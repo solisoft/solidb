@@ -1,4 +1,4 @@
-# Rust-DB: AQL-Compatible JSON Document Database
+# SoliDB: AQL-Compatible JSON Document Database
 
 A lightweight, high-performance database server written in Rust that implements a subset of ArangoDB's AQL (ArangoDB Query Language) for JSON document storage.
 
@@ -21,7 +21,7 @@ A lightweight, high-performance database server written in Rust that implements 
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd rust-db
+cd solidb
 
 # Build the project
 cargo build --release
@@ -451,7 +451,7 @@ RUST_LOG=debug cargo run
 
 ```bash
 cargo build --release
-./target/release/rust-db
+./target/release/solidb
 ```
 
 ## Limitations
@@ -472,7 +472,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Built-in functions~~ ✅ Implemented! (LENGTH, ROUND, ABS, UPPER, LOWER, CONCAT, SUBSTRING, etc.)
 - [x] ~~RocksDB storage backend~~ ✅ Implemented! (crash recovery, compression, LSM tree)
 - [x] ~~Bind Variables~~ ✅ Implemented! (@variable for AQL injection prevention)
-- [ ] Aggregation functions (COUNT, SUM, AVG, etc.)
+- [x] ~~Aggregation functions~~ ✅ (COUNT, SUM, AVG, etc.)
 - [ ] Graph traversal queries
 - [ ] Authentication and authorization
 - [ ] WebSocket support

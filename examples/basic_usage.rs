@@ -3,7 +3,7 @@ use serde_json::json;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("=== Rust-DB Basic Usage Example ===\n");
+    println!("=== SoliDB Basic Usage Example ===\n");
 
     // Initialize storage engine
     let storage = StorageEngine::new("./example_data")?;

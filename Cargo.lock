@@ -1185,7 +1185,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-db"
+name = "solidb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
