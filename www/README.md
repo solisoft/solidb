@@ -25,5 +25,7 @@ beans new my-project
 ### Run the project
 
 ```bash
+cd my-project
+npm install
 beans dev
 ```
