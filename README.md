@@ -123,39 +123,39 @@ curl -X POST http://localhost:6745/_api/cursor \
 
 ### Query Examples
 
-```aql
--- Basic iteration
+```ruby
+# Basic iteration
 FOR doc IN users RETURN doc
 
--- Filtering
+# Filtering
 FOR doc IN users FILTER doc.age > 18 RETURN doc
 FOR doc IN users FILTER doc.active == true AND doc.age >= 21 RETURN doc
 
--- Sorting
+# Sorting
 FOR doc IN users SORT doc.name ASC RETURN doc
 FOR doc IN users SORT doc.age DESC RETURN doc
 
--- Limiting
+# Limiting
 FOR doc IN users LIMIT 10 RETURN doc
 FOR doc IN users LIMIT 5, 10 RETURN doc  -- offset 5, count 10
 
--- Projection
+# Projection
 FOR doc IN users RETURN {name: doc.name, email: doc.email}
 
--- Complex queries
+# Complex queries
 FOR doc IN users
   FILTER doc.age > 25 AND doc.active == true
   SORT doc.name ASC
   LIMIT 10
   RETURN {name: doc.name, age: doc.age}
 
--- JOIN: Users with their Orders
+# JOIN: Users with their Orders
 FOR u IN users
   FOR o IN orders
     FILTER o.user_key == u._key
     RETURN {user: u.name, product: o.product, amount: o.amount}
 
--- JOIN with multiple filters and sorting
+# JOIN with multiple filters and sorting
 FOR u IN users
   FOR o IN orders
     FILTER o.user_key == u._key
@@ -164,40 +164,40 @@ FOR u IN users
     LIMIT 10
     RETURN {user: u.name, product: o.product, amount: o.amount}
 
--- Cross Join (Cartesian product)
+# Cross Join (Cartesian product)
 FOR u IN users
   FOR p IN products
     RETURN {user: u.name, product: p.name}
 
--- LET with literal value
+# LET with literal value
 LET minAge = 25
 FOR doc IN users
   FILTER doc.age >= minAge
   RETURN doc
 
--- LET with subquery
+# LET with subquery
 LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u)
 FOR user IN activeUsers
   RETURN user.name
 
--- Correlated subquery (LET inside FOR with access to outer variable)
+# Correlated subquery (LET inside FOR with access to outer variable)
 FOR u IN users
   LET userOrders = (FOR o IN orders FILTER o.user == u.name RETURN o.product)
   RETURN { name: u.name, orders: userOrders }
 
--- Correlated subquery with aggregation
+# Correlated subquery with aggregation
 FOR u IN users
   LET totalSpent = SUM((FOR o IN orders FILTER o.user == u.name RETURN o.amount))
   FILTER totalSpent > 100
   RETURN { name: u.name, spent: totalSpent }
 
--- Multiple LET clauses
+# Multiple LET clauses
 LET seniors = (FOR u IN users FILTER u.age > 30 RETURN u)
 LET juniors = (FOR u IN users FILTER u.age <= 30 RETURN u)
 FOR s IN seniors
   RETURN {name: s.name, category: "senior"}
 
--- LET with array literal
+# LET with array literal
 LET items = [1, 2, 3]
 FOR x IN items
   RETURN x * 2
