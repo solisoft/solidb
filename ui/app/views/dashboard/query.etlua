@@ -1,0 +1,45 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <h1 class="text-3xl font-bold leading-tight text-gray-100 mb-6">AQL Query</h1>
+  
+  <div class="bg-gray-800 shadow sm:rounded-lg border border-gray-700">
+    <div class="px-4 py-5 sm:p-6">
+      <h3 class="text-lg leading-6 font-medium text-gray-100">
+        Execute Query
+      </h3>
+      <div class="mt-2 max-w-xl text-sm text-gray-400">
+        <p>Enter your AQL query below to execute it against the database.</p>
+      </div>
+      <form class="mt-5 sm:flex sm:items-center">
+        <div class="w-full">
+          <label for="query" class="sr-only">Query</label>
+          <textarea id="query" name="query" rows="4" class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm bg-gray-900 text-gray-100 border-gray-600 rounded-md font-mono" placeholder="FOR u IN users RETURN u"></textarea>
+        </div>
+      </form>
+       <div class="mt-5">
+          <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            Run Query
+          </button>
+        </div>
+    </div>
+  </div>
+  
+  <div class="mt-8 bg-gray-800 shadow sm:rounded-lg hidden border border-gray-700" id="results-container">
+    <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-lg leading-6 font-medium text-gray-100 mb-4">Results</h3>
+        <div class="bg-gray-900 p-4 rounded-md overflow-x-auto border border-gray-700">
+            <pre class="text-sm text-gray-300 font-mono"><code>[
+  {
+    "id": "1",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  {
+    "id": "2",
+    "name": "Jane Smith",
+    "email": "jane@example.com"
+  }
+]</code></pre>
+        </div>
+    </div>
+  </div>
+</div>

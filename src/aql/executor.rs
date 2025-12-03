@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::time::{Instant, Duration};
+use chrono::Utc;
 
 use crate::error::{DbError, DbResult};
 use crate::storage::{Collection, StorageEngine, GeoPoint, distance_meters};
@@ -1215,6 +1216,54 @@ impl<'a> QueryExecutor<'a> {
                 }
 
                 Ok(Value::Object(result))
+            }
+
+
+            // DATE_NOW() - current timestamp in milliseconds since Unix epoch
+            "DATE_NOW" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError("DATE_NOW requires 0 arguments".to_string()));
+                }
+                let timestamp = Utc::now().timestamp_millis();
+                Ok(Value::Number(serde_json::Number::from(timestamp)))
+            }
+
+            // DATE_ISO8601(date) - convert timestamp to ISO 8601 string
+            "DATE_ISO8601" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_ISO8601 requires 1 argument: timestamp in milliseconds".to_string()));
+                }
+                
+                // Handle both integer and float timestamps
+                let timestamp_ms = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string()));
+                        }
+                    }
+                    _ => return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string())),
+                };
+                
+                // Convert milliseconds to seconds for chrono
+                let timestamp_secs = timestamp_ms / 1000;
+                let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                
+                // Create DateTime from timestamp
+                use chrono::TimeZone;
+                let datetime = match Utc.timestamp_opt(timestamp_secs, nanos) {
+                    chrono::LocalResult::Single(dt) => dt,
+                    _ => return Err(DbError::ExecutionError(
+                        format!("DATE_ISO8601: invalid timestamp: {}", timestamp_ms)
+                    )),
+                };
+                
+                // Format as ISO 8601 string (e.g., "2023-12-03T13:44:00.000Z")
+                let iso_string = datetime.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                Ok(Value::String(iso_string))
             }
 
             _ => Err(DbError::ExecutionError(format!("Unknown function: {}", name))),

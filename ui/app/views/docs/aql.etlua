@@ -1,0 +1,441 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Navigation -->
+    <div class="hidden lg:block lg:col-span-3">
+      <nav class="sticky top-6 space-y-2" aria-label="Sidebar">
+        <div class="bg-gray-900/50 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-xl">
+          <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 px-3">Contents</h3>
+          <a href="#syntax" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+            Basic Syntax
+          </a>
+          <a href="#let-subqueries" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+            LET & Subqueries
+          </a>
+          <a href="#operators" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+            Operators
+          </a>
+          <a href="#bind-variables" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
+            Bind Variables
+          </a>
+          <div class="mt-4 pt-4 border-t border-white/5">
+            <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Functions</h4>
+            <div class="space-y-1 pl-2">
+              <a href="#func-numeric" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-indigo-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Numeric
+              </a>
+              <a href="#func-string" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-purple-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                String
+              </a>
+              <a href="#func-date" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-pink-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Date <span class="ml-2 text-[10px] bg-pink-500/20 text-pink-300 px-1.5 rounded border border-pink-500/30">NEW</span>
+              </a>
+              <a href="#func-geo" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-green-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Geospatial
+              </a>
+              <a href="#func-fulltext" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-yellow-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Fulltext
+              </a>
+              <a href="#func-aggregation" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-blue-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Aggregation
+              </a>
+              <a href="#func-object" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-gray-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Object & Array
+              </a>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </div>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-4 tracking-tight">AQL Reference</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Master the ArangoDB Query Language (AQL) in SoliDB. A powerful, declarative language for querying and manipulating your JSON documents.
+          </p>
+        </div>
+      </div>
+
+      <!-- Basic Syntax -->
+      <section id="syntax" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Basic Syntax
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">AQL queries follow a declarative structure that reads like a sentence.</p>
+            
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <pre><code class="language-sql text-sm">LET variable = expression
+FOR variable IN collection
+  FILTER expression
+  SORT field [ASC|DESC]
+  LIMIT [offset,] count
+  RETURN expression</code></pre>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center"><span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">LET</span> Variable Assignment</h3>
+                <p class="text-sm text-gray-400">Binds values or subquery results to variables.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center"><span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">FOR</span> Iteration</h3>
+                <p class="text-sm text-gray-400">Iterates over collections or arrays.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center"><span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">FILTER</span> Filtering</h3>
+                <p class="text-sm text-gray-400">Restricts results based on conditions.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-colors">
+                <h3 class="text-indigo-300 font-bold mb-2 flex items-center"><span class="bg-indigo-500/20 p-1.5 rounded mr-2 text-xs">RETURN</span> Projection</h3>
+                <p class="text-sm text-gray-400">Constructs the result documents.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LET & Subqueries -->
+      <section id="let-subqueries" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              LET & Subqueries
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <div class="space-y-6">
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-semibold text-white mb-3">Correlated Subqueries</h3>
+                <p class="text-gray-400 mb-4 text-sm">Use <code>LET</code> inside a <code>FOR</code> loop to perform powerful joins and aggregations.</p>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  -- Subquery accessing outer variable 'u'
+  LET userOrders = (
+    FOR o IN orders 
+    FILTER o.user == u.name 
+    RETURN o
+  )
+  RETURN { name: u.name, orders: userOrders }</code></pre>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-semibold text-white mb-3">Aggregation with Subqueries</h3>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  LET totalSpent = SUM((
+    FOR o IN orders 
+    FILTER o.user == u.name 
+    RETURN o.amount
+  ))
+  FILTER totalSpent > 100
+  RETURN { name: u.name, spent: totalSpent }</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Operators -->
+      <section id="operators" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
+              Operators
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider">Comparison</h3>
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">==</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">!=</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">&lt;</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">&lt;=</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">&gt;</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">&gt;=</span>
+                </div>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider">Logical</h3>
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">AND</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">OR</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">NOT</span>
+                </div>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider">Arithmetic</h3>
+                <div class="flex flex-wrap gap-2">
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">+</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">-</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">*</span>
+                  <span class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10">/</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bind Variables -->
+      <section id="bind-variables" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              Bind Variables
+            </h2>
+            <span class="px-3 py-1 bg-green-500/20 text-green-300 text-xs font-bold rounded-full border border-green-500/30">SECURITY ESSENTIAL</span>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="bg-red-900/10 border border-red-500/30 rounded-xl p-5 flex items-start">
+              <svg class="w-6 h-6 text-red-400 mt-0.5 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              <div>
+                <h4 class="text-red-300 font-bold mb-1">Prevent Injection Attacks</h4>
+                <p class="text-sm text-red-200/70">Never concatenate user input directly into query strings. Always use bind variables (<code>@variable</code>) to safely substitute values.</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Query</h4>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  FILTER u.name == @name 
+  AND u.age >= @minAge
+  RETURN u</code></pre>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Bind Vars</h4>
+                <pre><code class="language-json text-sm">{
+  "name": "Alice",
+  "minAge": 25
+}</code></pre>
+              </div>
+            </div>
+            
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-2">Dynamic Field Access</h4>
+              <p class="text-sm text-gray-400 mb-3">Use bracket notation with bind variables for dynamic field names.</p>
+              <code class="text-sm bg-gray-950 px-2 py-1 rounded text-indigo-300 border border-white/10">FILTER doc[@fieldName] == @value</code>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Functions -->
+      <section id="functions" class="scroll-mt-24">
+        <div class="flex items-center mb-8">
+          <h2 class="text-3xl font-extrabold text-white">Functions</h2>
+          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
+        </div>
+
+        <!-- Numeric -->
+        <div class="mb-12" id="func-numeric">
+          <h3 class="text-xl font-bold text-indigo-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-indigo-500 rounded-full mr-3"></span>
+            Numeric
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group">
+              <div class="flex justify-between items-start mb-3">
+                <code class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30">ABS(number)</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Returns the absolute value.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ABS(-5) // 5</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group">
+              <div class="flex justify-between items-start mb-3">
+                <code class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30">CEIL(number)</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Rounds up to nearest integer.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CEIL(4.2) // 5</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group">
+              <div class="flex justify-between items-start mb-3">
+                <code class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30">FLOOR(number)</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Rounds down to nearest integer.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FLOOR(4.8) // 4</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group">
+              <div class="flex justify-between items-start mb-3">
+                <code class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30">ROUND(num, prec?)</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-3">Rounds to specified precision.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) // 3.14</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- String -->
+        <div class="mb-12" id="func-string">
+          <h3 class="text-xl font-bold text-purple-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-purple-500 rounded-full mr-3"></span>
+            String
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT(str1, ...)</code>
+              <p class="text-sm text-gray-400 mb-3">Concatenates strings.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT("A", "B") // "AB"</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">CONCAT_SEPARATOR(sep, arr)</code>
+              <p class="text-sm text-gray-400 mb-3">Joins array with separator.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONCAT_SEPARATOR(",", ["A","B"])</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LENGTH(str)</code>
+              <p class="text-sm text-gray-400 mb-3">Returns string length.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH("Hello") // 5</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SUBSTRING(str, start, len?)</code>
+              <p class="text-sm text-gray-400 mb-3">Extracts substring.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SUBSTRING("Hello", 0, 2) // "He"</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LOWER(str) / UPPER(str)</code>
+              <p class="text-sm text-gray-400 mb-3">Case conversion.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LOWER("Hi") // "hi"</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">LEVENSHTEIN(s1, s2)</code>
+              <p class="text-sm text-gray-400 mb-3">Calculates edit distance.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEVENSHTEIN("foo", "bar")</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Date Functions (New) -->
+        <div class="mb-12" id="func-date">
+          <h3 class="text-xl font-bold text-pink-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-pink-500 rounded-full mr-3"></span>
+            Date
+            <span class="ml-3 px-2 py-0.5 bg-pink-500/20 text-pink-300 text-xs rounded-full border border-pink-500/30">NEW</span>
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_NOW()</code>
+              <p class="text-sm text-gray-400 mb-3">Returns current Unix timestamp (ms).</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_NOW() // 1733234387000</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">DATE_ISO8601(timestamp)</code>
+              <p class="text-sm text-gray-400 mb-3">Converts timestamp to ISO 8601 string.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_ISO8601(1733234387000)
+// "2025-12-03T13:59:47.000Z"</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Geospatial -->
+        <div class="mb-12" id="func-geo">
+          <h3 class="text-xl font-bold text-green-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-green-500 rounded-full mr-3"></span>
+            Geospatial
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">DISTANCE(lat1, lon1, lat2, lon2)</code>
+              <p class="text-sm text-gray-400 mb-3">Distance in meters between coordinates.</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_DISTANCE(p1, p2)</code>
+              <p class="text-sm text-gray-400 mb-3">Distance in meters between GeoPoints.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fulltext -->
+        <div class="mb-12" id="func-fulltext">
+          <h3 class="text-xl font-bold text-yellow-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-yellow-500 rounded-full mr-3"></span>
+            Fulltext Search
+          </h3>
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:bg-gray-800/60 transition-colors">
+            <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">FULLTEXT(col, field, query, dist?)</code>
+            <p class="text-sm text-gray-400 mb-4">Fuzzy search using n-gram indexing.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET matches = FULLTEXT("articles", "title", "rust", 2)
+FOR m IN matches RETURN m.doc</code></pre>
+          </div>
+        </div>
+
+        <!-- Aggregation -->
+        <div class="mb-12" id="func-aggregation">
+          <h3 class="text-xl font-bold text-blue-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-blue-500 rounded-full mr-3"></span>
+            Aggregation
+          </h3>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">SUM(arr)</code>
+              <p class="text-xs text-gray-500">Sum values</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">AVG(arr)</code>
+              <p class="text-xs text-gray-500">Average</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">MIN(arr)</code>
+              <p class="text-xs text-gray-500">Minimum</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">MAX(arr)</code>
+              <p class="text-xs text-gray-500">Maximum</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Object & Array -->
+        <div class="mb-12" id="func-object">
+          <h3 class="text-xl font-bold text-gray-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-gray-500 rounded-full mr-3"></span>
+            Object & Array
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MERGE(obj1, obj2)</code>
+              <p class="text-sm text-gray-400 mb-3">Shallow merge of objects.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MERGE({a:1}, {b:2})</code></pre>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">LENGTH(val)</code>
+              <p class="text-sm text-gray-400 mb-3">Count elements in array/object.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LENGTH([1,2,3]) // 3</code></pre>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+</div>

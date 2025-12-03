@@ -1,0 +1,90 @@
+<div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="text-indigo-600 hover:text-indigo-500 font-medium">&larr; Back to Documentation</a>
+  </div>
+
+  <div class="prose prose-indigo prose-lg text-gray-500 mx-auto">
+    <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-4">Architecture</h1>
+    <p class="lead text-xl text-gray-600 mb-10">Overview of SoliDB's internal structure and technology stack.</p>
+
+    <div class="mt-12">
+      <h2 id="tech-stack" class="text-2xl font-bold text-gray-900 border-b border-gray-200 pb-2 mb-6">Technology Stack</h2>
+      <p>SoliDB is built with performance and reliability in mind, leveraging the Rust ecosystem:</p>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 class="text-lg font-bold text-gray-900 mb-2">Core Runtime</h3>
+          <ul class="list-disc pl-5 space-y-1 text-sm">
+            <li><strong>Rust:</strong> Memory safety and performance.</li>
+            <li><strong>Tokio:</strong> Asynchronous runtime for high concurrency.</li>
+          </ul>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 class="text-lg font-bold text-gray-900 mb-2">Web Server</h3>
+          <ul class="list-disc pl-5 space-y-1 text-sm">
+            <li><strong>Axum:</strong> Ergonomic and modular web framework.</li>
+            <li><strong>Tower:</strong> Middleware stack for robust networking.</li>
+          </ul>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 class="text-lg font-bold text-gray-900 mb-2">Storage Engine</h3>
+          <ul class="list-disc pl-5 space-y-1 text-sm">
+            <li><strong>RocksDB:</strong> High-performance embedded key-value store.</li>
+            <li><strong>Serde:</strong> Efficient serialization and deserialization.</li>
+          </ul>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 class="text-lg font-bold text-gray-900 mb-2">Utilities</h3>
+          <ul class="list-disc pl-5 space-y-1 text-sm">
+            <li><strong>Tracing:</strong> Structured logging and diagnostics.</li>
+            <li><strong>Anyhow/Thiserror:</strong> Idiomatic error handling.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-16">
+      <h2 id="project-structure" class="text-2xl font-bold text-gray-900 border-b border-gray-200 pb-2 mb-6">Project Structure</h2>
+      <p>The codebase is organized into modular components:</p>
+
+      <div class="mt-6 space-y-6">
+        <div>
+          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/main.rs</code></h3>
+          <p class="text-gray-600">The entry point of the application. It initializes the logging system, sets up the storage engine, creates the router, and starts the TCP listener.</p>
+        </div>
+
+        <div>
+          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/server/</code></h3>
+          <p class="text-gray-600">Contains the HTTP server logic.</p>
+          <ul class="list-disc pl-5 mt-2 space-y-1">
+            <li><code>routes.rs</code>: Defines the API endpoints and maps them to handlers.</li>
+            <li><code>handlers.rs</code>: Implements the business logic for each endpoint (e.g., creating collections, inserting documents).</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/storage/</code></h3>
+          <p class="text-gray-600">Manages data persistence and retrieval.</p>
+          <ul class="list-disc pl-5 mt-2 space-y-1">
+            <li><code>mod.rs</code>: Defines the <code>StorageEngine</code> and <code>Collection</code> structs.</li>
+            <li>Handles interaction with RocksDB.</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/aql/</code></h3>
+          <p class="text-gray-600">Implements the ArangoDB Query Language (AQL) engine.</p>
+          <ul class="list-disc pl-5 mt-2 space-y-1">
+            <li><code>lexer.rs</code>: Tokenizes the input query string.</li>
+            <li><code>parser.rs</code>: Parses tokens into an Abstract Syntax Tree (AST).</li>
+            <li><code>executor.rs</code>: Executes the AST against the storage engine.</li>
+            <li><code>ast.rs</code>: Defines the data structures for the AST.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

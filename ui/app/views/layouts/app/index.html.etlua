@@ -1,0 +1,66 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><%= title or "SoliDB - High Performance Rust Database" %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="SoliDB - A New High Performance Database Server" />
+  <link rel="stylesheet" href="<%= PublicPath("/app.css") %>" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+
+<body class="min-h-screen flex flex-col bg-gray-900 font-sans text-gray-100">
+  <%- Partial("header") %>
+  
+  <main class="flex-grow">
+    @yield
+  </main>
+
+  <%- Partial("footer") %>
+  <%- RefreshPageForDevMode() %>
+  <script>
+    document.addEventListener('DOMContentLoaded', (event) => {
+      document.querySelectorAll('pre code').forEach((el) => {
+        hljs.highlightElement(el);
+      });
+    });
+  </script>
+  <style>
+    /* Custom scrollbar for code blocks */
+    pre::-webkit-scrollbar {
+      height: 8px;
+    }
+    pre::-webkit-scrollbar-track {
+      background: #282c34;
+      border-radius: 0 0 8px 8px;
+    }
+    pre::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 4px;
+    }
+    pre::-webkit-scrollbar-thumb:hover {
+      background: #6b7280;
+    }
+    
+    /* Ensure code blocks have rounded corners and nice spacing */
+    pre {
+      border-radius: 0.5rem !important;
+      margin-top: 1.5rem !important;
+      margin-bottom: 1.5rem !important;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    
+    /* Override prose max-width for code blocks if needed, but usually prose is fine */
+    .prose pre {
+      background-color: #282c34 !important; /* Match atom-one-dark */
+      color: #abb2bf !important;
+    }
+  </style>
+</body>
+</html>

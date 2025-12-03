@@ -392,6 +392,22 @@ LEVENSHTEIN("rust", "rest")    -- Returns 1
 LEVENSHTEIN("test", "test")    -- Returns 0
 ```
 
+#### AQL Date Functions
+
+```aql
+-- Get current timestamp in milliseconds
+DATE_NOW()
+
+-- Convert timestamp to ISO 8601 string
+DATE_ISO8601(timestamp)
+
+-- Example: Get events from last 24 hours with formatted date
+FOR doc IN events
+  LET eventDate = DATE_ISO8601(doc.timestamp)
+  FILTER doc.timestamp > DATE_NOW() - 86400000
+  RETURN { event: doc.name, date: eventDate }
+```
+
 **Fulltext Search Response:**
 Each match includes:
 - `doc`: The full document

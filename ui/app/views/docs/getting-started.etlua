@@ -1,0 +1,57 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">&larr; Back to Documentation</a>
+  </div>
+
+  <div class="prose prose-invert prose-lg text-gray-400 mx-auto max-w-4xl">
+    <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-4">Getting Started with SoliDB</h1>
+    <p class="lead text-xl text-gray-300 mb-10">SoliDB is a high-performance, Rust-based database server designed for performance and ease of use.</p>
+    
+    <div class="mt-12">
+      <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Installation</h2>
+      <p class="mb-4">To install SoliDB, run the following command in your terminal:</p>
+      <div class="bg-gray-800 rounded-md p-4 font-mono text-sm border border-gray-700 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Terminal</span>
+        </div>
+        <code class="text-green-400">curl -sL https://solidb.io/install.sh | bash</code>
+      </div>
+    </div>
+    
+    <div class="mt-12">
+      <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Configuration</h2>
+      <p class="mb-4">Configuration is done via the <code>solidb.toml</code> file. By default, SoliDB listens on port 3000.</p>
+      <div class="bg-gray-800 rounded-md p-4 font-mono text-sm border border-gray-700 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">solidb.toml</span>
+        </div>
+        <pre class="m-0 p-0 bg-transparent"><code class="language-toml">[server]
+host = "127.0.0.1"
+port = 3000
+
+[storage]
+path = "./data"</code></pre>
+      </div>
+    </div>
+    
+    <div class="mt-12">
+      <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Running the Server</h2>
+      <p class="mb-4">Once installed and configured, you can start the server:</p>
+      <div class="bg-gray-800 rounded-md p-4 font-mono text-sm border border-gray-700 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Terminal</span>
+        </div>
+        <code class="text-green-400">solidb start</code>
+      </div>
+    </div>
+
+    <div class="mt-16 p-6 bg-indigo-900/20 rounded-xl border border-indigo-500/30">
+      <h3 class="text-xl font-bold text-indigo-300 mb-2">Next Steps</h3>
+      <p class="text-gray-300 mb-4">Now that you have SoliDB running, explore the API or learn about AQL.</p>
+      <div class="flex space-x-4">
+        <a href="/docs/api" class="text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-md text-sm font-medium transition-colors">API Reference</a>
+        <a href="/docs/aql" class="text-indigo-300 bg-indigo-900/50 hover:bg-indigo-800 px-4 py-2 rounded-md text-sm font-medium transition-colors">AQL Guide</a>
+      </div>
+    </div>
+  </div>
+</div>
