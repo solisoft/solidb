@@ -1,0 +1,1915 @@
+//! AQL Parser and Query Executor Tests
+//! Tests for the AQL query language implementation
+
+use rust_db::{parse, QueryExecutor, StorageEngine, BindVars};
+use serde_json::json;
+use std::collections::HashMap;
+use tempfile::TempDir;
+
+/// Helper to create a test storage engine
+fn create_test_storage() -> (StorageEngine, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
+    (storage, temp_dir)
+}
+
+/// Setup test data in users collection
+fn setup_users_collection(storage: &StorageEngine) {
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice",
+        "age": 30,
+        "city": "Paris",
+        "active": true
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "bob",
+        "name": "Bob",
+        "age": 25,
+        "city": "London",
+        "active": true
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "charlie",
+        "name": "Charlie",
+        "age": 35,
+        "city": "Paris",
+        "active": false
+    })).unwrap();
+}
+
+// ==================== Parser Tests ====================
+
+#[test]
+fn test_parse_simple_for_return() {
+    let query = parse("FOR doc IN users RETURN doc").unwrap();
+    assert_eq!(query.for_clauses.len(), 1);
+    assert_eq!(query.for_clauses[0].variable, "doc");
+    assert_eq!(query.for_clauses[0].collection, "users");
+}
+
+#[test]
+fn test_parse_filter() {
+    let query = parse("FOR doc IN users FILTER doc.age > 25 RETURN doc").unwrap();
+    assert_eq!(query.filter_clauses.len(), 1);
+}
+
+#[test]
+fn test_parse_multiple_filters() {
+    let query = parse("FOR doc IN users FILTER doc.age > 25 FILTER doc.active == true RETURN doc").unwrap();
+    assert_eq!(query.filter_clauses.len(), 2);
+}
+
+#[test]
+fn test_parse_sort() {
+    let query = parse("FOR doc IN users SORT doc.age DESC RETURN doc").unwrap();
+    assert!(query.sort_clause.is_some());
+    let sort = query.sort_clause.unwrap();
+    assert!(!sort.ascending);
+}
+
+#[test]
+fn test_parse_limit() {
+    let query = parse("FOR doc IN users LIMIT 10 RETURN doc").unwrap();
+    assert!(query.limit_clause.is_some());
+    let limit = query.limit_clause.unwrap();
+    assert_eq!(limit.count, 10);
+    assert_eq!(limit.offset, 0);
+}
+
+#[test]
+fn test_parse_limit_with_offset() {
+    let query = parse("FOR doc IN users LIMIT 5, 10 RETURN doc").unwrap();
+    assert!(query.limit_clause.is_some());
+    let limit = query.limit_clause.unwrap();
+    assert_eq!(limit.offset, 5);
+    assert_eq!(limit.count, 10);
+}
+
+#[test]
+fn test_parse_object_return() {
+    // Just verify it parses without error
+    let _query = parse("FOR doc IN users RETURN {name: doc.name, age: doc.age}").unwrap();
+}
+
+#[test]
+fn test_parse_join() {
+    let query = parse("FOR u IN users FOR o IN orders RETURN {user: u.name, order: o.id}").unwrap();
+    assert_eq!(query.for_clauses.len(), 2);
+}
+
+#[test]
+fn test_parse_invalid_query() {
+    let result = parse("INVALID QUERY");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_missing_return() {
+    let result = parse("FOR doc IN users");
+    assert!(result.is_err());
+}
+
+// ==================== RETURN-only Query Tests ====================
+
+#[test]
+fn test_return_only_simple() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("RETURN 42").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(42.0));
+}
+
+#[test]
+fn test_return_only_arithmetic() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("RETURN 1 + 2 * 3").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(7.0));
+}
+
+#[test]
+fn test_return_only_merge() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("RETURN MERGE({a: 1, b: 2}, {c: 3, d: 4})").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(2.0));
+    assert_eq!(results[0]["c"], json!(3.0));
+    assert_eq!(results[0]["d"], json!(4.0));
+}
+
+#[test]
+fn test_return_only_array() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("RETURN [1, 2, 3]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([1.0, 2.0, 3.0]));
+}
+
+#[test]
+fn test_return_only_object() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("RETURN {name: \"test\", value: 123}").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["name"], json!("test"));
+    assert_eq!(results[0]["value"], json!(123.0));
+}
+
+#[test]
+fn test_let_with_return_only() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("LET a = [1, 2, 3] RETURN a[0]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1.0));
+}
+
+#[test]
+fn test_multiple_let_with_return_only() {
+    let (storage, _dir) = create_test_storage();
+    
+    let query = parse("LET a = 10 LET b = 20 RETURN a + b").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(30.0));
+}
+
+
+// ==================== Query Executor Tests ====================
+
+#[test]
+fn test_execute_simple_query() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+}
+
+#[test]
+fn test_execute_filter_equality() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.city == \"Paris\" RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_filter_greater_than() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > 25 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_filter_less_than() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age < 30 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert!(results.contains(&json!("Bob")));
+}
+
+#[test]
+fn test_execute_filter_boolean() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.active == true RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+}
+
+#[test]
+fn test_execute_filter_not_equal() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.city != \"Paris\" RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert!(results.contains(&json!("Bob")));
+}
+
+#[test]
+fn test_execute_sort_ascending() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users SORT doc.age ASC RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0], json!("Bob"));    // 25
+    assert_eq!(results[1], json!("Alice"));  // 30
+    assert_eq!(results[2], json!("Charlie")); // 35
+}
+
+#[test]
+fn test_execute_sort_descending() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users SORT doc.age DESC RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0], json!("Charlie")); // 35
+    assert_eq!(results[1], json!("Alice"));   // 30
+    assert_eq!(results[2], json!("Bob"));     // 25
+}
+
+#[test]
+fn test_execute_limit() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users LIMIT 2 RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_execute_limit_with_offset() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users SORT doc.age ASC LIMIT 1, 2 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    // Skip Bob (25), get Alice (30) and Charlie (35)
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_object_projection() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN {n: doc.name, a: doc.age}").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["n"], "Alice");
+    assert_eq!(results[0]["a"], 30);
+}
+
+#[test]
+fn test_execute_field_access() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_multiple_filters() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.city == \"Paris\" FILTER doc.active == true RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+#[test]
+fn test_execute_and_condition() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > 25 AND doc.age < 35 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+#[test]
+fn test_execute_or_condition() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age == 25 OR doc.age == 35 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Bob")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_combined_clauses() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.active == true SORT doc.age DESC LIMIT 1 RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice")); // Oldest active user
+}
+
+// ==================== JOIN Tests ====================
+
+#[test]
+fn test_execute_join() {
+    let (storage, _dir) = create_test_storage();
+
+    // Create users
+    storage.create_collection("users".to_string()).unwrap();
+    let users = storage.get_collection("users").unwrap();
+    users.insert(json!({"_key": "1", "name": "Alice"})).unwrap();
+    users.insert(json!({"_key": "2", "name": "Bob"})).unwrap();
+
+    // Create orders
+    storage.create_collection("orders".to_string()).unwrap();
+    let orders = storage.get_collection("orders").unwrap();
+    orders.insert(json!({"_key": "o1", "user_id": "1", "product": "Laptop"})).unwrap();
+    orders.insert(json!({"_key": "o2", "user_id": "1", "product": "Phone"})).unwrap();
+    orders.insert(json!({"_key": "o3", "user_id": "2", "product": "Tablet"})).unwrap();
+
+    let query = parse("FOR u IN users FOR o IN orders FILTER o.user_id == u._key RETURN {user: u.name, product: o.product}").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    // Check Alice's orders
+    let alice_orders: Vec<_> = results.iter()
+        .filter(|r| r["user"] == "Alice")
+        .collect();
+    assert_eq!(alice_orders.len(), 2);
+}
+
+// ==================== Built-in Function Tests ====================
+
+#[test]
+fn test_execute_length_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users RETURN LENGTH(doc.name)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert!(results.contains(&json!(5))); // Alice
+    assert!(results.contains(&json!(3))); // Bob
+    assert!(results.contains(&json!(7))); // Charlie
+}
+
+#[test]
+fn test_execute_upper_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN UPPER(doc.name)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("ALICE"));
+}
+
+#[test]
+fn test_execute_lower_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN LOWER(doc.name)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("alice"));
+}
+
+#[test]
+fn test_execute_round_function() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("numbers".to_string()).unwrap();
+    let collection = storage.get_collection("numbers").unwrap();
+    collection.insert(json!({"_key": "1", "value": 3.7})).unwrap();
+
+    let query = parse("FOR doc IN numbers RETURN ROUND(doc.value)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(4.0));
+}
+
+#[test]
+fn test_execute_abs_function() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("numbers".to_string()).unwrap();
+    let collection = storage.get_collection("numbers").unwrap();
+    collection.insert(json!({"_key": "1", "value": -42})).unwrap();
+
+    let query = parse("FOR doc IN numbers RETURN ABS(doc.value)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(42.0));
+}
+
+#[test]
+fn test_execute_concat_separator_function() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("data".to_string()).unwrap();
+    let collection = storage.get_collection("data").unwrap();
+    collection.insert(json!({
+        "_key": "1",
+        "tags": ["rust", "database", "aql"]
+    })).unwrap();
+
+    let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\", \", doc.tags)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("rust, database, aql"));
+}
+
+#[test]
+fn test_execute_concat_separator_with_numbers() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("data".to_string()).unwrap();
+    let collection = storage.get_collection("data").unwrap();
+    collection.insert(json!({
+        "_key": "1",
+        "values": [1, 2, 3, 4, 5]
+    })).unwrap();
+
+    let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\"-\", doc.values)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("1-2-3-4-5"));
+}
+
+#[test]
+fn test_execute_concat_separator_empty_array() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("data".to_string()).unwrap();
+    let collection = storage.get_collection("data").unwrap();
+    collection.insert(json!({
+        "_key": "1",
+        "items": []
+    })).unwrap();
+
+    let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\",\", doc.items)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(""));
+}
+
+// ==================== MERGE Function Tests ====================
+
+#[test]
+fn test_merge_two_objects() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        FOR doc IN users 
+        LIMIT 1 
+        RETURN MERGE({a: 1, b: 2}, {c: 3, d: 4})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(2.0));
+    assert_eq!(results[0]["c"], json!(3.0));
+    assert_eq!(results[0]["d"], json!(4.0));
+}
+
+#[test]
+fn test_merge_override_values() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Later objects should override earlier ones
+    let query = parse(r#"
+        FOR doc IN users 
+        LIMIT 1 
+        RETURN MERGE({a: 1, b: 2}, {b: 99, c: 3})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(99.0)); // Overridden
+    assert_eq!(results[0]["c"], json!(3.0));
+}
+
+#[test]
+fn test_merge_multiple_objects() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        FOR doc IN users 
+        LIMIT 1 
+        RETURN MERGE({a: 1}, {b: 2}, {c: 3}, {d: 4})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(2.0));
+    assert_eq!(results[0]["c"], json!(3.0));
+    assert_eq!(results[0]["d"], json!(4.0));
+}
+
+#[test]
+fn test_merge_with_document() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Merge document with additional fields
+    let query = parse(r#"
+        FOR doc IN users 
+        FILTER doc.name == "Alice"
+        RETURN MERGE(doc, {status: "premium", points: 100})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["name"], json!("Alice"));
+    assert_eq!(results[0]["age"], json!(30));
+    assert_eq!(results[0]["status"], json!("premium"));
+    assert_eq!(results[0]["points"], json!(100.0));
+}
+
+#[test]
+fn test_merge_with_null() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Null values should be skipped
+    let query = parse(r#"
+        FOR doc IN users 
+        LIMIT 1 
+        RETURN MERGE({a: 1}, null, {b: 2})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(2.0));
+}
+
+#[test]
+fn test_merge_single_object() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        FOR doc IN users 
+        LIMIT 1 
+        RETURN MERGE({a: 1, b: 2})
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["a"], json!(1.0));
+    assert_eq!(results[0]["b"], json!(2.0));
+}
+
+
+// ==================== Geo Function Tests ====================
+
+#[test]
+fn test_execute_distance_function() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("places".to_string()).unwrap();
+    let collection = storage.get_collection("places").unwrap();
+    collection.insert(json!({
+        "_key": "eiffel",
+        "lat": 48.8584,
+        "lon": 2.2945
+    })).unwrap();
+
+    // Distance from Eiffel Tower to Arc de Triomphe (approx 48.8738, 2.2950)
+    let query = parse("FOR doc IN places RETURN ROUND(DISTANCE(doc.lat, doc.lon, 48.8738, 2.2950))").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Distance should be around 1700 meters
+    let dist = results[0].as_f64().unwrap();
+    assert!(dist > 1500.0 && dist < 2000.0);
+}
+
+// ==================== Edge Cases ====================
+
+#[test]
+fn test_empty_collection() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("empty".to_string()).unwrap();
+
+    let query = parse("FOR doc IN empty RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_filter_no_matches() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > 100 RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_nested_field_access() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+    collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice",
+        "address": {
+            "city": "Paris",
+            "country": "France"
+        }
+    })).unwrap();
+
+    let query = parse("FOR doc IN users RETURN doc.address.city").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Paris"));
+}
+
+#[test]
+fn test_filter_nested_field() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+    collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice",
+        "address": {"city": "Paris"}
+    })).unwrap();
+    collection.insert(json!({
+        "_key": "bob",
+        "name": "Bob",
+        "address": {"city": "London"}
+    })).unwrap();
+
+    let query = parse("FOR doc IN users FILTER doc.address.city == \"Paris\" RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+#[test]
+fn test_null_field_handling() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+    collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+        // No age field
+    })).unwrap();
+
+    let query = parse("FOR doc IN users RETURN doc.age").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(null));
+}
+
+// ==================== LET Subquery Tests ====================
+
+#[test]
+fn test_parse_let_clause() {
+    let query = parse("LET x = 42 FOR doc IN users RETURN doc").unwrap();
+    assert_eq!(query.let_clauses.len(), 1);
+    assert_eq!(query.let_clauses[0].variable, "x");
+}
+
+#[test]
+fn test_parse_let_with_subquery() {
+    let query = parse("LET allUsers = (FOR u IN users RETURN u) FOR x IN allUsers RETURN x").unwrap();
+    assert_eq!(query.let_clauses.len(), 1);
+    assert_eq!(query.let_clauses[0].variable, "allUsers");
+}
+
+#[test]
+fn test_parse_multiple_let_clauses() {
+    let query = parse("LET x = 1 LET y = 2 FOR doc IN users RETURN doc").unwrap();
+    assert_eq!(query.let_clauses.len(), 2);
+    assert_eq!(query.let_clauses[0].variable, "x");
+    assert_eq!(query.let_clauses[1].variable, "y");
+}
+
+#[test]
+fn test_execute_let_with_literal() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("LET minAge = 30 FOR doc IN users FILTER doc.age >= minAge RETURN doc.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));   // age 30
+    assert!(results.contains(&json!("Charlie"))); // age 35
+}
+
+#[test]
+fn test_execute_let_with_subquery() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // LET somedata = (FOR u IN users RETURN u)
+    // FOR item IN somedata RETURN item.name
+    let query = parse("LET somedata = (FOR u IN users RETURN u) FOR item IN somedata RETURN item.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_let_subquery_with_filter() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Get only active users via subquery, then iterate
+    let query = parse("LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u) FOR item IN activeUsers RETURN item.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Bob")));
+    assert!(!results.contains(&json!("Charlie"))); // Charlie is not active
+}
+
+#[test]
+fn test_execute_let_subquery_with_sort_limit() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Get top 2 oldest users
+    let query = parse("LET topUsers = (FOR u IN users SORT u.age DESC LIMIT 2 RETURN u) FOR item IN topUsers RETURN item.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Charlie"))); // age 35
+    assert!(results.contains(&json!("Alice")));   // age 30
+}
+
+#[test]
+fn test_execute_multiple_let_clauses() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Two LET clauses with different filters
+    let query = parse(r#"
+        LET parisUsers = (FOR u IN users FILTER u.city == "Paris" RETURN u)
+        LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u)
+        FOR p IN parisUsers
+        RETURN p.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));
+    assert!(results.contains(&json!("Charlie")));
+}
+
+#[test]
+fn test_execute_let_with_length() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use LENGTH function on subquery result
+    let query = parse("LET allUsers = (FOR u IN users RETURN u) FOR doc IN users LIMIT 1 RETURN LENGTH(allUsers)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3)); // 3 users total
+}
+
+#[test]
+fn test_execute_let_array_literal() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // LET with array literal
+    let query = parse("LET items = [1, 2, 3] FOR x IN items RETURN x").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    // Numbers from lexer are f64, so compare with floats
+    assert!(results.contains(&json!(1.0)));
+    assert!(results.contains(&json!(2.0)));
+    assert!(results.contains(&json!(3.0)));
+}
+
+#[test]
+fn test_execute_let_in_return_projection() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access LET variable in RETURN
+    let query = parse("LET prefix = \"User: \" FOR doc IN users FILTER doc.name == \"Alice\" RETURN CONCAT(prefix, doc.name)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("User: Alice"));
+}
+
+// ==================== Array Access Tests ====================
+
+#[test]
+fn test_array_access_basic() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access first element of array
+    let query = parse("LET a = [1, 2, 3] FOR doc IN users LIMIT 1 RETURN a[0]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1.0));
+}
+
+#[test]
+fn test_array_access_second_element() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access second element
+    let query = parse("LET a = [1, 2, 3] FOR doc IN users LIMIT 1 RETURN a[1]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(2.0));
+}
+
+#[test]
+fn test_array_access_last_element() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access last element
+    let query = parse("LET a = [1, 2, 3] FOR doc IN users LIMIT 1 RETURN a[2]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3.0));
+}
+
+#[test]
+fn test_array_access_out_of_bounds() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Out of bounds should return null
+    let query = parse("LET a = [1, 2, 3] FOR doc IN users LIMIT 1 RETURN a[10]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(null));
+}
+
+#[test]
+fn test_array_access_nested() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access nested array
+    let query = parse("LET a = [[1, 2], [3, 4]] FOR doc IN users LIMIT 1 RETURN a[0][1]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(2.0));
+}
+
+#[test]
+fn test_array_access_from_document() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("data".to_string()).unwrap();
+    let collection = storage.get_collection("data").unwrap();
+    collection.insert(json!({
+        "_key": "1",
+        "tags": ["rust", "database", "aql"]
+    })).unwrap();
+
+    // Access array field from document
+    let query = parse("FOR doc IN data RETURN doc.tags[0]").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("rust"));
+}
+
+
+// ==================== Bind Variables Tests (Security) ====================
+
+#[test]
+fn test_parse_bind_variable() {
+    // Verify @variable syntax parses correctly
+    let query = parse("FOR doc IN users FILTER doc.name == @name RETURN doc").unwrap();
+    assert_eq!(query.filter_clauses.len(), 1);
+}
+
+#[test]
+fn test_execute_bind_variable_string() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == @name RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("name".to_string(), json!("Alice"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+#[test]
+fn test_execute_bind_variable_number() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > @minAge RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("minAge".to_string(), json!(28));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));   // age 30
+    assert!(results.contains(&json!("Charlie"))); // age 35
+}
+
+#[test]
+fn test_execute_bind_variable_boolean() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.active == @isActive RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("isActive".to_string(), json!(false));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Charlie"));
+}
+
+#[test]
+fn test_execute_multiple_bind_variables() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age >= @minAge AND doc.city == @city RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("minAge".to_string(), json!(30));
+    bind_vars.insert("city".to_string(), json!("Paris"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&json!("Alice")));   // age 30, Paris
+    assert!(results.contains(&json!("Charlie"))); // age 35, Paris
+}
+
+#[test]
+fn test_execute_bind_variable_in_return() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN { name: doc.name, label: @label }").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("label".to_string(), json!("VIP Customer"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["name"], "Alice");
+    assert_eq!(results[0]["label"], "VIP Customer");
+}
+
+#[test]
+fn test_bind_variable_missing_returns_empty() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.name == @name RETURN doc").unwrap();
+
+    // Don't provide the bind variable - filter evaluations with missing
+    // bind vars will fail gracefully and return no matches
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Returns empty because the filter with missing @name doesn't match anything
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_bind_variable_missing_in_return_error() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Missing bind var in RETURN should error (not in filter)
+    let query = parse("FOR doc IN users RETURN @missing").unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    // Should fail because @missing is used in RETURN, not just filter
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("@missing"));
+}
+
+#[test]
+fn test_bind_variable_prevents_injection() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // This malicious input would be dangerous with string concatenation
+    // but is safe with bind variables
+    let malicious_input = "Alice\" OR 1==1 OR \"x\"==\"x";
+
+    let query = parse("FOR doc IN users FILTER doc.name == @name RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("name".to_string(), json!(malicious_input));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    // Should return empty because no user has this exact name
+    // (the malicious payload is treated as a literal string, not AQL code)
+    assert_eq!(results.len(), 0);
+}
+
+// ==================== Dynamic Field Access Tests ====================
+
+#[test]
+fn test_parse_dynamic_field_access() {
+    // Verify doc[@field] syntax parses correctly
+    let query = parse("FOR doc IN users RETURN doc[@field]").unwrap();
+    assert_eq!(query.for_clauses.len(), 1);
+}
+
+#[test]
+fn test_dynamic_field_access_with_bind_var() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use @fieldName to dynamically access a field
+    let query = parse("FOR doc IN users FILTER doc[@field] == @value RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("field".to_string(), json!("name"));
+    bind_vars.insert("value".to_string(), json!("Alice"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+#[test]
+fn test_dynamic_field_access_different_fields() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Access "age" field dynamically
+    let query = parse("FOR doc IN users FILTER doc[@field] > @minVal RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("field".to_string(), json!("age"));
+    bind_vars.insert("minVal".to_string(), json!(30));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Charlie")); // age 35
+}
+
+#[test]
+fn test_dynamic_field_access_in_return() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Return dynamic field
+    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN doc[@field]").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("field".to_string(), json!("city"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Paris"));
+}
+
+#[test]
+fn test_dynamic_field_access_with_string_literal() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // doc["name"] should work like doc.name
+    let query = parse("FOR doc IN users FILTER doc[\"name\"] == \"Alice\" RETURN doc.age").unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(30));
+}
+
+#[test]
+fn test_dynamic_field_access_combined_with_static() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Combine dynamic and static field access
+    let query = parse("FOR doc IN users FILTER doc[@field] == @value AND doc.active == true RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("field".to_string(), json!("city"));
+    bind_vars.insert("value".to_string(), json!("Paris"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    // Alice is in Paris and active, Charlie is in Paris but not active
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+}
+
+// ==================== Explain/Profile Tests ====================
+
+#[test]
+fn test_explain_simple_query() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check collections accessed
+    assert_eq!(explain.collections.len(), 1);
+    assert_eq!(explain.collections[0].name, "users");
+    assert_eq!(explain.collections[0].variable, "doc");
+    assert_eq!(explain.collections[0].documents_count, 3);
+
+    // Check timing exists
+    assert!(explain.timing.total_us > 0);
+    assert_eq!(explain.documents_returned, 3);
+}
+
+#[test]
+fn test_explain_with_filter() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > 25 RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check filter info
+    assert_eq!(explain.filters.len(), 1);
+    assert_eq!(explain.filters[0].documents_before, 3);
+    assert_eq!(explain.filters[0].documents_after, 2); // Alice (30) and Charlie (35)
+    assert!(explain.filters[0].time_us >= 0);
+
+    assert_eq!(explain.documents_scanned, 3);
+    assert_eq!(explain.documents_returned, 2);
+}
+
+#[test]
+fn test_explain_with_sort() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users SORT doc.age DESC RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check sort info
+    assert!(explain.sort.is_some());
+    let sort = explain.sort.unwrap();
+    assert_eq!(sort.field, "doc.age");
+    assert_eq!(sort.direction, "DESC");
+    assert!(sort.time_us >= 0);
+}
+
+#[test]
+fn test_explain_with_limit() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users LIMIT 2 RETURN doc").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check limit info
+    assert!(explain.limit.is_some());
+    let limit = explain.limit.unwrap();
+    assert_eq!(limit.offset, 0);
+    assert_eq!(limit.count, 2);
+
+    assert_eq!(explain.documents_returned, 2);
+}
+
+#[test]
+fn test_explain_with_subquery() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // LET with subquery
+    let query = parse("LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u) FOR item IN activeUsers RETURN item.name").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check LET binding info
+    assert_eq!(explain.let_bindings.len(), 1);
+    assert_eq!(explain.let_bindings[0].variable, "activeUsers");
+    assert!(explain.let_bindings[0].is_subquery);
+    assert!(explain.let_bindings[0].time_us >= 0);
+
+    // Should return Alice and Bob (active users)
+    assert_eq!(explain.documents_returned, 2);
+
+    // Check timing breakdown exists
+    assert!(explain.timing.let_clauses_us >= 0);
+    assert!(explain.timing.total_us > 0);
+}
+
+#[test]
+fn test_explain_with_multiple_subqueries() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        LET parisUsers = (FOR u IN users FILTER u.city == "Paris" RETURN u)
+        LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u)
+        FOR p IN parisUsers
+        RETURN p.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check LET bindings
+    assert_eq!(explain.let_bindings.len(), 2);
+    assert_eq!(explain.let_bindings[0].variable, "parisUsers");
+    assert!(explain.let_bindings[0].is_subquery);
+    assert_eq!(explain.let_bindings[1].variable, "activeUsers");
+    assert!(explain.let_bindings[1].is_subquery);
+
+    // Paris users: Alice and Charlie
+    assert_eq!(explain.documents_returned, 2);
+}
+
+#[test]
+fn test_explain_complex_query() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Complex query with subquery, filter, sort, and limit
+    let query = parse(r#"
+        LET topUsers = (FOR u IN users FILTER u.age >= 25 SORT u.age DESC RETURN u)
+        FOR user IN topUsers
+        FILTER user.active == true
+        LIMIT 1
+        RETURN { name: user.name, age: user.age }
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let explain = executor.explain(&query).unwrap();
+
+    // Check all components are present
+    assert_eq!(explain.let_bindings.len(), 1);
+    assert!(explain.let_bindings[0].is_subquery);
+
+    assert_eq!(explain.filters.len(), 1);
+    assert!(explain.limit.is_some());
+
+    // All timing fields should be populated
+    assert!(explain.timing.total_us > 0);
+    assert!(explain.timing.let_clauses_us >= 0);
+    assert!(explain.timing.filter_us >= 0);
+    assert!(explain.timing.limit_us >= 0);
+    assert!(explain.timing.return_projection_us >= 0);
+
+    // Should return Alice (age 30, active)
+    assert_eq!(explain.documents_returned, 1);
+}
+
+#[test]
+fn test_explain_with_bind_vars() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("FOR doc IN users FILTER doc.age > @minAge RETURN doc.name").unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("minAge".to_string(), json!(28));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let explain = executor.explain(&query).unwrap();
+
+    // Should filter correctly with bind var
+    assert_eq!(explain.filters.len(), 1);
+    assert_eq!(explain.filters[0].documents_before, 3);
+    assert_eq!(explain.filters[0].documents_after, 2); // Alice (30) and Charlie (35)
+    assert_eq!(explain.documents_returned, 2);
+}
+
+// ==================== Fulltext Search Tests ====================
+
+fn setup_articles_collection(storage: &StorageEngine) {
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+
+    // Insert articles with text content
+    collection.insert(json!({
+        "_key": "1",
+        "title": "Introduction to Rust Programming",
+        "content": "Rust is a systems programming language focused on safety and performance"
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "2",
+        "title": "Learning Python for Beginners",
+        "content": "Python is a great language for beginners to learn programming"
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "3",
+        "title": "Advanced Rust Patterns",
+        "content": "This article covers advanced patterns in Rust including traits and lifetimes"
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "4",
+        "title": "Database Design Fundamentals",
+        "content": "Learn about database normalization, indexing, and query optimization"
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "5",
+        "title": "Rust vs Go Comparison",
+        "content": "Comparing Rust and Go for systems programming and web services"
+    })).unwrap();
+
+    // Create fulltext index on title
+    collection.create_fulltext_index("ft_title".to_string(), "title".to_string(), Some(3)).unwrap();
+}
+
+#[test]
+fn test_fulltext_index_creation() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    let collection = storage.get_collection("articles").unwrap();
+    let indexes = collection.list_fulltext_indexes();
+
+    assert_eq!(indexes.len(), 1);
+    assert_eq!(indexes[0].name, "ft_title");
+    assert_eq!(indexes[0].field, "title");
+}
+
+#[test]
+fn test_fulltext_exact_match() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    let collection = storage.get_collection("articles").unwrap();
+
+    // Search for exact term "rust"
+    let results = collection.fulltext_search("title", "rust", 0).unwrap();
+
+    // Should find articles with "Rust" in title
+    assert!(results.len() >= 2);
+    let doc_keys: Vec<&str> = results.iter().map(|m| m.doc_key.as_str()).collect();
+    assert!(doc_keys.contains(&"1") || doc_keys.contains(&"3") || doc_keys.contains(&"5"));
+}
+
+#[test]
+fn test_fulltext_fuzzy_match() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    let collection = storage.get_collection("articles").unwrap();
+
+    // Search for "ryst" with fuzzy matching - shares "yst" with no direct match
+    // but should find "rust" via n-gram overlap ("rus" from rust) and Levenshtein
+    // Let's use "introduction" which is in article 1 - search for "introductoin" (typo)
+    let results = collection.fulltext_search("title", "introductoin", 2).unwrap();
+
+    // Should find "introduction" via fuzzy match (distance 2: swap o and i)
+    assert!(!results.is_empty(), "Expected fuzzy match for 'introductoin' -> 'introduction'");
+}
+
+#[test]
+fn test_fulltext_multiple_terms() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    let collection = storage.get_collection("articles").unwrap();
+
+    // Search for multiple terms
+    let results = collection.fulltext_search("title", "rust programming", 1).unwrap();
+
+    // Should find articles matching either term
+    assert!(!results.is_empty());
+}
+
+#[test]
+fn test_fulltext_score_ordering() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    let collection = storage.get_collection("articles").unwrap();
+
+    let results = collection.fulltext_search("title", "rust", 1).unwrap();
+
+    // Results should be ordered by score descending
+    if results.len() >= 2 {
+        for i in 0..results.len() - 1 {
+            assert!(results[i].score >= results[i + 1].score);
+        }
+    }
+}
+
+#[test]
+fn test_levenshtein_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Test LEVENSHTEIN function - need FOR clause
+    let query = parse(r#"FOR doc IN users LIMIT 1 RETURN LEVENSHTEIN("hello", "hallo")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Distance should be 1 (one character different)
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1));
+}
+
+#[test]
+fn test_levenshtein_identical_strings() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR doc IN users LIMIT 1 RETURN LEVENSHTEIN("test", "test")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Distance should be 0 for identical strings
+    assert_eq!(results[0], json!(0));
+}
+
+#[test]
+fn test_levenshtein_empty_string() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR doc IN users LIMIT 1 RETURN LEVENSHTEIN("abc", "")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Distance should be length of non-empty string
+    assert_eq!(results[0], json!(3));
+}
+
+#[test]
+fn test_fulltext_aql_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    // Use FULLTEXT function in AQL - need to iterate over result
+    let query = parse(r#"
+        LET matches = FULLTEXT("articles", "title", "rust")
+        FOR m IN matches
+        RETURN m
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert!(!results.is_empty(), "Expected FULLTEXT to return matches for 'rust'");
+
+    // Each match should have doc, score, and matched fields
+    let first_match = &results[0];
+    assert!(first_match.get("doc").is_some());
+    assert!(first_match.get("score").is_some());
+    assert!(first_match.get("matched").is_some());
+}
+
+#[test]
+fn test_fulltext_with_max_distance() {
+    let (storage, _dir) = create_test_storage();
+    setup_articles_collection(&storage);
+
+    // Use FULLTEXT function with custom max distance
+    let query = parse(r#"
+        LET matches = FULLTEXT("articles", "title", "pythn", 2)
+        FOR m IN matches
+        RETURN m
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Should find "python" with distance 2 from "pythn"
+    assert!(!results.is_empty(), "Expected fuzzy match for 'pythn' -> 'python'");
+}
+
+// ==================== Correlated Subquery Tests ====================
+
+fn setup_orders_collection(storage: &StorageEngine) {
+    storage.create_collection("orders".to_string()).unwrap();
+    let collection = storage.get_collection("orders").unwrap();
+
+    // Orders referencing users by name
+    collection.insert(json!({
+        "_key": "o1",
+        "user": "Alice",
+        "product": "Laptop",
+        "amount": 1200
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "o2",
+        "user": "Alice",
+        "product": "Mouse",
+        "amount": 50
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "o3",
+        "user": "Bob",
+        "product": "Keyboard",
+        "amount": 100
+    })).unwrap();
+
+    collection.insert(json!({
+        "_key": "o4",
+        "user": "Charlie",
+        "product": "Monitor",
+        "amount": 500
+    })).unwrap();
+}
+
+#[test]
+fn test_correlated_subquery_basic() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    // For each user, get their orders using a correlated subquery
+    let query = parse(r#"
+        FOR u IN users
+        LET userOrders = (FOR o IN orders FILTER o.user == u.name RETURN o.product)
+        RETURN { name: u.name, orders: userOrders }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3); // 3 users
+
+    // Find Alice's result
+    let alice = results.iter()
+        .find(|r| r["name"] == "Alice")
+        .expect("Alice should be in results");
+    let alice_orders = alice["orders"].as_array().unwrap();
+    assert_eq!(alice_orders.len(), 2); // Alice has 2 orders
+    assert!(alice_orders.contains(&json!("Laptop")));
+    assert!(alice_orders.contains(&json!("Mouse")));
+
+    // Find Bob's result
+    let bob = results.iter()
+        .find(|r| r["name"] == "Bob")
+        .expect("Bob should be in results");
+    let bob_orders = bob["orders"].as_array().unwrap();
+    assert_eq!(bob_orders.len(), 1);
+    assert!(bob_orders.contains(&json!("Keyboard")));
+}
+
+#[test]
+fn test_correlated_subquery_with_aggregation() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    // For each user, count their orders
+    let query = parse(r#"
+        FOR u IN users
+        LET orderCount = LENGTH((FOR o IN orders FILTER o.user == u.name RETURN o))
+        RETURN { name: u.name, orderCount: orderCount }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    let alice = results.iter().find(|r| r["name"] == "Alice").unwrap();
+    assert_eq!(alice["orderCount"], 2);
+
+    let bob = results.iter().find(|r| r["name"] == "Bob").unwrap();
+    assert_eq!(bob["orderCount"], 1);
+
+    let charlie = results.iter().find(|r| r["name"] == "Charlie").unwrap();
+    assert_eq!(charlie["orderCount"], 1);
+}
+
+#[test]
+fn test_correlated_subquery_with_sum() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    // For each user, sum their order amounts
+    let query = parse(r#"
+        FOR u IN users
+        LET totalSpent = SUM((FOR o IN orders FILTER o.user == u.name RETURN o.amount))
+        RETURN { name: u.name, totalSpent: totalSpent }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    let alice = results.iter().find(|r| r["name"] == "Alice").unwrap();
+    assert_eq!(alice["totalSpent"], 1250.0); // 1200 + 50
+
+    let bob = results.iter().find(|r| r["name"] == "Bob").unwrap();
+    assert_eq!(bob["totalSpent"], 100.0);
+}
+
+#[test]
+fn test_correlated_subquery_empty_result() {
+    let (storage, _dir) = create_test_storage();
+
+    // Add a user with no orders
+    storage.create_collection("users2".to_string()).unwrap();
+    let users = storage.get_collection("users2").unwrap();
+    users.insert(json!({"_key": "1", "name": "NoOrders"})).unwrap();
+
+    storage.create_collection("orders2".to_string()).unwrap();
+    // No orders collection is empty
+
+    let query = parse(r#"
+        FOR u IN users2
+        LET orders = (FOR o IN orders2 FILTER o.user == u.name RETURN o)
+        RETURN { name: u.name, orders: orders }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["orders"], json!([])); // Empty array
+}
+
+#[test]
+fn test_multiple_correlated_subqueries() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    // Multiple LET clauses inside FOR
+    let query = parse(r#"
+        FOR u IN users
+        LET orders = (FOR o IN orders FILTER o.user == u.name RETURN o.product)
+        LET orderCount = LENGTH(orders)
+        FILTER orderCount > 0
+        RETURN { name: u.name, products: orders, count: orderCount }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3); // All users have at least 1 order
+
+    for result in &results {
+        let count = result["count"].as_f64().unwrap() as usize;
+        let products = result["products"].as_array().unwrap();
+        assert_eq!(products.len(), count);
+    }
+}
+
+#[test]
+fn test_correlated_subquery_nested_filter() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    // Get users who spent more than 500 total
+    let query = parse(r#"
+        FOR u IN users
+        LET totalSpent = SUM((FOR o IN orders FILTER o.user == u.name RETURN o.amount))
+        FILTER totalSpent > 500
+        RETURN { name: u.name, spent: totalSpent }
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Only Alice (1250) has spent more than 500
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["name"], "Alice");
+}
+
+#[test]
+fn test_correlated_let_simple_expression() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // LET inside FOR with simple expression using outer variable
+    let query = parse(r#"
+        FOR u IN users
+        LET greeting = CONCAT("Hello, ", u.name)
+        RETURN greeting
+    "#).unwrap();
+
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    assert!(results.contains(&json!("Hello, Alice")));
+    assert!(results.contains(&json!("Hello, Bob")));
+    assert!(results.contains(&json!("Hello, Charlie")));
+}
+
