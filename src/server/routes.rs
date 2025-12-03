@@ -19,7 +19,7 @@ pub fn create_router(storage: StorageEngine) -> Router {
     Router::new()
         // Database routes
         .route("/_api/database", post(create_database))
-        .route("/_api/database", get(list_databases))
+        .route("/_api/databases", get(list_databases))
         .route("/_api/database/:name", delete(delete_database))
 
         // Collection routes

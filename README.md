@@ -219,7 +219,7 @@ FOR x IN items
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/_api/database` | Create a database |
-| GET | `/_api/database` | List all databases |
+| GET | `/_api/databases` | List all databases |
 | DELETE | `/_api/database/:name` | Delete a database |
 
 **Note**: The `_system` database is created automatically and cannot be deleted.
