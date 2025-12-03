@@ -1,4 +1,4 @@
-use rust_db::StorageEngine;
+use solidb::StorageEngine;
 use serde_json::json;
 
 #[tokio::main]
@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     println!("✓ Saved collection to disk\n");
 
     // Execute some AQL queries
-    use rust_db::{parse, QueryExecutor};
+    use solidb::{parse, QueryExecutor};
 
     let executor = QueryExecutor::new(&storage);
 

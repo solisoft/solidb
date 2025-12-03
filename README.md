@@ -10,6 +10,7 @@ A lightweight, high-performance database server written in Rust that implements 
 - 🌐 **HTTP REST API**: Simple and intuitive API endpoints
 - 💾 **RocksDB Storage**: Production-grade persistence with automatic crash recovery
 - 🔒 **Thread-Safe**: Concurrent request handling with Tokio
+- 🗄️ **Multi-Database**: Multiple isolated databases with collections
 - 📦 **Collections**: Organize documents into collections
 - 📊 **Indexing**: Hash and persistent indexes for fast queries
 - 🌍 **Geo Queries**: Spatial indexes and distance functions
@@ -34,10 +35,12 @@ The server will start on `http://localhost:6745`.
 
 ### Basic Usage
 
+> **Note**: The server automatically creates a `_system` database on startup. All examples use this default database.
+
 #### 1. Create a Collection
 
 ```bash
-curl -X POST http://localhost:6745/_api/collection \
+curl -X POST http://localhost:6745/_api/database/_system/collection \
   -H "Content-Type: application/json" \
   -d '{"name": "users"}'
 ```
@@ -45,15 +48,15 @@ curl -X POST http://localhost:6745/_api/collection \
 #### 2. Insert Documents
 
 ```bash
-curl -X POST http://localhost:6745/_api/document/users \
+curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "age": 30, "active": true}'
 
-curl -X POST http://localhost:6745/_api/document/users \
+curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
   -d '{"name": "Bob", "age": 25, "active": true}'
 
-curl -X POST http://localhost:6745/_api/document/users \
+curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
   -d '{"name": "Charlie", "age": 35, "active": false}'
 ```
@@ -62,22 +65,22 @@ curl -X POST http://localhost:6745/_api/document/users \
 
 ```bash
 # Get all users
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR doc IN users RETURN doc"}'
 
 # Filter by age
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR doc IN users FILTER doc.age > 25 RETURN doc"}'
 
 # Sort and limit
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR doc IN users FILTER doc.active == true SORT doc.age DESC LIMIT 2 RETURN doc"}'
 
 # Project specific fields
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR doc IN users RETURN {name: doc.name, age: doc.age}"}'
 ```
@@ -88,7 +91,7 @@ curl -X POST http://localhost:6745/_api/cursor \
 
 ```bash
 # Safe parameterized query
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{
     "query": "FOR doc IN users FILTER doc.name == @name AND doc.age >= @minAge RETURN doc",
@@ -99,7 +102,7 @@ curl -X POST http://localhost:6745/_api/cursor \
   }'
 
 # Dynamic field access with bind variables
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{
     "query": "FOR doc IN users FILTER doc[@field] == @value RETURN doc",
@@ -211,36 +214,49 @@ FOR x IN items
 
 ## REST API Reference
 
+### Databases
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/_api/database` | Create a database |
+| GET | `/_api/database` | List all databases |
+| DELETE | `/_api/database/:name` | Delete a database |
+
+**Note**: The `_system` database is created automatically and cannot be deleted.
+
 ### Collections
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/_api/collection` | Create a collection |
-| GET | `/_api/collection` | List all collections |
-| DELETE | `/_api/collection/:name` | Delete a collection |
+| POST | `/_api/database/:db/collection` | Create a collection |
+| GET | `/_api/database/:db/collection` | List all collections |
+| DELETE | `/_api/database/:db/collection/:name` | Delete a collection |
+| PUT | `/_api/database/:db/collection/:name/truncate` | Truncate a collection |
 
 ### Documents
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/_api/document/:collection` | Insert a document |
-| GET | `/_api/document/:collection/:key` | Get a document |
-| PUT | `/_api/document/:collection/:key` | Update a document |
-| DELETE | `/_api/document/:collection/:key` | Delete a document |
+| POST | `/_api/database/:db/document/:collection` | Insert a document |
+| GET | `/_api/database/:db/document/:collection/:key` | Get a document |
+| PUT | `/_api/database/:db/document/:collection/:key` | Update a document |
+| DELETE | `/_api/database/:db/document/:collection/:key` | Delete a document |
 
 ### Queries
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/_api/cursor` | Execute an AQL query |
-| POST | `/_api/explain` | Explain/profile an AQL query |
+| POST | `/_api/database/:db/cursor` | Execute an AQL query |
+| POST | `/_api/database/:db/explain` | Explain/profile an AQL query |
+| PUT | `/_api/cursor/:id` | Get next batch from cursor |
+| DELETE | `/_api/cursor/:id` | Delete cursor |
 
 #### Explain Query
 
 Get detailed execution plan with timing for each step:
 
 ```bash
-curl -X POST http://localhost:6745/_api/explain \
+curl -X POST http://localhost:6745/_api/database/_system/explain \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR u IN users FILTER u.age > 25 SORT u.name RETURN u"}'
 ```
@@ -251,9 +267,9 @@ Returns timing (in microseconds) for each step, index usage analysis, and optimi
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/_api/index/:collection` | Create an index |
-| GET | `/_api/index/:collection` | List indexes on collection |
-| DELETE | `/_api/index/:collection/:name` | Delete an index |
+| POST | `/_api/database/:db/index/:collection` | Create an index |
+| GET | `/_api/database/:db/index/:collection` | List indexes on collection |
+| DELETE | `/_api/database/:db/index/:collection/:name` | Delete an index |
 
 #### Create Index Request
 
@@ -276,12 +292,12 @@ Returns timing (in microseconds) for each step, index usage analysis, and optimi
 
 ```bash
 # Create a persistent index on the 'age' field
-curl -X POST http://localhost:6745/_api/index/users \
+curl -X POST http://localhost:6745/_api/database/_system/index/users \
   -H "Content-Type: application/json" \
   -d '{"name": "idx_age", "field": "age", "type": "persistent"}'
 
 # This query will now use the index automatically
-curl -X POST http://localhost:6745/_api/cursor \
+curl -X POST http://localhost:6745/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR doc IN users FILTER doc.age > 25 RETURN doc"}'
 ```
@@ -290,11 +306,11 @@ curl -X POST http://localhost:6745/_api/cursor \
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/_api/geo/:collection` | Create a geo index |
-| GET | `/_api/geo/:collection` | List geo indexes |
-| DELETE | `/_api/geo/:collection/:name` | Delete a geo index |
-| POST | `/_api/geo/:collection/:field/near` | Find documents near a point |
-| POST | `/_api/geo/:collection/:field/within` | Find documents within radius |
+| POST | `/_api/database/:db/geo/:collection` | Create a geo index |
+| GET | `/_api/database/:db/geo/:collection` | List geo indexes |
+| DELETE | `/_api/database/:db/geo/:collection/:name` | Delete a geo index |
+| POST | `/_api/database/:db/geo/:collection/:field/near` | Find documents near a point |
+| POST | `/_api/database/:db/geo/:collection/:field/within` | Find documents within radius |
 
 #### Create Geo Index Request
 
@@ -313,7 +329,7 @@ The field should contain coordinates in one of these formats:
 
 ```bash
 # Find 5 nearest places to the Eiffel Tower
-curl -X POST http://localhost:6745/_api/geo/places/location/near \
+curl -X POST http://localhost:6745/_api/database/_system/geo/places/location/near \
   -H "Content-Type: application/json" \
   -d '{"lat": 48.8584, "lon": 2.2945, "limit": 5}'
 ```
@@ -322,7 +338,7 @@ curl -X POST http://localhost:6745/_api/geo/places/location/near \
 
 ```bash
 # Find places within 2km of the Eiffel Tower
-curl -X POST http://localhost:6745/_api/geo/places/location/within \
+curl -X POST http://localhost:6745/_api/database/_system/geo/places/location/within \
   -H "Content-Type: application/json" \
   -d '{"lat": 48.8584, "lon": 2.2945, "radius": 2000}'
 ```
@@ -351,7 +367,7 @@ Fulltext indexes enable fuzzy text search using n-gram indexing and Levenshtein 
 #### Create Fulltext Index
 
 ```bash
-curl -X POST http://localhost:6745/_api/index/articles \
+curl -X POST http://localhost:6745/_api/database/_system/index/articles \
   -H "Content-Type: application/json" \
   -d '{"name": "ft_title", "field": "title", "type": "fulltext"}'
 ```
@@ -397,17 +413,19 @@ Each match includes:
                   │
 ┌─────────────────▼───────────────────────┐
 │        Storage Engine                   │
-│           (RocksDB)                     │
+│    (Multi-Database + RocksDB)           │
 └─────────────────────────────────────────┘
 ```
 
 ### Components
 
-- **Storage Engine**: RocksDB-backed storage with column families per collection
+- **Storage Engine**: Multi-database architecture with RocksDB backend
+- **Database Layer**: Isolated databases, each containing collections
+- **Collections**: Column families in RocksDB with naming format `{database}:{collection}`
 - **AQL Parser**: Lexer and parser for AQL query language
-- **Query Executor**: Executes parsed queries against the storage engine
+- **Query Executor**: Executes parsed queries with smart collection lookup
 - **HTTP Server**: REST API built with Axum and Tokio
-- **Indexes**: Hash and Persistent indexes stored in RocksDB
+- **Indexes**: Hash, Persistent, Geo, and Fulltext indexes stored in RocksDB
 
 ## Data Persistence
 
@@ -421,7 +439,12 @@ Data is stored using **RocksDB**, a high-performance embedded key-value store de
   ├── *.log           # Write-Ahead Log for crash recovery
   ├── MANIFEST-*      # Database manifest
   ├── CURRENT         # Current manifest pointer
-  └── OPTIONS-*       # RocksDB configuration
+  ├── OPTIONS-*       # RocksDB configuration
+  └── Column Families:
+      ├── _meta       # Database metadata
+      ├── _system:users      # Collection in _system database
+      ├── _system:products   # Another collection
+      └── myapp:customers    # Collection in custom database
 ```
 
 ### Benefits of RocksDB
@@ -429,7 +452,8 @@ Data is stored using **RocksDB**, a high-performance embedded key-value store de
 - **Automatic persistence**: Data is durably stored immediately
 - **Crash recovery**: Write-Ahead Log ensures no data loss
 - **Compression**: Built-in LZ4/Snappy/Zstd compression
-- **Column Families**: Each collection is a separate column family
+- **Column Families**: Each collection is a separate column family (`{db}:{collection}`)
+- **Multi-Database**: Isolated databases with separate namespaces
 - **LSM Tree**: Optimized for write-heavy workloads
 - **No manual saves**: Unlike JSON files, no explicit save needed
 
@@ -473,6 +497,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~RocksDB storage backend~~ ✅ Implemented! (crash recovery, compression, LSM tree)
 - [x] ~~Bind Variables~~ ✅ Implemented! (@variable for AQL injection prevention)
 - [x] ~~Aggregation functions~~ ✅ (COUNT, SUM, AVG, etc.)
+- [x] ~~Multi-Database Architecture~~ ✅ Implemented! (isolated databases with collections)
 - [ ] Graph traversal queries
 - [ ] Authentication and authorization
 - [ ] WebSocket support

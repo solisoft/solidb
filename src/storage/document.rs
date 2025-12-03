@@ -30,7 +30,7 @@ pub struct Document {
 impl Document {
     /// Create a new document with auto-generated key
     pub fn new(collection_name: &str, data: Value) -> Self {
-        let key = Uuid::new_v4().to_string();
+        let key = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let id = format!("{}/{}", collection_name, key);
         let now = Utc::now();
 

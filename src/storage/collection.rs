@@ -103,10 +103,10 @@ impl Collection {
                     return Err(DbError::InvalidDocument("_key must be a string".to_string()));
                 }
             } else {
-                uuid::Uuid::new_v4().to_string()
+                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
             }
         } else {
-            uuid::Uuid::new_v4().to_string()
+            uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
         };
 
         let doc = Document::with_key(&self.name, key.clone(), data);
@@ -205,12 +205,17 @@ impl Collection {
 
     /// Get all documents
     pub fn all(&self) -> Vec<Document> {
+        self.scan(None)
+    }
+
+    /// Scan documents with an optional limit
+    pub fn scan(&self, limit: Option<usize>) -> Vec<Document> {
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name).expect("Column family should exist");
         let prefix = DOC_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, prefix);
 
-        iter.filter_map(|result| {
+        let iter = iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
                 // Check if key starts with doc prefix
                 if key.starts_with(prefix) {
@@ -219,13 +224,119 @@ impl Collection {
                     None
                 }
             })
-        })
-        .collect()
+        });
+
+        if let Some(n) = limit {
+            iter.take(n).collect()
+        } else {
+            iter.collect()
+        }
     }
 
     /// Get the number of documents
     pub fn count(&self) -> usize {
         self.all().len()
+    }
+
+    /// Truncate collection - remove all documents but keep indexes
+    pub fn truncate(&self) -> DbResult<usize> {
+        let mut db = self.db.write().unwrap();
+        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        
+        // Collect all document keys
+        let prefix = DOC_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
+        let mut keys_to_delete = Vec::new();
+        
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(prefix) {
+                    keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+        
+        let count = keys_to_delete.len();
+        
+        // Delete all documents
+        for key in keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        
+        // Clear all index entries (but keep index metadata)
+        let idx_prefix = IDX_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, idx_prefix);
+        let mut idx_keys_to_delete = Vec::new();
+        
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(idx_prefix) {
+                    idx_keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+        
+        for key in idx_keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        
+        // Clear fulltext index entries (but keep metadata)
+        let ft_prefix = FT_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, ft_prefix);
+        let mut ft_keys_to_delete = Vec::new();
+        
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(ft_prefix) {
+                    ft_keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+        
+        for key in ft_keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        
+        // Clear fulltext term entries
+        let ft_term_prefix = FT_TERM_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, ft_term_prefix);
+        let mut ft_term_keys_to_delete = Vec::new();
+        
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(ft_term_prefix) {
+                    ft_term_keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+        
+        for key in ft_term_keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        
+        // Clear geo index entries (but keep metadata)
+        let geo_prefix = GEO_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, geo_prefix);
+        let mut geo_keys_to_delete = Vec::new();
+        
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(geo_prefix) {
+                    geo_keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+        
+        for key in geo_keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        
+        Ok(count)
     }
 
     // ==================== Index Operations ====================

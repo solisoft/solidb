@@ -127,10 +127,24 @@ impl<'a> QueryExecutor<'a> {
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
+        // Optimization: Check if we can push LIMIT down to storage scan
+        let scan_limit = if query.sort_clause.is_none() {
+            let for_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::For(_))).count();
+            let filter_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::Filter(_))).count();
+            
+            if for_count == 1 && filter_count == 0 {
+                query.limit_clause.as_ref().map(|l| l.offset + l.count)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Process body_clauses in order (supports correlated subqueries)
         // If body_clauses is empty, fall back to legacy behavior
         let rows = if !query.body_clauses.is_empty() {
-            self.execute_body_clauses(&query.body_clauses, &initial_bindings)?
+            self.execute_body_clauses(&query.body_clauses, &initial_bindings, scan_limit)?
         } else {
             // Legacy path: use for_clauses and filter_clauses separately
             let mut rows = self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
@@ -181,16 +195,85 @@ impl<'a> QueryExecutor<'a> {
 
     /// Execute body clauses in order, supporting correlated subqueries
     /// LET clauses inside FOR loops are evaluated per-row with access to outer variables
-    fn execute_body_clauses(&self, clauses: &[BodyClause], initial_ctx: &Context) -> DbResult<Vec<Context>> {
+    fn execute_body_clauses(&self, clauses: &[BodyClause], initial_ctx: &Context, scan_limit: Option<usize>) -> DbResult<Vec<Context>> {
         let mut rows: Vec<Context> = vec![initial_ctx.clone()];
 
-        for clause in clauses {
-            match clause {
+        // Optimization: Check if we can use index for FOR + FILTER pattern
+        // Pattern: FOR var IN collection, followed by FILTER on var.field == value
+        let mut i = 0;
+        while i < clauses.len() {
+            match &clauses[i] {
                 BodyClause::For(for_clause) => {
-                    // Expand each current row with documents from the collection/variable
+                    // Check if next clause is a FILTER that can use an index
+                    let use_index = if i + 1 < clauses.len() {
+                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
+                            // Check if this is a collection (not a LET variable)
+                            // source_variable might be None or Some(collection_name)
+                            let is_collection = if let Some(src) = &for_clause.source_variable {
+                                // If source_variable == collection, it's a collection
+                                src == &for_clause.collection
+                            } else {
+                                // If source_variable is None, it's definitely a collection
+                                true
+                            };
+                            
+                            if is_collection {
+                                // Try to extract indexable condition
+                                self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable).is_some()
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if use_index {
+                        // Try to use index lookup
+                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
+                            let mut used_index = false;
+                            let mut new_rows = Vec::new();
+                            
+                            for ctx in &rows {
+                                if let Ok(collection) = self.storage.get_collection(&for_clause.collection) {
+                                    if let Some(condition) = self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable) {
+                                        if let Some(docs) = self.use_index_for_condition(&collection, &condition) {
+                                            if !docs.is_empty() {
+                                                used_index = true;
+                                                // Apply scan_limit to index results
+                                                let docs: Vec<_> = if let Some(n) = scan_limit {
+                                                    docs.into_iter().take(n).collect()
+                                                } else {
+                                                    docs
+                                                };
+                                                
+                                                for doc in docs {
+                                                    let mut new_ctx = ctx.clone();
+                                                    new_ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                                    new_rows.push(new_ctx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Only use index results if we actually found documents
+                            if used_index {
+                                rows = new_rows;
+                                i += 2; // Skip both FOR and FILTER
+                                continue;
+                            }
+                            // Otherwise fall through to normal FOR processing
+                        }
+                    }
+
+                    // Normal FOR processing (no index)
                     let mut new_rows = Vec::new();
                     for ctx in &rows {
-                        let docs = self.get_for_source_docs(for_clause, ctx)?;
+                        let docs = self.get_for_source_docs(for_clause, ctx, scan_limit)?;
                         for doc in docs {
                             let mut new_ctx = ctx.clone();
                             new_ctx.insert(for_clause.variable.clone(), doc);
@@ -214,27 +297,34 @@ impl<'a> QueryExecutor<'a> {
                     });
                 }
             }
+            i += 1;
         }
 
         Ok(rows)
     }
 
     /// Get documents for a FOR clause source (collection or variable)
-    fn get_for_source_docs(&self, for_clause: &ForClause, ctx: &Context) -> DbResult<Vec<Value>> {
+    fn get_for_source_docs(&self, for_clause: &ForClause, ctx: &Context, limit: Option<usize>) -> DbResult<Vec<Value>> {
         let source_name = for_clause.source_variable.as_ref()
             .unwrap_or(&for_clause.collection);
 
         // Check if source is a LET variable in current context
         if let Some(value) = ctx.get(source_name) {
             return match value {
-                Value::Array(arr) => Ok(arr.clone()),
+                Value::Array(arr) => {
+                    if let Some(n) = limit {
+                        Ok(arr.iter().take(n).cloned().collect())
+                    } else {
+                        Ok(arr.clone())
+                    }
+                },
                 other => Ok(vec![other.clone()]),
             };
         }
 
-        // Otherwise it's a collection
+        // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.storage.get_collection(&for_clause.collection)?;
-        Ok(collection.all().into_iter().map(|d| d.to_value()).collect())
+        Ok(collection.scan(limit).into_iter().map(|d| d.to_value()).collect())
     }
 
     /// Explain and profile a query execution
@@ -295,8 +385,7 @@ impl<'a> QueryExecutor<'a> {
             } else {
                 // It's a collection - check for potential index usage
                 let collection = self.storage.get_collection(&for_clause.collection)?;
-                let docs: Vec<_> = collection.all();
-                let doc_count = docs.len();
+                let doc_count = collection.count();
                 total_docs_scanned += doc_count;
 
                 // Check if any filter can use an index
@@ -334,52 +423,101 @@ impl<'a> QueryExecutor<'a> {
             });
         }
 
-        let mut rows = self.build_row_combinations_with_context(&query.for_clauses, &let_bindings)?;
+        // Execute query using optimized path (with index support)
+        let scan_start = Instant::now();
+        let mut rows = if !query.body_clauses.is_empty() {
+            // Use optimized path with index support
+            // Don't pass scan_limit to explain - we want to see full execution
+            self.execute_body_clauses(&query.body_clauses, &let_bindings, None)?
+        } else {
+            // Legacy path for old queries
+            self.build_row_combinations_with_context(&query.for_clauses, &let_bindings)?
+        };
         collection_scan_time = scan_start.elapsed();
         let rows_after_scan = rows.len();
 
-        // Apply and analyze FILTER clauses
+        // Note: Filters are already applied in execute_body_clauses, but we need to analyze them
+        // So we'll extract filter info from body_clauses
         let filter_start = Instant::now();
-        for filter in &query.filter_clauses {
-            let before_count = rows.len();
-            let clause_start = Instant::now();
+        
+        if !query.body_clauses.is_empty() {
+            // Filters were already applied in execute_body_clauses
+            // Extract filter info from body_clauses for reporting
+            for clause in &query.body_clauses {
+                if let BodyClause::Filter(filter) = clause {
+                    // Try to find index candidate for this filter
+                    let mut index_candidate = None;
+                    let mut can_use_index = false;
 
-            rows.retain(|ctx| {
-                self.evaluate_filter_with_context(&filter.expression, ctx)
-                    .unwrap_or(false)
-            });
+                    if !query.for_clauses.is_empty() {
+                        let var_name = &query.for_clauses[0].variable;
+                        if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
+                            index_candidate = Some(condition.field.clone());
+                            // Check if index exists
+                            if let Ok(collection) = self.storage.get_collection(&query.for_clauses[0].collection) {
+                                for idx in collection.list_indexes() {
+                                    if idx.field == condition.field {
+                                        can_use_index = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-            let clause_time = clause_start.elapsed();
-            let after_count = rows.len();
+                    filters_info.push(FilterInfo {
+                        expression: format!("{:?}", filter.expression),
+                        index_candidate,
+                        can_use_index,
+                        documents_before: total_docs_scanned,
+                        documents_after: rows.len(),
+                        time_us: 0, // Timing included in collection_scan_time
+                    });
+                }
+            }
+        } else {
+            // Legacy path: Apply and analyze FILTER clauses
+            for filter in &query.filter_clauses {
+                let before_count = rows.len();
+                let clause_start = Instant::now();
 
-            // Try to find index candidate for this filter
-            let mut index_candidate = None;
-            let mut can_use_index = false;
+                rows.retain(|ctx| {
+                    self.evaluate_filter_with_context(&filter.expression, ctx)
+                        .unwrap_or(false)
+                });
 
-            if !query.for_clauses.is_empty() {
-                let var_name = &query.for_clauses[0].variable;
-                if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
-                    index_candidate = Some(condition.field.clone());
-                    // Check if index exists
-                    if let Ok(collection) = self.storage.get_collection(&query.for_clauses[0].collection) {
-                        for idx in collection.list_indexes() {
-                            if idx.field == condition.field {
-                                can_use_index = true;
-                                break;
+                let clause_time = clause_start.elapsed();
+                let after_count = rows.len();
+
+                // Try to find index candidate for this filter
+                let mut index_candidate = None;
+                let mut can_use_index = false;
+
+                if !query.for_clauses.is_empty() {
+                    let var_name = &query.for_clauses[0].variable;
+                    if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
+                        index_candidate = Some(condition.field.clone());
+                        // Check if index exists
+                        if let Ok(collection) = self.storage.get_collection(&query.for_clauses[0].collection) {
+                            for idx in collection.list_indexes() {
+                                if idx.field == condition.field {
+                                    can_use_index = true;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            filters_info.push(FilterInfo {
-                expression: format!("{:?}", filter.expression),
-                index_candidate,
-                can_use_index,
-                documents_before: before_count,
-                documents_after: after_count,
-                time_us: clause_time.as_micros() as u64,
-            });
+                filters_info.push(FilterInfo {
+                    expression: format!("{:?}", filter.expression),
+                    index_candidate,
+                    can_use_index,
+                    documents_before: before_count,
+                    documents_after: after_count,
+                    time_us: clause_time.as_micros() as u64,
+                });
+            }
         }
         filter_time = filter_start.elapsed();
 
@@ -688,7 +826,7 @@ impl<'a> QueryExecutor<'a> {
 
         // Process body_clauses in order
         let rows = if !query.body_clauses.is_empty() {
-            self.execute_body_clauses(&query.body_clauses, &initial_bindings)?
+            self.execute_body_clauses(&query.body_clauses, &initial_bindings, None)?
         } else {
             let mut rows = self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
             for filter in &query.filter_clauses {
@@ -1180,12 +1318,39 @@ impl<'a> QueryExecutor<'a> {
         collection: &Collection,
         condition: &IndexableCondition,
     ) -> Option<Vec<crate::storage::Document>> {
+        // Normalize the value for index lookup
+        // If it's a float that's actually an integer (e.g., 30.0), convert to integer
+        // This handles the case where AQL parses "30" as 30.0 but data has integer 30
+        let normalized_value = if let Value::Number(n) = &condition.value {
+            if let Some(f) = n.as_f64() {
+                if f.fract() == 0.0 && f.is_finite() {
+                    // It's a whole number, try as integer first
+                    Value::Number(serde_json::Number::from(f as i64))
+                } else {
+                    condition.value.clone()
+                }
+            } else {
+                condition.value.clone()
+            }
+        } else {
+            condition.value.clone()
+        };
+        
         match condition.op {
-            BinaryOperator::Equal => collection.index_lookup_eq(&condition.field, &condition.value),
-            BinaryOperator::GreaterThan => collection.index_lookup_gt(&condition.field, &condition.value),
-            BinaryOperator::GreaterThanOrEqual => collection.index_lookup_gte(&condition.field, &condition.value),
-            BinaryOperator::LessThan => collection.index_lookup_lt(&condition.field, &condition.value),
-            BinaryOperator::LessThanOrEqual => collection.index_lookup_lte(&condition.field, &condition.value),
+            BinaryOperator::Equal => {
+                // Try with normalized value first
+                if let Some(docs) = collection.index_lookup_eq(&condition.field, &normalized_value) {
+                    if !docs.is_empty() {
+                        return Some(docs);
+                    }
+                }
+                // Fall back to original value
+                collection.index_lookup_eq(&condition.field, &condition.value)
+            },
+            BinaryOperator::GreaterThan => collection.index_lookup_gt(&condition.field, &normalized_value),
+            BinaryOperator::GreaterThanOrEqual => collection.index_lookup_gte(&condition.field, &normalized_value),
+            BinaryOperator::LessThan => collection.index_lookup_lt(&condition.field, &normalized_value),
+            BinaryOperator::LessThanOrEqual => collection.index_lookup_lte(&condition.field, &normalized_value),
             _ => None,
         }
     }
