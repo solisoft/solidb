@@ -1,0 +1,55 @@
+<document-view-modal>
+  <div if={ state.visible } class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold text-gray-100">View Document</h3>
+        <button onclick={ handleClose } class="text-gray-400 hover:text-gray-300">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <pre class="bg-gray-900 p-4 rounded-md text-gray-100 font-mono text-sm overflow-x-auto">{ state.document ? JSON.stringify(state.document, null, 2) : '' }</pre>
+      <div class="flex justify-end space-x-3 mt-4">
+        <button onclick={ handleClose } class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">
+          Close
+        </button>
+        <button onclick={ handleEdit } class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">
+          Edit
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    export default {
+      state: {
+        visible: false,
+        document: null
+      },
+
+      show(document) {
+        this.update({ visible: true, document: document })
+      },
+
+      hide() {
+        this.update({ visible: false, document: null })
+      },
+
+      handleClose(e) {
+        if (e) e.preventDefault()
+        this.hide()
+        if (this.props.onClose) {
+          this.props.onClose()
+        }
+      },
+
+      handleEdit(e) {
+        if (e) e.preventDefault()
+        if (this.props.onEdit) {
+          this.props.onEdit(this.state.document)
+        }
+      }
+    }
+  </script>
+</document-view-modal>

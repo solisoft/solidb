@@ -8,11 +8,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::aql::{parse, QueryExecutor};
+use crate::aql::{parse, QueryExecutor, BodyClause, Query};
 use crate::error::DbError;
 use crate::storage::{StorageEngine, IndexType, IndexStats, GeoIndexStats};
 use crate::server::cursor_store::CursorStore;
 use std::collections::HashMap;
+
+/// Check if a query is potentially long-running (contains mutations or range iterations)
+#[inline]
+fn is_long_running_query(query: &Query) -> bool {
+    query.body_clauses.iter().any(|clause| match clause {
+        BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => true,
+        BodyClause::For(f) => f.source_expression.is_some(),
+        _ => false,
+    })
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -76,6 +86,8 @@ pub struct ExecuteQueryResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub cached: bool,
+    #[serde(rename = "executionTimeMs")]
+    pub execution_time_ms: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,13 +180,57 @@ pub async fn truncate_collection(
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-    let count = collection.truncate()?;
-    
+
+    // Run in blocking task since this can be slow for large collections
+    let coll = collection.clone();
+    let count = tokio::task::spawn_blocking(move || {
+        coll.truncate()
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+
     Ok(Json(serde_json::json!({
         "database": db_name,
         "collection": coll_name,
         "deleted": count,
         "status": "truncated"
+    })))
+}
+
+pub async fn compact_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    collection.compact();
+
+    Ok(Json(serde_json::json!({
+        "database": db_name,
+        "collection": coll_name,
+        "status": "compacted"
+    })))
+}
+
+pub async fn get_collection_stats(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    let stats = collection.stats();
+
+    Ok(Json(serde_json::json!({
+        "database": db_name,
+        "collection": coll_name,
+        "document_count": stats.document_count,
+        "disk_usage": {
+            "sst_files_size": stats.disk_usage.sst_files_size,
+            "live_data_size": stats.disk_usage.live_data_size,
+            "num_sst_files": stats.disk_usage.num_sst_files,
+            "memtable_size": stats.disk_usage.memtable_size,
+            "total_size": stats.disk_usage.sst_files_size + stats.disk_usage.memtable_size
+        }
     })))
 }
 
@@ -229,31 +285,59 @@ pub async fn delete_document(
 
 pub async fn execute_query(
     State(state): State<AppState>,
-    Path(_db_name): Path<String>,
+    Path(db_name): Path<String>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<ExecuteQueryResponse>, DbError> {
-    // Note: Database context will be handled by collection lookups in the query
     let query = parse(&req.query)?;
+    let batch_size = req.batch_size;
 
-    let executor = if req.bind_vars.is_empty() {
-        QueryExecutor::new(&state.storage)
+    // Only use spawn_blocking for potentially long-running queries
+    // (mutations or range iterations). Simple reads run directly.
+    let (result, execution_time_ms) = if is_long_running_query(&query) {
+        let storage = state.storage.clone();
+        let bind_vars = req.bind_vars.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let executor = if bind_vars.is_empty() {
+                QueryExecutor::with_database(&storage, db_name)
+            } else {
+                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+            };
+
+            let start = std::time::Instant::now();
+            let result = executor.execute(&query)?;
+            let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+            Ok::<_, DbError>((result, execution_time_ms))
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
     } else {
-        QueryExecutor::with_bind_vars(&state.storage, req.bind_vars)
+        let executor = if req.bind_vars.is_empty() {
+            QueryExecutor::with_database(&state.storage, db_name)
+        } else {
+            QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
+        };
+
+        let start = std::time::Instant::now();
+        let result = executor.execute(&query)?;
+        let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+        (result, execution_time_ms)
     };
-    let result = executor.execute(&query)?;
+
     let total_count = result.len();
 
-    if total_count > req.batch_size {
-        let cursor_id = state.cursor_store.store(result, req.batch_size);
+    if total_count > batch_size {
+        let cursor_id = state.cursor_store.store(result, batch_size);
         let (first_batch, has_more) = state.cursor_store.get_next_batch(&cursor_id)
             .unwrap_or((vec![], false));
-        
+
         Ok(Json(ExecuteQueryResponse {
             result: first_batch,
             count: total_count,
             has_more,
             id: if has_more { Some(cursor_id) } else { None },
             cached: false,
+            execution_time_ms,
         }))
     } else {
         Ok(Json(ExecuteQueryResponse {
@@ -262,21 +346,23 @@ pub async fn execute_query(
             has_more: false,
             id: None,
             cached: false,
+            execution_time_ms,
         }))
     }
 }
 
 pub async fn explain_query(
     State(state): State<AppState>,
-    Path(_db_name): Path<String>,
+    Path(db_name): Path<String>,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::aql::QueryExplain>, DbError> {
     let query = parse(&req.query)?;
 
+    // explain() is fast - no need for spawn_blocking
     let executor = if req.bind_vars.is_empty() {
-        QueryExecutor::new(&state.storage)
+        QueryExecutor::with_database(&state.storage, db_name)
     } else {
-        QueryExecutor::with_bind_vars(&state.storage, req.bind_vars)
+        QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
     };
     let explain = executor.explain(&query)?;
 
@@ -297,6 +383,7 @@ pub async fn get_next_batch(
             has_more,
             id: if has_more { Some(cursor_id) } else { None },
             cached: true,
+            execution_time_ms: 0.0, // Cached results, no execution time
         }))
     } else {
         Err(DbError::DocumentNotFound(format!("Cursor not found or expired: {}", cursor_id)))
@@ -356,6 +443,7 @@ pub async fn create_index(
     let index_type = match req.index_type.to_lowercase().as_str() {
         "hash" => IndexType::Hash,
         "persistent" | "skiplist" | "btree" => IndexType::Persistent,
+        "fulltext" => IndexType::Fulltext,
         _ => return Err(DbError::InvalidDocument(format!("Unknown index type: {}", req.index_type))),
     };
 
@@ -378,6 +466,29 @@ pub async fn list_indexes(
     let collection = database.get_collection(&coll_name)?;
     let indexes = collection.list_indexes();
     Ok(Json(ListIndexesResponse { indexes }))
+}
+
+pub async fn rebuild_indexes(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    // Run in blocking task since this can be slow for large collections
+    let coll = collection.clone();
+    let count = tokio::task::spawn_blocking(move || {
+        coll.rebuild_all_indexes()
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+
+    Ok(Json(serde_json::json!({
+        "database": db_name,
+        "collection": coll_name,
+        "documents_indexed": count,
+        "status": "rebuilt"
+    })))
 }
 
 pub async fn delete_index(

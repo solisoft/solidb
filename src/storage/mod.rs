@@ -6,7 +6,7 @@ pub mod index;
 pub mod geo;
 
 pub use document::Document;
-pub use collection::Collection;
+pub use collection::{Collection, CollectionStats, DiskUsage};
 pub use database::Database;
 pub use engine::StorageEngine;
 pub use index::{Index, IndexType, IndexStats, FulltextMatch, levenshtein_distance};

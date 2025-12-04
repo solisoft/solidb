@@ -24,14 +24,24 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
 # Utilities
 uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.8"
 
 # Storage
 rocksdb = "0.22"
 
+# Temp directories (needed by benchmark)
+tempfile = "3.10"
+
+[[bin]]
+name = "benchmark"
+path = "benches/benchmark.rs"
+
 [dev-dependencies]
 reqwest = { version = "0.11", features = ["json"] }
-tempfile = "3.10"
 tokio-test = "0.4"

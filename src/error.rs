@@ -14,6 +14,9 @@ pub enum DbError {
     #[error("Invalid document: {0}")]
     InvalidDocument(String),
 
+    #[error("Conflict: {0}")]
+    ConflictError(String),
+
     #[error("Parse error: {0}")]
     ParseError(String),
 

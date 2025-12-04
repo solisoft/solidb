@@ -1,0 +1,1 @@
+https://unpkg.com/riot@10.1.2/riot.min.js

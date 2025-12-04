@@ -18,6 +18,11 @@ pub enum Token {
     True,
     False,
     Null,
+    Insert,
+    Into,
+    Update,
+    With,
+    Remove,
 
     // Identifiers and literals
     Identifier(String),
@@ -40,6 +45,7 @@ pub enum Token {
 
     // Delimiters
     Dot,            // .
+    DotDot,         // .. (range operator)
     Comma,          // ,
     LeftBrace,      // {
     RightBrace,     // }
@@ -92,9 +98,21 @@ impl Lexer {
 
     fn read_number(&mut self) -> DbResult<Token> {
         let mut num_str = String::new();
+        let mut has_dot = false;
 
         while let Some(ch) = self.current_char {
-            if ch.is_numeric() || ch == '.' {
+            if ch.is_numeric() {
+                num_str.push(ch);
+                self.advance();
+            } else if ch == '.' && !has_dot {
+                // Check if this is a decimal point or start of range operator (..)
+                let next = self.input.get(self.position + 1).copied();
+                if next == Some('.') {
+                    // This is a range operator (..), stop reading number
+                    break;
+                }
+                // It's a decimal point
+                has_dot = true;
                 num_str.push(ch);
                 self.advance();
             } else {
@@ -169,6 +187,11 @@ impl Lexer {
             "TRUE" => Token::True,
             "FALSE" => Token::False,
             "NULL" => Token::Null,
+            "INSERT" => Token::Insert,
+            "INTO" => Token::Into,
+            "UPDATE" => Token::Update,
+            "WITH" => Token::With,
+            "REMOVE" => Token::Remove,
             _ => Token::Identifier(ident),
         }
     }
@@ -260,7 +283,15 @@ impl Lexer {
             Some('-') => { self.advance(); Token::Minus }
             Some('*') => { self.advance(); Token::Star }
             Some('/') => { self.advance(); Token::Slash }
-            Some('.') => { self.advance(); Token::Dot }
+            Some('.') => {
+                self.advance();
+                if self.current_char == Some('.') {
+                    self.advance();
+                    Token::DotDot
+                } else {
+                    Token::Dot
+                }
+            }
             Some(',') => { self.advance(); Token::Comma }
             Some('{') => { self.advance(); Token::LeftBrace }
             Some('}') => { self.advance(); Token::RightBrace }

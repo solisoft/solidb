@@ -44,6 +44,11 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> DbResult<Query> {
+        self.parse_query(true)
+    }
+
+    /// Parse a query, optionally checking for trailing tokens (false for subqueries)
+    fn parse_query(&mut self, check_trailing: bool) -> DbResult<Query> {
         // Parse initial LET clauses (before any FOR - these are evaluated once)
         let mut let_clauses = Vec::new();
         while matches!(self.current_token(), Token::Let) {
@@ -55,7 +60,7 @@ impl Parser {
         let mut for_clauses = Vec::new();
         let mut filter_clauses = Vec::new();
 
-        // Parse FOR, FILTER, and additional LET clauses (they can be interleaved in AQL)
+        // Parse FOR, FILTER, INSERT, and additional LET clauses (they can be interleaved in AQL)
         loop {
             if matches!(self.current_token(), Token::For) {
                 let for_clause = self.parse_for_clause()?;
@@ -65,6 +70,15 @@ impl Parser {
                 let filter_clause = self.parse_filter_clause()?;
                 filter_clauses.push(filter_clause.clone());
                 body_clauses.push(BodyClause::Filter(filter_clause));
+            } else if matches!(self.current_token(), Token::Insert) {
+                let insert_clause = self.parse_insert_clause()?;
+                body_clauses.push(BodyClause::Insert(insert_clause));
+            } else if matches!(self.current_token(), Token::Update) {
+                let update_clause = self.parse_update_clause()?;
+                body_clauses.push(BodyClause::Update(update_clause));
+            } else if matches!(self.current_token(), Token::Remove) {
+                let remove_clause = self.parse_remove_clause()?;
+                body_clauses.push(BodyClause::Remove(remove_clause));
             } else if matches!(self.current_token(), Token::Let) {
                 let let_clause = self.parse_let_clause()?;
                 // LET after FOR goes to body_clauses (correlated), not let_clauses
@@ -89,7 +103,44 @@ impl Parser {
             None
         };
 
-        let return_clause = self.parse_return_clause()?;
+        // RETURN clause is optional - mutations (INSERT/UPDATE/REMOVE) don't require it
+        let return_clause = if matches!(self.current_token(), Token::Return) {
+            Some(self.parse_return_clause()?)
+        } else {
+            None
+        };
+
+        // Only validate at top-level, not for subqueries
+        if check_trailing {
+            // Validate that we have a valid query structure
+            // A query must have either:
+            // 1. A RETURN clause (with or without FOR)
+            // 2. A mutation (INSERT/UPDATE/REMOVE)
+            // FOR without RETURN or mutation is invalid
+            let has_mutation = body_clauses.iter().any(|c| matches!(c,
+                BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)));
+
+            if return_clause.is_none() && !has_mutation {
+                // Check if there are unexpected tokens
+                if !matches!(self.current_token(), Token::Eof) {
+                    return Err(DbError::ParseError(format!(
+                        "Unexpected token: {:?}. Expected FOR, LET, RETURN, INSERT, UPDATE, or REMOVE",
+                        self.current_token()
+                    )));
+                }
+                return Err(DbError::ParseError(
+                    "Invalid query: missing RETURN clause or mutation (INSERT/UPDATE/REMOVE)".to_string()
+                ));
+            }
+
+            // Check for trailing tokens after a valid query
+            if !matches!(self.current_token(), Token::Eof) {
+                return Err(DbError::ParseError(format!(
+                    "Unexpected token after query: {:?}",
+                    self.current_token()
+                )));
+            }
+        }
 
         Ok(Query {
             let_clauses,
@@ -133,27 +184,98 @@ impl Parser {
 
         self.expect(Token::In)?;
 
-        let name = if let Token::Identifier(name) = self.current_token() {
+        // Check if the source is an identifier (collection/variable) or an expression (e.g., range)
+        if let Token::Identifier(name) = self.current_token() {
             let n = name.clone();
             self.advance();
-            n
-        } else {
-            return Err(DbError::ParseError("Expected collection or variable name after IN".to_string()));
-        };
 
-        // We'll determine at execution time whether this is a collection or a LET variable
-        // For now, store it as collection name (backward compatible)
-        Ok(ForClause {
-            variable,
-            collection: name.clone(),
-            source_variable: Some(name),
-        })
+            // We'll determine at execution time whether this is a collection or a LET variable
+            Ok(ForClause {
+                variable,
+                collection: n.clone(),
+                source_variable: Some(n),
+                source_expression: None,
+            })
+        } else {
+            // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
+            let expr = self.parse_expression()?;
+            Ok(ForClause {
+                variable,
+                collection: String::new(), // No collection for expression sources
+                source_variable: None,
+                source_expression: Some(expr),
+            })
+        }
     }
 
     fn parse_filter_clause(&mut self) -> DbResult<FilterClause> {
         self.expect(Token::Filter)?;
         let expression = self.parse_expression()?;
         Ok(FilterClause { expression })
+    }
+
+    fn parse_insert_clause(&mut self) -> DbResult<InsertClause> {
+        self.expect(Token::Insert)?;
+        let document = self.parse_expression()?;
+        self.expect(Token::Into)?;
+
+        let collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError("Expected collection name after INTO".to_string()));
+        };
+
+        Ok(InsertClause { document, collection })
+    }
+
+    fn parse_update_clause(&mut self) -> DbResult<UpdateClause> {
+        self.expect(Token::Update)?;
+
+        // Parse the document selector (usually a variable like `doc` or `doc._key`)
+        let selector = self.parse_expression()?;
+
+        // Expect WITH keyword
+        self.expect(Token::With)?;
+
+        // Parse the changes (object expression)
+        let changes = self.parse_expression()?;
+
+        // Expect IN keyword
+        self.expect(Token::In)?;
+
+        // Parse collection name
+        let collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError("Expected collection name after IN".to_string()));
+        };
+
+        Ok(UpdateClause { selector, changes, collection })
+    }
+
+    fn parse_remove_clause(&mut self) -> DbResult<RemoveClause> {
+        self.expect(Token::Remove)?;
+
+        // Parse the document selector (usually a variable like `doc` or `doc._key`)
+        let selector = self.parse_expression()?;
+
+        // Expect IN keyword
+        self.expect(Token::In)?;
+
+        // Parse collection name
+        let collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError("Expected collection name after IN".to_string()));
+        };
+
+        Ok(RemoveClause { selector, collection })
     }
 
     fn parse_sort_clause(&mut self) -> DbResult<SortClause> {
@@ -248,11 +370,11 @@ impl Parser {
     }
 
     fn parse_comparison_expression(&mut self) -> DbResult<Expression> {
-        let mut left = self.parse_additive_expression()?;
+        let mut left = self.parse_range_expression()?;
 
         while let Some(op) = self.parse_comparison_operator() {
             self.advance();
-            let right = self.parse_additive_expression()?;
+            let right = self.parse_range_expression()?;
             left = Expression::BinaryOp {
                 left: Box::new(left),
                 op,
@@ -272,6 +394,19 @@ impl Parser {
             Token::GreaterThan => Some(BinaryOperator::GreaterThan),
             Token::GreaterThanEq => Some(BinaryOperator::GreaterThanOrEqual),
             _ => None,
+        }
+    }
+
+    /// Parse range expressions (e.g., 1..5 produces [1, 2, 3, 4, 5])
+    fn parse_range_expression(&mut self) -> DbResult<Expression> {
+        let left = self.parse_additive_expression()?;
+
+        if matches!(self.current_token(), Token::DotDot) {
+            self.advance(); // consume '..'
+            let right = self.parse_additive_expression()?;
+            Ok(Expression::Range(Box::new(left), Box::new(right)))
+        } else {
+            Ok(left)
         }
     }
 
@@ -463,7 +598,7 @@ impl Parser {
                 self.advance();
                 // Check if this is a subquery (starts with FOR or LET)
                 if matches!(self.current_token(), Token::For | Token::Let) {
-                    let subquery = self.parse()?;
+                    let subquery = self.parse_query(false)?;  // Don't check trailing for subqueries
                     self.expect(Token::RightParen)?;
                     Ok(Expression::Subquery(Box::new(subquery)))
                 } else {

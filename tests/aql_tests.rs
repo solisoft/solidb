@@ -1913,3 +1913,2016 @@ fn test_correlated_let_simple_expression() {
     assert!(results.contains(&json!("Hello, Charlie")));
 }
 
+// ==================== COLLECTION_COUNT Function Tests ====================
+
+#[test]
+fn test_collection_count_basic() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"RETURN COLLECTION_COUNT("users")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3)); // 3 users in setup
+}
+
+#[test]
+fn test_collection_count_empty_collection() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("empty".to_string()).unwrap();
+
+    let query = parse(r#"RETURN COLLECTION_COUNT("empty")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(0));
+}
+
+#[test]
+fn test_collection_count_multiple_collections() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+    setup_orders_collection(&storage);
+
+    let query = parse(r#"RETURN {
+        users: COLLECTION_COUNT("users"),
+        orders: COLLECTION_COUNT("orders")
+    }"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["users"], json!(3));
+    assert_eq!(results[0]["orders"], json!(4));
+}
+
+#[test]
+fn test_collection_count_with_bind_var() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"RETURN COLLECTION_COUNT(@col)"#).unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("col".to_string(), json!("users"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3));
+}
+
+#[test]
+fn test_collection_count_nonexistent_collection() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN COLLECTION_COUNT("nonexistent")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    // Should error because collection doesn't exist
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_collection_count_in_for_loop() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use COLLECTION_COUNT inside a FOR loop
+    let query = parse(r#"
+        FOR doc IN users
+        LIMIT 1
+        RETURN COLLECTION_COUNT("users")
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3));
+}
+
+// ==================== DATE_TIMESTAMP Function Tests ====================
+
+#[test]
+fn test_date_timestamp_basic() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TIMESTAMP("2025-12-03T13:59:47.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1764770387000_i64));
+}
+
+#[test]
+fn test_date_timestamp_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // ISO 8601 with timezone offset
+    let query = parse(r#"RETURN DATE_TIMESTAMP("2025-12-03T14:59:47.000+01:00")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Same moment in time as 13:59:47 UTC
+    assert_eq!(results[0], json!(1764770387000_i64));
+}
+
+#[test]
+fn test_date_timestamp_roundtrip() {
+    let (storage, _dir) = create_test_storage();
+
+    // Convert timestamp to ISO and back
+    let query = parse(r#"
+        LET ts = 1764770387000
+        LET iso = DATE_ISO8601(ts)
+        RETURN DATE_TIMESTAMP(iso)
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1764770387000_i64));
+}
+
+#[test]
+fn test_date_timestamp_invalid_format() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TIMESTAMP("not-a-date")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    // Should error because the date format is invalid
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("DATE_TIMESTAMP"));
+}
+
+#[test]
+fn test_date_timestamp_with_milliseconds() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TIMESTAMP("2025-01-15T10:30:45.123Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Verify the result is a number (timestamp in milliseconds)
+    assert!(results[0].is_i64());
+    let ts = results[0].as_i64().unwrap();
+    // Should end in 123 for the milliseconds
+    assert_eq!(ts % 1000, 123);
+}
+
+#[test]
+fn test_date_now_returns_current_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_NOW()"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let ts = results[0].as_i64().unwrap();
+
+    // Should be a reasonable timestamp (after 2024)
+    assert!(ts > 1704067200000); // 2024-01-01 00:00:00 UTC
+}
+
+#[test]
+fn test_date_iso8601_and_timestamp_consistency() {
+    let (storage, _dir) = create_test_storage();
+
+    // Get current time, convert to ISO, parse back
+    let query = parse(r#"
+        LET now = DATE_NOW()
+        LET iso = DATE_ISO8601(now)
+        LET back = DATE_TIMESTAMP(iso)
+        RETURN { original: now, converted: back, match: now == back }
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["match"], json!(true));
+}
+
+#[test]
+fn test_date_timestamp_epoch() {
+    let (storage, _dir) = create_test_storage();
+
+    // Unix epoch
+    let query = parse(r#"RETURN DATE_TIMESTAMP("1970-01-01T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(0_i64));
+}
+
+// ==================== DATE_TRUNC Function Tests ====================
+
+#[test]
+fn test_date_trunc_year() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "year")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-01-01T00:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_month() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "month")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-01T00:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_day() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "day")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T00:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_hour() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "hour")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_minute() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "minute")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_second() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "second")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:45.000Z"));
+}
+
+#[test]
+fn test_date_trunc_millisecond() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "milliseconds")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_trunc_short_units() {
+    let (storage, _dir) = create_test_storage();
+
+    // Test short unit names: y, m, d, h, i, s, f
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "h")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("2025-06-15T14:00:00.000Z"));
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "i")"#).unwrap();
+    let results = executor.execute(&query).unwrap();
+    assert_eq!(results[0], json!("2025-06-15T14:30:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use numeric timestamp instead of ISO string
+    // 1750000000000 ms = July 15, 2025, 14:40:00 UTC
+    let query = parse(r#"RETURN DATE_TRUNC(1750000000000, "day")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Should truncate to start of day
+    assert!(results[0].as_str().unwrap().contains("T00:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025-06-15T20:30:00Z in New York (UTC-4 during DST) is 2025-06-15T16:30:00 local
+    // Truncating to day in NY timezone should give 2025-06-15T00:00:00 NY = 2025-06-15T04:00:00Z
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T20:30:00.000Z", "day", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T04:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_with_utc_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "day", "UTC")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T00:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_europe_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025-06-15T01:30:00Z in Berlin (UTC+2 during DST) is 2025-06-15T03:30:00 local
+    // Truncating to day in Berlin timezone should give 2025-06-15T00:00:00 Berlin = 2025-06-14T22:00:00Z
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T01:30:00.000Z", "day", "Europe/Berlin")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-14T22:00:00.000Z"));
+}
+
+#[test]
+fn test_date_trunc_invalid_unit() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "invalid")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown unit"));
+}
+
+#[test]
+fn test_date_trunc_invalid_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "day", "Invalid/Timezone")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown timezone"));
+}
+
+#[test]
+fn test_date_trunc_case_insensitive_unit() {
+    let (storage, _dir) = create_test_storage();
+
+    // Units should be case-insensitive
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "YEAR")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("2025-01-01T00:00:00.000Z"));
+
+    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "Day")"#).unwrap();
+    let results = executor.execute(&query).unwrap();
+    assert_eq!(results[0], json!("2025-06-15T00:00:00.000Z"));
+}
+
+// ==================== DATE_FORMAT Function Tests ====================
+
+#[test]
+fn test_date_format_basic() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15"));
+}
+
+#[test]
+fn test_date_format_time() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M:%S")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("14:30:45"));
+}
+
+#[test]
+fn test_date_format_full_datetime() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d %H:%M:%S")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("2025-06-15 14:30:45"));
+}
+
+#[test]
+fn test_date_format_weekday() {
+    let (storage, _dir) = create_test_storage();
+
+    // %A = full weekday name, %a = abbreviated
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%A")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("Sunday"));
+}
+
+#[test]
+fn test_date_format_month_name() {
+    let (storage, _dir) = create_test_storage();
+
+    // %B = full month name, %b = abbreviated
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%B")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("June"));
+}
+
+#[test]
+fn test_date_format_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 14:30 UTC should be 10:30 in New York (EDT, UTC-4)
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("10:30"));
+}
+
+#[test]
+fn test_date_format_timezone_date_change() {
+    let (storage, _dir) = create_test_storage();
+
+    // 02:00 UTC on June 15 should be June 14 22:00 in New York (EDT, UTC-4)
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T02:00:00.000Z", "%Y-%m-%d", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("2025-06-14"));
+}
+
+#[test]
+fn test_date_format_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use numeric timestamp
+    let query = parse(r#"RETURN DATE_FORMAT(1750000000000, "%Y-%m-%d")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Verify it's a valid date format
+    assert!(results[0].as_str().unwrap().contains("-"));
+}
+
+#[test]
+fn test_date_format_custom_format() {
+    let (storage, _dir) = create_test_storage();
+
+    // Custom format with text
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Date: %d/%m/%Y Time: %H:%M")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("Date: 15/06/2025 Time: 14:30"));
+}
+
+#[test]
+fn test_date_format_iso_week() {
+    let (storage, _dir) = create_test_storage();
+
+    // %V = ISO week number, %G = ISO year
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Week %V of %G")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("Week 24 of 2025"));
+}
+
+#[test]
+fn test_date_format_12_hour() {
+    let (storage, _dir) = create_test_storage();
+
+    // %I = 12-hour, %p = AM/PM
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%I:%M %p")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("02:30 PM"));
+}
+
+#[test]
+fn test_date_format_day_of_year() {
+    let (storage, _dir) = create_test_storage();
+
+    // %j = day of year (001-366)
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%j")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("166")); // June 15 is day 166 of the year
+}
+
+#[test]
+fn test_date_format_invalid_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d", "Invalid/TZ")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown timezone"));
+}
+
+#[test]
+fn test_date_format_europe_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 14:30 UTC should be 16:30 in Berlin (CEST, UTC+2)
+    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "Europe/Berlin")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!("16:30"));
+}
+
+// ==================== DATE_ISOWEEK Function Tests ====================
+
+#[test]
+fn test_date_isoweek_basic() {
+    let (storage, _dir) = create_test_storage();
+
+    // June 15, 2025 is in ISO week 24
+    let query = parse(r#"RETURN DATE_ISOWEEK("2025-06-15T14:30:45.123Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(24));
+}
+
+#[test]
+fn test_date_isoweek_first_week() {
+    let (storage, _dir) = create_test_storage();
+
+    // January 6, 2025 is in ISO week 2
+    let query = parse(r#"RETURN DATE_ISOWEEK("2025-01-06T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(2));
+}
+
+#[test]
+fn test_date_isoweek_last_week() {
+    let (storage, _dir) = create_test_storage();
+
+    // December 29, 2025 is in ISO week 1 of 2026 (or week 52/53 depending on year)
+    let query = parse(r#"RETURN DATE_ISOWEEK("2025-12-29T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // December 29, 2025 is Monday of week 1 of 2026
+    assert_eq!(results[0], json!(1));
+}
+
+#[test]
+fn test_date_isoweek_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use numeric timestamp
+    let query = parse(r#"RETURN DATE_ISOWEEK(1750000000000)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Should return a valid week number (1-53)
+    let week = results[0].as_u64().unwrap();
+    assert!(week >= 1 && week <= 53);
+}
+
+#[test]
+fn test_date_isoweek_year_boundary() {
+    let (storage, _dir) = create_test_storage();
+
+    // January 1, 2025 is a Wednesday, so it's still in ISO week 1 of 2025
+    let query = parse(r#"RETURN DATE_ISOWEEK("2025-01-01T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(1));
+}
+
+#[test]
+fn test_date_isoweek_mid_year() {
+    let (storage, _dir) = create_test_storage();
+
+    // July 1, 2025 should be around week 27
+    let query = parse(r#"RETURN DATE_ISOWEEK("2025-07-01T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(27));
+}
+
+// ==================== DATE_DAYOFYEAR Function Tests ====================
+
+#[test]
+fn test_date_dayofyear_basic() {
+    let (storage, _dir) = create_test_storage();
+
+    // June 15 is day 166 of the year (31+28+31+30+31+15 = 166)
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45.123Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(166));
+}
+
+#[test]
+fn test_date_dayofyear_first_day() {
+    let (storage, _dir) = create_test_storage();
+
+    // January 1 is day 1
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-01-01T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(1));
+}
+
+#[test]
+fn test_date_dayofyear_last_day() {
+    let (storage, _dir) = create_test_storage();
+
+    // December 31, 2025 is day 365 (non-leap year)
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-12-31T23:59:59.999Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(365));
+}
+
+#[test]
+fn test_date_dayofyear_leap_year() {
+    let (storage, _dir) = create_test_storage();
+
+    // December 31, 2024 is day 366 (leap year)
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2024-12-31T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(366));
+}
+
+#[test]
+fn test_date_dayofyear_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use numeric timestamp
+    let query = parse(r#"RETURN DATE_DAYOFYEAR(1750000000000)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Should return a valid day number (1-366)
+    let day = results[0].as_u64().unwrap();
+    assert!(day >= 1 && day <= 366);
+}
+
+#[test]
+fn test_date_dayofyear_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025-01-01T02:00:00Z in New York (UTC-5 in winter) is still Dec 31, 2024
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-01-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // In New York it's still Dec 31, 2024 (leap year), so day 366
+    assert_eq!(results[0], json!(366));
+}
+
+#[test]
+fn test_date_dayofyear_timezone_europe() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025-06-15T22:00:00Z in Berlin (UTC+2 during DST) is June 16, 00:00
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T22:00:00.000Z", "Europe/Berlin")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // In Berlin it's June 16, so day 167
+    assert_eq!(results[0], json!(167));
+}
+
+#[test]
+fn test_date_dayofyear_invalid_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown timezone"));
+}
+
+// ==================== DATE_DAYS_IN_MONTH Function Tests ====================
+
+#[test]
+fn test_date_days_in_month_january() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-01-15T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(31));
+}
+
+#[test]
+fn test_date_days_in_month_february_non_leap() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025 is not a leap year
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-02-15T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(28));
+}
+
+#[test]
+fn test_date_days_in_month_february_leap() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2024 is a leap year
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2024-02-15T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(29));
+}
+
+#[test]
+fn test_date_days_in_month_april() {
+    let (storage, _dir) = create_test_storage();
+
+    // April has 30 days
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-04-15T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(30));
+}
+
+#[test]
+fn test_date_days_in_month_december() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-12-15T00:00:00.000Z")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results[0], json!(31));
+}
+
+#[test]
+fn test_date_days_in_month_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH(1750000000000)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // Should return a valid number of days (28-31)
+    let days = results[0].as_u64().unwrap();
+    assert!(days >= 28 && days <= 31);
+}
+
+#[test]
+fn test_date_days_in_month_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2025-02-01T02:00:00Z in New York (UTC-5) is still January 31
+    // January has 31 days
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-02-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // In New York it's still January, so 31 days
+    assert_eq!(results[0], json!(31));
+}
+
+#[test]
+fn test_date_days_in_month_timezone_february_leap() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2024-03-01T02:00:00Z in New York (UTC-5) is still February 29 (leap year)
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2024-03-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    // In New York it's still February 2024 (leap year), so 29 days
+    assert_eq!(results[0], json!(29));
+}
+
+#[test]
+fn test_date_days_in_month_invalid_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown timezone"));
+}
+
+// ==================== DATE_ADD Function Tests ====================
+
+#[test]
+fn test_date_add_years() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 3, "years")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2028-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_months() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 3, "months")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-09-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_weeks() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 2, "weeks")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-29T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_days() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 10, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-25T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_hours() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 5, "hours")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T19:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_minutes() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 45, "minutes")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T15:15:45.123Z"));
+}
+
+#[test]
+fn test_date_add_seconds() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 30, "seconds")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:31:15.123Z"));
+}
+
+#[test]
+fn test_date_add_milliseconds() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 500, "milliseconds")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:45.623Z"));
+}
+
+#[test]
+fn test_date_add_negative_amount() {
+    let (storage, _dir) = create_test_storage();
+
+    // Subtract 7 days
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", -7, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-08T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_negative_months() {
+    let (storage, _dir) = create_test_storage();
+
+    // Subtract 3 months
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", -3, "months")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-03-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use timestamp instead of ISO string
+    // 1733234387000 ms = 2024-12-03T13:59:47.000Z
+    let query = parse(r#"RETURN DATE_ADD(1733234387000, 2, "hours")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2024-12-03T15:59:47.000Z"));
+}
+
+#[test]
+fn test_date_add_month_boundary() {
+    let (storage, _dir) = create_test_storage();
+
+    // Jan 31 + 1 month should give Feb 28 (or 29 in leap year)
+    let query = parse(r#"RETURN DATE_ADD("2025-01-31T12:00:00.000Z", 1, "month")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-02-28T12:00:00.000Z"));
+}
+
+#[test]
+fn test_date_add_month_boundary_leap_year() {
+    let (storage, _dir) = create_test_storage();
+
+    // Jan 31, 2024 + 1 month should give Feb 29 (leap year)
+    let query = parse(r#"RETURN DATE_ADD("2024-01-31T12:00:00.000Z", 1, "month")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2024-02-29T12:00:00.000Z"));
+}
+
+#[test]
+fn test_date_add_short_units() {
+    let (storage, _dir) = create_test_storage();
+
+    // Test short unit names
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 1, "y")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2026-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_case_insensitive() {
+    let (storage, _dir) = create_test_storage();
+
+    // Test case-insensitive unit matching
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 5, "DAYS")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-20T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // Add 1 day with timezone
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Should add 1 day in New York time, then convert back to UTC
+    assert_eq!(results[0], json!("2025-06-16T20:00:00.000Z"));
+}
+
+#[test]
+fn test_date_add_year_boundary() {
+    let (storage, _dir) = create_test_storage();
+
+    // Add months across year boundary
+    let query = parse(r#"RETURN DATE_ADD("2025-11-15T12:00:00.000Z", 3, "months")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2026-02-15T12:00:00.000Z"));
+}
+
+#[test]
+fn test_date_add_leap_year_feb_29() {
+    let (storage, _dir) = create_test_storage();
+
+    // Feb 29, 2024 + 1 year should give Feb 28, 2025 (not a leap year)
+    let query = parse(r#"RETURN DATE_ADD("2024-02-29T12:00:00.000Z", 1, "year")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-02-28T12:00:00.000Z"));
+}
+
+#[test]
+fn test_date_add_invalid_unit() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 5, "invalid")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown unit"));
+}
+
+#[test]
+fn test_date_add_invalid_amount() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", "invalid", "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("amount must be a number"));
+}
+
+#[test]
+fn test_date_add_invalid_date() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("invalid-date", 5, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("invalid ISO 8601 date"));
+}
+
+#[test]
+fn test_date_add_invalid_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 1, "day", "Invalid/Timezone")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown timezone"));
+}
+
+#[test]
+fn test_date_add_zero_amount() {
+    let (storage, _dir) = create_test_storage();
+
+    // Adding 0 should return the same date
+    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 0, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_add_large_amount() {
+    let (storage, _dir) = create_test_storage();
+
+    // Add 1000 days
+    let query = parse(r#"RETURN DATE_ADD("2025-01-01T00:00:00.000Z", 1000, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2027-09-28T00:00:00.000Z"));
+}
+
+// ==================== DATE_SUBTRACT Function Tests ====================
+
+#[test]
+fn test_date_subtract_days() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", 7, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-08T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_subtract_months() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", 3, "months")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-03-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_subtract_years() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", 2, "years")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2023-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_subtract_hours() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", 5, "hours")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T09:30:45.123Z"));
+}
+
+#[test]
+fn test_date_subtract_with_timestamp() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use timestamp instead of ISO string
+    let query = parse(r#"RETURN DATE_SUBTRACT(1733234387000, 1, "day")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2024-12-02T13:59:47.000Z"));
+}
+
+#[test]
+fn test_date_subtract_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-14T20:00:00.000Z"));
+}
+
+#[test]
+fn test_date_subtract_month_boundary() {
+    let (storage, _dir) = create_test_storage();
+
+    // March 31 - 1 month should give Feb 28 (or 29 in leap year)
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-03-31T12:00:00.000Z", 1, "month")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-02-28T12:00:00.000Z"));
+}
+
+#[test]
+fn test_date_subtract_zero() {
+    let (storage, _dir) = create_test_storage();
+
+    // Subtracting 0 should return the same date
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", 0, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("2025-06-15T14:30:45.123Z"));
+}
+
+#[test]
+fn test_date_subtract_invalid_amount() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", "invalid", "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("amount must be a number"));
+}
+
+// ==================== DATE_DIFF Function Tests ====================
+
+#[test]
+fn test_date_diff_days() {
+    let (storage, _dir) = create_test_storage();
+
+    // 10 days difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-11T00:00:00Z", "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(10.0));
+}
+
+#[test]
+fn test_date_diff_hours() {
+    let (storage, _dir) = create_test_storage();
+
+    // 5 hours difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T10:00:00Z", "2025-06-15T15:00:00Z", "hours")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(5.0));
+}
+
+#[test]
+fn test_date_diff_months() {
+    let (storage, _dir) = create_test_storage();
+
+    // 3 months difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-03-15T00:00:00Z", "2025-06-15T00:00:00Z", "months")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(3.0));
+}
+
+#[test]
+fn test_date_diff_years() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2 years difference
+    let query = parse(r#"RETURN DATE_DIFF("2023-06-15T00:00:00Z", "2025-06-15T00:00:00Z", "years")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(2.0));
+}
+
+#[test]
+fn test_date_diff_negative() {
+    let (storage, _dir) = create_test_storage();
+
+    // Negative difference (date2 before date1)
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(-5.0));
+}
+
+#[test]
+fn test_date_diff_with_float() {
+    let (storage, _dir) = create_test_storage();
+
+    // With asFloat=true for decimal precision
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-15T12:00:00Z", "days", true)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let result = results[0].as_f64().unwrap();
+    assert!((result - 0.5).abs() < 0.01); // 12 hours = 0.5 days
+}
+
+#[test]
+fn test_date_diff_milliseconds() {
+    let (storage, _dir) = create_test_storage();
+
+    // Millisecond difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:45.000Z", "2025-06-15T14:30:45.500Z", "milliseconds")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(500.0));
+}
+
+#[test]
+fn test_date_diff_with_timestamps() {
+    let (storage, _dir) = create_test_storage();
+
+    // Using numeric timestamps
+    // 1 day = 86400000 ms
+    let query = parse(r#"RETURN DATE_DIFF(1000000000000, 1000086400000, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1.0));
+}
+
+#[test]
+fn test_date_diff_with_timezone() {
+    let (storage, _dir) = create_test_storage();
+
+    // Same UTC time but different local times due to timezone
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-16T00:00:00Z", "days", false, "America/New_York")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(1.0));
+}
+
+#[test]
+fn test_date_diff_minutes() {
+    let (storage, _dir) = create_test_storage();
+
+    // 90 minutes difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:00:00Z", "2025-06-15T15:30:00Z", "minutes")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(90.0));
+}
+
+#[test]
+fn test_date_diff_seconds() {
+    let (storage, _dir) = create_test_storage();
+
+    // 120 seconds difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:32:00Z", "seconds")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(120.0));
+}
+
+#[test]
+fn test_date_diff_weeks() {
+    let (storage, _dir) = create_test_storage();
+
+    // 2 weeks difference
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-15T00:00:00Z", "weeks")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(2.0));
+}
+
+#[test]
+fn test_date_diff_zero() {
+    let (storage, _dir) = create_test_storage();
+
+    // Same date
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:30:00Z", "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!(0.0));
+}
+
+#[test]
+fn test_date_diff_invalid_unit() {
+    let (storage, _dir) = create_test_storage();
+
+    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-16T00:00:00Z", "invalid")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let result = executor.execute(&query);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("unknown unit"));
+}
+
+
+// ==================== INSERT Statement Tests ====================
+
+#[test]
+fn test_insert_simple() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_database("testdb".to_string()).unwrap();
+    storage.create_collection("numbers".to_string()).unwrap();
+
+    // Insert documents using FOR loop with LET array
+    let query = parse(r#"
+        LET nums = [1, 2, 3, 4, 5]
+        FOR i IN nums
+          INSERT { value: i } INTO numbers
+          RETURN i
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 5);
+
+    // Verify all documents were inserted
+    let collection = storage.get_collection("numbers").unwrap();
+    let all_docs = collection.scan(None);
+    assert_eq!(all_docs.len(), 5);
+}
+
+#[test]
+fn test_insert_with_object_construction() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_database("testdb".to_string()).unwrap();
+    storage.create_collection("users".to_string()).unwrap();
+
+    // Insert with object construction
+    let query = parse(r#"
+        LET nums = [1, 2, 3]
+        FOR i IN nums
+          INSERT { name: CONCAT("User", i), index: i } INTO users
+          RETURN i
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    // Verify documents
+    let collection = storage.get_collection("users").unwrap();
+    let all_docs = collection.scan(None);
+    assert_eq!(all_docs.len(), 3);
+}
+
+// ==================== UPDATE Statement Tests ====================
+
+#[test]
+fn test_update_simple() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Get Alice's document and update it
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Alice"
+        UPDATE doc WITH { status: "premium" } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+
+    // Verify the update
+    let collection = storage.get_collection("users").unwrap();
+    let alice = collection.get("alice").unwrap();
+    assert_eq!(alice.to_value()["status"], json!("premium"));
+    // Original fields should still exist
+    assert_eq!(alice.to_value()["name"], json!("Alice"));
+    assert_eq!(alice.to_value()["age"], json!(30));
+}
+
+#[test]
+fn test_update_multiple_fields() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Update multiple fields
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Bob"
+        UPDATE doc WITH { status: "vip", level: 5, verified: true } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+
+    // Verify all new fields
+    let collection = storage.get_collection("users").unwrap();
+    let bob = collection.get("bob").unwrap();
+    assert_eq!(bob.to_value()["status"], json!("vip"));
+    assert_eq!(bob.to_value()["level"], json!(5.0));
+    assert_eq!(bob.to_value()["verified"], json!(true));
+}
+
+#[test]
+fn test_update_overwrite_field() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Update (overwrite) an existing field
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Charlie"
+        UPDATE doc WITH { age: 40 } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+
+    // Verify the field was overwritten
+    let collection = storage.get_collection("users").unwrap();
+    let charlie = collection.get("charlie").unwrap();
+    assert_eq!(charlie.to_value()["age"], json!(40.0)); // Was 35, now 40
+    // Original name should still exist
+    assert_eq!(charlie.to_value()["name"], json!("Charlie"));
+}
+
+#[test]
+fn test_update_multiple_documents() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Update all users from Paris
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.city == "Paris"
+        UPDATE doc WITH { region: "Europe" } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2); // Alice and Charlie are from Paris
+
+    // Verify both documents were updated
+    let collection = storage.get_collection("users").unwrap();
+    let alice = collection.get("alice").unwrap();
+    let charlie = collection.get("charlie").unwrap();
+    assert_eq!(alice.to_value()["region"], json!("Europe"));
+    assert_eq!(charlie.to_value()["region"], json!("Europe"));
+}
+
+#[test]
+fn test_update_with_expression() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Update with computed value using CONCAT
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Alice"
+        UPDATE doc WITH { fullName: CONCAT(doc.name, " from ", doc.city) } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+
+    // Verify the computed field
+    let collection = storage.get_collection("users").unwrap();
+    let alice = collection.get("alice").unwrap();
+    assert_eq!(alice.to_value()["fullName"], json!("Alice from Paris"));
+}
+
+#[test]
+fn test_update_with_bind_vars() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == @name
+        UPDATE doc WITH { points: @points } IN users
+        RETURN doc.name
+    "#).unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("name".to_string(), json!("Alice"));
+    bind_vars.insert("points".to_string(), json!(100));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+
+    // Verify the update with bind var value
+    let collection = storage.get_collection("users").unwrap();
+    let alice = collection.get("alice").unwrap();
+    assert_eq!(alice.to_value()["points"], json!(100));
+}
+
+#[test]
+fn test_update_no_match() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Filter matches no documents - update should not fail
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "NonExistent"
+        UPDATE doc WITH { status: "updated" } IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 0); // No documents matched
+}
+
+#[test]
+fn test_update_preserves_key() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Update should preserve _key
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Alice"
+        UPDATE doc WITH { name: "Alice Updated" } IN users
+        RETURN doc._key
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("alice"));
+
+    // Verify the document still exists with same key
+    let collection = storage.get_collection("users").unwrap();
+    let alice = collection.get("alice").unwrap();
+    assert_eq!(alice.to_value()["name"], json!("Alice Updated"));
+    assert_eq!(alice.to_value()["_key"], json!("alice"));
+}
+
+// ==================== Range Expression Tests ====================
+
+#[test]
+fn test_range_basic() {
+    let (storage, _dir) = create_test_storage();
+
+    // Basic range 1..5 should produce [1, 2, 3, 4, 5]
+    let query = parse(r#"RETURN 1..5"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([1, 2, 3, 4, 5]));
+}
+
+#[test]
+fn test_range_single_element() {
+    let (storage, _dir) = create_test_storage();
+
+    // Range 3..3 should produce [3]
+    let query = parse(r#"RETURN 3..3"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([3]));
+}
+
+#[test]
+fn test_range_negative_numbers() {
+    let (storage, _dir) = create_test_storage();
+
+    // Range with negative numbers
+    let query = parse(r#"RETURN -2..2"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([-2, -1, 0, 1, 2]));
+}
+
+#[test]
+fn test_range_empty() {
+    let (storage, _dir) = create_test_storage();
+
+    // Range 5..3 should produce empty array (start > end)
+    let query = parse(r#"RETURN 5..3"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([]));
+}
+
+#[test]
+fn test_range_in_for_loop() {
+    let (storage, _dir) = create_test_storage();
+
+    // Use range in FOR loop
+    let query = parse(r#"
+        FOR i IN 1..5
+        RETURN i * 2
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 5);
+    assert_eq!(results[0], json!(2.0));
+    assert_eq!(results[1], json!(4.0));
+    assert_eq!(results[2], json!(6.0));
+    assert_eq!(results[3], json!(8.0));
+    assert_eq!(results[4], json!(10.0));
+}
+
+#[test]
+fn test_range_with_expressions() {
+    let (storage, _dir) = create_test_storage();
+
+    // Range with expressions
+    let query = parse(r#"
+        LET start = 2
+        LET end = 6
+        RETURN start..end
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([2, 3, 4, 5, 6]));
+}
+
+#[test]
+fn test_range_with_arithmetic() {
+    let (storage, _dir) = create_test_storage();
+
+    // Range with arithmetic expressions
+    let query = parse(r#"RETURN (1 + 1)..(3 * 2)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!([2, 3, 4, 5, 6]));
+}
+
+#[test]
+fn test_range_for_insert() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_database("testdb".to_string()).unwrap();
+    storage.create_collection("items".to_string()).unwrap();
+
+    // Use range in FOR loop for insert
+    let query = parse(r#"
+        FOR i IN 1..3
+        INSERT { index: i, name: CONCAT("Item", i) } INTO items
+        RETURN i
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    // Verify documents were inserted
+    let collection = storage.get_collection("items").unwrap();
+    assert_eq!(collection.count(), 3);
+}
+
+// ==================== REMOVE Statement Tests ====================
+
+#[test]
+fn test_remove_simple() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Verify we have users before
+    let collection = storage.get_collection("users").unwrap();
+    let count_before = collection.count();
+    assert!(count_before > 0);
+
+    // Remove Alice
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "Alice"
+        REMOVE doc IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Alice"));
+
+    // Verify Alice was deleted
+    let collection = storage.get_collection("users").unwrap();
+    assert_eq!(collection.count(), count_before - 1);
+    assert!(collection.get("alice").is_err());
+}
+
+#[test]
+fn test_remove_multiple_documents() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Remove all users from Paris (Alice and Charlie)
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.city == "Paris"
+        REMOVE doc IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 2);
+
+    // Verify they were deleted
+    let collection = storage.get_collection("users").unwrap();
+    assert!(collection.get("alice").is_err());
+    assert!(collection.get("charlie").is_err());
+    // Bob should still exist
+    assert!(collection.get("bob").is_ok());
+}
+
+#[test]
+fn test_remove_by_key() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Remove by key string
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc._key == "bob"
+        REMOVE doc IN users
+        RETURN doc._key
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("bob"));
+
+    // Verify Bob was deleted
+    let collection = storage.get_collection("users").unwrap();
+    assert!(collection.get("bob").is_err());
+}
+
+#[test]
+fn test_remove_no_match() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let collection = storage.get_collection("users").unwrap();
+    let count_before = collection.count();
+
+    // Filter matches no documents - remove should not fail
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == "NonExistent"
+        REMOVE doc IN users
+        RETURN doc.name
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 0);
+
+    // Count should be unchanged
+    let collection = storage.get_collection("users").unwrap();
+    assert_eq!(collection.count(), count_before);
+}
+
+#[test]
+fn test_remove_with_bind_vars() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"
+        FOR doc IN users
+        FILTER doc.name == @name
+        REMOVE doc IN users
+        RETURN doc.name
+    "#).unwrap();
+
+    let mut bind_vars: BindVars = HashMap::new();
+    bind_vars.insert("name".to_string(), json!("Charlie"));
+
+    let executor = QueryExecutor::with_bind_vars(&storage, bind_vars);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0], json!("Charlie"));
+
+    // Verify Charlie was deleted
+    let collection = storage.get_collection("users").unwrap();
+    assert!(collection.get("charlie").is_err());
+}
+
+#[test]
+fn test_remove_all() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Remove all documents
+    let query = parse(r#"
+        FOR doc IN users
+        REMOVE doc IN users
+        RETURN doc._key
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3); // Alice, Bob, Charlie
+
+    // Verify collection is empty
+    let collection = storage.get_collection("users").unwrap();
+    assert_eq!(collection.count(), 0);
+}

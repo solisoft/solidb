@@ -1,4 +1,5 @@
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::collections::{HashMap, HashSet};
 use rocksdb::DB;
 use serde_json::Value;
@@ -17,6 +18,27 @@ const GEO_META_PREFIX: &str = "geo_meta:";
 const FT_PREFIX: &str = "ft:";          // Fulltext n-gram entries
 const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
+const STATS_PREFIX: &str = "_stats:";   // Collection statistics
+const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
+
+/// Compare two JSON values for sorting
+#[inline]
+fn compare_json_values(a: &Value, b: &Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a, b) {
+        (Value::Null, Value::Null) => Ordering::Equal,
+        (Value::Null, _) => Ordering::Less,
+        (_, Value::Null) => Ordering::Greater,
+        (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
+        (Value::Number(a), Value::Number(b)) => {
+            let a_f64 = a.as_f64().unwrap_or(0.0);
+            let b_f64 = b.as_f64().unwrap_or(0.0);
+            a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
+        }
+        (Value::String(a), Value::String(b)) => a.cmp(b),
+        _ => Ordering::Equal,
+    }
+}
 
 /// Fulltext index metadata
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -26,13 +48,48 @@ struct FulltextIndex {
     min_length: usize,
 }
 
+/// Collection statistics including disk usage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CollectionStats {
+    pub name: String,
+    pub document_count: usize,
+    pub disk_usage: DiskUsage,
+}
+
+/// Disk usage statistics for a collection
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DiskUsage {
+    /// Total size of SST files in bytes
+    pub sst_files_size: u64,
+    /// Estimated live data size in bytes
+    pub live_data_size: u64,
+    /// Number of SST files
+    pub num_sst_files: u64,
+    /// Size of memtables in bytes
+    pub memtable_size: u64,
+}
+
 /// Represents a collection of documents backed by RocksDB
-#[derive(Clone)]
 pub struct Collection {
     /// Collection name (column family name)
     pub name: String,
     /// RocksDB instance
     db: Arc<RwLock<DB>>,
+    /// Cached document count (atomic for lock-free updates)
+    doc_count: Arc<AtomicUsize>,
+    /// Whether count needs to be persisted to disk
+    count_dirty: Arc<AtomicBool>,
+}
+
+impl Clone for Collection {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            db: self.db.clone(),
+            doc_count: self.doc_count.clone(),
+            count_dirty: self.count_dirty.clone(),
+        }
+    }
 }
 
 impl std::fmt::Debug for Collection {
@@ -46,7 +103,35 @@ impl std::fmt::Debug for Collection {
 impl Collection {
     /// Create a new collection handle
     pub fn new(name: String, db: Arc<RwLock<DB>>) -> Self {
-        Self { name, db }
+        // Load cached count from disk, or calculate if not present
+        let count = {
+            let db_guard = db.read().unwrap();
+            if let Some(cf) = db_guard.cf_handle(&name) {
+                match db_guard.get_cf(cf, STATS_COUNT_KEY.as_bytes()) {
+                    Ok(Some(bytes)) => {
+                        String::from_utf8_lossy(&bytes)
+                            .parse::<usize>()
+                            .unwrap_or(0)
+                    }
+                    _ => {
+                        // No cached count - calculate from documents
+                        let prefix = DOC_PREFIX.as_bytes();
+                        db_guard.prefix_iterator_cf(cf, prefix)
+                            .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                            .count()
+                    }
+                }
+            } else {
+                0
+            }
+        };
+
+        Self {
+            name,
+            db,
+            doc_count: Arc::new(AtomicUsize::new(count)),
+            count_dirty: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Build a document key
@@ -93,7 +178,173 @@ impl Collection {
     // ==================== Document Operations ====================
 
     /// Insert a document into the collection
-    pub fn insert(&self, mut data: Value) -> DbResult<Document> {
+    pub fn insert(&self, data: Value) -> DbResult<Document> {
+        self.insert_internal(data, true)
+    }
+
+    /// Insert a document without updating indexes (for bulk imports)
+    /// Call rebuild_all_indexes() after bulk import is complete
+    pub fn insert_no_index(&self, data: Value) -> DbResult<Document> {
+        self.insert_internal(data, false)
+    }
+
+    /// Batch insert multiple documents without indexes (fastest for bulk imports)
+    /// Uses RocksDB WriteBatch for optimal performance
+    /// Returns the list of inserted documents for subsequent indexing
+    pub fn insert_batch(&self, documents: Vec<Value>) -> DbResult<Vec<Document>> {
+        use rocksdb::WriteBatch;
+
+        let total_docs = documents.len();
+        let prep_start = std::time::Instant::now();
+
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+
+        let mut batch = WriteBatch::default();
+        let mut inserted_docs = Vec::with_capacity(total_docs);
+
+        for mut data in documents {
+            // Extract or generate key
+            let key = if let Some(obj) = data.as_object_mut() {
+                if let Some(key_value) = obj.remove("_key") {
+                    if let Some(key_str) = key_value.as_str() {
+                        key_str.to_string()
+                    } else {
+                        continue; // Skip invalid documents
+                    }
+                } else {
+                    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+                }
+            } else {
+                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+            };
+
+            let doc = Document::with_key(&self.name, key.clone(), data);
+            if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
+                batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+                inserted_docs.push(doc);
+            }
+        }
+
+        let count = inserted_docs.len();
+        let prep_time = prep_start.elapsed();
+        tracing::info!("insert_batch: Prepared {} docs in {:?}", count, prep_time);
+
+        // Write all documents in one batch operation
+        let write_start = std::time::Instant::now();
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
+        let write_time = write_start.elapsed();
+        tracing::info!("insert_batch: RocksDB write took {:?}", write_time);
+
+        // Update document count
+        self.doc_count.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+        self.count_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        Ok(inserted_docs)
+    }
+
+    /// Index only the provided documents (for incremental indexing after batch insert)
+    pub fn index_documents(&self, docs: &[Document]) -> DbResult<usize> {
+        use rocksdb::WriteBatch;
+
+        let total_start = std::time::Instant::now();
+
+        let indexes = self.get_all_indexes();
+        let geo_indexes = self.get_all_geo_indexes();
+        let ft_indexes = self.get_all_fulltext_indexes();
+
+        tracing::info!(
+            "index_documents: Indexing {} docs with {} regular, {} geo, {} fulltext indexes",
+            docs.len(), indexes.len(), geo_indexes.len(), ft_indexes.len()
+        );
+
+        if indexes.is_empty() && geo_indexes.is_empty() && ft_indexes.is_empty() {
+            return Ok(0);
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+
+        // Build regular indexes
+        if !indexes.is_empty() {
+            let idx_start = std::time::Instant::now();
+            let mut batch = WriteBatch::default();
+
+            for doc in docs {
+                let doc_value = doc.to_value();
+                for index in &indexes {
+                    let field_value = extract_field_value(&doc_value, &index.field);
+                    if !field_value.is_null() {
+                        let entry_key = Self::idx_entry_key(&index.name, &field_value, &doc.key);
+                        batch.put_cf(cf, entry_key, doc.key.as_bytes());
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("index_documents: Regular indexes took {:?}", idx_start.elapsed());
+        }
+
+        // Build geo indexes
+        if !geo_indexes.is_empty() {
+            let geo_start = std::time::Instant::now();
+            let mut batch = WriteBatch::default();
+
+            for doc in docs {
+                let doc_value = doc.to_value();
+                for geo_index in &geo_indexes {
+                    let field_value = extract_field_value(&doc_value, &geo_index.field);
+                    if !field_value.is_null() {
+                        let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
+                        if let Ok(geo_data) = serde_json::to_vec(&field_value) {
+                            batch.put_cf(cf, entry_key, &geo_data);
+                        }
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("index_documents: Geo indexes took {:?}", geo_start.elapsed());
+        }
+
+        // Build fulltext indexes
+        if !ft_indexes.is_empty() {
+            let ft_start = std::time::Instant::now();
+            let mut batch = WriteBatch::default();
+
+            for doc in docs {
+                let doc_value = doc.to_value();
+                for ft_index in &ft_indexes {
+                    let field_value = extract_field_value(&doc_value, &ft_index.field);
+                    if let Some(text) = field_value.as_str() {
+                        let terms = tokenize(text);
+                        for term in &terms {
+                            if term.len() >= ft_index.min_length {
+                                let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                batch.put_cf(cf, term_key, doc.key.as_bytes());
+                            }
+                        }
+
+                        let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                        for ngram in &ngrams {
+                            let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
+                            batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                        }
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("index_documents: Fulltext indexes took {:?}", ft_start.elapsed());
+        }
+
+        tracing::info!("index_documents: Total time {:?}", total_start.elapsed());
+        Ok(docs.len())
+    }
+
+    /// Internal insert implementation
+    fn insert_internal(&self, mut data: Value, update_indexes: bool) -> DbResult<Document> {
         // Extract or generate key
         let key = if let Some(obj) = data.as_object_mut() {
             if let Some(key_value) = obj.remove("_key") {
@@ -110,10 +361,15 @@ impl Collection {
         };
 
         let doc = Document::with_key(&self.name, key.clone(), data);
-        let doc_bytes = serde_json::to_vec(&doc)?;
         let doc_value = doc.to_value();
 
+        // Check unique constraints BEFORE saving the document (only if indexes are enabled)
+        if update_indexes {
+            self.check_unique_constraints(&key, &doc_value)?;
+        }
+
         // Store document
+        let doc_bytes = serde_json::to_vec(&doc)?;
         {
             let db = self.db.read().unwrap();
             let cf = db.cf_handle(&self.name).expect("Column family should exist");
@@ -121,11 +377,14 @@ impl Collection {
                 .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
         }
 
-        // Update indexes
-        self.update_indexes_on_insert(&key, &doc_value)?;
+        // Update indexes (if enabled)
+        if update_indexes {
+            self.update_indexes_on_insert(&key, &doc_value)?;
+            self.update_fulltext_on_insert(&key, &doc_value)?;
+        }
 
-        // Update fulltext indexes
-        self.update_fulltext_on_insert(&key, &doc_value)?;
+        // Update document count
+        self.increment_count();
 
         Ok(doc)
     }
@@ -180,6 +439,46 @@ impl Collection {
         Ok(doc)
     }
 
+    /// Update a document with revision check (optimistic concurrency control)
+    /// Returns error if the current revision doesn't match expected_rev
+    pub fn update_with_rev(&self, key: &str, expected_rev: &str, data: Value) -> DbResult<Document> {
+        // Get old document for index updates
+        let old_doc = self.get(key)?;
+
+        // Check revision matches
+        if old_doc.revision() != expected_rev {
+            return Err(DbError::ConflictError(format!(
+                "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
+                key, expected_rev, old_doc.revision()
+            )));
+        }
+
+        let old_value = old_doc.to_value();
+
+        // Create updated document
+        let mut doc = old_doc;
+        doc.update(data);
+        let new_value = doc.to_value();
+        let doc_bytes = serde_json::to_vec(&doc)?;
+
+        // Store updated document
+        {
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            db.put_cf(cf, Self::doc_key(key), &doc_bytes)
+                .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+        }
+
+        // Update indexes
+        self.update_indexes_on_update(key, &old_value, &new_value)?;
+
+        // Update fulltext indexes (delete old, insert new)
+        self.update_fulltext_on_delete(key, &old_value)?;
+        self.update_fulltext_on_insert(key, &new_value)?;
+
+        Ok(doc)
+    }
+
     /// Delete a document
     pub fn delete(&self, key: &str) -> DbResult<()> {
         // Get document for index cleanup
@@ -199,6 +498,9 @@ impl Collection {
 
         // Update fulltext indexes
         self.update_fulltext_on_delete(key, &doc_value)?;
+
+        // Update document count
+        self.decrement_count();
 
         Ok(())
     }
@@ -235,19 +537,155 @@ impl Collection {
 
     /// Get the number of documents
     pub fn count(&self) -> usize {
-        self.all().len()
+        // Fast atomic read - no disk I/O
+        self.doc_count.load(Ordering::Relaxed)
+    }
+
+    /// Increment document count (called on insert) - atomic, no disk I/O
+    fn increment_count(&self) {
+        self.doc_count.fetch_add(1, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+    }
+
+    /// Decrement document count (called on delete) - atomic, no disk I/O
+    fn decrement_count(&self) {
+        self.doc_count.fetch_sub(1, Ordering::Relaxed);
+        self.count_dirty.store(true, Ordering::Relaxed);
+    }
+
+    /// Flush count to disk if dirty (call periodically or on shutdown)
+    pub fn flush_stats(&self) {
+        if self.count_dirty.swap(false, Ordering::Relaxed) {
+            let count = self.doc_count.load(Ordering::Relaxed);
+            let db = self.db.read().unwrap();
+            if let Some(cf) = db.cf_handle(&self.name) {
+                let _ = db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
+            }
+        }
+    }
+
+    /// Compact the collection to remove tombstones and reclaim space
+    /// This is useful after bulk deletes or truncation
+    pub fn compact(&self) {
+        let db = self.db.read().unwrap();
+        if let Some(cf) = db.cf_handle(&self.name) {
+            db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+        }
+    }
+
+    /// Recalculate and store document count (used for repair)
+    pub fn recalculate_count(&self) -> usize {
+        let db = self.db.read().unwrap();
+        let cf = match db.cf_handle(&self.name) {
+            Some(cf) => cf,
+            None => return 0,
+        };
+
+        // Count document keys
+        let prefix = DOC_PREFIX.as_bytes();
+        let count = db.prefix_iterator_cf(cf, prefix)
+            .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+            .count();
+
+        // Update atomic counter and persist
+        self.doc_count.store(count, Ordering::Relaxed);
+        let _ = db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
+        self.count_dirty.store(false, Ordering::Relaxed);
+        count
+    }
+
+    /// Get disk usage statistics for this collection
+    pub fn disk_usage(&self) -> DiskUsage {
+        let db = self.db.read().unwrap();
+        let cf = match db.cf_handle(&self.name) {
+            Some(cf) => cf,
+            None => return DiskUsage {
+                sst_files_size: 0,
+                live_data_size: 0,
+                num_sst_files: 0,
+                memtable_size: 0,
+            },
+        };
+
+        // Get SST files size
+        let sst_files_size = db
+            .property_int_value_cf(cf, "rocksdb.total-sst-files-size")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+
+        // Get estimated live data size
+        let live_data_size = db
+            .property_int_value_cf(cf, "rocksdb.estimate-live-data-size")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+
+        // Get number of SST files at all levels
+        let num_sst_files = db
+            .property_int_value_cf(cf, "rocksdb.num-files-at-level0")
+            .ok()
+            .flatten()
+            .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level1")
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level2")
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level3")
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level4")
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level5")
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+            + db.property_int_value_cf(cf, "rocksdb.num-files-at-level6")
+                .ok()
+                .flatten()
+                .unwrap_or(0);
+
+        // Get memtable size
+        let memtable_size = db
+            .property_int_value_cf(cf, "rocksdb.cur-size-all-mem-tables")
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+
+        DiskUsage {
+            sst_files_size,
+            live_data_size,
+            num_sst_files,
+            memtable_size,
+        }
+    }
+
+    /// Get full collection statistics
+    pub fn stats(&self) -> CollectionStats {
+        CollectionStats {
+            name: self.name.clone(),
+            document_count: self.count(),
+            disk_usage: self.disk_usage(),
+        }
     }
 
     /// Truncate collection - remove all documents but keep indexes
     pub fn truncate(&self) -> DbResult<usize> {
         let mut db = self.db.write().unwrap();
         let cf = db.cf_handle(&self.name).expect("Column family should exist");
-        
+
         // Collect all document keys
         let prefix = DOC_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, prefix);
         let mut keys_to_delete = Vec::new();
-        
+
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(prefix) {
@@ -255,20 +693,20 @@ impl Collection {
                 }
             }
         }
-        
+
         let count = keys_to_delete.len();
-        
+
         // Delete all documents
         for key in keys_to_delete {
             db.delete_cf(cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
         // Clear all index entries (but keep index metadata)
         let idx_prefix = IDX_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, idx_prefix);
         let mut idx_keys_to_delete = Vec::new();
-        
+
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(idx_prefix) {
@@ -276,17 +714,17 @@ impl Collection {
                 }
             }
         }
-        
+
         for key in idx_keys_to_delete {
             db.delete_cf(cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
         // Clear fulltext index entries (but keep metadata)
         let ft_prefix = FT_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, ft_prefix);
         let mut ft_keys_to_delete = Vec::new();
-        
+
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(ft_prefix) {
@@ -294,17 +732,17 @@ impl Collection {
                 }
             }
         }
-        
+
         for key in ft_keys_to_delete {
             db.delete_cf(cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
         // Clear fulltext term entries
         let ft_term_prefix = FT_TERM_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, ft_term_prefix);
         let mut ft_term_keys_to_delete = Vec::new();
-        
+
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(ft_term_prefix) {
@@ -312,17 +750,17 @@ impl Collection {
                 }
             }
         }
-        
+
         for key in ft_term_keys_to_delete {
             db.delete_cf(cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
         // Clear geo index entries (but keep metadata)
         let geo_prefix = GEO_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, geo_prefix);
         let mut geo_keys_to_delete = Vec::new();
-        
+
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(geo_prefix) {
@@ -330,12 +768,23 @@ impl Collection {
                 }
             }
         }
-        
+
         for key in geo_keys_to_delete {
             db.delete_cf(cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
-        
+
+        // Reset document count to 0 (both in-memory and on disk)
+        self.doc_count.store(0, Ordering::Relaxed);
+        self.count_dirty.store(false, Ordering::Relaxed);
+        db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), "0".as_bytes())
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+
+        // Compact the column family to remove tombstones
+        // This is important for performance - without compaction, iterators
+        // still have to scan through all deleted keys (tombstones)
+        db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+
         Ok(count)
     }
 
@@ -368,6 +817,39 @@ impl Collection {
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Check unique constraints before inserting/updating a document
+    fn check_unique_constraints(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
+        let indexes = self.get_all_indexes();
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+
+        for index in indexes {
+            if index.unique {
+                let field_value = extract_field_value(doc_value, &index.field);
+                if !field_value.is_null() {
+                    let value_str = serde_json::to_string(&field_value).unwrap_or_default();
+                    let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
+                    let mut iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+
+                    // Check if any OTHER document already has this value
+                    if let Some(Ok((key, value))) = iter.next() {
+                        if key.starts_with(prefix.as_bytes()) {
+                            let existing_key = String::from_utf8_lossy(&value);
+                            // Allow update of the same document
+                            if existing_key != doc_key {
+                                return Err(DbError::InvalidDocument(format!(
+                                    "Unique constraint violated: field '{}' with value {} already exists in index '{}'",
+                                    index.field, value_str, index.name
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Update indexes on document insert
@@ -565,6 +1047,185 @@ impl Collection {
             .collect()
     }
 
+    /// Rebuild all indexes from existing documents
+    /// Call this after bulk imports using insert_no_index()
+    pub fn rebuild_all_indexes(&self) -> DbResult<usize> {
+        use rocksdb::WriteBatch;
+
+        let total_start = std::time::Instant::now();
+
+        let indexes = self.get_all_indexes();
+        let geo_indexes = self.get_all_geo_indexes();
+        let ft_indexes = self.get_all_fulltext_indexes();
+
+        tracing::info!(
+            "rebuild_all_indexes: {} regular, {} geo, {} fulltext indexes",
+            indexes.len(), geo_indexes.len(), ft_indexes.len()
+        );
+
+        if indexes.is_empty() && geo_indexes.is_empty() && ft_indexes.is_empty() {
+            return Ok(0);
+        }
+
+        // Clear existing index entries using WriteBatch
+        let clear_start = std::time::Instant::now();
+        {
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let mut batch = WriteBatch::default();
+
+            // Clear regular indexes
+            for index in &indexes {
+                let prefix = format!("{}{}:", IDX_PREFIX, index.name);
+                let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+                for result in iter {
+                    if let Ok((key, _)) = result {
+                        if key.starts_with(prefix.as_bytes()) {
+                            batch.delete_cf(cf, &key);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Clear geo indexes
+            for geo_index in &geo_indexes {
+                let prefix = format!("{}{}:", GEO_PREFIX, geo_index.name);
+                let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+                for result in iter {
+                    if let Ok((key, _)) = result {
+                        if key.starts_with(prefix.as_bytes()) {
+                            batch.delete_cf(cf, &key);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Clear fulltext indexes
+            for ft_index in &ft_indexes {
+                let ngram_prefix = format!("{}{}:", FT_PREFIX, ft_index.name);
+                let iter = db.prefix_iterator_cf(cf, ngram_prefix.as_bytes());
+                for result in iter {
+                    if let Ok((key, _)) = result {
+                        if key.starts_with(ngram_prefix.as_bytes()) {
+                            batch.delete_cf(cf, &key);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                let term_prefix = format!("{}{}:", FT_TERM_PREFIX, ft_index.name);
+                let iter = db.prefix_iterator_cf(cf, term_prefix.as_bytes());
+                for result in iter {
+                    if let Ok((key, _)) = result {
+                        if key.starts_with(term_prefix.as_bytes()) {
+                            batch.delete_cf(cf, &key);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+        }
+        tracing::info!("rebuild_all_indexes: Clear phase took {:?}", clear_start.elapsed());
+
+        // Load all documents
+        let load_start = std::time::Instant::now();
+        let docs = self.all();
+        let doc_count = docs.len();
+        tracing::info!("rebuild_all_indexes: Loaded {} docs in {:?}", doc_count, load_start.elapsed());
+
+        // Rebuild regular indexes using WriteBatch
+        if !indexes.is_empty() {
+            let idx_start = std::time::Instant::now();
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let mut batch = WriteBatch::default();
+
+            for doc in &docs {
+                let doc_value = doc.to_value();
+                for index in &indexes {
+                    let field_value = extract_field_value(&doc_value, &index.field);
+                    if !field_value.is_null() {
+                        let entry_key = Self::idx_entry_key(&index.name, &field_value, &doc.key);
+                        batch.put_cf(cf, entry_key, doc.key.as_bytes());
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("rebuild_all_indexes: Regular indexes took {:?}", idx_start.elapsed());
+        }
+
+        // Rebuild geo indexes using WriteBatch
+        if !geo_indexes.is_empty() {
+            let geo_start = std::time::Instant::now();
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let mut batch = WriteBatch::default();
+
+            for doc in &docs {
+                let doc_value = doc.to_value();
+                for geo_index in &geo_indexes {
+                    let field_value = extract_field_value(&doc_value, &geo_index.field);
+                    if !field_value.is_null() {
+                        let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
+                        if let Ok(geo_data) = serde_json::to_vec(&field_value) {
+                            batch.put_cf(cf, entry_key, &geo_data);
+                        }
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("rebuild_all_indexes: Geo indexes took {:?}", geo_start.elapsed());
+        }
+
+        // Rebuild fulltext indexes (this is the slow part - n-gram generation)
+        if !ft_indexes.is_empty() {
+            let ft_start = std::time::Instant::now();
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let mut batch = WriteBatch::default();
+
+            for doc in &docs {
+                let doc_value = doc.to_value();
+                for ft_index in &ft_indexes {
+                    let field_value = extract_field_value(&doc_value, &ft_index.field);
+                    if let Some(text) = field_value.as_str() {
+                        // Index terms
+                        let terms = tokenize(text);
+                        for term in &terms {
+                            if term.len() >= ft_index.min_length {
+                                let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                batch.put_cf(cf, term_key, doc.key.as_bytes());
+                            }
+                        }
+
+                        // Index n-grams
+                        let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                        for ngram in &ngrams {
+                            let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
+                            batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                        }
+                    }
+                }
+            }
+
+            let _ = db.write(batch);
+            tracing::info!("rebuild_all_indexes: Fulltext indexes took {:?}", ft_start.elapsed());
+        }
+
+        tracing::info!("rebuild_all_indexes: Total time {:?}", total_start.elapsed());
+        Ok(doc_count)
+    }
+
     /// Get index statistics
     fn get_index_stats(&self, name: &str) -> Option<IndexStats> {
         let index = self.get_index(name)?;
@@ -591,29 +1252,105 @@ impl Collection {
 
     /// Get an index for a field
     pub fn get_index_for_field(&self, field: &str) -> Option<Index> {
-        self.get_all_indexes()
-            .into_iter()
-            .find(|idx| idx.field == field)
+        // Direct lookup using field-to-index mapping key
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+
+        // Try to find index by checking idx_meta entries
+        // Use a more targeted approach - look for index with matching field
+        let prefix = IDX_META_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
+
+        for result in iter {
+            if let Ok((key, value)) = result {
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                if let Ok(index) = serde_json::from_slice::<Index>(&value) {
+                    if index.field == field {
+                        return Some(index);
+                    }
+                }
+            }
+        }
+        None
     }
 
-    /// Lookup documents using index (equality)
+    /// Lookup documents using index (equality) - optimized version
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
+        let value_str = serde_json::to_string(value).ok()?;
 
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
 
-        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, serde_json::to_string(value).ok()?);
+        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
-        let keys: Vec<String> = iter
+        // Collect document keys from index
+        let doc_keys: Vec<Vec<u8>> = iter
             .filter_map(|r| r.ok())
-            .filter(|(k, _)| k.starts_with(prefix.as_bytes()))
-            .filter_map(|(_, v)| String::from_utf8(v.to_vec()).ok())
+            .take_while(|(k, _)| k.starts_with(prefix.as_bytes()))
+            .map(|(_, v)| {
+                // Build the document key directly
+                let key_str = String::from_utf8_lossy(&v);
+                Self::doc_key(&key_str)
+            })
             .collect();
-        drop(db);
 
-        Some(self.get_many(&keys))
+        if doc_keys.is_empty() {
+            return Some(Vec::new());
+        }
+
+        // Use multi_get for batch retrieval (much faster than individual gets)
+        let results = db.multi_get_cf(doc_keys.iter().map(|k| (cf, k.as_slice())));
+
+        let docs: Vec<Document> = results
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|opt| opt)
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect();
+
+        Some(docs)
+    }
+
+    /// Lookup documents using index (equality) with limit - for high-cardinality fields
+    pub fn index_lookup_eq_limit(&self, field: &str, value: &Value, limit: usize) -> Option<Vec<Document>> {
+        let index = self.get_index_for_field(field)?;
+        let value_str = serde_json::to_string(value).ok()?;
+
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+
+        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
+        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+
+        // Collect document keys from index (limited)
+        let doc_keys: Vec<Vec<u8>> = iter
+            .filter_map(|r| r.ok())
+            .take_while(|(k, _)| k.starts_with(prefix.as_bytes()))
+            .take(limit) // Apply limit early
+            .map(|(_, v)| {
+                let key_str = String::from_utf8_lossy(&v);
+                Self::doc_key(&key_str)
+            })
+            .collect();
+
+        if doc_keys.is_empty() {
+            return Some(Vec::new());
+        }
+
+        let results = db.multi_get_cf(doc_keys.iter().map(|k| (cf, k.as_slice())));
+
+        let docs: Vec<Document> = results
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|opt| opt)
+            .filter_map(|bytes| serde_json::from_slice(&bytes).ok())
+            .collect();
+
+        Some(docs)
     }
 
     /// Lookup documents using index (greater than)
@@ -637,9 +1374,66 @@ impl Collection {
         None
     }
 
-    /// Get documents sorted by indexed field
-    pub fn index_sorted(&self, _field: &str, _ascending: bool) -> Option<Vec<Document>> {
-        None
+    /// Get documents sorted by indexed field with optional limit
+    /// Returns documents in sorted order by the indexed field
+    pub fn index_sorted(&self, field: &str, ascending: bool, limit: Option<usize>) -> Option<Vec<Document>> {
+        let index = self.get_index_for_field(field)?;
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+
+        let prefix = format!("{}{}:", IDX_PREFIX, index.name);
+
+        // Collect all (value, doc_key) pairs from the index
+        let mut entries: Vec<(Value, String)> = Vec::new();
+        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+
+        for item in iter {
+            if let Ok((k, v)) = item {
+                if !k.starts_with(prefix.as_bytes()) {
+                    break;
+                }
+                // Parse the index entry key to extract value and doc_key
+                let key_str = String::from_utf8_lossy(&k);
+                let suffix = &key_str[prefix.len()..];
+                // Format is: value_json:doc_key
+                // We need to find the last colon to split correctly
+                if let Some(last_colon) = suffix.rfind(':') {
+                    let value_str = &suffix[..last_colon];
+                    if let Ok(value) = serde_json::from_str::<Value>(value_str) {
+                        let doc_key = String::from_utf8_lossy(&v).to_string();
+                        entries.push((value, doc_key));
+                    }
+                }
+            }
+        }
+        drop(db);
+
+        // Sort entries by value
+        entries.sort_by(|(a, _), (b, _)| {
+            let cmp = compare_json_values(a, b);
+            if ascending { cmp } else { cmp.reverse() }
+        });
+
+        // Apply limit
+        let entries: Vec<String> = if let Some(limit) = limit {
+            entries.into_iter().take(limit).map(|(_, k)| k).collect()
+        } else {
+            entries.into_iter().map(|(_, k)| k).collect()
+        };
+
+        // Fetch documents in order
+        let docs = self.get_many(&entries);
+
+        // Preserve order from index
+        let mut result: Vec<Document> = Vec::with_capacity(entries.len());
+        let doc_map: std::collections::HashMap<_, _> = docs.into_iter().map(|d| (d.key.clone(), d)).collect();
+        for key in entries {
+            if let Some(doc) = doc_map.get(&key) {
+                result.push(doc.clone());
+            }
+        }
+
+        Some(result)
     }
 
     // ==================== Geo Index Operations ====================

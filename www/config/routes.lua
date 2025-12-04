@@ -7,12 +7,16 @@ Routes = { ["GET"] = {
       ["@"] = "docs#index"
     },
     ["dashboard"] = {
-      ["@"] = "dashboard#index",
-      ["collections"] = { ["@"] = "dashboard#collections" },
-      ["query"] = { ["@"] = "dashboard#query" }
+      ["@"] = "dashboard#index"
     }
   }
 }
+CustomRoute("GET", "/database/:db/query", "dashboard#query")
+CustomRoute("GET", "/database/:db/collections", "dashboard#collections")
+CustomRoute("GET", "/database/:db/collection/:collection/indexes", "dashboard#indexes")
+CustomRoute("GET", "/database/:db/collection/:collection/documents", "dashboard#documents")
+Logger(Routes)
+CustomRoute("GET", "/database/:db/databases", "dashboard#databases")
 
 -- docs pages
 CustomRoute("GET", "/docs/:page", "docs#show")
@@ -22,6 +26,7 @@ CustomRoute("GET", "/o/:uuid/:format", "uploads#original_image")
 CustomRoute("GET", "/r/:uuid/:width/:format", "uploads#resized_image_x", { [":width"] = "([0-9]+)" })
 CustomRoute("GET", "/xy/:uuid/:width/:height/:format", "uploads#resized_image_x_y", { [":width"] = "([0-9]+)", [":height"] = "([0-9]+)" })
 
+Logger(Routes)
 -- CustomRoute("GET", "demo/with/:id/nested/:demo/route", "welcome#ban", {
 --  [":demo"] = "([0-9]+)" -- you can define regex per params
 -- })

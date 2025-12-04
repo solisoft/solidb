@@ -4,7 +4,12 @@
   "description": "A tiny [redbean](https://redbean.dev/) MVC Lua framework",
   "author": "",
   "license": "MIT",
+  "scripts": {
+    "build:riot": "riot app/components --output public/app/components --ext js"
+  },
   "dependencies": {
+    "@riotjs/cli": "^6.1.4",
+    "@riotjs/compiler": "^9.5.1",
     "@tailwindcss/cli": "^4.1.13"
   }
 }

@@ -140,24 +140,23 @@ local function assignRoute(method, name, options, value)
 		for i = 1, #path do
 			local v = path[i]
 			if v:sub(1, 1) == ":" then
-				current[":var"] = {
-					[":name"] = v:sub(2),
-					[":regex"] = options[v] or "([0-9a-zA-Z_\\-]+)",
-				}
+				current[":var"] = current[":var"] or {}
+				current[":var"][":name"] = v:sub(2)
+				current[":var"][":regex"] = options[v] or "([0-9a-zA-Z_\\-]+)"
 				if i == #path then
-					current[":var"][""] = value
+					current[":var"][""] = { ["@"] = value }
 				end
 				current = current[":var"]
 			else
 				current[v] = current[v] or {}
 				if i == #path then
-					current[v] = value
+					current[v] = { ["@"] = value }
 				end
 				current = current[v]
 			end
 		end
 	else
-		current[""] = value
+		current[""] = { ["@"] = value }
 	end
 end
 
@@ -308,6 +307,9 @@ function DefineRoute(path, method)
 	end
 
 	if recognized_route ~= nil then
+		if type(recognized_route) == "table" then
+			recognized_route = recognized_route["@"]
+		end
 		recognized_route = string.split(recognized_route, "#")
 		Params = table.merge(Params, { controller = recognized_route[1], action = recognized_route[2] })
 	end

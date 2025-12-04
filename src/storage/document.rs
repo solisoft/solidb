@@ -14,6 +14,10 @@ pub struct Document {
     #[serde(rename = "_id")]
     pub id: String,
 
+    /// Revision for optimistic concurrency control
+    #[serde(rename = "_rev")]
+    pub rev: String,
+
     /// Creation timestamp
     #[serde(rename = "_created_at")]
     pub created_at: DateTime<Utc>,
@@ -28,6 +32,11 @@ pub struct Document {
 }
 
 impl Document {
+    /// Generate a new revision ID
+    fn generate_rev() -> String {
+        Uuid::new_v4().to_string()
+    }
+
     /// Create a new document with auto-generated key
     pub fn new(collection_name: &str, data: Value) -> Self {
         let key = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
@@ -37,6 +46,7 @@ impl Document {
         Self {
             key,
             id,
+            rev: Self::generate_rev(),
             created_at: now,
             updated_at: now,
             data,
@@ -51,6 +61,7 @@ impl Document {
         Self {
             key,
             id,
+            rev: Self::generate_rev(),
             created_at: now,
             updated_at: now,
             data,
@@ -58,6 +69,7 @@ impl Document {
     }
 
     /// Update the document data (merges with existing data)
+    /// Generates a new revision on every update
     pub fn update(&mut self, data: Value) {
         // Merge new data with existing data
         if let (Some(existing), Some(new)) = (self.data.as_object_mut(), data.as_object()) {
@@ -68,7 +80,13 @@ impl Document {
             // If not objects, replace entirely
             self.data = data;
         }
+        self.rev = Self::generate_rev();
         self.updated_at = Utc::now();
+    }
+
+    /// Get the current revision
+    pub fn revision(&self) -> &str {
+        &self.rev
     }
 
     /// Get a field from the document
@@ -77,6 +95,7 @@ impl Document {
         match field {
             "_key" => Some(Value::String(self.key.clone())),
             "_id" => Some(Value::String(self.id.clone())),
+            "_rev" => Some(Value::String(self.rev.clone())),
             _ => self.data.get(field).cloned(),
         }
     }

@@ -421,3 +421,116 @@ fn test_geo_within() {
     assert_eq!(places[0].0.key, "eiffel");
 }
 
+// ==================== Revision Tests ====================
+
+#[test]
+fn test_document_has_revision() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    let doc = collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+    })).unwrap();
+
+    // Document should have a _rev field
+    let value = doc.to_value();
+    assert!(value.get("_rev").is_some());
+    assert!(value["_rev"].is_string());
+    assert!(!value["_rev"].as_str().unwrap().is_empty());
+}
+
+#[test]
+fn test_revision_changes_on_update() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    // Insert document
+    let doc = collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+    })).unwrap();
+    let original_rev = doc.revision().to_string();
+
+    // Update document
+    let updated_doc = collection.update("alice", json!({
+        "name": "Alice Updated"
+    })).unwrap();
+    let new_rev = updated_doc.revision().to_string();
+
+    // Revision should change
+    assert_ne!(original_rev, new_rev);
+}
+
+#[test]
+fn test_update_with_rev_success() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    // Insert document
+    let doc = collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+    })).unwrap();
+    let current_rev = doc.revision().to_string();
+
+    // Update with correct revision should succeed
+    let result = collection.update_with_rev("alice", &current_rev, json!({
+        "name": "Alice Updated"
+    }));
+
+    assert!(result.is_ok());
+    let updated = result.unwrap();
+    assert_eq!(updated.to_value()["name"], json!("Alice Updated"));
+}
+
+#[test]
+fn test_update_with_rev_conflict() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    // Insert document
+    let doc = collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+    })).unwrap();
+    let original_rev = doc.revision().to_string();
+
+    // Simulate another update (changes revision)
+    collection.update("alice", json!({
+        "status": "active"
+    })).unwrap();
+
+    // Try to update with old revision - should fail
+    let result = collection.update_with_rev("alice", &original_rev, json!({
+        "name": "Alice Conflict"
+    }));
+
+    assert!(result.is_err());
+    assert!(matches!(result, Err(DbError::ConflictError(_))));
+}
+
+#[test]
+fn test_revision_accessible_via_get() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("users".to_string()).unwrap();
+    let collection = storage.get_collection("users").unwrap();
+
+    // Insert document
+    collection.insert(json!({
+        "_key": "alice",
+        "name": "Alice"
+    })).unwrap();
+
+    // Get document and check _rev is accessible
+    let doc = collection.get("alice").unwrap();
+    let rev = doc.get("_rev");
+
+    assert!(rev.is_some());
+    assert!(rev.unwrap().is_string());
+}
+

@@ -11,6 +11,18 @@ local app = {
 
   query = function()
     Page("dashboard/query", "app")
+  end,
+
+  databases = function()
+    Page("dashboard/databases", "app")
+  end,
+
+  indexes = function()
+    Page("dashboard/indexes", "app")
+  end,
+
+  documents = function()
+    Page("dashboard/documents", "app")
   end
 }
 

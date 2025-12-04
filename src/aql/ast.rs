@@ -11,7 +11,8 @@ pub struct Query {
     pub filter_clauses: Vec<FilterClause>,
     pub sort_clause: Option<SortClause>,
     pub limit_clause: Option<LimitClause>,
-    pub return_clause: ReturnClause,
+    /// RETURN clause is optional - queries with only mutations (INSERT/UPDATE/REMOVE) don't need it
+    pub return_clause: Option<ReturnClause>,
     /// Ordered body clauses (FOR, LET, FILTER) preserving declaration order
     /// This enables correlated subqueries where LET can reference outer FOR variables
     pub body_clauses: Vec<BodyClause>,
@@ -23,6 +24,9 @@ pub enum BodyClause {
     For(ForClause),
     Let(LetClause),
     Filter(FilterClause),
+    Insert(InsertClause),
+    Update(UpdateClause),
+    Remove(RemoveClause),
 }
 
 /// LET variable = expression (can be a subquery)
@@ -39,12 +43,41 @@ pub struct ForClause {
     pub collection: String,
     /// Optional: iterate over a variable (e.g., FOR x IN someLetVar)
     pub source_variable: Option<String>,
+    /// Optional: iterate over an expression (e.g., FOR i IN 1..5)
+    pub source_expression: Option<Expression>,
 }
 
 /// FILTER expression
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterClause {
     pub expression: Expression,
+}
+
+/// INSERT document INTO collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct InsertClause {
+    pub document: Expression,
+    pub collection: String,
+}
+
+/// UPDATE document WITH changes IN collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateClause {
+    /// The document or key to update (usually a variable like `doc` or `doc._key`)
+    pub selector: Expression,
+    /// The changes to apply (object expression)
+    pub changes: Expression,
+    /// The collection to update in
+    pub collection: String,
+}
+
+/// REMOVE document IN collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoveClause {
+    /// The document or key to remove (usually a variable like `doc` or `doc._key`)
+    pub selector: Expression,
+    /// The collection to remove from
+    pub collection: String,
 }
 
 /// SORT field [ASC|DESC]
@@ -106,6 +139,9 @@ pub enum Expression {
 
     /// Array construction
     Array(Vec<Expression>),
+
+    /// Range expression (e.g., 1..5 produces [1, 2, 3, 4, 5])
+    Range(Box<Expression>, Box<Expression>),
 
     /// Function call (e.g., DISTANCE(lat1, lon1, lat2, lon2))
     FunctionCall {

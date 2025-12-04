@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use rocksdb::DB;
 
@@ -11,6 +12,8 @@ pub struct Database {
     pub name: String,
     /// RocksDB instance
     db: Arc<RwLock<DB>>,
+    /// Cached collection handles
+    collections: Arc<RwLock<HashMap<String, Collection>>>,
 }
 
 impl std::fmt::Debug for Database {
@@ -24,14 +27,18 @@ impl std::fmt::Debug for Database {
 impl Database {
     /// Create a new database handle
     pub fn new(name: String, db: Arc<RwLock<DB>>) -> Self {
-        Self { name, db }
+        Self {
+            name,
+            db,
+            collections: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Create a new collection in this database
     pub fn create_collection(&self, collection_name: String) -> DbResult<()> {
         let cf_name = self.collection_cf_name(&collection_name);
         let mut db = self.db.write().unwrap();
-        
+
         // Check if collection already exists
         if db.cf_handle(&cf_name).is_some() {
             return Err(DbError::CollectionAlreadyExists(collection_name));
@@ -58,6 +65,12 @@ impl Database {
         db.drop_cf(&cf_name)
             .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {}", e)))?;
 
+        // Remove from cache
+        {
+            let mut cache = self.collections.write().unwrap();
+            cache.remove(collection_name);
+        }
+
         Ok(())
     }
 
@@ -65,7 +78,7 @@ impl Database {
     pub fn list_collections(&self) -> Vec<String> {
         let db = self.db.read().unwrap();
         let prefix = format!("{}:", self.name);
-        
+
         // Iterate through all column families
         let mut collections = Vec::new();
         for cf_name in DB::list_cf(&rocksdb::Options::default(), db.path()).unwrap_or_default() {
@@ -78,17 +91,34 @@ impl Database {
         collections
     }
 
-    /// Get a collection handle
+    /// Get a collection handle (cached for consistent atomic counters)
     pub fn get_collection(&self, collection_name: &str) -> DbResult<Collection> {
-        let cf_name = self.collection_cf_name(collection_name);
-        let db = self.db.read().unwrap();
-
-        // Check if collection exists
-        if db.cf_handle(&cf_name).is_none() {
-            return Err(DbError::CollectionNotFound(collection_name.to_string()));
+        // Check cache first
+        {
+            let cache = self.collections.read().unwrap();
+            if let Some(collection) = cache.get(collection_name) {
+                return Ok(collection.clone());
+            }
         }
 
-        Ok(Collection::new(cf_name, self.db.clone()))
+        let cf_name = self.collection_cf_name(collection_name);
+
+        // Check if collection exists
+        {
+            let db = self.db.read().unwrap();
+            if db.cf_handle(&cf_name).is_none() {
+                return Err(DbError::CollectionNotFound(collection_name.to_string()));
+            }
+        }
+
+        // Create and cache the collection
+        let collection = Collection::new(cf_name, self.db.clone());
+        {
+            let mut cache = self.collections.write().unwrap();
+            cache.insert(collection_name.to_string(), collection.clone());
+        }
+
+        Ok(collection)
     }
 
     /// Generate column family name for a collection

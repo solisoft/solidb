@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
 use rocksdb::{DB, Options, ColumnFamilyDescriptor};
 
 use crate::error::{DbError, DbResult};
@@ -10,12 +11,26 @@ use super::database::Database;
 const META_CF: &str = "_meta";
 
 /// The main storage engine backed by RocksDB
-#[derive(Clone)]
 pub struct StorageEngine {
     /// RocksDB instance wrapped in RwLock for mutability
     db: Arc<RwLock<DB>>,
     /// Database path for reopening
     path: std::path::PathBuf,
+    /// Cached collection handles
+    collections: Arc<RwLock<HashMap<String, Collection>>>,
+    /// Cached database handles
+    databases: Arc<RwLock<HashMap<String, Database>>>,
+}
+
+impl Clone for StorageEngine {
+    fn clone(&self) -> Self {
+        Self {
+            db: self.db.clone(),
+            path: self.path.clone(),
+            collections: self.collections.clone(),
+            databases: self.databases.clone(),
+        }
+    }
 }
 
 impl std::fmt::Debug for StorageEngine {
@@ -61,6 +76,8 @@ impl StorageEngine {
         Ok(Self {
             db: Arc::new(RwLock::new(db)),
             path,
+            collections: Arc::new(RwLock::new(HashMap::new())),
+            databases: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -72,7 +89,56 @@ impl StorageEngine {
             // Create _system database
             self.create_database("_system".to_string())?;
         }
+
+        // Recalculate document counts for all collections
+        // This ensures counts are accurate after crashes or unclean shutdowns
+        self.recalculate_all_counts();
+
         Ok(())
+    }
+
+    /// Recalculate document counts for all collections
+    /// Called on startup to ensure counts are accurate after potential crashes
+    pub fn recalculate_all_counts(&self) {
+        let databases = self.list_databases();
+        let mut total_collections = 0;
+
+        for db_name in databases {
+            if let Ok(database) = self.get_database(&db_name) {
+                let collections = database.list_collections();
+                for coll_name in collections {
+                    if let Ok(collection) = database.get_collection(&coll_name) {
+                        collection.recalculate_count();
+                        total_collections += 1;
+                    }
+                }
+            }
+        }
+
+        if total_collections > 0 {
+            tracing::info!("Recalculated document counts for {} collections", total_collections);
+        }
+    }
+
+    /// Flush all collection stats to disk
+    /// Called on shutdown to ensure counts are persisted
+    pub fn flush_all_stats(&self) {
+        let databases = self.list_databases();
+
+        for db_name in databases {
+            if let Ok(database) = self.get_database(&db_name) {
+                let collections = database.list_collections();
+                for coll_name in collections {
+                    if let Ok(collection) = database.get_collection(&coll_name) {
+                        collection.flush_stats();
+                    }
+                }
+            }
+        }
+
+        // Also flush RocksDB
+        let _ = self.flush();
+        tracing::info!("Flushed all collection stats to disk");
     }
 
     // ==================== Database Operations ====================
@@ -123,6 +189,12 @@ impl StorageEngine {
         db.delete_cf(meta_cf, db_key.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to delete database: {}", e)))?;
 
+        // Remove from cache
+        {
+            let mut cache = self.databases.write().unwrap();
+            cache.remove(name);
+        }
+
         Ok(())
     }
 
@@ -146,14 +218,30 @@ impl StorageEngine {
         .collect()
     }
 
-    /// Get a database handle
+    /// Get a database handle (cached for consistent collection counters)
     pub fn get_database(&self, name: &str) -> DbResult<Database> {
+        // Check cache first
+        {
+            let cache = self.databases.read().unwrap();
+            if let Some(database) = cache.get(name) {
+                return Ok(database.clone());
+            }
+        }
+
+        // Verify database exists
         let databases = self.list_databases();
         if !databases.contains(&name.to_string()) {
             return Err(DbError::CollectionNotFound(format!("Database '{}' not found", name)));
         }
 
-        Ok(Database::new(name.to_string(), self.db.clone()))
+        // Create and cache the database
+        let database = Database::new(name.to_string(), self.db.clone());
+        {
+            let mut cache = self.databases.write().unwrap();
+            cache.insert(name.to_string(), database.clone());
+        }
+
+        Ok(database)
     }
 
     // ==================== Legacy Collection Operations (for backward compatibility) ====================
@@ -176,24 +264,44 @@ impl StorageEngine {
     }
 
     /// Get a collection (legacy method - checks both database-prefixed and plain names)
+    /// Uses cached collection handles for performance
     pub fn get_collection(&self, name: &str) -> DbResult<Collection> {
+        // Check cache first
+        {
+            let cache = self.collections.read().unwrap();
+            if let Some(collection) = cache.get(name) {
+                return Ok(collection.clone());
+            }
+        }
+
         let db = self.db.read().unwrap();
 
         // First, try the exact name (for backward compatibility or direct access)
-        if db.cf_handle(name).is_some() {
-            drop(db);
-            return Ok(Collection::new(name.to_string(), self.db.clone()));
+        let actual_name = if db.cf_handle(name).is_some() {
+            name.to_string()
+        } else {
+            // If not found, try prefixing with _system database
+            let system_name = format!("_system:{}", name);
+            if db.cf_handle(&system_name).is_some() {
+                system_name
+            } else {
+                // Not found in either format
+                return Err(DbError::CollectionNotFound(name.to_string()));
+            }
+        };
+        drop(db);
+
+        // Create and cache the collection
+        let collection = Collection::new(actual_name.clone(), self.db.clone());
+        {
+            let mut cache = self.collections.write().unwrap();
+            cache.insert(name.to_string(), collection.clone());
+            if actual_name != name {
+                cache.insert(actual_name, collection.clone());
+            }
         }
 
-        // If not found, try prefixing with _system database
-        let system_name = format!("_system:{}", name);
-        if db.cf_handle(&system_name).is_some() {
-            drop(db);
-            return Ok(Collection::new(system_name, self.db.clone()));
-        }
-
-        // Not found in either format
-        Err(DbError::CollectionNotFound(name.to_string()))
+        Ok(collection)
     }
 
     /// Delete a collection

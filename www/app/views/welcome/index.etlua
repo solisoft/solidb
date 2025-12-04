@@ -1,32 +1,103 @@
-<div class="relative bg-gray-900 overflow-hidden">
-  <div class="max-w-7xl mx-auto">
-    <div class="relative z-10 pb-8 bg-gray-900 sm:pb-16 md:pb-20 lg:max-w-2xl lg:w-full lg:pb-28 xl:pb-32">
-      <main class="mt-10 mx-auto max-w-7xl px-4 sm:mt-12 sm:px-6 md:mt-16 lg:mt-20 lg:px-8 xl:mt-28">
-        <div class="sm:text-center lg:text-left">
-          <h1 class="text-4xl tracking-tight font-extrabold text-gray-100 sm:text-5xl md:text-6xl">
-            <span class="block xl:inline">Data storage made</span>
-            <span class="block text-indigo-400 xl:inline">simple and fast</span>
-          </h1>
-          <p class="mt-3 text-base text-gray-400 sm:mt-5 sm:text-lg sm:max-w-xl sm:mx-auto md:mt-5 md:text-xl lg:mx-0">
-            SoliDB is a high-performance, Rust-based database server designed for modern applications. Experience the power of document storage with the flexibility of AQL.
-          </p>
-          <div class="mt-5 sm:mt-8 sm:flex sm:justify-center lg:justify-start">
-            <div class="rounded-md shadow">
-              <a href="/docs" class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10">
-                Documentation
-              </a>
-            </div>
-            <div class="mt-3 sm:mt-0 sm:ml-3">
-              <a href="/dashboard" class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-indigo-300 bg-indigo-900/50 hover:bg-indigo-900 md:py-4 md:text-lg md:px-10">
-                Dashboard
-              </a>
+<div class="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+  <div class="max-w-md w-full space-y-8">
+    <div>
+      <div class="mx-auto h-16 w-16 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
+        <svg class="h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      </div>
+      <h2 class="mt-6 text-center text-3xl font-extrabold text-white">
+        SoliDB Admin Console
+      </h2>
+      <p class="mt-2 text-center text-sm text-gray-400">
+        Select a database to manage
+      </p>
+    </div>
+
+    <div class="mt-8 space-y-6 bg-gray-800 py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-700">
+      <div class="space-y-6">
+        <div>
+          <label for="database-select" class="block text-sm font-medium text-gray-300">
+            Database
+          </label>
+          <div class="mt-1 relative">
+            <select id="database-select" name="database" class="block w-full pl-3 pr-10 py-2 text-base border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-gray-700 text-white">
+              <option value="" disabled selected>Loading databases...</option>
+            </select>
+            <div id="db-loading-indicator" class="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-none">
+              <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
             </div>
           </div>
+          <p id="db-error-msg" class="mt-2 text-sm text-red-400 hidden"></p>
         </div>
-      </main>
+
+        <div>
+          <button id="enter-btn" type="button" disabled class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            Enter Console
+          </button>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2">
-    <img class="h-56 w-full object-cover sm:h-72 md:h-96 lg:w-full lg:h-full" src="<%= PublicPath("/images/abstract_hero.png") %>" alt="Abstract Database Art">
-  </div>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const dbSelect = document.getElementById('database-select');
+    const loadingIndicator = document.getElementById('db-loading-indicator');
+    const errorMsg = document.getElementById('db-error-msg');
+    const enterBtn = document.getElementById('enter-btn');
+
+    try {
+      const response = await fetch('http://localhost:6745/_api/databases');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      // Clear loading state
+      dbSelect.innerHTML = '';
+      loadingIndicator.classList.add('hidden');
+
+      if (data.databases && data.databases.length > 0) {
+        data.databases.forEach(db => {
+          const option = document.createElement('option');
+          option.value = db;
+          option.textContent = db;
+          dbSelect.appendChild(option);
+        });
+
+        // Select _system by default if available
+        if (data.databases.includes('_system')) {
+          dbSelect.value = '_system';
+        }
+
+        enterBtn.disabled = false;
+      } else {
+        const option = document.createElement('option');
+        option.textContent = "No databases found";
+        dbSelect.appendChild(option);
+      }
+    } catch (error) {
+      console.error('Failed to fetch databases:', error);
+      loadingIndicator.classList.add('hidden');
+      dbSelect.innerHTML = '<option disabled>Error loading databases</option>';
+      errorMsg.textContent = 'Failed to connect to server. Please ensure SoliDB is running.';
+      errorMsg.classList.remove('hidden');
+    }
+
+    enterBtn.addEventListener('click', () => {
+      const selectedDb = dbSelect.value;
+      if (selectedDb) {
+        // Store selected DB in localStorage for persistence across sessions
+        localStorage.setItem('solidb_current_db', selectedDb);
+
+        // Redirect to dashboard
+        window.location.href = `/database/${selectedDb}/collections`;
+      }
+    });
+  });
+</script>

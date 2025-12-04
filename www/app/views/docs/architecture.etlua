@@ -1,88 +1,216 @@
-<div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
   <div class="mb-8">
-    <a href="/docs" class="text-indigo-600 hover:text-indigo-500 font-medium">&larr; Back to Documentation</a>
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
   </div>
 
-  <div class="prose prose-indigo prose-lg text-gray-500 mx-auto">
-    <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-4">Architecture</h1>
-    <p class="lead text-xl text-gray-600 mb-10">Overview of SoliDB's internal structure and technology stack.</p>
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <div class="relative mb-16 text-center">
+      <div class="relative">
+        <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-6 tracking-tight">Architecture</h1>
+        <p class="text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
+          A deep dive into SoliDB's internal structure, technology stack, and design principles. Built for performance, reliability, and developer experience.
+        </p>
+      </div>
+    </div>
 
-    <div class="mt-12">
-      <h2 id="tech-stack" class="text-2xl font-bold text-gray-900 border-b border-gray-200 pb-2 mb-6">Technology Stack</h2>
-      <p>SoliDB is built with performance and reliability in mind, leveraging the Rust ecosystem:</p>
+    <!-- Technology Stack -->
+    <div class="my-20">
+      <h2 id="tech-stack" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
+        <span class="w-2 h-8 bg-indigo-500 rounded-full"></span>
+        Technology Stack
+      </h2>
       
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 class="text-lg font-bold text-gray-900 mb-2">Core Runtime</h3>
-          <ul class="list-disc pl-5 space-y-1 text-sm">
-            <li><strong>Rust:</strong> Memory safety and performance.</li>
-            <li><strong>Tokio:</strong> Asynchronous runtime for high concurrency.</li>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Core Runtime -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-indigo-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-indigo-500/20 rounded-xl border border-indigo-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Core Runtime</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-indigo-300 block mb-1">Rust</strong>
+                <span class="text-sm text-gray-400">Memory safety without garbage collection, ensuring predictable high performance.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-indigo-300 block mb-1">Tokio</strong>
+                <span class="text-sm text-gray-400">Industry-standard asynchronous runtime for handling thousands of concurrent connections.</span>
+              </div>
+            </li>
           </ul>
         </div>
 
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 class="text-lg font-bold text-gray-900 mb-2">Web Server</h3>
-          <ul class="list-disc pl-5 space-y-1 text-sm">
-            <li><strong>Axum:</strong> Ergonomic and modular web framework.</li>
-            <li><strong>Tower:</strong> Middleware stack for robust networking.</li>
+        <!-- Web Server -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-purple-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Web Server</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-purple-300 block mb-1">Axum</strong>
+                <span class="text-sm text-gray-400">Ergonomic, modular web framework built on top of Hyper.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-purple-300 block mb-1">Tower</strong>
+                <span class="text-sm text-gray-400">Robust middleware stack for timeouts, tracing, and backpressure.</span>
+              </div>
+            </li>
           </ul>
         </div>
 
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 class="text-lg font-bold text-gray-900 mb-2">Storage Engine</h3>
-          <ul class="list-disc pl-5 space-y-1 text-sm">
-            <li><strong>RocksDB:</strong> High-performance embedded key-value store.</li>
-            <li><strong>Serde:</strong> Efficient serialization and deserialization.</li>
+        <!-- Storage Engine -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-pink-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-pink-500/20 rounded-xl border border-pink-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Storage Engine</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-pink-300 block mb-1">RocksDB</strong>
+                <span class="text-sm text-gray-400">Battle-tested embedded key-value store optimized for fast storage.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-pink-300 block mb-1">Serde</strong>
+                <span class="text-sm text-gray-400">Zero-copy serialization framework for efficient JSON handling.</span>
+              </div>
+            </li>
           </ul>
         </div>
 
-        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 class="text-lg font-bold text-gray-900 mb-2">Utilities</h3>
-          <ul class="list-disc pl-5 space-y-1 text-sm">
-            <li><strong>Tracing:</strong> Structured logging and diagnostics.</li>
-            <li><strong>Anyhow/Thiserror:</strong> Idiomatic error handling.</li>
+        <!-- Utilities -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-green-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-green-500/20 rounded-xl border border-green-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Utilities</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-green-300 block mb-1">Tracing</strong>
+                <span class="text-sm text-gray-400">Structured logging and distributed tracing for observability.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-green-300 block mb-1">Anyhow</strong>
+                <span class="text-sm text-gray-400">Idiomatic error handling with context-rich error reports.</span>
+              </div>
+            </li>
           </ul>
         </div>
       </div>
     </div>
 
-    <div class="mt-16">
-      <h2 id="project-structure" class="text-2xl font-bold text-gray-900 border-b border-gray-200 pb-2 mb-6">Project Structure</h2>
-      <p>The codebase is organized into modular components:</p>
+    <!-- Project Structure -->
+    <div class="mb-12">
+      <h2 id="project-structure" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
+        <span class="w-2 h-8 bg-purple-500 rounded-full"></span>
+        Project Structure
+      </h2>
 
-      <div class="mt-6 space-y-6">
-        <div>
-          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/main.rs</code></h3>
-          <p class="text-gray-600">The entry point of the application. It initializes the logging system, sets up the storage engine, creates the router, and starts the TCP listener.</p>
+      <div class="relative border-l-2 border-white/10 ml-4 space-y-12">
+        <!-- src/main.rs -->
+        <div class="relative pl-10">
+          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-indigo-500 border-4 border-gray-900"></div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
+            <h3 class="text-xl font-bold text-indigo-300 mb-2 font-mono">src/main.rs</h3>
+            <p class="text-gray-400 mb-4">Application entry point. Bootstraps the system:</p>
+            <ul class="list-disc pl-5 space-y-1 text-sm text-gray-500 mb-4">
+              <li>Initializes logging/tracing</li>
+              <li>Sets up RocksDB storage engine</li>
+              <li>Configures API routes</li>
+              <li>Starts TCP listener</li>
+            </ul>
+          </div>
         </div>
 
-        <div>
-          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/server/</code></h3>
-          <p class="text-gray-600">Contains the HTTP server logic.</p>
-          <ul class="list-disc pl-5 mt-2 space-y-1">
-            <li><code>routes.rs</code>: Defines the API endpoints and maps them to handlers.</li>
-            <li><code>handlers.rs</code>: Implements the business logic for each endpoint (e.g., creating collections, inserting documents).</li>
-          </ul>
+        <!-- src/server/ -->
+        <div class="relative pl-10">
+          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-purple-500 border-4 border-gray-900"></div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
+            <h3 class="text-xl font-bold text-purple-300 mb-2 font-mono">src/server/</h3>
+            <p class="text-gray-400 mb-4">HTTP server logic and API definitions.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">routes.rs</code>
+                <span class="text-xs text-gray-500">Route definitions and handler mapping.</span>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">handlers.rs</code>
+                <span class="text-xs text-gray-500">Business logic for endpoints.</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/storage/</code></h3>
-          <p class="text-gray-600">Manages data persistence and retrieval.</p>
-          <ul class="list-disc pl-5 mt-2 space-y-1">
-            <li><code>mod.rs</code>: Defines the <code>StorageEngine</code> and <code>Collection</code> structs.</li>
-            <li>Handles interaction with RocksDB.</li>
-          </ul>
+        <!-- src/aql/ -->
+        <div class="relative pl-10">
+          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-pink-500 border-4 border-gray-900"></div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
+            <h3 class="text-xl font-bold text-pink-300 mb-2 font-mono">src/aql/</h3>
+            <p class="text-gray-400 mb-4">The AQL Query Engine pipeline.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 1</span>
+                <code class="text-sm font-bold text-white">lexer.rs</code>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 2</span>
+                <code class="text-sm font-bold text-white">parser.rs</code>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 3</span>
+                <code class="text-sm font-bold text-white">ast.rs</code>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 4</span>
+                <code class="text-sm font-bold text-white">executor.rs</code>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <h3 class="text-xl font-semibold text-gray-800 mb-2"><code>src/aql/</code></h3>
-          <p class="text-gray-600">Implements the ArangoDB Query Language (AQL) engine.</p>
-          <ul class="list-disc pl-5 mt-2 space-y-1">
-            <li><code>lexer.rs</code>: Tokenizes the input query string.</li>
-            <li><code>parser.rs</code>: Parses tokens into an Abstract Syntax Tree (AST).</li>
-            <li><code>executor.rs</code>: Executes the AST against the storage engine.</li>
-            <li><code>ast.rs</code>: Defines the data structures for the AST.</li>
-          </ul>
+        <!-- src/storage/ -->
+        <div class="relative pl-10">
+          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-green-500 border-4 border-gray-900"></div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
+            <h3 class="text-xl font-bold text-green-300 mb-2 font-mono">src/storage/</h3>
+            <p class="text-gray-400 mb-4">Data persistence layer.</p>
+            <div class="bg-gray-950/50 p-4 rounded border border-white/5">
+              <code class="text-sm font-bold text-white block mb-1">mod.rs</code>
+              <span class="text-sm text-gray-500">Defines <code>StorageEngine</code> and <code>Collection</code> structs. Manages direct interaction with the underlying RocksDB instance.</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

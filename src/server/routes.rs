@@ -5,6 +5,8 @@ use axum::{
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::trace::TraceLayer;
+use tower_http::cors::{CorsLayer, Any};
+use axum::http::Method;
 
 use crate::storage::StorageEngine;
 use crate::server::cursor_store::CursorStore;
@@ -27,6 +29,8 @@ pub fn create_router(storage: StorageEngine) -> Router {
         .route("/_api/database/:db/collection", get(list_collections))
         .route("/_api/database/:db/collection/:name", delete(delete_collection))
         .route("/_api/database/:db/collection/:name/truncate", put(truncate_collection))
+        .route("/_api/database/:db/collection/:name/compact", put(compact_collection))
+        .route("/_api/database/:db/collection/:name/stats", get(get_collection_stats))
 
         // Document routes
         .route("/_api/database/:db/document/:collection", post(insert_document))
@@ -43,6 +47,7 @@ pub fn create_router(storage: StorageEngine) -> Router {
         // Index routes
         .route("/_api/database/:db/index/:collection", post(create_index))
         .route("/_api/database/:db/index/:collection", get(list_indexes))
+        .route("/_api/database/:db/index/:collection/rebuild", put(rebuild_indexes))
         .route("/_api/database/:db/index/:collection/:name", delete(delete_index))
 
         // Geo index routes
@@ -54,4 +59,10 @@ pub fn create_router(storage: StorageEngine) -> Router {
 
         .with_state(state)
         .layer(TraceLayer::new_for_http())
+        .layer(
+            CorsLayer::new()
+                .allow_origin("http://localhost:8080".parse::<axum::http::HeaderValue>().unwrap())
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers(Any)
+        )
 }

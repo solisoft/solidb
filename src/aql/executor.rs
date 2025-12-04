@@ -91,6 +91,7 @@ pub struct ExecutionTiming {
 pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
+    database: Option<String>,
 }
 
 /// Extracted filter condition for index optimization
@@ -106,12 +107,45 @@ impl<'a> QueryExecutor<'a> {
         Self {
             storage,
             bind_vars: HashMap::new(),
+            database: None,
         }
     }
 
     /// Create executor with bind variables for parameterized queries
     pub fn with_bind_vars(storage: &'a StorageEngine, bind_vars: BindVars) -> Self {
-        Self { storage, bind_vars }
+        Self { storage, bind_vars, database: None }
+    }
+
+    /// Create executor with database context
+    pub fn with_database(storage: &'a StorageEngine, database: String) -> Self {
+        Self {
+            storage,
+            bind_vars: HashMap::new(),
+            database: Some(database),
+        }
+    }
+
+    /// Create executor with both database context and bind variables
+    pub fn with_database_and_bind_vars(storage: &'a StorageEngine, database: String, bind_vars: BindVars) -> Self {
+        Self {
+            storage,
+            bind_vars,
+            database: Some(database),
+        }
+    }
+
+    /// Get collection with database prefix if set
+    /// Uses database.get_collection() to share the same cached Collection instances
+    fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
+        // If we have a database context, get collection through the database
+        // This ensures we use the same cached Collection instances as the handlers
+        if let Some(ref db_name) = self.database {
+            let database = self.storage.get_database(db_name)?;
+            database.get_collection(name)
+        } else {
+            // No database context - fall back to legacy storage method
+            self.storage.get_collection(name)
+        }
     }
 
     pub fn execute(&self, query: &Query) -> DbResult<Vec<Value>> {
@@ -128,11 +162,48 @@ impl<'a> QueryExecutor<'a> {
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
+        // Optimization: Use index for SORT + LIMIT if available
+        // Check if query is: FOR var IN collection SORT var.field LIMIT n RETURN ...
+        if let (Some(sort), Some(limit)) = (&query.sort_clause, &query.limit_clause) {
+            // Check if we have a simple FOR loop on a collection
+            if query.body_clauses.len() == 1 {
+                if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
+                    // Check if the sort field is on the loop variable
+                    let sort_field = &sort.field;
+                    if sort_field.starts_with(&format!("{}.", for_clause.variable)) {
+                        let field = &sort_field[for_clause.variable.len() + 1..];
+
+                        // Try to get collection and check for index
+                        if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                            if let Some(docs) = collection.index_sorted(field, sort.ascending, Some(limit.offset + limit.count)) {
+                                // Got sorted documents from index! Apply offset and build result
+                                let start = limit.offset.min(docs.len());
+                                let end = (start + limit.count).min(docs.len());
+                                let docs = &docs[start..end];
+
+                                if let Some(ref return_clause) = query.return_clause {
+                                    let results: DbResult<Vec<Value>> = docs.iter().map(|doc| {
+                                        let mut ctx = initial_bindings.clone();
+                                        ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                        self.evaluate_expr_with_context(&return_clause.expression, &ctx)
+                                    }).collect();
+                                    return results;
+                                } else {
+                                    // No RETURN clause - return empty array
+                                    return Ok(vec![]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Optimization: Check if we can push LIMIT down to storage scan
         let scan_limit = if query.sort_clause.is_none() {
             let for_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::For(_))).count();
             let filter_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::Filter(_))).count();
-            
+
             if for_count == 1 && filter_count == 0 {
                 query.limit_clause.as_ref().map(|l| l.offset + l.count)
             } else {
@@ -185,13 +256,17 @@ impl<'a> QueryExecutor<'a> {
             rows = rows[start..end].to_vec();
         }
 
-        // Apply RETURN projection
-        let results: DbResult<Vec<Value>> = rows
-            .iter()
-            .map(|ctx| self.evaluate_expr_with_context(&query.return_clause.expression, ctx))
-            .collect();
-
-        results
+        // Apply RETURN projection (if present)
+        if let Some(ref return_clause) = query.return_clause {
+            let results: DbResult<Vec<Value>> = rows
+                .iter()
+                .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
+                .collect();
+            results
+        } else {
+            // No RETURN clause - return empty array (mutations don't need to return anything)
+            Ok(vec![])
+        }
     }
 
     /// Execute body clauses in order, supporting correlated subqueries
@@ -217,7 +292,7 @@ impl<'a> QueryExecutor<'a> {
                                 // If source_variable is None, it's definitely a collection
                                 true
                             };
-                            
+
                             if is_collection {
                                 // Try to extract indexable condition
                                 self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable).is_some()
@@ -236,9 +311,9 @@ impl<'a> QueryExecutor<'a> {
                         if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
                             let mut used_index = false;
                             let mut new_rows = Vec::new();
-                            
+
                             for ctx in &rows {
-                                if let Ok(collection) = self.storage.get_collection(&for_clause.collection) {
+                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
                                     if let Some(condition) = self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable) {
                                         if let Some(docs) = self.use_index_for_condition(&collection, &condition) {
                                             if !docs.is_empty() {
@@ -249,7 +324,7 @@ impl<'a> QueryExecutor<'a> {
                                                 } else {
                                                     docs
                                                 };
-                                                
+
                                                 for doc in docs {
                                                     let mut new_ctx = ctx.clone();
                                                     new_ctx.insert(for_clause.variable.clone(), doc.to_value());
@@ -260,7 +335,7 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                 }
                             }
-                            
+
                             // Only use index results if we actually found documents
                             if used_index {
                                 rows = new_rows;
@@ -297,6 +372,129 @@ impl<'a> QueryExecutor<'a> {
                             .unwrap_or(false)
                     });
                 }
+                BodyClause::Insert(insert_clause) => {
+                    // Get collection once, outside the loop
+                    let collection = self.get_collection(&insert_clause.collection)?;
+
+                    // For bulk inserts (>100 docs), use batch mode for maximum performance
+                    let bulk_mode = rows.len() > 100;
+                    let has_indexes = !collection.list_indexes().is_empty();
+
+                    tracing::info!(
+                        "INSERT: {} documents, bulk_mode={}, has_indexes={}",
+                        rows.len(), bulk_mode, has_indexes
+                    );
+
+                    if bulk_mode {
+                        // Evaluate all documents first
+                        let eval_start = std::time::Instant::now();
+                        let mut documents = Vec::with_capacity(rows.len());
+                        for ctx in &rows {
+                            let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                            documents.push(doc_value);
+                        }
+                        let eval_time = eval_start.elapsed();
+                        tracing::info!("INSERT: Document evaluation took {:?}", eval_time);
+
+                        // Batch insert all documents at once (uses RocksDB WriteBatch)
+                        let insert_start = std::time::Instant::now();
+                        let inserted_docs = collection.insert_batch(documents)?;
+                        let insert_time = insert_start.elapsed();
+                        tracing::info!("INSERT: Batch insert of {} docs took {:?}", inserted_docs.len(), insert_time);
+
+                        // Index ONLY the newly inserted documents asynchronously
+                        if has_indexes {
+                            tracing::info!("INSERT: Starting async indexing of {} new docs", inserted_docs.len());
+                            let coll = collection.clone();
+                            std::thread::spawn(move || {
+                                let index_start = std::time::Instant::now();
+                                let result = coll.index_documents(&inserted_docs);
+                                let index_time = index_start.elapsed();
+                                match result {
+                                    Ok(count) => tracing::info!("INSERT: Indexed {} docs in {:?}", count, index_time),
+                                    Err(e) => tracing::error!("INSERT: Indexing failed: {}", e),
+                                }
+                            });
+                        }
+                    } else {
+                        // Small inserts - use normal path with indexes
+                        let insert_start = std::time::Instant::now();
+                        for ctx in &rows {
+                            let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                            collection.insert(doc_value)?;
+                        }
+                        let insert_time = insert_start.elapsed();
+                        tracing::info!("INSERT: {} docs with indexes took {:?}", rows.len(), insert_time);
+                    }
+                }
+                BodyClause::Update(update_clause) => {
+                    // Get collection once, outside the loop
+                    let collection = self.get_collection(&update_clause.collection)?;
+
+                    // Update documents for each row context
+                    for ctx in &rows {
+                        // Evaluate selector expression to get the document key
+                        let selector_value = self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+
+                        // Extract _key from selector (can be a string key or a document with _key field)
+                        let key = match &selector_value {
+                            Value::String(s) => s.clone(),
+                            Value::Object(obj) => {
+                                obj.get("_key")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .ok_or_else(|| DbError::ExecutionError(
+                                        "UPDATE: selector object must have a _key field".to_string()
+                                    ))?
+                            }
+                            _ => return Err(DbError::ExecutionError(
+                                "UPDATE: selector must be a string key or an object with _key field".to_string()
+                            )),
+                        };
+
+                        // Evaluate changes expression
+                        let changes_value = self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+
+                        // Ensure changes is an object
+                        if !changes_value.is_object() {
+                            return Err(DbError::ExecutionError(
+                                "UPDATE: changes must be an object".to_string()
+                            ));
+                        }
+
+                        // Update the document (collection.update handles merging internally)
+                        collection.update(&key, changes_value)?;
+                    }
+                }
+                BodyClause::Remove(remove_clause) => {
+                    // Get collection once, outside the loop
+                    let collection = self.get_collection(&remove_clause.collection)?;
+
+                    // Remove documents for each row context
+                    for ctx in &rows {
+                        // Evaluate selector expression to get the document key
+                        let selector_value = self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+
+                        // Extract _key from selector (can be a string key or a document with _key field)
+                        let key = match &selector_value {
+                            Value::String(s) => s.clone(),
+                            Value::Object(obj) => {
+                                obj.get("_key")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .ok_or_else(|| DbError::ExecutionError(
+                                        "REMOVE: selector object must have a _key field".to_string()
+                                    ))?
+                            }
+                            _ => return Err(DbError::ExecutionError(
+                                "REMOVE: selector must be a string key or an object with _key field".to_string()
+                            )),
+                        };
+
+                        // Delete the document
+                        collection.delete(&key)?;
+                    }
+                }
             }
             i += 1;
         }
@@ -306,6 +504,21 @@ impl<'a> QueryExecutor<'a> {
 
     /// Get documents for a FOR clause source (collection or variable)
     fn get_for_source_docs(&self, for_clause: &ForClause, ctx: &Context, limit: Option<usize>) -> DbResult<Vec<Value>> {
+        // Check if source is an expression (e.g., range 1..5)
+        if let Some(expr) = &for_clause.source_expression {
+            let value = self.evaluate_expr_with_context(expr, ctx)?;
+            return match value {
+                Value::Array(arr) => {
+                    if let Some(n) = limit {
+                        Ok(arr.into_iter().take(n).collect())
+                    } else {
+                        Ok(arr)
+                    }
+                },
+                other => Ok(vec![other]),
+            };
+        }
+
         let source_name = for_clause.source_variable.as_ref()
             .unwrap_or(&for_clause.collection);
 
@@ -324,7 +537,7 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Otherwise it's a collection - use scan with limit for optimization
-        let collection = self.storage.get_collection(&for_clause.collection)?;
+        let collection = self.get_collection(&for_clause.collection)?;
         Ok(collection.scan(limit).into_iter().map(|d| d.to_value()).collect())
     }
 
@@ -385,7 +598,7 @@ impl<'a> QueryExecutor<'a> {
                 (arr_len, "variable_iteration".to_string(), None, None)
             } else {
                 // It's a collection - check for potential index usage
-                let collection = self.storage.get_collection(&for_clause.collection)?;
+                let collection = self.get_collection(&for_clause.collection)?;
                 let doc_count = collection.count();
                 total_docs_scanned += doc_count;
 
@@ -440,7 +653,7 @@ impl<'a> QueryExecutor<'a> {
         // Note: Filters are already applied in execute_body_clauses, but we need to analyze them
         // So we'll extract filter info from body_clauses
         let filter_start = Instant::now();
-        
+
         if !query.body_clauses.is_empty() {
             // Filters were already applied in execute_body_clauses
             // Extract filter info from body_clauses for reporting
@@ -455,7 +668,7 @@ impl<'a> QueryExecutor<'a> {
                         if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
                             index_candidate = Some(condition.field.clone());
                             // Check if index exists
-                            if let Ok(collection) = self.storage.get_collection(&query.for_clauses[0].collection) {
+                            if let Ok(collection) = self.get_collection(&query.for_clauses[0].collection) {
                                 for idx in collection.list_indexes() {
                                     if idx.field == condition.field {
                                         can_use_index = true;
@@ -499,7 +712,7 @@ impl<'a> QueryExecutor<'a> {
                     if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
                         index_candidate = Some(condition.field.clone());
                         // Check if index exists
-                        if let Ok(collection) = self.storage.get_collection(&query.for_clauses[0].collection) {
+                        if let Ok(collection) = self.get_collection(&query.for_clauses[0].collection) {
                             for idx in collection.list_indexes() {
                                 if idx.field == condition.field {
                                     can_use_index = true;
@@ -571,13 +784,17 @@ impl<'a> QueryExecutor<'a> {
         };
         limit_time = limit_start.elapsed();
 
-        // Apply RETURN projection
+        // Apply RETURN projection (if present)
         let return_start = Instant::now();
-        let results: DbResult<Vec<Value>> = rows
-            .iter()
-            .map(|ctx| self.evaluate_expr_with_context(&query.return_clause.expression, ctx))
-            .collect();
-        let results = results?;
+        let results = if let Some(ref return_clause) = query.return_clause {
+            let results: DbResult<Vec<Value>> = rows
+                .iter()
+                .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
+                .collect();
+            results?
+        } else {
+            vec![]
+        };
         return_time = return_start.elapsed();
 
         let total_time = total_start.elapsed();
@@ -656,7 +873,7 @@ impl<'a> QueryExecutor<'a> {
                 }
             } else {
                 // Source is a collection name
-                let collection = self.storage.get_collection(&for_clause.collection)?;
+                let collection = self.get_collection(&for_clause.collection)?;
                 collection.all().iter().map(|d| d.to_value()).collect()
             };
 
@@ -797,6 +1014,40 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(arr))
             }
 
+            Expression::Range(start_expr, end_expr) => {
+                let start_val = self.evaluate_expr_with_context(start_expr, ctx)?;
+                let end_val = self.evaluate_expr_with_context(end_expr, ctx)?;
+
+                let start = match &start_val {
+                    Value::Number(n) => {
+                        // Try integer first, then fall back to truncating float
+                        n.as_i64().or_else(|| n.as_f64().map(|f| f as i64))
+                            .ok_or_else(|| DbError::ExecutionError("Range start must be a number".to_string()))?
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("Range start must be a number, got: {:?}", start_val)
+                    )),
+                };
+
+                let end = match &end_val {
+                    Value::Number(n) => {
+                        // Try integer first, then fall back to truncating float
+                        n.as_i64().or_else(|| n.as_f64().map(|f| f as i64))
+                            .ok_or_else(|| DbError::ExecutionError("Range end must be a number".to_string()))?
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("Range end must be a number, got: {:?}", end_val)
+                    )),
+                };
+
+                // Generate array from start to end (inclusive)
+                let arr: Vec<Value> = (start..=end)
+                    .map(|i| Value::Number(serde_json::Number::from(i)))
+                    .collect();
+
+                Ok(Value::Array(arr))
+            }
+
             Expression::FunctionCall { name, args } => {
                 self.evaluate_function(name, args, ctx)
             }
@@ -866,13 +1117,16 @@ impl<'a> QueryExecutor<'a> {
             rows = rows[start..end].to_vec();
         }
 
-        // Apply RETURN projection
-        let results: DbResult<Vec<Value>> = rows
-            .iter()
-            .map(|ctx| self.evaluate_expr_with_context(&query.return_clause.expression, ctx))
-            .collect();
-
-        results
+        // Apply RETURN projection (if present)
+        if let Some(ref return_clause) = query.return_clause {
+            let results: DbResult<Vec<Value>> = rows
+                .iter()
+                .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
+                .collect();
+            results
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Evaluate a function call
@@ -1040,7 +1294,7 @@ impl<'a> QueryExecutor<'a> {
 
             // CEIL(number) - ceiling
             "CEIL" => {
-                
+
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError("CEIL requires 1 argument".to_string()));
                 }
@@ -1148,7 +1402,7 @@ impl<'a> QueryExecutor<'a> {
                     2 // Default Levenshtein distance
                 };
 
-                let collection = self.storage.get_collection(collection_name)?;
+                let collection = self.get_collection(collection_name)?;
 
                 match collection.fulltext_search(field, query, max_distance) {
                     Some(matches) => {
@@ -1228,12 +1482,29 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(serde_json::Number::from(timestamp)))
             }
 
+            // COLLECTION_COUNT(collection) - get the count of documents in a collection
+            "COLLECTION_COUNT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "COLLECTION_COUNT requires 1 argument: collection name".to_string()
+                    ));
+                }
+                let collection_name = evaluated_args[0].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "COLLECTION_COUNT: argument must be a string (collection name)".to_string()
+                    ))?;
+
+                let collection = self.get_collection(collection_name)?;
+                let count = collection.count();
+                Ok(Value::Number(serde_json::Number::from(count)))
+            }
+
             // DATE_ISO8601(date) - convert timestamp to ISO 8601 string
             "DATE_ISO8601" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError("DATE_ISO8601 requires 1 argument: timestamp in milliseconds".to_string()));
                 }
-                
+
                 // Handle both integer and float timestamps
                 let timestamp_ms = match &evaluated_args[0] {
                     Value::Number(n) => {
@@ -1247,11 +1518,11 @@ impl<'a> QueryExecutor<'a> {
                     }
                     _ => return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string())),
                 };
-                
+
                 // Convert milliseconds to seconds for chrono
                 let timestamp_secs = timestamp_ms / 1000;
                 let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
-                
+
                 // Create DateTime from timestamp
                 use chrono::TimeZone;
                 let datetime = match Utc.timestamp_opt(timestamp_secs, nanos) {
@@ -1260,10 +1531,1053 @@ impl<'a> QueryExecutor<'a> {
                         format!("DATE_ISO8601: invalid timestamp: {}", timestamp_ms)
                     )),
                 };
-                
+
                 // Format as ISO 8601 string (e.g., "2023-12-03T13:44:00.000Z")
                 let iso_string = datetime.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                 Ok(Value::String(iso_string))
+            }
+
+            // DATE_TIMESTAMP(date) - convert ISO 8601 string to timestamp in milliseconds
+            "DATE_TIMESTAMP" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_TIMESTAMP requires 1 argument: ISO 8601 date string".to_string()
+                    ));
+                }
+
+                let date_str = evaluated_args[0].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_TIMESTAMP: argument must be a string (ISO 8601 date)".to_string()
+                    ))?;
+
+                // Parse ISO 8601 string to DateTime
+                use chrono::DateTime;
+                let datetime = DateTime::parse_from_rfc3339(date_str)
+                    .map_err(|e| DbError::ExecutionError(
+                        format!("DATE_TIMESTAMP: invalid ISO 8601 date '{}': {}", date_str, e)
+                    ))?;
+
+                // Convert to milliseconds since Unix epoch
+                let timestamp_ms = datetime.timestamp_millis();
+                Ok(Value::Number(serde_json::Number::from(timestamp_ms)))
+            }
+
+            // DATE_TRUNC(date, unit, timezone?) - truncate date to specified unit
+            "DATE_TRUNC" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_TRUNC requires 2-3 arguments: date, unit, [timezone]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, Timelike, TimeZone, NaiveDateTime};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_TRUNC: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_TRUNC: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_TRUNC: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_TRUNC: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse the unit
+                let unit = evaluated_args[1].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_TRUNC: unit must be a string".to_string()
+                    ))?
+                    .to_lowercase();
+
+                // Parse optional timezone
+                let tz: Tz = if evaluated_args.len() == 3 {
+                    let tz_str = evaluated_args[2].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_TRUNC: timezone must be a string".to_string()
+                        ))?;
+                    tz_str.parse::<Tz>()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_TRUNC: unknown timezone '{}'", tz_str)
+                        ))?
+                } else {
+                    chrono_tz::UTC
+                };
+
+                // Convert to the target timezone for truncation
+                let datetime_tz = datetime_utc.with_timezone(&tz);
+
+                // Truncate based on unit
+                let truncated: DateTime<Tz> = match unit.as_str() {
+                    "y" | "year" | "years" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), 1, 1).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "m" | "month" | "months" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), 1).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "d" | "day" | "days" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "h" | "hour" | "hours" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), 0, 0).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "i" | "minute" | "minutes" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), datetime_tz.minute(), 0).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "s" | "second" | "seconds" => {
+                        let naive = NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(datetime_tz.year(), datetime_tz.month(), datetime_tz.day()).unwrap(),
+                            chrono::NaiveTime::from_hms_opt(datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second()).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_TRUNC: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "f" | "millisecond" | "milliseconds" => {
+                        // Keep the original datetime (milliseconds are the finest granularity we support)
+                        datetime_tz
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("DATE_TRUNC: unknown unit '{}'. Valid units: y/year/years, m/month/months, d/day/days, h/hour/hours, i/minute/minutes, s/second/seconds, f/millisecond/milliseconds", unit)
+                    )),
+                };
+
+                // Convert back to UTC and format as ISO 8601
+                let truncated_utc = truncated.with_timezone(&Utc);
+                let iso_string = truncated_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                Ok(Value::String(iso_string))
+            }
+
+            // DATE_DAYS_IN_MONTH(date, timezone?) - return number of days in the month
+            "DATE_DAYS_IN_MONTH" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_DAYS_IN_MONTH requires 1-2 arguments: date, [timezone]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, TimeZone, NaiveDate};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_DAYS_IN_MONTH: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_DAYS_IN_MONTH: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_DAYS_IN_MONTH: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_DAYS_IN_MONTH: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Get year and month, optionally in a specific timezone
+                let (year, month) = if evaluated_args.len() == 2 {
+                    let tz_str = evaluated_args[1].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_DAYS_IN_MONTH: timezone must be a string".to_string()
+                        ))?;
+                    let tz: Tz = tz_str.parse()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_DAYS_IN_MONTH: unknown timezone '{}'", tz_str)
+                        ))?;
+                    let dt_tz = datetime_utc.with_timezone(&tz);
+                    (dt_tz.year(), dt_tz.month())
+                } else {
+                    (datetime_utc.year(), datetime_utc.month())
+                };
+
+                // Calculate days in month by finding the first day of next month
+                // and subtracting from it
+                let days_in_month = if month == 12 {
+                    NaiveDate::from_ymd_opt(year + 1, 1, 1)
+                } else {
+                    NaiveDate::from_ymd_opt(year, month + 1, 1)
+                }
+                .and_then(|next_month| NaiveDate::from_ymd_opt(year, month, 1).map(|this_month| {
+                    (next_month - this_month).num_days()
+                }))
+                .unwrap_or(30) as u32; // Fallback, though this shouldn't happen
+
+                Ok(Value::Number(serde_json::Number::from(days_in_month)))
+            }
+
+            // DATE_DAYOFYEAR(date, timezone?) - return day of year (1-366)
+            "DATE_DAYOFYEAR" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_DAYOFYEAR requires 1-2 arguments: date, [timezone]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, TimeZone};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_DAYOFYEAR: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_DAYOFYEAR: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_DAYOFYEAR: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_DAYOFYEAR: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse optional timezone
+                let day_of_year = if evaluated_args.len() == 2 {
+                    let tz_str = evaluated_args[1].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_DAYOFYEAR: timezone must be a string".to_string()
+                        ))?;
+                    let tz: Tz = tz_str.parse()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_DAYOFYEAR: unknown timezone '{}'", tz_str)
+                        ))?;
+                    datetime_utc.with_timezone(&tz).ordinal()
+                } else {
+                    datetime_utc.ordinal()
+                };
+
+                Ok(Value::Number(serde_json::Number::from(day_of_year)))
+            }
+
+            // DATE_ISOWEEK(date) - return ISO 8601 week number
+            "DATE_ISOWEEK" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_ISOWEEK requires 1 argument: date".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, TimeZone};
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_ISOWEEK: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_ISOWEEK: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_ISOWEEK: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_ISOWEEK: argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Get ISO week number
+                let iso_week = datetime_utc.iso_week().week();
+                Ok(Value::Number(serde_json::Number::from(iso_week)))
+            }
+
+            // DATE_FORMAT(date, format, timezone?) - format date according to format string
+            "DATE_FORMAT" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_FORMAT requires 2-3 arguments: date, format, [timezone]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, TimeZone};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_FORMAT: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_FORMAT: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_FORMAT: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_FORMAT: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse the format string
+                let format_str = evaluated_args[1].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_FORMAT: format must be a string".to_string()
+                    ))?;
+
+                // Parse optional timezone
+                let tz: Tz = if evaluated_args.len() == 3 {
+                    let tz_str = evaluated_args[2].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_FORMAT: timezone must be a string".to_string()
+                        ))?;
+                    tz_str.parse::<Tz>()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_FORMAT: unknown timezone '{}'", tz_str)
+                        ))?
+                } else {
+                    chrono_tz::UTC
+                };
+
+                // Convert to the target timezone
+                let datetime_tz = datetime_utc.with_timezone(&tz);
+
+                // Format using strftime-style format string
+                // Chrono supports: %Y, %m, %d, %H, %M, %S, %f, %a, %A, %b, %B, %j, %U, %W, %w, %Z, etc.
+                let formatted = datetime_tz.format(format_str).to_string();
+                Ok(Value::String(formatted))
+            }
+
+            // DATE_ADD(date, amount, unit, timezone?) - add amount of time to date
+            "DATE_ADD" => {
+                if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_ADD requires 3-4 arguments: date, amount, unit, [timezone]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, Timelike, TimeZone, Duration};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_ADD: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_ADD: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_ADD: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_ADD: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse the amount
+                let amount = match &evaluated_args[1] {
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_ADD: amount must be a number".to_string()
+                            ));
+                        }
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_ADD: amount must be a number".to_string()
+                    )),
+                };
+
+                // Parse the unit
+                let unit = evaluated_args[2].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_ADD: unit must be a string".to_string()
+                    ))?
+                    .to_lowercase();
+
+                // Parse optional timezone
+                let tz: Tz = if evaluated_args.len() == 4 {
+                    let tz_str = evaluated_args[3].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_ADD: timezone must be a string".to_string()
+                        ))?;
+                    tz_str.parse::<Tz>()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_ADD: unknown timezone '{}'", tz_str)
+                        ))?
+                } else {
+                    chrono_tz::UTC
+                };
+
+                // Convert to the target timezone for calculation
+                let datetime_tz = datetime_utc.with_timezone(&tz);
+
+                // Perform the addition based on unit
+                let result_tz: DateTime<Tz> = match unit.as_str() {
+                    "y" | "year" | "years" => {
+                        // Add years
+                        let new_year = datetime_tz.year() + amount as i32;
+                        let naive = chrono::NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(new_year, datetime_tz.month(), datetime_tz.day())
+                                .unwrap_or_else(|| {
+                                    // Handle invalid dates (e.g., Feb 29 in non-leap year)
+                                    chrono::NaiveDate::from_ymd_opt(new_year, datetime_tz.month(), 28).unwrap()
+                                }),
+                            chrono::NaiveTime::from_hms_milli_opt(
+                                datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
+                                datetime_tz.timestamp_subsec_millis()
+                            ).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "m" | "month" | "months" => {
+                        // Add months
+                        let total_months = datetime_tz.year() * 12 + datetime_tz.month() as i32 - 1 + amount as i32;
+                        let new_year = total_months / 12;
+                        let new_month = (total_months % 12 + 1) as u32;
+
+                        // Handle day overflow (e.g., Jan 31 + 1 month = Feb 28/29)
+                        let max_day = chrono::NaiveDate::from_ymd_opt(new_year, new_month + 1, 1)
+                            .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(new_year + 1, 1, 1).unwrap())
+                            .pred_opt()
+                            .unwrap()
+                            .day();
+                        let new_day = datetime_tz.day().min(max_day);
+
+                        let naive = chrono::NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(new_year, new_month, new_day).unwrap(),
+                            chrono::NaiveTime::from_hms_milli_opt(
+                                datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
+                                datetime_tz.timestamp_subsec_millis()
+                            ).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "w" | "week" | "weeks" => {
+                        // Add weeks (7 days)
+                        datetime_tz.checked_add_signed(Duration::weeks(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "d" | "day" | "days" => {
+                        // Add days
+                        datetime_tz.checked_add_signed(Duration::days(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "h" | "hour" | "hours" => {
+                        // Add hours
+                        datetime_tz.checked_add_signed(Duration::hours(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "i" | "minute" | "minutes" => {
+                        // Add minutes
+                        datetime_tz.checked_add_signed(Duration::minutes(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "s" | "second" | "seconds" => {
+                        // Add seconds
+                        datetime_tz.checked_add_signed(Duration::seconds(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "f" | "millisecond" | "milliseconds" => {
+                        // Add milliseconds
+                        datetime_tz.checked_add_signed(Duration::milliseconds(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_ADD: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("DATE_ADD: unknown unit '{}'. Valid units: y/year/years, m/month/months, w/week/weeks, d/day/days, h/hour/hours, i/minute/minutes, s/second/seconds, f/millisecond/milliseconds", unit)
+                    )),
+                };
+
+                // Convert back to UTC and format as ISO 8601
+                let result_utc = result_tz.with_timezone(&Utc);
+                let iso_string = result_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                Ok(Value::String(iso_string))
+            }
+
+            // DATE_SUBTRACT(date, amount, unit, timezone?) - subtract amount of time from date
+            // This is a convenience wrapper around DATE_ADD with negated amount
+            "DATE_SUBTRACT" => {
+                if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_SUBTRACT requires 3-4 arguments: date, amount, unit, [timezone]".to_string()
+                    ));
+                }
+
+                // Negate the amount and reuse DATE_ADD logic
+                let negated_amount = match &evaluated_args[1] {
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            Value::Number(serde_json::Number::from(-i))
+                        } else if let Some(f) = n.as_f64() {
+                            Value::Number(serde_json::Number::from_f64(-f).unwrap())
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_SUBTRACT: amount must be a number".to_string()
+                            ));
+                        }
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_SUBTRACT: amount must be a number".to_string()
+                    )),
+                };
+
+                // Build new evaluated_args with negated amount
+                let mut new_evaluated_args = evaluated_args.clone();
+                new_evaluated_args[1] = negated_amount;
+
+                // Now execute the DATE_ADD logic inline with the negated amount
+                // (We can't easily call evaluate_function recursively with modified args,
+                // so we just negate and fall through to DATE_ADD logic by swapping the name)
+
+                // Actually, let's just duplicate the key parts of DATE_ADD logic here
+                // but with the negated amount
+                use chrono::{DateTime, Datelike, Timelike, TimeZone, Duration};
+                use chrono_tz::Tz;
+
+                // Parse the date (can be timestamp or ISO string)
+                let datetime_utc: DateTime<Utc> = match &new_evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_SUBTRACT: invalid timestamp".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_SUBTRACT: invalid timestamp: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_SUBTRACT: invalid ISO 8601 date '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_SUBTRACT: first argument must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse the negated amount
+                let amount = match &new_evaluated_args[1] {
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_SUBTRACT: amount must be a number".to_string()
+                            ));
+                        }
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_SUBTRACT: amount must be a number".to_string()
+                    )),
+                };
+
+                // Parse the unit
+                let unit = new_evaluated_args[2].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_SUBTRACT: unit must be a string".to_string()
+                    ))?
+                    .to_lowercase();
+
+                // Parse optional timezone
+                let tz: Tz = if new_evaluated_args.len() == 4 {
+                    let tz_str = new_evaluated_args[3].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_SUBTRACT: timezone must be a string".to_string()
+                        ))?;
+                    tz_str.parse::<Tz>()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_SUBTRACT: unknown timezone '{}'", tz_str)
+                        ))?
+                } else {
+                    chrono_tz::UTC
+                };
+
+                // Convert to the target timezone for calculation
+                let datetime_tz = datetime_utc.with_timezone(&tz);
+
+                // Perform the addition based on unit (amount is already negated)
+                let result_tz: DateTime<Tz> = match unit.as_str() {
+                    "y" | "year" | "years" => {
+                        let new_year = datetime_tz.year() + amount as i32;
+                        let naive = chrono::NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(new_year, datetime_tz.month(), datetime_tz.day())
+                                .unwrap_or_else(|| {
+                                    chrono::NaiveDate::from_ymd_opt(new_year, datetime_tz.month(), 28).unwrap()
+                                }),
+                            chrono::NaiveTime::from_hms_milli_opt(
+                                datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
+                                datetime_tz.timestamp_subsec_millis()
+                            ).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "m" | "month" | "months" => {
+                        let total_months = datetime_tz.year() * 12 + datetime_tz.month() as i32 - 1 + amount as i32;
+                        let new_year = total_months / 12;
+                        let new_month = (total_months % 12 + 1) as u32;
+
+                        let max_day = chrono::NaiveDate::from_ymd_opt(new_year, new_month + 1, 1)
+                            .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(new_year + 1, 1, 1).unwrap())
+                            .pred_opt()
+                            .unwrap()
+                            .day();
+                        let new_day = datetime_tz.day().min(max_day);
+
+                        let naive = chrono::NaiveDateTime::new(
+                            chrono::NaiveDate::from_ymd_opt(new_year, new_month, new_day).unwrap(),
+                            chrono::NaiveTime::from_hms_milli_opt(
+                                datetime_tz.hour(), datetime_tz.minute(), datetime_tz.second(),
+                                datetime_tz.timestamp_subsec_millis()
+                            ).unwrap()
+                        );
+                        tz.from_local_datetime(&naive)
+                            .single()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: ambiguous or invalid datetime".to_string()
+                            ))?
+                    }
+                    "w" | "week" | "weeks" => {
+                        datetime_tz.checked_add_signed(Duration::weeks(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "d" | "day" | "days" => {
+                        datetime_tz.checked_add_signed(Duration::days(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "h" | "hour" | "hours" => {
+                        datetime_tz.checked_add_signed(Duration::hours(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "i" | "minute" | "minutes" => {
+                        datetime_tz.checked_add_signed(Duration::minutes(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "s" | "second" | "seconds" => {
+                        datetime_tz.checked_add_signed(Duration::seconds(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    "f" | "millisecond" | "milliseconds" => {
+                        datetime_tz.checked_add_signed(Duration::milliseconds(amount))
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_SUBTRACT: date arithmetic overflow".to_string()
+                            ))?
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("DATE_SUBTRACT: unknown unit '{}'. Valid units: y/year/years, m/month/months, w/week/weeks, d/day/days, h/hour/hours, i/minute/minutes, s/second/seconds, f/millisecond/milliseconds", unit)
+                    )),
+                };
+
+                // Convert back to UTC and format as ISO 8601
+                let result_utc = result_tz.with_timezone(&Utc);
+                let iso_string = result_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                Ok(Value::String(iso_string))
+            }
+
+            // DATE_DIFF(date1, date2, unit, asFloat?, timezone1?, timezone2?) - calculate difference between dates
+            "DATE_DIFF" => {
+                if evaluated_args.len() < 3 || evaluated_args.len() > 6 {
+                    return Err(DbError::ExecutionError(
+                        "DATE_DIFF requires 3-6 arguments: date1, date2, unit, [asFloat], [timezone1], [timezone2]".to_string()
+                    ));
+                }
+
+                use chrono::{DateTime, Datelike, TimeZone};
+                use chrono_tz::Tz;
+
+                // Parse date1 (can be timestamp or ISO string)
+                let datetime1_utc: DateTime<Utc> = match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_DIFF: invalid timestamp for date1".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_DIFF: invalid timestamp for date1: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_DIFF: invalid ISO 8601 date for date1 '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_DIFF: date1 must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse date2 (can be timestamp or ISO string)
+                let datetime2_utc: DateTime<Utc> = match &evaluated_args[1] {
+                    Value::Number(n) => {
+                        let timestamp_ms = if let Some(i) = n.as_i64() {
+                            i
+                        } else if let Some(f) = n.as_f64() {
+                            f as i64
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "DATE_DIFF: invalid timestamp for date2".to_string()
+                            ));
+                        };
+                        let secs = timestamp_ms / 1000;
+                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                        match Utc.timestamp_opt(secs, nanos) {
+                            chrono::LocalResult::Single(dt) => dt,
+                            _ => return Err(DbError::ExecutionError(
+                                format!("DATE_DIFF: invalid timestamp for date2: {}", timestamp_ms)
+                            )),
+                        }
+                    }
+                    Value::String(s) => {
+                        DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| DbError::ExecutionError(
+                                format!("DATE_DIFF: invalid ISO 8601 date for date2 '{}': {}", s, e)
+                            ))?
+                            .with_timezone(&Utc)
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        "DATE_DIFF: date2 must be a timestamp or ISO 8601 string".to_string()
+                    )),
+                };
+
+                // Parse the unit
+                let unit = evaluated_args[2].as_str()
+                    .ok_or_else(|| DbError::ExecutionError(
+                        "DATE_DIFF: unit must be a string".to_string()
+                    ))?
+                    .to_lowercase();
+
+                // Parse optional asFloat (default: false)
+                let as_float = if evaluated_args.len() >= 4 {
+                    evaluated_args[3].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                // Parse optional timezones
+                let (tz1, tz2) = if evaluated_args.len() >= 5 {
+                    let tz1_str = evaluated_args[4].as_str()
+                        .ok_or_else(|| DbError::ExecutionError(
+                            "DATE_DIFF: timezone1 must be a string".to_string()
+                        ))?;
+                    let tz1: Tz = tz1_str.parse()
+                        .map_err(|_| DbError::ExecutionError(
+                            format!("DATE_DIFF: unknown timezone1 '{}'", tz1_str)
+                        ))?;
+
+                    let tz2 = if evaluated_args.len() >= 6 {
+                        let tz2_str = evaluated_args[5].as_str()
+                            .ok_or_else(|| DbError::ExecutionError(
+                                "DATE_DIFF: timezone2 must be a string".to_string()
+                            ))?;
+                        tz2_str.parse::<Tz>()
+                            .map_err(|_| DbError::ExecutionError(
+                                format!("DATE_DIFF: unknown timezone2 '{}'", tz2_str)
+                            ))?
+                    } else {
+                        tz1  // If timezone2 not specified, use timezone1 for both
+                    };
+
+                    (tz1, tz2)
+                } else {
+                    (chrono_tz::UTC, chrono_tz::UTC)
+                };
+
+                // Convert dates to their respective timezones
+                let datetime1_tz = datetime1_utc.with_timezone(&tz1);
+                let datetime2_tz = datetime2_utc.with_timezone(&tz2);
+
+                // Calculate the difference based on unit
+                let diff: f64 = match unit.as_str() {
+                    "y" | "year" | "years" => {
+                        // Calculate year difference
+                        let year_diff = datetime2_tz.year() - datetime1_tz.year();
+                        if as_float {
+                            // More precise calculation considering months and days
+                            let month_diff = datetime2_tz.month() as i32 - datetime1_tz.month() as i32;
+                            let day_diff = datetime2_tz.day() as i32 - datetime1_tz.day() as i32;
+                            year_diff as f64 + (month_diff as f64 / 12.0) + (day_diff as f64 / 365.25)
+                        } else {
+                            year_diff as f64
+                        }
+                    }
+                    "m" | "month" | "months" => {
+                        // Calculate month difference
+                        let total_months1 = datetime1_tz.year() * 12 + datetime1_tz.month() as i32;
+                        let total_months2 = datetime2_tz.year() * 12 + datetime2_tz.month() as i32;
+                        let month_diff = total_months2 - total_months1;
+                        if as_float {
+                            // Add fractional part based on days
+                            let day_diff = datetime2_tz.day() as i32 - datetime1_tz.day() as i32;
+                            month_diff as f64 + (day_diff as f64 / 30.0)
+                        } else {
+                            month_diff as f64
+                        }
+                    }
+                    "w" | "week" | "weeks" => {
+                        // Calculate week difference using milliseconds
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        let weeks = diff_ms as f64 / (7.0 * 24.0 * 60.0 * 60.0 * 1000.0);
+                        if as_float {
+                            weeks
+                        } else {
+                            weeks.trunc()
+                        }
+                    }
+                    "d" | "day" | "days" => {
+                        // Calculate day difference using milliseconds
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        let days = diff_ms as f64 / (24.0 * 60.0 * 60.0 * 1000.0);
+                        if as_float {
+                            days
+                        } else {
+                            days.trunc()
+                        }
+                    }
+                    "h" | "hour" | "hours" => {
+                        // Calculate hour difference using milliseconds
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        let hours = diff_ms as f64 / (60.0 * 60.0 * 1000.0);
+                        if as_float {
+                            hours
+                        } else {
+                            hours.trunc()
+                        }
+                    }
+                    "i" | "minute" | "minutes" => {
+                        // Calculate minute difference using milliseconds
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        let minutes = diff_ms as f64 / (60.0 * 1000.0);
+                        if as_float {
+                            minutes
+                        } else {
+                            minutes.trunc()
+                        }
+                    }
+                    "s" | "second" | "seconds" => {
+                        // Calculate second difference using milliseconds
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        let seconds = diff_ms as f64 / 1000.0;
+                        if as_float {
+                            seconds
+                        } else {
+                            seconds.trunc()
+                        }
+                    }
+                    "f" | "millisecond" | "milliseconds" => {
+                        // Calculate millisecond difference
+                        let diff_ms = datetime2_utc.timestamp_millis() - datetime1_utc.timestamp_millis();
+                        diff_ms as f64
+                    }
+                    _ => return Err(DbError::ExecutionError(
+                        format!("DATE_DIFF: unknown unit '{}'. Valid units: y/year/years, m/month/months, w/week/weeks, d/day/days, h/hour/hours, i/minute/minutes, s/second/seconds, f/millisecond/milliseconds", unit)
+                    )),
+                };
+
+                Ok(Value::Number(serde_json::Number::from_f64(diff).unwrap()))
             }
 
             _ => Err(DbError::ExecutionError(format!("Unknown function: {}", name))),
@@ -1384,7 +2698,7 @@ impl<'a> QueryExecutor<'a> {
         } else {
             condition.value.clone()
         };
-        
+
         match condition.op {
             BinaryOperator::Equal => {
                 // Try with normalized value first
