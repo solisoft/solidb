@@ -39,9 +39,10 @@ rocksdb = "0.22"
 # Temp directories (needed by benchmark)
 tempfile = "3.10"
 
+# Default binary
 [[bin]]
-name = "benchmark"
-path = "benches/benchmark.rs"
+name = "solidb"
+path = "src/main.rs"
 
 [dev-dependencies]
 reqwest = { version = "0.11", features = ["json"] }
