@@ -104,6 +104,33 @@ struct IndexableCondition {
     value: Value,
 }
 
+/// Format an Expression as a human-readable string
+fn format_expression(expr: &Expression) -> String {
+    match expr {
+        Expression::Variable(name) => name.clone(),
+        Expression::BindVariable(name) => format!("@{}", name),
+        Expression::FieldAccess(base, field) => {
+            format!("{}.{}", format_expression(base), field)
+        }
+        Expression::DynamicFieldAccess(base, field_expr) => {
+            format!("{}[{}]", format_expression(base), format_expression(field_expr))
+        }
+        Expression::ArrayAccess(base, index) => {
+            format!("{}[{}]", format_expression(base), format_expression(index))
+        }
+        Expression::Literal(value) => format!("{}", value),
+        Expression::FunctionCall { name, args } => {
+            let args_str = args
+                .iter()
+                .map(|a| format_expression(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({})", name, args_str)
+        }
+        _ => format!("{:?}", expr), // Fallback to debug for complex expressions
+    }
+}
+
 impl<'a> QueryExecutor<'a> {
     pub fn new(storage: &'a StorageEngine) -> Self {
         Self {
@@ -970,7 +997,7 @@ impl<'a> QueryExecutor<'a> {
             });
 
             Some(SortInfo {
-                field: format!("{:?}", sort.expression),
+                field: format_expression(&sort.expression),
                 direction: if sort.ascending {
                     "ASC".to_string()
                 } else {
