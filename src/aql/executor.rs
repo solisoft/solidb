@@ -1330,6 +1330,480 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
+            // COUNT(array) - count elements in array
+            "COUNT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("COUNT requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("COUNT: argument must be an array".to_string()))?;
+                Ok(Value::Number(serde_json::Number::from(arr.len())))
+            }
+
+            // COUNT_DISTINCT(array) - count distinct values in array
+            "COUNT_DISTINCT" | "COUNT_UNIQUE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("COUNT_DISTINCT requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("COUNT_DISTINCT: argument must be an array".to_string()))?;
+                let unique: std::collections::HashSet<String> = arr.iter()
+                    .map(|v| v.to_string())
+                    .collect();
+                Ok(Value::Number(serde_json::Number::from(unique.len())))
+            }
+
+            // VARIANCE_POPULATION(array) - population variance
+            "VARIANCE_POPULATION" | "VARIANCE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("VARIANCE_POPULATION requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("VARIANCE_POPULATION: argument must be an array".to_string()))?;
+                let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.is_empty() {
+                    return Ok(Value::Null);
+                }
+                let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+                Ok(Value::Number(serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // VARIANCE_SAMPLE(array) - sample variance (n-1 denominator)
+            "VARIANCE_SAMPLE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("VARIANCE_SAMPLE requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("VARIANCE_SAMPLE: argument must be an array".to_string()))?;
+                let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.len() < 2 {
+                    return Ok(Value::Null);
+                }
+                let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
+                Ok(Value::Number(serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // STDDEV_POPULATION(array) - population standard deviation
+            "STDDEV_POPULATION" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("STDDEV_POPULATION requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("STDDEV_POPULATION: argument must be an array".to_string()))?;
+                let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.is_empty() {
+                    return Ok(Value::Null);
+                }
+                let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+                let stddev = variance.sqrt();
+                Ok(Value::Number(serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // STDDEV_SAMPLE(array) / STDDEV(array) - sample standard deviation (n-1 denominator)
+            "STDDEV_SAMPLE" | "STDDEV" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("STDDEV_SAMPLE requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("STDDEV_SAMPLE: argument must be an array".to_string()))?;
+                let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.len() < 2 {
+                    return Ok(Value::Null);
+                }
+                let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
+                let stddev = variance.sqrt();
+                Ok(Value::Number(serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // MEDIAN(array) - median value
+            "MEDIAN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("MEDIAN requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("MEDIAN: argument must be an array".to_string()))?;
+                let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.is_empty() {
+                    return Ok(Value::Null);
+                }
+                nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let len = nums.len();
+                let median = if len % 2 == 0 {
+                    (nums[len / 2 - 1] + nums[len / 2]) / 2.0
+                } else {
+                    nums[len / 2]
+                };
+                Ok(Value::Number(serde_json::Number::from_f64(median).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // PERCENTILE(array, p) - percentile value (p between 0 and 100)
+            "PERCENTILE" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("PERCENTILE requires 2 arguments: array, percentile (0-100)".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("PERCENTILE: first argument must be an array".to_string()))?;
+                let p = evaluated_args[1].as_f64()
+                    .ok_or_else(|| DbError::ExecutionError("PERCENTILE: second argument must be a number".to_string()))?;
+                if !(0.0..=100.0).contains(&p) {
+                    return Err(DbError::ExecutionError("PERCENTILE: percentile must be between 0 and 100".to_string()));
+                }
+                let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+                if nums.is_empty() {
+                    return Ok(Value::Null);
+                }
+                nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let index = (p / 100.0) * (nums.len() - 1) as f64;
+                let lower = index.floor() as usize;
+                let upper = index.ceil() as usize;
+                let result = if lower == upper {
+                    nums[lower]
+                } else {
+                    let fraction = index - lower as f64;
+                    nums[lower] * (1.0 - fraction) + nums[upper] * fraction
+                };
+                Ok(Value::Number(serde_json::Number::from_f64(result).unwrap_or(serde_json::Number::from(0))))
+            }
+
+            // UNIQUE(array) - return unique values
+            "UNIQUE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("UNIQUE requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("UNIQUE: argument must be an array".to_string()))?;
+                let mut seen = std::collections::HashSet::new();
+                let unique: Vec<Value> = arr.iter()
+                    .filter(|v| seen.insert(v.to_string()))
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(unique))
+            }
+
+            // SORTED(array) - sort array (ascending)
+            "SORTED" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SORTED requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("SORTED: argument must be an array".to_string()))?;
+                let mut sorted = arr.clone();
+                sorted.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Number(n1), Value::Number(n2)) => {
+                            n1.as_f64().unwrap_or(0.0).partial_cmp(&n2.as_f64().unwrap_or(0.0))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
+                        _ => a.to_string().cmp(&b.to_string())
+                    }
+                });
+                Ok(Value::Array(sorted))
+            }
+
+            // SORTED_UNIQUE(array) - sort and return unique values
+            "SORTED_UNIQUE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SORTED_UNIQUE requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("SORTED_UNIQUE: argument must be an array".to_string()))?;
+                let mut seen = std::collections::HashSet::new();
+                let mut unique: Vec<Value> = arr.iter()
+                    .filter(|v| seen.insert(v.to_string()))
+                    .cloned()
+                    .collect();
+                unique.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Number(n1), Value::Number(n2)) => {
+                            n1.as_f64().unwrap_or(0.0).partial_cmp(&n2.as_f64().unwrap_or(0.0))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
+                        _ => a.to_string().cmp(&b.to_string())
+                    }
+                });
+                Ok(Value::Array(unique))
+            }
+
+            // REVERSE(array) - reverse array
+            "REVERSE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("REVERSE requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("REVERSE: argument must be an array".to_string()))?;
+                let mut reversed = arr.clone();
+                reversed.reverse();
+                Ok(Value::Array(reversed))
+            }
+
+            // FIRST(array) - first element
+            "FIRST" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("FIRST requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("FIRST: argument must be an array".to_string()))?;
+                Ok(arr.first().cloned().unwrap_or(Value::Null))
+            }
+
+            // LAST(array) - last element
+            "LAST" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("LAST requires 1 argument".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("LAST: argument must be an array".to_string()))?;
+                Ok(arr.last().cloned().unwrap_or(Value::Null))
+            }
+
+            // NTH(array, index) - nth element (0-based)
+            "NTH" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("NTH requires 2 arguments: array, index".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("NTH: first argument must be an array".to_string()))?;
+                let index = evaluated_args[1].as_i64()
+                    .ok_or_else(|| DbError::ExecutionError("NTH: second argument must be an integer".to_string()))? as usize;
+                Ok(arr.get(index).cloned().unwrap_or(Value::Null))
+            }
+
+            // SLICE(array, start, length?) - slice array
+            "SLICE" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("SLICE requires 2-3 arguments: array, start, [length]".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("SLICE: first argument must be an array".to_string()))?;
+                let start = evaluated_args[1].as_i64()
+                    .ok_or_else(|| DbError::ExecutionError("SLICE: start must be an integer".to_string()))?;
+                let start = if start < 0 {
+                    (arr.len() as i64 + start).max(0) as usize
+                } else {
+                    start as usize
+                };
+                let length = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_u64().unwrap_or(arr.len() as u64) as usize
+                } else {
+                    arr.len().saturating_sub(start)
+                };
+                let end = (start + length).min(arr.len());
+                Ok(Value::Array(arr[start..end].to_vec()))
+            }
+
+            // FLATTEN(array, depth?) - flatten nested arrays
+            "FLATTEN" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError("FLATTEN requires 1-2 arguments: array, [depth]".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("FLATTEN: first argument must be an array".to_string()))?;
+                let depth = if evaluated_args.len() > 1 {
+                    evaluated_args[1].as_u64().unwrap_or(1) as usize
+                } else {
+                    1
+                };
+                fn flatten_recursive(arr: &[Value], depth: usize) -> Vec<Value> {
+                    let mut result = Vec::new();
+                    for item in arr {
+                        if let Value::Array(inner) = item {
+                            if depth > 0 {
+                                result.extend(flatten_recursive(inner, depth - 1));
+                            } else {
+                                result.push(item.clone());
+                            }
+                        } else {
+                            result.push(item.clone());
+                        }
+                    }
+                    result
+                }
+                Ok(Value::Array(flatten_recursive(arr, depth)))
+            }
+
+            // PUSH(array, element, unique?) - add element to array
+            "PUSH" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("PUSH requires 2-3 arguments: array, element, [unique]".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("PUSH: first argument must be an array".to_string()))?;
+                let element = &evaluated_args[1];
+                let unique = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+                let mut result = arr.clone();
+                if unique {
+                    if !result.iter().any(|v| v.to_string() == element.to_string()) {
+                        result.push(element.clone());
+                    }
+                } else {
+                    result.push(element.clone());
+                }
+                Ok(Value::Array(result))
+            }
+
+            // APPEND(array1, array2, unique?) - append arrays
+            "APPEND" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("APPEND requires 2-3 arguments: array1, array2, [unique]".to_string()));
+                }
+                let arr1 = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("APPEND: first argument must be an array".to_string()))?;
+                let arr2 = evaluated_args[1].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("APPEND: second argument must be an array".to_string()))?;
+                let unique = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+                let mut result = arr1.clone();
+                if unique {
+                    let existing: std::collections::HashSet<String> = result.iter().map(|v| v.to_string()).collect();
+                    for item in arr2 {
+                        if !existing.contains(&item.to_string()) {
+                            result.push(item.clone());
+                        }
+                    }
+                } else {
+                    result.extend(arr2.iter().cloned());
+                }
+                Ok(Value::Array(result))
+            }
+
+            // UNION(array1, array2, ...) - union of arrays (unique values)
+            "UNION" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError("UNION requires at least 1 argument".to_string()));
+                }
+                let mut seen = std::collections::HashSet::new();
+                let mut result = Vec::new();
+                for arg in &evaluated_args {
+                    let arr = arg.as_array()
+                        .ok_or_else(|| DbError::ExecutionError("UNION: all arguments must be arrays".to_string()))?;
+                    for item in arr {
+                        if seen.insert(item.to_string()) {
+                            result.push(item.clone());
+                        }
+                    }
+                }
+                Ok(Value::Array(result))
+            }
+
+            // UNION_DISTINCT(array1, array2, ...) - same as UNION (for compatibility)
+            "UNION_DISTINCT" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError("UNION_DISTINCT requires at least 1 argument".to_string()));
+                }
+                let mut seen = std::collections::HashSet::new();
+                let mut result = Vec::new();
+                for arg in &evaluated_args {
+                    let arr = arg.as_array()
+                        .ok_or_else(|| DbError::ExecutionError("UNION_DISTINCT: all arguments must be arrays".to_string()))?;
+                    for item in arr {
+                        if seen.insert(item.to_string()) {
+                            result.push(item.clone());
+                        }
+                    }
+                }
+                Ok(Value::Array(result))
+            }
+
+            // MINUS(array1, array2) - elements in array1 not in array2
+            "MINUS" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("MINUS requires 2 arguments: array1, array2".to_string()));
+                }
+                let arr1 = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("MINUS: first argument must be an array".to_string()))?;
+                let arr2 = evaluated_args[1].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("MINUS: second argument must be an array".to_string()))?;
+                let set2: std::collections::HashSet<String> = arr2.iter().map(|v| v.to_string()).collect();
+                let mut seen = std::collections::HashSet::new();
+                let result: Vec<Value> = arr1.iter()
+                    .filter(|v| {
+                        let key = v.to_string();
+                        !set2.contains(&key) && seen.insert(key)
+                    })
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(result))
+            }
+
+            // INTERSECTION(array1, array2, ...) - common elements in all arrays
+            "INTERSECTION" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError("INTERSECTION requires at least 1 argument".to_string()));
+                }
+                let first = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("INTERSECTION: all arguments must be arrays".to_string()))?;
+
+                if evaluated_args.len() == 1 {
+                    return Ok(Value::Array(first.clone()));
+                }
+
+                // Build sets for all other arrays
+                let mut sets: Vec<std::collections::HashSet<String>> = Vec::new();
+                for arg in &evaluated_args[1..] {
+                    let arr = arg.as_array()
+                        .ok_or_else(|| DbError::ExecutionError("INTERSECTION: all arguments must be arrays".to_string()))?;
+                    sets.push(arr.iter().map(|v| v.to_string()).collect());
+                }
+
+                let mut seen = std::collections::HashSet::new();
+                let result: Vec<Value> = first.iter()
+                    .filter(|v| {
+                        let key = v.to_string();
+                        sets.iter().all(|s| s.contains(&key)) && seen.insert(key)
+                    })
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(result))
+            }
+
+            // POSITION(array, search, start?) - find position of element in array (0-based, -1 if not found)
+            "POSITION" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("POSITION requires 2-3 arguments: array, search, [start]".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("POSITION: first argument must be an array".to_string()))?;
+                let search = &evaluated_args[1];
+                let start = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_i64().unwrap_or(0) as usize
+                } else {
+                    0
+                };
+                let position = arr.iter()
+                    .skip(start)
+                    .position(|v| v.to_string() == search.to_string())
+                    .map(|p| p + start);
+                Ok(match position {
+                    Some(p) => Value::Number(serde_json::Number::from(p)),
+                    None => Value::Number(serde_json::Number::from(-1)),
+                })
+            }
+
+            // CONTAINS_ARRAY(array, search) - check if array contains element
+            "CONTAINS_ARRAY" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("CONTAINS_ARRAY requires 2 arguments: array, search".to_string()));
+                }
+                let arr = evaluated_args[0].as_array()
+                    .ok_or_else(|| DbError::ExecutionError("CONTAINS_ARRAY: first argument must be an array".to_string()))?;
+                let search = &evaluated_args[1];
+                let contains = arr.iter().any(|v| v.to_string() == search.to_string());
+                Ok(Value::Bool(contains))
+            }
+
             // ROUND(number, precision?) - round a number
             "ROUND" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {

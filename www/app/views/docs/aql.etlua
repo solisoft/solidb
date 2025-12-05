@@ -57,11 +57,15 @@
               </a>
               <a href="#func-aggregation" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
                 <span class="w-1 h-1 rounded-full bg-blue-500 mr-2 opacity-50 group-hover:opacity-100"></span>
-                Aggregation
+                Aggregation <span class="ml-2 text-[10px] bg-blue-500/20 text-blue-300 px-1.5 rounded border border-blue-500/30">EXPANDED</span>
+              </a>
+              <a href="#func-array" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
+                <span class="w-1 h-1 rounded-full bg-orange-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Array <span class="ml-2 text-[10px] bg-orange-500/20 text-orange-300 px-1.5 rounded border border-orange-500/30">NEW</span>
               </a>
               <a href="#func-object" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
                 <span class="w-1 h-1 rounded-full bg-gray-500 mr-2 opacity-50 group-hover:opacity-100"></span>
-                Object & Array
+                Object
               </a>
               <a href="#func-collection" class="flex items-center px-3 py-1.5 text-sm text-gray-400 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
                 <span class="w-1 h-1 rounded-full bg-cyan-500 mr-2 opacity-50 group-hover:opacity-100"></span>
@@ -777,8 +781,11 @@ FOR m IN matches RETURN m.doc</code></pre>
           <h3 class="text-xl font-bold text-blue-300 mb-6 flex items-center">
             <span class="w-2 h-8 bg-blue-500 rounded-full mr-3"></span>
             Aggregation
+            <span class="ml-3 px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">EXPANDED</span>
           </h3>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Basic Aggregations</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
               <code class="block text-sm font-bold text-white mb-2">SUM(arr)</code>
               <p class="text-xs text-gray-500">Sum values</p>
@@ -795,6 +802,161 @@ FOR m IN matches RETURN m.doc</code></pre>
               <code class="block text-sm font-bold text-white mb-2">MAX(arr)</code>
               <p class="text-xs text-gray-500">Maximum</p>
             </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">COUNT(arr)</code>
+              <p class="text-xs text-gray-500">Count elements</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">COUNT_DISTINCT(arr)</code>
+              <p class="text-xs text-gray-500">Count unique</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">MEDIAN(arr)</code>
+              <p class="text-xs text-gray-500">Median value</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">PERCENTILE(arr, p)</code>
+              <p class="text-xs text-gray-500">Percentile (0-100)</p>
+            </div>
+          </div>
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Statistical Functions</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">VARIANCE(arr)</code>
+              <p class="text-xs text-gray-500">Population variance</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">VARIANCE_SAMPLE(arr)</code>
+              <p class="text-xs text-gray-500">Sample variance</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">STDDEV(arr)</code>
+              <p class="text-xs text-gray-500">Sample std dev</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">STDDEV_POPULATION(arr)</code>
+              <p class="text-xs text-gray-500">Population std dev</p>
+            </div>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+            <h4 class="text-sm font-bold text-gray-300 mb-3">Aggregation Example</h4>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR u IN users
+  LET amounts = (FOR o IN orders FILTER o.user == u._key RETURN o.amount)
+  RETURN {
+    user: u.name,
+    total: SUM(amounts),
+    avg: ROUND(AVG(amounts), 2),
+    count: COUNT(amounts),
+    median: MEDIAN(amounts),
+    stddev: ROUND(STDDEV(amounts), 2)
+  }</code></pre>
+          </div>
+        </div>
+
+        <!-- Array Functions -->
+        <div class="mb-12" id="func-array">
+          <h3 class="text-xl font-bold text-orange-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-orange-500 rounded-full mr-3"></span>
+            Array
+            <span class="ml-3 px-2 py-0.5 bg-orange-500/20 text-orange-300 text-xs rounded-full border border-orange-500/30">NEW</span>
+          </h3>
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Access Functions</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">FIRST(arr)</code>
+              <p class="text-xs text-gray-500">First element</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">LAST(arr)</code>
+              <p class="text-xs text-gray-500">Last element</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">NTH(arr, n)</code>
+              <p class="text-xs text-gray-500">Element at index n</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">SLICE(arr, start, len?)</code>
+              <p class="text-xs text-gray-500">Slice array</p>
+            </div>
+          </div>
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Transformation Functions</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">UNIQUE(arr)</code>
+              <p class="text-xs text-gray-500">Remove duplicates</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">SORTED(arr)</code>
+              <p class="text-xs text-gray-500">Sort ascending</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">SORTED_UNIQUE(arr)</code>
+              <p class="text-xs text-gray-500">Sort & deduplicate</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">REVERSE(arr)</code>
+              <p class="text-xs text-gray-500">Reverse order</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">FLATTEN(arr, depth?)</code>
+              <p class="text-xs text-gray-500">Flatten nested</p>
+            </div>
+          </div>
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Combination Functions</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">PUSH(arr, elem)</code>
+              <p class="text-xs text-gray-500">Add element</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">APPEND(arr1, arr2)</code>
+              <p class="text-xs text-gray-500">Concatenate</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">UNION(arr1, arr2)</code>
+              <p class="text-xs text-gray-500">Union (unique)</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">INTERSECTION(...)</code>
+              <p class="text-xs text-gray-500">Common elements</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">MINUS(arr1, arr2)</code>
+              <p class="text-xs text-gray-500">Difference</p>
+            </div>
+          </div>
+
+          <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Search Functions</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">POSITION(arr, elem)</code>
+              <p class="text-xs text-gray-500">Find index (-1 if none)</p>
+            </div>
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-4 text-center hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white mb-2">CONTAINS_ARRAY(arr, elem)</code>
+              <p class="text-xs text-gray-500">Check if contains</p>
+            </div>
+          </div>
+
+          <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+            <h4 class="text-sm font-bold text-gray-300 mb-3">Array Examples</h4>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Combine and deduplicate tags
+LET tags1 = ["rust", "database"]
+LET tags2 = ["database", "nosql"]
+RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
+
+-- Get top 3 values from sorted array
+LET values = [5, 2, 8, 1, 9, 3]
+RETURN SLICE(SORTED(values), 3, 3)  -- [5, 8, 9] (last 3)
+
+-- Flatten nested arrays
+LET nested = [[1, 2], [3, [4, 5]]]
+RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]</code></pre>
           </div>
         </div>
 

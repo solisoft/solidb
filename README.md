@@ -247,6 +247,70 @@ FOR x IN items
 **Logical**: `AND`, `OR`, `NOT`
 **Arithmetic**: `+`, `-`, `*`, `/`
 
+### Aggregation Functions
+
+```aql
+-- Basic aggregations (operate on arrays)
+SUM(array)          -- Sum of numeric values
+AVG(array)          -- Average of numeric values
+MIN(array)          -- Minimum value
+MAX(array)          -- Maximum value
+COUNT(array)        -- Number of elements
+COUNT_DISTINCT(array) -- Number of unique values
+
+-- Statistical functions
+MEDIAN(array)           -- Median value
+VARIANCE(array)         -- Population variance
+VARIANCE_SAMPLE(array)  -- Sample variance
+STDDEV(array)           -- Sample standard deviation
+STDDEV_POPULATION(array) -- Population standard deviation
+PERCENTILE(array, p)    -- Percentile value (p: 0-100)
+
+-- Example: Get average order amount per user
+FOR u IN users
+  LET orderAmounts = (FOR o IN orders FILTER o.user == u._key RETURN o.amount)
+  RETURN {
+    user: u.name,
+    total: SUM(orderAmounts),
+    avg: AVG(orderAmounts),
+    count: COUNT(orderAmounts),
+    median: MEDIAN(orderAmounts)
+  }
+```
+
+### Array Functions
+
+```aql
+-- Access functions
+FIRST(array)          -- First element
+LAST(array)           -- Last element
+NTH(array, n)         -- Element at index n (0-based)
+SLICE(array, start, length?) -- Slice array
+
+-- Transformation functions
+UNIQUE(array)         -- Remove duplicates
+SORTED(array)         -- Sort ascending
+SORTED_UNIQUE(array)  -- Sort and remove duplicates
+REVERSE(array)        -- Reverse array
+FLATTEN(array, depth?) -- Flatten nested arrays
+
+-- Combination functions
+PUSH(array, element, unique?) -- Add element
+APPEND(array1, array2, unique?) -- Concatenate arrays
+UNION(array1, array2, ...)      -- Union (unique values)
+MINUS(array1, array2)           -- Difference
+INTERSECTION(array1, array2, ...) -- Common elements
+
+-- Search functions
+POSITION(array, element)    -- Find index (-1 if not found)
+CONTAINS_ARRAY(array, element) -- Check if contains
+
+-- Example: Combine and deduplicate tags
+LET tags1 = ["rust", "database"]
+LET tags2 = ["database", "nosql"]
+RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
+```
+
 ## REST API Reference
 
 ### Databases
