@@ -55,15 +55,44 @@ The server will start on `http://localhost:6745`.
 Before building on Ubuntu or Debian-based systems, install the required development libraries:
 
 ```bash
-# Install zstd compression library (required by RocksDB)
+# Install all required dependencies
 sudo apt-get update
-sudo apt-get install -y libzstd-dev
-
-# Install additional build dependencies
-sudo apt-get install -y build-essential clang libclang-dev
+sudo apt-get install -y \
+    build-essential \
+    clang \
+    libclang-dev \
+    pkg-config \
+    libssl-dev \
+    libzstd-dev
 ```
 
-**Note**: The `libzstd-dev` package is required for the `zstd-sys` crate used by RocksDB. Without it, compilation will fail with an error like `failed to run custom build command for zstd-sys`.
+**Required packages:**
+- `build-essential` - GCC compiler and build tools
+- `clang` & `libclang-dev` - Clang compiler (required by RocksDB)
+- `pkg-config` - Package configuration tool (required by openssl-sys)
+- `libssl-dev` - OpenSSL development libraries (required by reqwest/HTTPS)
+- `libzstd-dev` - Zstandard compression library (required by RocksDB)
+
+**Note**: Without these packages, compilation will fail with errors like:
+- `failed to run custom build command for zstd-sys` (missing libzstd-dev)
+- `failed to run custom build command for openssl-sys` (missing pkg-config or libssl-dev)
+
+### Arch Linux Build Requirements
+
+On Arch Linux, install the required dependencies:
+
+```bash
+# Install all required dependencies
+sudo pacman -Syu
+sudo pacman -S base-devel clang pkg-config openssl zstd
+```
+
+**Required packages:**
+- `base-devel` - Development tools (includes GCC, make, etc.)
+- `clang` - Clang compiler (required by RocksDB)
+- `pkg-config` - Package configuration tool
+- `openssl` - OpenSSL library (includes development headers)
+- `zstd` - Zstandard compression library
 
 ### Command Line Options
 
