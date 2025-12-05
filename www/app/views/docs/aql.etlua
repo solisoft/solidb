@@ -768,11 +768,56 @@ DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")
             <span class="w-2 h-8 bg-yellow-500 rounded-full mr-3"></span>
             Fulltext Search
           </h3>
-          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:bg-gray-800/60 transition-colors">
-            <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">FULLTEXT(col, field, query, dist?)</code>
-            <p class="text-sm text-gray-400 mb-4">Fuzzy search using n-gram indexing.</p>
-            <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET matches = FULLTEXT("articles", "title", "rust", 2)
+          <div class="space-y-4">
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:bg-gray-800/60 transition-colors">
+              <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit mb-3">FULLTEXT(col, field, query, dist?)</code>
+              <p class="text-sm text-gray-400 mb-4">Fuzzy search using n-gram indexing.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET matches = FULLTEXT("articles", "title", "rust", 2)
 FOR m IN matches RETURN m.doc</code></pre>
+            </div>
+            
+            <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:bg-gray-800/60 transition-colors">
+              <div class="flex items-center mb-3">
+                <code class="block text-sm font-bold text-white bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/30 w-fit">BM25(field, query)</code>
+                <span class="ml-3 px-2 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30">NEW</span>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">BM25 relevance scoring for ranking search results. Returns a numeric score that can be used in SORT clauses.</p>
+              
+              <div class="bg-yellow-900/10 border border-yellow-500/30 rounded-lg p-4 mb-4 flex items-start">
+                <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                  <h4 class="text-yellow-300 font-bold mb-1 text-sm">BM25 Algorithm</h4>
+                  <p class="text-sm text-yellow-200/70">BM25 (Best Matching 25) is a probabilistic ranking function that provides more sophisticated relevance scoring than n-gram similarity. It considers term frequency, document length, and inverse document frequency.</p>
+                </div>
+              </div>
+              
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Basic Scoring</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  RETURN {
+    title: doc.title,
+    score: BM25(doc.content, "machine learning")
+  }</code></pre>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort by Relevance</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  SORT BM25(doc.content, "rust database") DESC
+  LIMIT 10
+  RETURN doc</code></pre>
+                </div>
+              </div>
+              
+              <div class="mt-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Combined with Filters</h4>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  FILTER doc.published == true
+  SORT BM25(doc.content, "query optimization") DESC
+  LIMIT 5
+  RETURN {title: doc.title, score: BM25(doc.content, "query optimization")}</code></pre>
+              </div>
+            </div>
           </div>
         </div>
 

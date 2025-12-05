@@ -3926,3 +3926,139 @@ fn test_remove_all() {
     let collection = storage.get_collection("users").unwrap();
     assert_eq!(collection.count(), 0);
 }
+
+// ==================== BM25 Scoring Tests ====================
+
+#[test]
+fn test_bm25_basic_scoring() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+    
+    collection.insert(json!({
+        "_key": "1",
+        "title": "Introduction to Machine Learning",
+        "content": "Machine learning is a subset of artificial intelligence"
+    })).unwrap();
+
+    let query = parse(r#"
+        FOR doc IN articles
+        RETURN BM25(doc.content, "machine learning")
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // BM25 score should be positive for matching terms
+    assert!(results[0].as_f64().unwrap() > 0.0);
+}
+
+#[test]
+fn test_bm25_sort_descending() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+    
+    collection.insert(json!({
+        "_key": "1",
+        "title": "ML Basics",
+        "content": "Machine learning and artificial intelligence"
+    })).unwrap();
+    
+    collection.insert(json!({
+        "_key": "2",
+        "title": "Advanced ML",
+        "content": "Machine learning machine learning deep learning neural networks"
+    })).unwrap();
+    
+    collection.insert(json!({
+        "_key": "3",
+        "title": "Other Topic",
+        "content": "This is about something completely different"
+    })).unwrap();
+
+    let query = parse(r#"
+        FOR doc IN articles
+        SORT BM25(doc.content, "machine learning") DESC
+        RETURN {title: doc.title, score: BM25(doc.content, "machine learning")}
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    // Document 2 should have highest score (more occurrences of "machine learning")
+    assert_eq!(results[0]["title"], json!("Advanced ML"));
+    // Document 3 should have lowest score (no matching terms)
+    assert_eq!(results[2]["title"], json!("Other Topic"));
+}
+
+#[test]
+fn test_bm25_with_limit() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+    
+    for i in 1..=10 {
+        collection.insert(json!({
+            "_key": i.to_string(),
+            "content": format!("Article {} about machine learning", i)
+        })).unwrap();
+    }
+
+    let query = parse(r#"
+        FOR doc IN articles
+        SORT BM25(doc.content, "machine learning") DESC
+        LIMIT 3
+        RETURN doc._key
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+}
+
+#[test]
+fn test_bm25_no_matches() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+    
+    collection.insert(json!({
+        "_key": "1",
+        "content": "This is about databases and storage"
+    })).unwrap();
+
+    let query = parse(r#"
+        FOR doc IN articles
+        RETURN BM25(doc.content, "machine learning")
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Score should be 0 for no matching terms
+    assert_eq!(results[0].as_f64().unwrap(), 0.0);
+}
+
+#[test]
+fn test_bm25_empty_query() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("articles".to_string()).unwrap();
+    let collection = storage.get_collection("articles").unwrap();
+    
+    collection.insert(json!({
+        "_key": "1",
+        "content": "Some content here"
+    })).unwrap();
+
+    let query = parse(r#"
+        FOR doc IN articles
+        RETURN BM25(doc.content, "")
+    "#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    // Empty query should return 0 score
+    assert_eq!(results[0].as_f64().unwrap(), 0.0);
+}

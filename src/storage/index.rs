@@ -97,6 +97,84 @@ pub fn ngram_similarity(ngrams1: &[String], ngrams2: &[String]) -> f64 {
     intersection as f64 / union as f64
 }
 
+// ==================== BM25 Scoring ====================
+
+/// BM25 parameters
+pub const BM25_K1: f64 = 1.5;  // Term frequency saturation parameter
+pub const BM25_B: f64 = 0.75;   // Length normalization parameter
+
+/// Calculate BM25 score for a document given query terms
+/// 
+/// # Arguments
+/// * `query_terms` - Tokenized query terms
+/// * `doc_terms` - Tokenized document terms
+/// * `doc_length` - Length of the document (number of terms)
+/// * `avg_doc_length` - Average document length in the collection
+/// * `total_docs` - Total number of documents in the collection
+/// * `term_doc_freq` - Map of term -> number of documents containing that term
+pub fn bm25_score(
+    query_terms: &[String],
+    doc_terms: &[String],
+    doc_length: usize,
+    avg_doc_length: f64,
+    total_docs: usize,
+    term_doc_freq: &std::collections::HashMap<String, usize>,
+) -> f64 {
+    if query_terms.is_empty() || doc_terms.is_empty() || total_docs == 0 {
+        return 0.0;
+    }
+
+    // Count term frequencies in document
+    let mut doc_term_freq: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for term in doc_terms {
+        *doc_term_freq.entry(term.clone()).or_insert(0) += 1;
+    }
+
+    let mut score = 0.0;
+
+    for query_term in query_terms {
+        // Get term frequency in document
+        let tf = *doc_term_freq.get(query_term).unwrap_or(&0) as f64;
+        
+        if tf == 0.0 {
+            continue; // Term not in document
+        }
+
+        // Calculate IDF
+        let df = *term_doc_freq.get(query_term).unwrap_or(&0) as f64;
+        let idf = calculate_idf(total_docs, df as usize);
+
+        // Calculate BM25 component for this term
+        let numerator = tf * (BM25_K1 + 1.0);
+        let denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_length as f64 / avg_doc_length));
+        
+        score += idf * (numerator / denominator);
+    }
+
+    score
+}
+
+/// Calculate Inverse Document Frequency (IDF)
+/// 
+/// # Arguments
+/// * `total_docs` - Total number of documents in the collection
+/// * `doc_freq` - Number of documents containing the term
+/// 
+/// # Returns
+/// IDF score using the formula: log((N - df + 0.5) / (df + 0.5))
+pub fn calculate_idf(total_docs: usize, doc_freq: usize) -> f64 {
+    if total_docs == 0 || doc_freq == 0 {
+        return 0.0;
+    }
+    
+    let n = total_docs as f64;
+    let df = doc_freq as f64;
+    
+    // BM25 IDF formula
+    ((n - df + 0.5) / (df + 0.5)).ln()
+}
+
+
 /// Fulltext search result with scoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FulltextMatch {

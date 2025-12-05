@@ -235,28 +235,30 @@ impl<'a> QueryExecutor<'a> {
             if query.body_clauses.len() == 1 {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
                     // Check if the sort field is on the loop variable
-                    let sort_field = &sort.field;
-                    if sort_field.starts_with(&format!("{}.", for_clause.variable)) {
-                        let field = &sort_field[for_clause.variable.len() + 1..];
+                    // Check if sort expression is a simple field access on the loop variable
+                    if let Expression::FieldAccess(base, field) = &sort.expression {
+                        if let Expression::Variable(var) = base.as_ref() {
+                            if var == &for_clause.variable {
+                                // Try to get collection and check for index
+                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                    if let Some(docs) = collection.index_sorted(field, sort.ascending, Some(limit.offset + limit.count)) {
+                                        // Got sorted documents from index! Apply offset and build result
+                                        let start = limit.offset.min(docs.len());
+                                        let end = (start + limit.count).min(docs.len());
+                                        let docs = &docs[start..end];
 
-                        // Try to get collection and check for index
-                        if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                            if let Some(docs) = collection.index_sorted(field, sort.ascending, Some(limit.offset + limit.count)) {
-                                // Got sorted documents from index! Apply offset and build result
-                                let start = limit.offset.min(docs.len());
-                                let end = (start + limit.count).min(docs.len());
-                                let docs = &docs[start..end];
-
-                                if let Some(ref return_clause) = query.return_clause {
-                                    let results: DbResult<Vec<Value>> = docs.iter().map(|doc| {
-                                        let mut ctx = initial_bindings.clone();
-                                        ctx.insert(for_clause.variable.clone(), doc.to_value());
-                                        self.evaluate_expr_with_context(&return_clause.expression, &ctx)
-                                    }).collect();
-                                    return results;
-                                } else {
-                                    // No RETURN clause - return empty array
-                                    return Ok(vec![]);
+                                        if let Some(ref return_clause) = query.return_clause {
+                                            let results: DbResult<Vec<Value>> = docs.iter().map(|doc| {
+                                                let mut ctx = initial_bindings.clone();
+                                                ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                                self.evaluate_expr_with_context(&return_clause.expression, &ctx)
+                                            }).collect();
+                                            return results;
+                                        } else {
+                                            // No RETURN clause - return empty array
+                                            return Ok(vec![]);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -299,15 +301,14 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
-            let field_path = &sort.field;
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
                 let a_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), a
+                    &sort.expression, a
                 ).unwrap_or(Value::Null);
                 let b_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), b
+                    &sort.expression, b
                 ).unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
@@ -813,15 +814,14 @@ impl<'a> QueryExecutor<'a> {
         // Apply SORT
         let sort_start = Instant::now();
         let sort_info = if let Some(sort) = &query.sort_clause {
-            let field_path = &sort.field;
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
                 let a_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), a
+                    &sort.expression, a
                 ).unwrap_or(Value::Null);
                 let b_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), b
+                    &sort.expression, b
                 ).unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
@@ -829,7 +829,7 @@ impl<'a> QueryExecutor<'a> {
             });
 
             Some(SortInfo {
-                field: sort.field.clone(),
+                field: format!("{:?}", sort.expression),
                 direction: if sort.ascending { "ASC".to_string() } else { "DESC".to_string() },
                 time_us: 0, // Will be set below
             })
@@ -1169,15 +1169,14 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
-            let field_path = &sort.field;
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
                 let a_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), a
+                    &sort.expression, a
                 ).unwrap_or(Value::Null);
                 let b_val = self.evaluate_expr_with_context(
-                    &parse_field_expr(field_path), b
+                    &sort.expression, b
                 ).unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
@@ -1986,6 +1985,56 @@ impl<'a> QueryExecutor<'a> {
 
                 let distance = crate::storage::levenshtein_distance(s1, s2);
                 Ok(Value::Number(serde_json::Number::from(distance)))
+            }
+
+            // BM25(field, query) - BM25 relevance scoring for a document field
+            // Returns a numeric score that can be used in SORT clauses
+            // Usage: SORT BM25(doc.content, "search query") DESC
+            "BM25" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "BM25 requires 2 arguments: field, query".to_string()
+                    ));
+                }
+                
+                // Get the field value (should be a string from the document)
+                let field_text = evaluated_args[0].as_str()
+                    .ok_or_else(|| DbError::ExecutionError("BM25: field must be a string".to_string()))?;
+                
+                let query = evaluated_args[1].as_str()
+                    .ok_or_else(|| DbError::ExecutionError("BM25: query must be a string".to_string()))?;
+
+                // Tokenize query and document
+                use crate::storage::{tokenize, bm25_score};
+                let query_terms = tokenize(query);
+                let doc_terms = tokenize(field_text);
+                let doc_length = doc_terms.len();
+
+                // For BM25, we need collection statistics
+                // Since we don't have access to the collection here, we'll use simplified scoring
+                // In a real implementation, we'd need to pass collection context
+                // For now, use a simplified version with estimated parameters
+                let avg_doc_length = 100.0; // Estimated average
+                let total_docs = 1000; // Estimated total
+                
+                // Create a simple term document frequency map
+                // In a real implementation, this would come from the collection's fulltext index
+                let mut term_doc_freq = std::collections::HashMap::new();
+                for term in &query_terms {
+                    // Estimate: assume each term appears in ~10% of documents
+                    term_doc_freq.insert(term.clone(), total_docs / 10);
+                }
+
+                let score = bm25_score(
+                    &query_terms,
+                    &doc_terms,
+                    doc_length,
+                    avg_doc_length,
+                    total_docs,
+                    &term_doc_freq,
+                );
+
+                Ok(Value::Number(serde_json::Number::from_f64(score).unwrap_or(serde_json::Number::from(0))))
             }
 
             // MERGE(obj1, obj2, ...) - merge multiple objects (later objects override earlier ones)

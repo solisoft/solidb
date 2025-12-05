@@ -1,5 +1,33 @@
 <div class="min-h-screen flex items-center justify-center bg-gray-900 relative overflow-hidden">
   
+  <!-- Server Unreachable Banner -->
+  <div id="server-unreachable-banner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-500/10 border-b border-red-500/20 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm font-medium text-red-400">
+              Server Not Reachable
+            </p>
+            <p class="text-xs text-red-300/70 mt-0.5">
+              Cannot connect to <span id="unreachable-server-url" class="font-mono">localhost:6745</span>. Please check if the server is running.
+            </p>
+          </div>
+        </div>
+        <button id="dismiss-banner-btn" class="flex-shrink-0 ml-4 text-red-400 hover:text-red-300 transition-colors">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="max-w-md w-full relative z-10 px-4 sm:px-0">
     <!-- Header -->
 
@@ -160,6 +188,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const recentServersContainer = document.getElementById('recent-servers-container');
   const recentServersList = document.getElementById('recent-servers-list');
 
+  const serverUnreachableBanner = document.getElementById('server-unreachable-banner');
+  const unreachableServerUrl = document.getElementById('unreachable-server-url');
+  const dismissBannerBtn = document.getElementById('dismiss-banner-btn');
+
+  // Dismiss banner handler
+  dismissBannerBtn.addEventListener('click', () => {
+    serverUnreachableBanner.classList.add('hidden');
+  });
+
   // Load Recent Servers
   renderRecentServers();
 
@@ -169,9 +206,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     serverHost.value = savedConfig.host;
     serverPort.value = savedConfig.port;
 
-    // Auto-connect flow
-    setUIConnectedState(savedConfig);
-    loadDatabases();
+    // Auto-connect flow - test if server is reachable
+    const serverUrl = `${savedConfig.host}:${savedConfig.port}`;
+    unreachableServerUrl.textContent = serverUrl;
+    
+    try {
+      const isReachable = await testConnection(savedConfig);
+      if (isReachable) {
+        setUIConnectedState(savedConfig);
+        loadDatabases();
+      } else {
+        // Server not reachable - show banner
+        serverUnreachableBanner.classList.remove('hidden');
+      }
+    } catch (error) {
+      // Server not reachable - show banner
+      serverUnreachableBanner.classList.remove('hidden');
+    }
   }
 
   // --- UI State Helpers ---
@@ -185,8 +236,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Enable database section
     dbSection.classList.remove('opacity-50', 'pointer-events-none');
 
-    // Hide status messages
+    // Hide status messages and banner
     connectionStatus.classList.add('hidden');
+    serverUnreachableBanner.classList.add('hidden');
   }
 
   function setUIDisconnectedState() {
@@ -324,6 +376,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
       console.error(error);
       showStatus('error', 'Failed to connect. Check server details.');
+      
+      // Show unreachable banner
+      const serverUrl = `${host}:${port}`;
+      unreachableServerUrl.textContent = serverUrl;
+      serverUnreachableBanner.classList.remove('hidden');
 
       // Reset button
       connectBtn.disabled = false;

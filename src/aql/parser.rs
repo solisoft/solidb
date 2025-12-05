@@ -281,7 +281,8 @@ impl Parser {
     fn parse_sort_clause(&mut self) -> DbResult<SortClause> {
         self.expect(Token::Sort)?;
 
-        let field = self.parse_field_path()?;
+        // Parse expression (could be field path, function call like BM25(...), etc.)
+        let expression = self.parse_expression()?;
 
         let ascending = match self.current_token() {
             Token::Desc => {
@@ -295,7 +296,7 @@ impl Parser {
             _ => true, // Default to ascending
         };
 
-        Ok(SortClause { field, ascending })
+        Ok(SortClause { expression, ascending })
     }
 
     fn parse_limit_clause(&mut self) -> DbResult<LimitClause> {

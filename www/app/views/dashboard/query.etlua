@@ -255,6 +255,10 @@ async function explainQuery() {
   }
 }
 
+// Expose functions to global scope for onclick handlers
+window.executeQuery = executeQuery;
+window.explainQuery = explainQuery;
+
 function displayExplainResults(explainData, executionTime) {
   const container = document.getElementById('resultsContainer');
 
@@ -420,4 +424,10 @@ function copyResults() {
     }, 2000);
   });
 }
+
+// Expose all onclick functions to global scope
+window.removeResult = removeResult;
+window.clearLastResult = clearLastResult;
+window.clearAllResults = clearAllResults;
+window.copyResults = copyResults;
 </script>

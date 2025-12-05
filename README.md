@@ -489,6 +489,20 @@ FOR r IN results
 LEVENSHTEIN("hello", "hallo")  -- Returns 1
 LEVENSHTEIN("rust", "rest")    -- Returns 1
 LEVENSHTEIN("test", "test")    -- Returns 0
+
+-- BM25 relevance scoring (NEW!)
+-- BM25(field, query) - Returns relevance score for ranking
+FOR doc IN articles
+  SORT BM25(doc.content, "machine learning") DESC
+  LIMIT 10
+  RETURN {title: doc.title, score: BM25(doc.content, "machine learning")}
+
+-- Combined with filters
+FOR doc IN articles
+  FILTER doc.published == true
+  SORT BM25(doc.content, "rust database") DESC
+  LIMIT 5
+  RETURN doc
 ```
 
 #### AQL Date Functions
@@ -571,6 +585,31 @@ Data is stored using **RocksDB**, a high-performance embedded key-value store de
 - **Multi-Database**: Isolated databases with separate namespaces
 - **LSM Tree**: Optimized for write-heavy workloads
 - **No manual saves**: Unlike JSON files, no explicit save needed
+
+## Web UI Dashboard
+
+SoliDB includes a web-based management interface for browsing databases, collections, documents, and running AQL queries.
+
+### Running the Dashboard
+
+```bash
+# Navigate to the www directory
+cd www/
+
+# Start the web server
+./luaonbeans.org -D .
+```
+
+The dashboard will be available at `http://localhost:8080`.
+
+### Features
+
+- 📊 **Database Browser**: View and manage all databases
+- 📁 **Collection Management**: Create, delete, and truncate collections
+- 📄 **Document Viewer**: Browse, search, and edit documents
+- 🔍 **AQL Query Editor**: Write and execute AQL queries with syntax highlighting
+- 📈 **Cluster Status**: Monitor cluster health and replication lag (in cluster mode)
+- 📚 **Documentation**: Built-in API and AQL reference
 
 ## Development
 

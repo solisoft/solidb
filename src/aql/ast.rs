@@ -80,10 +80,11 @@ pub struct RemoveClause {
     pub collection: String,
 }
 
-/// SORT field [ASC|DESC]
+/// SORT expression [ASC|DESC]
+/// Supports both field-based sorting (SORT doc.age) and function-based sorting (SORT BM25(doc.content, "query"))
 #[derive(Debug, Clone, PartialEq)]
 pub struct SortClause {
-    pub field: String,
+    pub expression: Expression,
     pub ascending: bool,
 }
 
