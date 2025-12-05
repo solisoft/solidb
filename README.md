@@ -86,15 +86,18 @@ On Arch Linux, install the required dependencies:
 ```bash
 # Install all required dependencies
 sudo pacman -Syu
-sudo pacman -S base-devel clang pkg-config openssl zstd
+sudo pacman -S base-devel clang gcc pkg-config openssl zstd
 ```
 
 **Required packages:**
-- `base-devel` - Development tools (includes GCC, make, etc.)
+- `base-devel` - Development tools (includes make, etc.)
 - `clang` - Clang compiler (required by RocksDB)
+- `gcc` - GCC C++ compiler and standard library (required for C++ compilation)
 - `pkg-config` - Package configuration tool
 - `openssl` - OpenSSL library (includes development headers)
 - `zstd` - Zstandard compression library
+
+**Note**: Both `clang` and `gcc` are needed because RocksDB uses C++17 features that require the GCC C++ standard library (`libstdc++`).
 
 ### Command Line Options
 
