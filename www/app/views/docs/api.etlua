@@ -1,522 +1,539 @@
-<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-  <div class="mb-8">
-    <a href="/docs" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">&larr; Back to Documentation</a>
-  </div>
-
-  <div class="prose prose-invert prose-lg text-gray-400 mx-auto max-w-4xl">
-    <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-4">API Reference</h1>
-    <p class="lead text-xl text-gray-300 mb-10">Complete reference for the SoliDB HTTP API.</p>
-
-    <div class="mt-12">
-      <h2 id="databases" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Databases</h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Create Database</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database</span>
-        </div>
-        <p class="mt-2">Creates a new database.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "name": "myapp"
-}</code></pre>
+<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <!-- Header Section -->
+  <div class="mb-12 relative">
+    <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 blur-3xl -z-10 rounded-full"></div>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div>
+        <a href="/docs" class="inline-flex items-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors mb-4 group">
+          <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Documentation
+        </a>
+        <h1 class="text-5xl font-black text-white tracking-tight mb-4">
+          API <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Reference</span>
+        </h1>
+        <p class="text-xl text-gray-400 max-w-2xl">
+          Comprehensive documentation for the SoliDB HTTP API. Everything you need to build powerful applications.
+        </p>
       </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">List Databases</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
-          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/databases</span>
-        </div>
-        <p class="mt-2">Lists all databases. The <code>_system</code> database is created automatically.</p>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Delete Database</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-red-500 shadow-sm">
-          <span class="text-red-400 font-bold">DELETE</span> <span class="text-gray-300">/_api/database/:name</span>
-        </div>
-        <p class="mt-2">Deletes a database and all its collections. The <code>_system</code> database cannot be deleted.</p>
-      </div>
-    </div>
-
-    <div class="mt-12">
-      <h2 id="collections" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Collections</h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Create Collection</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/collection</span>
-        </div>
-        <p class="mt-2">Creates a new collection in the specified database.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "name": "users"
-}</code></pre>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">List Collections</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
-          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/database/:db/collection</span>
-        </div>
-        <p class="mt-2">Lists all collections in the specified database.</p>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Delete Collection</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-red-500 shadow-sm">
-          <span class="text-red-400 font-bold">DELETE</span> <span class="text-gray-300">/_api/database/:db/collection/:name</span>
-        </div>
-        <p class="mt-2">Deletes a collection and all its documents.</p>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Truncate Collection</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-yellow-500 shadow-sm">
-          <span class="text-yellow-400 font-bold">PUT</span> <span class="text-gray-300">/_api/database/:db/collection/:name/truncate</span>
-        </div>
-        <p class="mt-2">Removes all documents from a collection while preserving the collection structure and all indexes.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
-        <pre><code class="language-json">{
-  "database": "_system",
-  "collection": "users",
-  "deleted": 3,
-  "status": "truncated"
-}</code></pre>
-        <div class="bg-blue-900/20 border-l-4 border-blue-500 p-4 mt-4 rounded-r-md">
-          <div class="flex">
-            <div class="ml-3">
-              <p class="text-sm text-blue-200">
-                <strong>Use Case:</strong> Truncate is useful when you want to clear all data but keep the collection schema and indexes intact. Unlike DELETE, truncate preserves index definitions for better performance when repopulating data.
-              </p>
-            </div>
+      <div class="hidden md:block">
+        <div class="p-4 bg-gray-800/50 backdrop-blur border border-white/5 rounded-xl">
+          <div class="flex items-center space-x-2 text-sm text-gray-400">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>API Version: v1.0.0</span>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="mt-16">
-      <h2 id="documents" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Documents</h2>
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    
+    <!-- Sidebar Partial -->
+    <%- Partial("api_sidebar") %>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Insert Document</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/document/:collection</span>
-        </div>
-        <p class="mt-2">Inserts a new document into a collection.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
+    <!-- Main Content -->
+    <div class="col-span-12 lg:col-span-9">
+      <div class="space-y-16">
+        
+        <!-- Databases Section -->
+        <section id="databases" class="scroll-mt-24">
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-indigo-500/10 rounded-lg mr-4">
+                <i class="fas fa-database text-indigo-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Databases</h2>
+            </div>
+            
+            <div class="space-y-8">
+              <!-- Create Database -->
+              <div class="group">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-indigo-400 transition-colors">Create Database</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-indigo-500/30 transition-colors">
+                  <span class="text-indigo-400">/_api/database</span>
+                </div>
+                <p class="mt-2 text-gray-400">Creates a new database context.</p>
+                <div class="mt-4 bg-gray-950 rounded-lg p-4 border border-white/5">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request Body</span>
+                  <pre><code class="language-json">{
+  "name": "myapp"
+}</code></pre>
+                </div>
+              </div>
+
+              <!-- List Databases -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-indigo-400 transition-colors">List Databases</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-blue-500/20 text-blue-400 rounded uppercase tracking-wide">GET</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-blue-500/30 transition-colors">
+                  <span class="text-blue-400">/_api/databases</span>
+                </div>
+                <p class="mt-2 text-gray-400">Lists all available databases, including the system database.</p>
+              </div>
+
+              <!-- Delete Database -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-indigo-400 transition-colors">Delete Database</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 rounded uppercase tracking-wide">DELETE</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-red-500/30 transition-colors">
+                  <span class="text-red-400">/_api/database/:name</span>
+                </div>
+                <p class="mt-2 text-gray-400">Permanently deletes a database and all its collections.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Collections Section -->
+        <section id="collections" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-blue-500/10 rounded-lg mr-4">
+                <i class="fas fa-layer-group text-blue-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Collections</h2>
+            </div>
+            
+            <div class="space-y-8">
+              <!-- Create Collection -->
+              <div class="group">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-blue-400 transition-colors">Create Collection</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-blue-500/30 transition-colors">
+                  <span class="text-green-400">/_api/database/:db/collection</span>
+                </div>
+                <p class="mt-2 text-gray-400">Creates a new collection within a database.</p>
+                 <div class="mt-4 bg-gray-950 rounded-lg p-4 border border-white/5">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request Body</span>
+                  <pre><code class="language-json">{
+  "name": "users"
+}</code></pre>
+                </div>
+              </div>
+
+               <!-- List Collections -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-blue-400 transition-colors">List Collections</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-blue-500/20 text-blue-400 rounded uppercase tracking-wide">GET</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-blue-500/30 transition-colors">
+                   <span class="text-blue-400">/_api/database/:db/collection</span>
+                </div>
+                <p class="mt-2 text-gray-400">Retrieves all collections in the specified database.</p>
+              </div>
+
+              <!-- Delete Collection -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-blue-400 transition-colors">Delete Collection</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 rounded uppercase tracking-wide">DELETE</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-red-500/30 transition-colors">
+                  <span class="text-red-400">/_api/database/:db/collection/:name</span>
+                </div>
+                <p class="mt-2 text-gray-400">removes a collection and all associated documents.</p>
+              </div>
+
+               <!-- Truncate Collection -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-blue-400 transition-colors">Truncate Collection</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-yellow-500/20 text-yellow-400 rounded uppercase tracking-wide">PUT</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-yellow-500/30 transition-colors">
+                  <span class="text-yellow-400">/_api/database/:db/collection/:name/truncate</span>
+                </div>
+                 <p class="mt-2 text-gray-400">Clears all documents but preserves the structure and indexes.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Documents Section -->
+        <section id="documents" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-green-500/10 rounded-lg mr-4">
+                <i class="fas fa-file-alt text-green-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Documents</h2>
+            </div>
+            
+            <div class="space-y-8">
+              <!-- Insert Document -->
+              <div class="group">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-green-400 transition-colors">Insert Document</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-green-500/30 transition-colors">
+                  <span class="text-green-400">/_api/database/:db/document/:collection</span>
+                </div>
+                 <div class="mt-4 bg-gray-950 rounded-lg p-4 border border-white/5">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request Body</span>
+                  <pre><code class="language-json">{
   "name": "John Doe",
   "age": 30
 }</code></pre>
-      </div>
+                </div>
+              </div>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Get Document</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
-          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/database/:db/document/:collection/:key</span>
-        </div>
-        <p class="mt-2">Retrieves a document by its key.</p>
-      </div>
+               <!-- Get Document -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-green-400 transition-colors">Get Document</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-blue-500/20 text-blue-400 rounded uppercase tracking-wide">GET</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-blue-500/30 transition-colors">
+                  <span class="text-blue-400">/_api/database/:db/document/:collection/:key</span>
+                </div>
+              </div>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Update Document</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-yellow-500 shadow-sm">
-          <span class="text-yellow-400 font-bold">PUT</span> <span class="text-gray-300">/_api/database/:db/document/:collection/:key</span>
-        </div>
-        <p class="mt-2">Updates an existing document.</p>
-      </div>
+              <!-- Update Document -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-green-400 transition-colors">Update Document</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-yellow-500/20 text-yellow-400 rounded uppercase tracking-wide">PUT</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-yellow-500/30 transition-colors">
+                  <span class="text-yellow-400">/_api/database/:db/document/:collection/:key</span>
+                </div>
+              </div>
+              
+              <!-- Delete Document -->
+              <div class="group border-t border-gray-700/50 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-green-400 transition-colors">Delete Document</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 rounded uppercase tracking-wide">DELETE</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-red-500/30 transition-colors">
+                  <span class="text-red-400">/_api/database/:db/document/:collection/:key</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Delete Document</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-red-500 shadow-sm">
-          <span class="text-red-400 font-bold">DELETE</span> <span class="text-gray-300">/_api/database/:db/document/:collection/:key</span>
-        </div>
-        <p class="mt-2">Deletes a document.</p>
+        <!-- Transactions Section -->
+       <section id="transactions" class="scroll-mt-24">
+  <div class="bg-gradient-to-br from-emerald-900/10 to-teal-900/10 backdrop-blur-md border border-emerald-500/30 rounded-2xl p-8 hover:border-emerald-500/50 transition-colors relative overflow-hidden">
+    <div class="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
+    
+    <div class="flex items-center mb-6 relative z-10">
+      <div class="p-3 bg-emerald-500/10 rounded-lg mr-4 border border-emerald-500/30">
+        <i class="fas fa-exchange-alt text-emerald-400 text-xl"></i>
+      </div>
+      <div>
+        <h2 class="text-2xl font-bold text-white flex items-center">
+          Transactions 
+          <span class="ml-3 text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 uppercase tracking-widest font-bold">New</span>
+        </h2>
       </div>
     </div>
-
-    <div class="mt-16">
-      <h2 id="query" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">AQL Query</h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Execute Query</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/cursor</span>
-        </div>
-        <p class="mt-2">Executes an AQL query.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body (Simple)</h4>
-        <pre><code class="language-json">{
-  "query": "FOR u IN users RETURN u"
-}</code></pre>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Execute Query with Bind Variables</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/cursor</span>
-        </div>
-        <p class="mt-2">Executes an AQL query with bind variables. <strong class="text-red-400">Always use bind variables for user input to prevent AQL injection attacks.</strong></p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "query": "FOR u IN users FILTER u.name == @name AND u.age >= @minAge RETURN u",
-  "bindVars": {
-    "name": "Alice",
-    "minAge": 25
-  }
-}</code></pre>
-        <div class="bg-yellow-900/20 border-l-4 border-yellow-500 p-4 mt-4 rounded-r-md">
-          <div class="flex">
-            <div class="ml-3">
-              <p class="text-sm text-yellow-200">
-                <strong>Security:</strong> Bind variables (<code>@variable</code>) are safely substituted and never parsed as AQL code. This prevents injection attacks where malicious input could modify the query.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Explain Query (Profiling)</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-purple-500 shadow-sm">
-          <span class="text-purple-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/explain</span>
-        </div>
-        <p class="mt-2">Analyzes and profiles a query execution, showing timing for each step and index usage.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "query": "FOR u IN users FILTER u.age > 25 SORT u.name ASC RETURN u",
-  "bindVars": {}
-}</code></pre>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
-        <pre><code class="language-json">{
-  "collections": [{
-    "name": "users",
-    "variable": "u",
-    "access_type": "full_scan",
-    "index_used": null,
-    "documents_count": 1000
-  }],
-  "filters": [{
-    "expression": "u.age > 25",
-    "index_candidate": "age",
-    "can_use_index": false,
-    "documents_before": 1000,
-    "documents_after": 450,
-    "time_us": 1234
-  }],
-  "sort": {
-    "field": "u.name",
-    "direction": "ASC",
-    "time_us": 567
-  },
-  "timing": {
-    "total_us": 5432,
-    "collection_scan_us": 2000,
-    "filter_us": 1234,
-    "sort_us": 567,
-    "return_projection_us": 100
-  },
-  "documents_scanned": 1000,
-  "documents_returned": 450,
-  "warnings": [
-    "Full collection scan on 'users' (1000 documents). Consider adding an index."
-  ]
-}</code></pre>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Execute Query with Pagination</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/cursor</span>
-        </div>
-        <p class="mt-2">Executes an AQL query with automatic cursor-based pagination for large result sets.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "query": "FOR u IN users RETURN u",
-  "batchSize": 100  // Optional, default 100
-}</code></pre>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response (with pagination)</h4>
-        <pre><code class="language-json">{
-  "result": [...],  // First batch (up to batchSize documents)
-  "count": 250,     // Total number of results
-  "hasMore": true,  // More results available
-  "id": "550e8400-e29b-41d4-a716-446655440000",  // Cursor ID
-  "cached": false   // Results from cache (false for initial query)
-}</code></pre>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response (small result set, no pagination)</h4>
-        <pre><code class="language-json">{
-  "result": [...],  // All results
-  "count": 25,
-  "hasMore": false,
-  "id": null,
-  "cached": false
-}</code></pre>
-        <div class="bg-blue-900/20 border-l-4 border-blue-500 p-4 mt-4 rounded-r-md">
-          <div class="flex">
-            <div class="ml-3">
-              <p class="text-sm text-blue-200">
-                <strong>Pagination:</strong> If the result set exceeds <code>batchSize</code> (default 100), the response includes a cursor <code>id</code> and <code>hasMore: true</code>. Use the cursor ID to fetch subsequent batches. Cursors automatically expire after 5 minutes.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Get Next Batch from Cursor</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-yellow-500 shadow-sm">
-          <span class="text-yellow-400 font-bold">PUT</span> <span class="text-gray-300">/_api/cursor/:id</span>
-        </div>
-        <p class="mt-2">Retrieves the next batch of results from an active cursor.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
-        <pre><code class="language-json">{
-  "result": [...],  // Next batch of documents
-  "count": 100,     // Number of documents in this batch
-  "hasMore": true,  // More results available
-  "id": "550e8400-e29b-41d4-a716-446655440000",  // Same cursor ID
-  "cached": true    // Results from cursor cache
-}</code></pre>
-        <div class="bg-yellow-900/20 border-l-4 border-yellow-500 p-4 mt-4 rounded-r-md">
-          <div class="flex">
-            <div class="ml-3">
-              <p class="text-sm text-yellow-200">
-                <strong>Note:</strong> When <code>hasMore</code> is <code>false</code>, the cursor is automatically deleted and <code>id</code> will be <code>null</code>. Returns 404 if the cursor has expired or doesn't exist.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Delete Cursor</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-red-500 shadow-sm">
-          <span class="text-red-400 font-bold">DELETE</span> <span class="text-gray-300">/_api/cursor/:id</span>
-        </div>
-        <p class="mt-2">Explicitly deletes a cursor before it expires. Useful for freeing resources when you don't need the remaining results.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
-        <p class="mt-2"><code>204 No Content</code> on success, <code>404 Not Found</code> if cursor doesn't exist.</p>
-      </div>
-
-      <div class="my-8 bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-500/30 rounded-lg p-6">
-        <h4 class="text-lg font-semibold text-indigo-300 mb-3">Pagination Example Workflow</h4>
-        <div class="space-y-3 text-sm">
-          <div>
-            <span class="text-gray-400">1. Initial query:</span>
-            <code class="block bg-gray-800 p-2 rounded mt-1 text-xs">POST /_api/cursor {"query": "FOR u IN users RETURN u", "batchSize": 100}</code>
-          </div>
-          <div>
-            <span class="text-gray-400">2. Response includes cursor ID:</span>
-            <code class="block bg-gray-800 p-2 rounded mt-1 text-xs">{"result": [...], "count": 250, "hasMore": true, "id": "abc-123"}</code>
-          </div>
-          <div>
-            <span class="text-gray-400">3. Fetch next batch:</span>
-            <code class="block bg-gray-800 p-2 rounded mt-1 text-xs">PUT /_api/cursor/abc-123</code>
-          </div>
-          <div>
-            <span class="text-gray-400">4. Repeat until hasMore is false</span>
-          </div>
-          <div>
-            <span class="text-gray-400">5. Optional - delete cursor early:</span>
-            <code class="block bg-gray-800 p-2 rounded mt-1 text-xs">DELETE /_api/cursor/abc-123</code>
-          </div>
-        </div>
-      </div>
+    
+    <div class="mb-8 p-4 bg-emerald-900/20 rounded-xl border border-emerald-500/20">
+      <p class="text-emerald-200/80 text-sm leading-relaxed">
+        <strong>ACID Guarantees:</strong> Transactions ensure multi-document operations are atomic. Either all succeed, or all fail. Zero performance impact for non-transactional operations.
+      </p>
     </div>
 
-    <div class="mt-16">
-      <h2 id="indexes" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Indexes</h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Create Index</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/index/:collection</span>
+    <div class="space-y-8 relative z-10">
+      <!-- Begin Transaction -->
+      <div class="group">
+        <div class="flex items-start justify-between mb-2">
+          <h3 class="text-lg font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors">Begin Transaction</h3>
+          <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
         </div>
-        <p class="mt-2">Creates a new index on a collection.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "name": "email_idx",
-  "field": "email",
+        <div class="bg-gray-900/80 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-emerald-500/30 transition-colors">
+          <span class="text-green-400">/_api/database/:db/transaction/begin</span>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+            <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request (Optional)</span>
+            <pre><code class="language-json">{
+  "isolationLevel": "read_committed"
+}</code></pre>
+          </div>
+          <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+            <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Response</span>
+            <pre><code class="language-json">{
+  "id": "tx:1764...",
+  "status": "active"
+}</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transactional Operations -->
+      <div class="group border-t border-emerald-500/20 pt-8">
+        <h3 class="text-lg font-bold text-emerald-200 mb-4">Transactional Operations</h3>
+        <p class="text-gray-400 text-sm mb-4">Perform standard CRUD operations within the transaction context using the transaction ID.</p>
+        
+        <div class="space-y-3">
+          <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+             <span class="text-green-400 font-bold mr-2 w-12">POST</span>
+             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection</span>
+          </div>
+           <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+             <span class="text-yellow-400 font-bold mr-2 w-12">PUT</span>
+             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection/:key</span>
+          </div>
+           <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+             <span class="text-red-400 font-bold mr-2 w-12">DELETE</span>
+             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection/:key</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transactional AQL Queries -->
+      <div class="group border-t border-emerald-500/20 pt-8">
+        <div class="flex items-start justify-between mb-2">
+          <h3 class="text-lg font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors">Execute AQL Query</h3>
+          <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+        </div>
+        <div class="bg-gray-900/80 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-emerald-500/30 transition-colors">
+          <span class="text-green-400">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/query</span>
+        </div>
+        <p class="mt-3 text-gray-300 text-sm">
+          Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction context. Supports FOR loops, FILTER, and LET clauses for bulk operations.
+        </p>
+        
+        <div class="mt-4 bg-emerald-900/10 rounded-lg p-4 border border-emerald-500/20">
+          <div class="flex items-start space-x-2 text-xs text-emerald-200/80">
+            <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span><strong>New:</strong> Full FOR loop support enables powerful bulk operations within transactions.</span>
+          </div>
+        </div>
+        
+        <div class="mt-4 space-y-3">
+          <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+            <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Simple INSERT</span>
+            <pre><code class="language-json">{
+  "query": "INSERT {name: 'Alice', age: 30} INTO users"
+}</code></pre>
+          </div>
+          
+          <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+            <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Bulk Operation with FOR Loop</span>
+            <pre><code class="language-json">{
+  "query": "FOR user IN users FILTER user.age > 60 UPDATE user._key WITH {category: 'senior'} IN users"
+}</code></pre>
+          </div>
+          
+          <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+            <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Response</span>
+            <pre><code class="language-json">{
+  "result": [],
+  "mutationCount": 42,
+  "message": "42 operation(s) staged in transaction..."
+}</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commit/Rollback -->
+       <div class="group border-t border-emerald-500/20 pt-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <div class="flex items-start justify-between mb-2">
+              <h3 class="text-lg font-semibold text-gray-200">Commit</h3>
+              <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+            </div>
+            <div class="bg-gray-900/80 rounded-lg p-3 font-mono text-xs border border-white/5">
+              <span class="text-green-400">.../transaction/:tx_id/commit</span>
+            </div>
+             <p class="mt-2 text-xs text-gray-400">Persist all changes atomically.</p>
+          </div>
+          <div>
+             <div class="flex items-start justify-between mb-2">
+              <h3 class="text-lg font-semibold text-gray-200">Rollback</h3>
+              <span class="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 rounded uppercase tracking-wide">POST</span>
+            </div>
+            <div class="bg-gray-900/80 rounded-lg p-3 font-mono text-xs border border-white/5">
+              <span class="text-red-400">.../transaction/:tx_id/rollback</span>
+            </div>
+            <p class="mt-2 text-xs text-gray-400">Discard all changes.</p>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</section>
+
+        <!-- AQL Query Section -->
+        <section id="query" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-purple-500/10 rounded-lg mr-4">
+                <i class="fas fa-terminal text-purple-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">AQL Query</h2>
+            </div>
+
+             <div class="space-y-8">
+               <div class="group">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-purple-400 transition-colors">Execute Query</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                 <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-purple-500/30 transition-colors">
+                  <span class="text-green-400">/_api/database/:db/cursor</span>
+                </div>
+                <div class="mt-4 bg-gray-950 rounded-lg p-4 border border-white/5">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request Body (Best Practice)</span>
+                  <pre><code class="language-json">{
+  "query": "FOR u IN users FILTER u.age > @age RETURN u",
+  "bindVars": { "age": 25 }
+}</code></pre>
+                </div>
+              </div>
+
+               <div class="group border-t border-gray-700/50 pt-8">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-purple-400 transition-colors">Explain Query</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-purple-500/20 text-purple-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                 <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-purple-500/30 transition-colors">
+                  <span class="text-purple-400">/_api/database/:db/explain</span>
+                </div>
+                <p class="mt-2 text-gray-400">Profiles query execution plan and performance metrics.</p>
+              </div>
+             </div>
+          </div>
+        </section>
+
+        <!-- Indexes Section -->
+        <section id="indexes" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-yellow-500/10 rounded-lg mr-4">
+                <i class="fas fa-list-ol text-yellow-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Indexes</h2>
+            </div>
+            
+             <div class="space-y-8">
+              <!-- Create Index -->
+              <div class="group">
+                 <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-yellow-400 transition-colors">Create Index</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-yellow-500/30 transition-colors">
+                  <span class="text-green-400">/_api/database/:db/index/:collection</span>
+                </div>
+                 <div class="mt-4 bg-gray-950 rounded-lg p-4 border border-white/5">
+                  <pre><code class="language-json">{
   "type": "persistent",
+  "fields": ["email"],
   "unique": true
 }</code></pre>
-      </div>
+                </div>
+              </div>
+              
+              <!-- List/Delete Indexes condensed -->
+              <div class="group border-t border-gray-700/50 pt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                    <h3 class="text-sm font-semibold text-gray-300 mb-2">List Indexes</h3>
+                    <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5">
+                      <span class="text-blue-400 font-bold mr-2">GET</span>.../index/:collection
+                    </div>
+                 </div>
+                  <div>
+                    <h3 class="text-sm font-semibold text-gray-300 mb-2">Delete Index</h3>
+                    <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5">
+                      <span class="text-red-400 font-bold mr-2">DELETE</span>.../index/:collection/:name
+                    </div>
+                 </div>
+              </div>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">List Indexes</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
-          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/database/:db/index/:collection</span>
-        </div>
-        <p class="mt-2">Lists all indexes on a collection.</p>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Delete Index</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-red-500 shadow-sm">
-          <span class="text-red-400 font-bold">DELETE</span> <span class="text-gray-300">/_api/database/:db/index/:collection/:name</span>
-        </div>
-        <p class="mt-2">Deletes an index.</p>
-      </div>
-    </div>
-
-    <div class="mt-16">
-      <h2 id="geo" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Geo Indexes</h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Create Geo Index</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/geo/:collection</span>
-        </div>
-        <p class="mt-2">Creates a geospatial index.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "name": "location_idx",
-  "field": "location"
-}</code></pre>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Geo Near Query</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/geo/:collection/:field/near</span>
-        </div>
-        <p class="mt-2">Finds documents near a coordinate.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "lat": 40.7128,
-  "lon": -74.0060,
-  "limit": 10
-}</code></pre>
-      </div>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Geo Within Query</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-green-500 shadow-sm">
-          <span class="text-green-400 font-bold">POST</span> <span class="text-gray-300">/_api/database/:db/geo/:collection/:field/within</span>
-        </div>
-        <p class="mt-2">Finds documents within a radius.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Request Body</h4>
-        <pre><code class="language-json">{
-  "lat": 40.7128,
-  "lon": -74.0060,
-  "radius": 1000
-}</code></pre>
-      </div>
-    </div>
-
-    <div class="mt-16">
-      <h2 id="cluster" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Cluster <span class="ml-2 text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30">NEW</span></h2>
-
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">Get Cluster Status</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
-          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/cluster/status</span>
-        </div>
-        <p class="mt-2">Returns the current cluster status including node information, replication state, and peer connections.</p>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
-        <pre><code class="language-json">{
-  "node_id": "node1",
-  "is_cluster_mode": true,
-  "current_sequence": 1234,
-  "log_entries": 1234,
-  "peers": [
-    {
-      "address": "192.168.1.11:6756",
-      "is_connected": true,
-      "last_seen_secs_ago": 2,
-      "replication_lag": 0
-    }
-  ]
-}</code></pre>
-        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response Fields</h4>
-        <div class="overflow-x-auto mt-2">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-gray-700">
-                <th class="text-left py-2 px-3 text-gray-400">Field</th>
-                <th class="text-left py-2 px-3 text-gray-400">Description</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-800">
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">node_id</code></td>
-                <td class="py-2 px-3 text-gray-300">Unique identifier for this node</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">is_cluster_mode</code></td>
-                <td class="py-2 px-3 text-gray-300">Whether clustering is active (peers configured)</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">current_sequence</code></td>
-                <td class="py-2 px-3 text-gray-300">Latest sequence number in replication log</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">log_entries</code></td>
-                <td class="py-2 px-3 text-gray-300">Total entries in replication log</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">peers[].address</code></td>
-                <td class="py-2 px-3 text-gray-300">Replication address of the peer</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">peers[].is_connected</code></td>
-                <td class="py-2 px-3 text-gray-300">Whether currently connected to peer</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">peers[].last_seen_secs_ago</code></td>
-                <td class="py-2 px-3 text-gray-300">Seconds since last heartbeat from peer</td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3"><code class="text-emerald-400">peers[].replication_lag</code></td>
-                <td class="py-2 px-3 text-gray-300">Number of operations not yet acknowledged by peer</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="bg-blue-900/20 border-l-4 border-blue-500 p-4 mt-4 rounded-r-md">
-          <div class="flex">
-            <div class="ml-3">
-              <p class="text-sm text-blue-200">
-                <strong>Note:</strong> In single-node mode, <code>is_cluster_mode</code> will be <code>false</code> and <code>peers</code> will be an empty array.
-              </p>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
 
-    <div class="mt-16">
-      <h2 id="date-functions" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Date Functions</h2>
+        <!-- Geo Section -->
+        <section id="geo" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-orange-500/10 rounded-lg mr-4">
+                <i class="fas fa-globe-americas text-orange-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Geo Spatial</h2>
+            </div>
+             <div class="space-y-6">
+                <div class="bg-gray-900/50 rounded-lg p-4 font-mb border border-white/5">
+                  <h3 class="text-lg font-semibold text-white mb-2">Create Geo Index</h3>
+                  <p class="text-gray-400 text-sm mb-3">Enables geospatial queries on a collection.</p>
+                  <code class="block bg-black/30 p-2 rounded text-xs text-orange-300">POST /_api/database/:db/geo/:collection</code>
+                </div>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div class="bg-gray-900/50 rounded-lg p-4 border border-white/5">
+                     <h4 class="text-white font-medium mb-2">Geo Near</h4>
+                     <p class="text-xs text-gray-500 mb-2">Find closest points.</p>
+                     <code class="block bg-black/30 p-2 rounded text-xs text-gray-300">.../near</code>
+                   </div>
+                   <div class="bg-gray-900/50 rounded-lg p-4 border border-white/5">
+                     <h4 class="text-white font-medium mb-2">Geo Within</h4>
+                     <p class="text-xs text-gray-500 mb-2">Find points inside radius.</p>
+                      <code class="block bg-black/30 p-2 rounded text-xs text-gray-300">.../within</code>
+                   </div>
+                 </div>
+             </div>
+           </div>
+        </section>
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">DATE_NOW()</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-purple-500 shadow-sm">
-          <span class="text-purple-400 font-bold">AQL FUNCTION</span>
-        </div>
-        <p class="mt-2">Returns the current Unix timestamp in milliseconds.</p>
-        <pre><code class="language-sql">RETURN DATE_NOW()
--- Result: 1733234387000</code></pre>
-      </div>
+        <!-- Cluster Section -->
+        <section id="cluster" class="scroll-mt-24">
+          <div class="bg-gradient-to-br from-emerald-900/10 to-blue-900/10 backdrop-blur-md border border-emerald-500/30 rounded-2xl p-8 hover:border-emerald-500/50 transition-colors relative">
+             <div class="flex items-center mb-6">
+              <div class="p-3 bg-emerald-500/10 rounded-lg mr-4">
+                <i class="fas fa-network-wired text-emerald-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white flex items-center">
+                Cluster
+                 <span class="ml-3 text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 uppercase tracking-widest font-bold">New</span>
+              </h2>
+            </div>
+            
+            <div class="group">
+              <div class="flex items-start justify-between mb-2">
+                <h3 class="text-lg font-semibold text-gray-200">Get Status</h3>
+                <span class="px-2 py-1 text-xs font-bold bg-blue-500/20 text-blue-400 rounded uppercase tracking-wide">GET</span>
+              </div>
+              <div class="bg-gray-900/50 rounded-lg p-4 font-mono text-sm border border-white/5">
+                <span class="text-blue-400">/_api/cluster/status</span>
+              </div>
+              <p class="mt-2 text-gray-400">Monitoring replication state and peer connectivity.</p>
+            </div>
+          </div>
+        </section>
+        
+        <!-- Date Functions Section -->
 
-      <div class="my-8">
-        <h3 class="text-xl font-semibold text-gray-200 mb-3">DATE_ISO8601(timestamp)</h3>
-        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-purple-500 shadow-sm">
-          <span class="text-purple-400 font-bold">AQL FUNCTION</span>
-        </div>
-        <p class="mt-2">Converts a Unix timestamp (in milliseconds) to an ISO 8601 formatted string.</p>
-        <pre><code class="language-sql">RETURN DATE_ISO8601(1733234387000)
--- Result: "2025-12-03T13:59:47.000Z"</code></pre>
-      </div>
 
-      <div class="my-8 bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-500/30 rounded-lg p-6">
-        <h4 class="text-lg font-semibold text-indigo-300 mb-3">Example: Time-based Filtering</h4>
-        <pre><code class="language-sql">FOR doc IN events
-  LET eventDate = DATE_ISO8601(doc.timestamp)
-  FILTER doc.timestamp > DATE_NOW() - 86400000 -- Last 24 hours
-  RETURN {
-    event: doc.name,
-    date: eventDate
-  }</code></pre>
       </div>
+      
+      <!-- Footer Note -->
+      <div class="mt-24 pt-8 border-t border-white/5 text-center text-gray-500">
+        <p>Documentation built with <span class="text-red-400">♥</span> for the SoliDB Community.</p>
+      </div>
+      
     </div>
   </div>
 </div>

@@ -5,7 +5,9 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "build:riot": "riot app/components --output public/app/components --ext js"
+    "build:riot": "riot app/components --output public/app/components --ext js",
+    "build:css": "tailwindcss -i ./app/views/layouts/app/css_tw_src.css -o ./public/app.css",
+    "watch:css": "tailwindcss -i ./app/views/layouts/app/css_tw_src.css -o ./public/app.css --watch"
   },
   "dependencies": {
     "@riotjs/cli": "^6.1.4",

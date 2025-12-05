@@ -92,8 +92,10 @@ pub struct ExecutionTiming {
 pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
-    database: Option<String>,
+   database: Option<String>,
     replication: Option<&'a ReplicationService>,
+    // Flag to indicate if we should defer mutations for transactional execution
+    is_transactional: bool,
 }
 
 /// Extracted filter condition for index optimization
@@ -138,6 +140,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars: HashMap::new(),
             database: None,
             replication: None,
+            is_transactional: false,
         }
     }
 
@@ -148,6 +151,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars,
             database: None,
             replication: None,
+            is_transactional: false,
         }
     }
 
@@ -158,6 +162,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars: HashMap::new(),
             database: Some(database),
             replication: None,
+            is_transactional: false,
         }
     }
 
@@ -172,6 +177,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars,
             database: Some(database),
             replication: None,
+            is_transactional: false,
         }
     }
 
@@ -533,7 +539,7 @@ impl<'a> QueryExecutor<'a> {
                             .unwrap_or(false)
                     });
                 }
-                BodyClause::Insert(insert_clause) => {
+                 BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&insert_clause.collection)?;
 
@@ -1146,7 +1152,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Evaluate a filter expression with full context
-    fn evaluate_filter_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<bool> {
+    pub fn evaluate_filter_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<bool> {
         match self.evaluate_expr_with_context(expr, ctx)? {
             Value::Bool(b) => Ok(b),
             _ => Ok(false),
@@ -1154,7 +1160,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Evaluate an expression with a context containing multiple variables
-    fn evaluate_expr_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<Value> {
+    pub fn evaluate_expr_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<Value> {
         match expr {
             Expression::Variable(name) => ctx
                 .get(name)

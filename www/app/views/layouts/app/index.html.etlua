@@ -1,5 +1,5 @@
 <!DOCTYPE HTML>
-<html lang="en">
+<html lang="en" style="scroll-behavior: smooth">
 <head>
   <meta charset="UTF-8">
   <title><%= title or "SoliDB - High Performance Rust Database" %></title>

@@ -1,336 +1,356 @@
-<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-  <div class="mb-8">
-    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
-      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-      Back to Documentation
-    </a>
-  </div>
-
-  <div class="max-w-5xl mx-auto">
-    <!-- Header -->
-    <div class="relative mb-16 text-center">
-      <div class="relative">
-        <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-6 tracking-tight">Architecture</h1>
-        <p class="text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
-          A deep dive into SoliDB's internal structure, technology stack, and design principles. Built for performance, reliability, and developer experience.
+<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <!-- Header Section -->
+  <div class="mb-12 relative">
+    <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 blur-3xl -z-10 rounded-full"></div>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div>
+        <a href="/docs" class="inline-flex items-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors mb-4 group">
+          <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Documentation
+        </a>
+        <h1 class="text-5xl font-black text-white tracking-tight mb-4">
+          Architecture <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">Deep Dive</span>
+        </h1>
+        <p class="text-xl text-gray-400 max-w-2xl">
+          Understanding SoliDB's internal structure, technology stack, and design principles.
         </p>
       </div>
     </div>
+  </div>
 
-    <!-- Technology Stack -->
-    <div class="my-20">
-      <h2 id="tech-stack" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
-        <span class="w-2 h-8 bg-indigo-500 rounded-full"></span>
-        Technology Stack
-      </h2>
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("architecture_sidebar") %>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Core Runtime -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-indigo-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-indigo-500/20 rounded-xl border border-indigo-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+    <!-- Main Content -->
+    <div class="col-span-12 lg:col-span-9 space-y-16">
+      
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="p-3 bg-indigo-500/10 rounded-lg mr-4">
+              <i class="fas fa-layer-group text-indigo-400 text-xl"></i>
             </div>
-            <h3 class="text-xl font-bold text-white">Core Runtime</h3>
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
           </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-indigo-300 block mb-1">Rust</strong>
-                <span class="text-sm text-gray-400">Memory safety without garbage collection, ensuring predictable high performance.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-indigo-300 block mb-1">Tokio</strong>
-                <span class="text-sm text-gray-400">Industry-standard asynchronous runtime for handling thousands of concurrent connections.</span>
-              </div>
-            </li>
-          </ul>
+          <p class="text-gray-300 leading-relaxed text-lg">
+            SoliDB is designed for performance, reliability, and developer experience. It combines a robust Rust core with a modern embedded key-value store to deliver high-throughput document storage and querying capabilities.
+          </p>
+        </div>
+      </section>
+
+      <!-- Technology Stack -->
+      <section id="tech-stack" class="scroll-mt-24">
+        <div class="flex items-center mb-8">
+           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
+            <span class="w-1.5 h-8 bg-indigo-500 rounded-full"></span>
+            Technology Stack
+          </h2>
+          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
         </div>
 
-        <!-- Web Server -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-purple-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Core Runtime -->
+          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-indigo-500/30 transition-all group">
+            <div class="flex items-center mb-6 gap-6">
+              <div class="p-3 bg-indigo-500/20 rounded-xl border border-indigo-500/30 group-hover:scale-110 transition-transform">
+                <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              </div>
+              <h3 class="text-xl font-bold text-white">Core Runtime</h3>
             </div>
-            <h3 class="text-xl font-bold text-white">Web Server</h3>
+            <ul class="space-y-4">
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-indigo-300 block mb-1">Rust</strong>
+                  <span class="text-sm text-gray-400">Memory safety without garbage collection, ensuring predictable high performance.</span>
+                </div>
+              </li>
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-indigo-300 block mb-1">Tokio</strong>
+                  <span class="text-sm text-gray-400">Industry-standard asynchronous runtime for handling thousands of concurrent connections.</span>
+                </div>
+              </li>
+            </ul>
           </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-purple-300 block mb-1">Axum</strong>
-                <span class="text-sm text-gray-400">Ergonomic, modular web framework built on top of Hyper.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-purple-300 block mb-1">Tower</strong>
-                <span class="text-sm text-gray-400">Robust middleware stack for timeouts, tracing, and backpressure.</span>
-              </div>
-            </li>
-          </ul>
-        </div>
 
-        <!-- Storage Engine -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-pink-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-pink-500/20 rounded-xl border border-pink-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+          <!-- Web Server -->
+          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-purple-500/30 transition-all group">
+            <div class="flex items-center mb-6 gap-6">
+              <div class="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30 group-hover:scale-110 transition-transform">
+                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+              </div>
+              <h3 class="text-xl font-bold text-white">Web Server</h3>
             </div>
-            <h3 class="text-xl font-bold text-white">Storage Engine</h3>
+            <ul class="space-y-4">
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-purple-300 block mb-1">Axum</strong>
+                  <span class="text-sm text-gray-400">Ergonomic, modular web framework built on top of Hyper.</span>
+                </div>
+              </li>
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-purple-300 block mb-1">Tower</strong>
+                  <span class="text-sm text-gray-400">Robust middleware stack for timeouts, tracing, and backpressure.</span>
+                </div>
+              </li>
+            </ul>
           </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-pink-300 block mb-1">RocksDB</strong>
-                <span class="text-sm text-gray-400">Battle-tested embedded key-value store optimized for fast storage.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-pink-300 block mb-1">Serde</strong>
-                <span class="text-sm text-gray-400">Zero-copy serialization framework for efficient JSON handling.</span>
-              </div>
-            </li>
-          </ul>
-        </div>
 
-        <!-- Utilities -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-green-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-green-500/20 rounded-xl border border-green-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          <!-- Storage Engine -->
+          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-pink-500/30 transition-all group">
+            <div class="flex items-center mb-6 gap-6">
+              <div class="p-3 bg-pink-500/20 rounded-xl border border-pink-500/30 group-hover:scale-110 transition-transform">
+                <svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+              </div>
+              <h3 class="text-xl font-bold text-white">Storage Engine</h3>
             </div>
-            <h3 class="text-xl font-bold text-white">Utilities</h3>
+            <ul class="space-y-4">
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-pink-300 block mb-1">RocksDB</strong>
+                  <span class="text-sm text-gray-400">Battle-tested embedded key-value store optimized for fast storage.</span>
+                </div>
+              </li>
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-pink-300 block mb-1">Serde</strong>
+                  <span class="text-sm text-gray-400">Zero-copy serialization framework for efficient JSON handling.</span>
+                </div>
+              </li>
+            </ul>
           </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-green-300 block mb-1">Tracing</strong>
-                <span class="text-sm text-gray-400">Structured logging and distributed tracing for observability.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-green-300 block mb-1">Anyhow</strong>
-                <span class="text-sm text-gray-400">Idiomatic error handling with context-rich error reports.</span>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
 
-    <!-- Project Structure -->
-    <div class="mb-12">
-      <h2 id="project-structure" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
-        <span class="w-2 h-8 bg-purple-500 rounded-full"></span>
-        Project Structure
-      </h2>
-
-      <div class="relative border-l-2 border-white/10 ml-4 space-y-12">
-        <!-- src/main.rs -->
-        <div class="relative pl-10">
-          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-indigo-500 border-4 border-gray-900"></div>
-          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-indigo-300 mb-2 font-mono">src/main.rs</h3>
-            <p class="text-gray-400 mb-4">Application entry point. Bootstraps the system:</p>
-            <ul class="list-disc pl-5 space-y-1 text-sm text-gray-500 mb-4">
-              <li>Initializes logging/tracing</li>
-              <li>Sets up RocksDB storage engine</li>
-              <li>Configures API routes</li>
-              <li>Starts TCP listener</li>
+          <!-- Utilities -->
+          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-green-500/30 transition-all group">
+            <div class="flex items-center mb-6 gap-6">
+              <div class="p-3 bg-green-500/20 rounded-xl border border-green-500/30 group-hover:scale-110 transition-transform">
+                <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </div>
+              <h3 class="text-xl font-bold text-white">Utilities</h3>
+            </div>
+            <ul class="space-y-4">
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-green-300 block mb-1">Tracing</strong>
+                  <span class="text-sm text-gray-400">Structured logging and distributed tracing for observability.</span>
+                </div>
+              </li>
+              <li class="flex items-start">
+                <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <div>
+                  <strong class="text-green-300 block mb-1">Anyhow</strong>
+                  <span class="text-sm text-gray-400">Idiomatic error handling with context-rich error reports.</span>
+                </div>
+              </li>
             </ul>
           </div>
         </div>
+      </section>
 
-        <!-- src/server/ -->
-        <div class="relative pl-10">
-          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-purple-500 border-4 border-gray-900"></div>
-          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-purple-300 mb-2 font-mono">src/server/</h3>
-            <p class="text-gray-400 mb-4">HTTP server logic and API definitions.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">routes.rs</code>
-                <span class="text-xs text-gray-500">Route definitions and handler mapping.</span>
+      <!-- Project Structure -->
+      <section id="project-structure" class="scroll-mt-24">
+        <div class="flex items-center mb-8">
+           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
+            <span class="w-1.5 h-8 bg-purple-500 rounded-full"></span>
+            Project Structure
+          </h2>
+          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
+        </div>
+
+        <div class="relative border-l-2 border-white/10 ml-4 space-y-12">
+          <!-- src/main.rs -->
+          <div class="relative pl-10">
+            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-indigo-500 border-4 border-gray-900"></div>
+            <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 hover:bg-gray-800/40 transition-colors">
+              <h3 class="text-xl font-bold text-indigo-300 mb-2 font-mono">src/main.rs</h3>
+              <p class="text-gray-400 mb-4">Application entry point. Bootstraps the system:</p>
+              <ul class="list-disc pl-5 space-y-1 text-sm text-gray-500 mb-4">
+                <li>Initializes logging/tracing</li>
+                <li>Sets up RocksDB storage engine</li>
+                <li>Configures API routes</li>
+                <li>Starts TCP listener</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- src/server/ -->
+          <div class="relative pl-10">
+            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-purple-500 border-4 border-gray-900"></div>
+            <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 hover:bg-gray-800/40 transition-colors">
+              <h3 class="text-xl font-bold text-purple-300 mb-2 font-mono">src/server/</h3>
+              <p class="text-gray-400 mb-4">HTTP server logic and API definitions.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">routes.rs</code>
+                  <span class="text-xs text-gray-500">Route definitions and handler mapping.</span>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">handlers.rs</code>
+                  <span class="text-xs text-gray-500">Business logic for endpoints.</span>
+                </div>
               </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">handlers.rs</code>
-                <span class="text-xs text-gray-500">Business logic for endpoints.</span>
+            </div>
+          </div>
+
+          <!-- src/aql/ -->
+          <div class="relative pl-10">
+            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-pink-500 border-4 border-gray-900"></div>
+            <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 hover:bg-gray-800/40 transition-colors">
+              <h3 class="text-xl font-bold text-pink-300 mb-2 font-mono">src/aql/</h3>
+              <p class="text-gray-400 mb-4">The AQL Query Engine pipeline.</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 1</span>
+                  <code class="text-sm font-bold text-white">lexer.rs</code>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 2</span>
+                  <code class="text-sm font-bold text-white">parser.rs</code>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 3</span>
+                  <code class="text-sm font-bold text-white">ast.rs</code>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 4</span>
+                  <code class="text-sm font-bold text-white">executor.rs</code>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- src/storage/ -->
+          <div class="relative pl-10">
+            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-green-500 border-4 border-gray-900"></div>
+            <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 hover:bg-gray-800/40 transition-colors">
+              <h3 class="text-xl font-bold text-green-300 mb-2 font-mono">src/storage/</h3>
+              <p class="text-gray-400 mb-4">Data persistence layer.</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">mod.rs</code>
+                <span class="text-sm text-gray-500">Defines <code>StorageEngine</code> and <code>Collection</code> structs. Manages direct interaction with the underlying RocksDB instance.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- src/cluster/ -->
+          <div class="relative pl-10">
+            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-emerald-500 border-4 border-gray-900"></div>
+            <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 hover:bg-gray-800/40 transition-colors">
+              <h3 class="text-xl font-bold text-emerald-300 mb-2 font-mono">src/cluster/</h3>
+              <p class="text-gray-400 mb-4">Multi-node replication and clustering.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">service.rs</code>
+                  <span class="text-xs text-gray-500">Replication service for peer-to-peer communication.</span>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">replication.rs</code>
+                  <span class="text-xs text-gray-500">Persistent replication log and entry management.</span>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">hlc.rs</code>
+                  <span class="text-xs text-gray-500">Hybrid Logical Clock for distributed ordering.</span>
+                </div>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                  <code class="text-sm font-bold text-white block mb-1">config.rs</code>
+                  <span class="text-xs text-gray-500">Cluster configuration and peer management.</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <!-- src/aql/ -->
-        <div class="relative pl-10">
-          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-pink-500 border-4 border-gray-900"></div>
-          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-pink-300 mb-2 font-mono">src/aql/</h3>
-            <p class="text-gray-400 mb-4">The AQL Query Engine pipeline.</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
-                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 1</span>
-                <code class="text-sm font-bold text-white">lexer.rs</code>
+      <!-- Cluster Architecture -->
+      <section id="cluster" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-emerald-500/20 rounded-2xl p-8 hover:border-emerald-500/40 transition-colors">
+          <div class="flex items-center mb-8">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+              Cluster Architecture
+            </h2>
+            <span class="ml-4 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-500/30">NEW</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Replication -->
+            <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-xl p-6">
+              <div class="flex items-center mb-4 gap-4">
+                <div class="p-2 bg-emerald-500/20 rounded-lg">
+                  <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                </div>
+                <h3 class="text-lg font-bold text-white">Replication</h3>
               </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
-                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 2</span>
-                <code class="text-sm font-bold text-white">parser.rs</code>
+              <ul class="space-y-3">
+                <li class="flex items-start">
+                  <span class="text-emerald-400 mr-2">•</span>
+                  <div><strong class="text-emerald-300 block mb-0.5">Peer-to-Peer</strong> <span class="text-sm text-gray-400">No master/slave distinction.</span></div>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-emerald-400 mr-2">•</span>
+                  <div><strong class="text-emerald-300 block mb-0.5">Push & Pull</strong> <span class="text-sm text-gray-400">Bidirectional sync.</span></div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Conflict Resolution -->
+            <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-xl p-6">
+              <div class="flex items-center mb-4 gap-4">
+                <div class="p-2 bg-teal-500/20 rounded-lg">
+                  <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <h3 class="text-lg font-bold text-white">Conflict Resolution</h3>
               </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
-                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 3</span>
-                <code class="text-sm font-bold text-white">ast.rs</code>
-              </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5 text-center">
-                <span class="text-xs text-gray-500 uppercase tracking-wider block mb-1">Step 4</span>
-                <code class="text-sm font-bold text-white">executor.rs</code>
-              </div>
+               <ul class="space-y-3">
+                <li class="flex items-start">
+                  <span class="text-teal-400 mr-2">•</span>
+                  <div><strong class="text-teal-300 block mb-0.5">Hybrid Logical Clocks</strong> <span class="text-sm text-gray-400">Consistent event ordering.</span></div>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-teal-400 mr-2">•</span>
+                  <div><strong class="text-teal-300 block mb-0.5">Last-Write-Wins</strong> <span class="text-sm text-gray-400">Auto conflict resolution.</span></div>
+                </li>
+              </ul>
             </div>
           </div>
-        </div>
 
-        <!-- src/storage/ -->
-        <div class="relative pl-10">
-          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-green-500 border-4 border-gray-900"></div>
-          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-green-300 mb-2 font-mono">src/storage/</h3>
-            <p class="text-gray-400 mb-4">Data persistence layer.</p>
-            <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-              <code class="text-sm font-bold text-white block mb-1">mod.rs</code>
-              <span class="text-sm text-gray-500">Defines <code>StorageEngine</code> and <code>Collection</code> structs. Manages direct interaction with the underlying RocksDB instance.</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- src/cluster/ -->
-        <div class="relative pl-10">
-          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-emerald-500 border-4 border-gray-900"></div>
-          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-emerald-300 mb-2 font-mono">src/cluster/</h3>
-            <p class="text-gray-400 mb-4">Multi-node replication and clustering.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">service.rs</code>
-                <span class="text-xs text-gray-500">Replication service for peer-to-peer communication.</span>
-              </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">replication.rs</code>
-                <span class="text-xs text-gray-500">Persistent replication log and entry management.</span>
-              </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">hlc.rs</code>
-                <span class="text-xs text-gray-500">Hybrid Logical Clock for distributed ordering.</span>
-              </div>
-              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-1">config.rs</code>
-                <span class="text-xs text-gray-500">Cluster configuration and peer management.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Cluster Architecture -->
-    <div class="my-20">
-      <h2 id="cluster" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
-        <span class="w-2 h-8 bg-emerald-500 rounded-full"></span>
-        Cluster Architecture
-        <span class="px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-500/30">NEW</span>
-      </h2>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Replication -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-emerald-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-emerald-500/20 rounded-xl border border-emerald-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-            </div>
-            <h3 class="text-xl font-bold text-white">Replication</h3>
-          </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-emerald-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-emerald-300 block mb-1">Peer-to-Peer</strong>
-                <span class="text-sm text-gray-400">All nodes are equal - no master/slave distinction.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-emerald-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-emerald-300 block mb-1">Push & Pull Sync</strong>
-                <span class="text-sm text-gray-400">Bidirectional replication with catch-up support.</span>
-              </div>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Conflict Resolution -->
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-teal-500/30 transition-all group">
-          <div class="flex items-center mb-6 gap-6">
-            <div class="p-3 bg-teal-500/20 rounded-xl border border-teal-500/30 group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            </div>
-            <h3 class="text-xl font-bold text-white">Conflict Resolution</h3>
-          </div>
-          <ul class="space-y-4">
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-teal-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-teal-300 block mb-1">Hybrid Logical Clocks</strong>
-                <span class="text-sm text-gray-400">Consistent event ordering across distributed nodes.</span>
-              </div>
-            </li>
-            <li class="flex items-start">
-              <svg class="w-5 h-5 text-teal-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-              <div>
-                <strong class="text-teal-300 block mb-1">Last-Write-Wins</strong>
-                <span class="text-sm text-gray-400">Automatic conflict resolution using HLC timestamps.</span>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Cluster Diagram -->
-      <div class="mt-8 bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
-        <h3 class="text-lg font-bold text-white mb-4">Cluster Communication</h3>
-        <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto">
-          <pre class="text-gray-300">┌─────────────────────────────────────────────────────────────┐
-│                         Cluster                             │
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto">
+            <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Topology Diagram</h4>
+            <pre class="text-gray-300">┌─────────────────────────────────────────────────────────────┐
+│                    Cluster Architecture                     │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  ┌─────────────┐    Replication    ┌─────────────┐         │
-│  │   Node 1    │◄─────────────────►│   Node 2    │         │
-│  │ HTTP: 6745  │      (TCP)        │ HTTP: 6755  │         │
-│  │ Repl: 6746  │                   │ Repl: 6756  │         │
-│  └──────┬──────┘                   └──────┬──────┘         │
-│         │                                 │                │
-│         │         Replication             │                │
-│         └────────────┬────────────────────┘                │
-│                      │                                     │
-│                      ▼                                     │
+│  ┌─────────────┐    TCP/JSON    ┌─────────────┐            │
+│  │   Node 1    │◄──────────────►│   Node 2    │            │
+│  │  :6745/:6746│                │  :6755/:6756│            │
+│  └──────┬──────┘                └──────┬──────┘            │
+│         │                              │                   │
+│         │         TCP/JSON             │                   │
+│         └──────────────┬───────────────┘                   │
+│                        │                                   │
+│                        ▼                                   │
 │               ┌─────────────┐                              │
 │               │   Node 3    │                              │
-│               │ HTTP: 6765  │                              │
-│               │ Repl: 6766  │                              │
+│               │  :6765/:6766│                              │
 │               └─────────────┘                              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘</pre>
+          </div>
         </div>
-      </div>
+      </section>
+
     </div>
   </div>
 </div>

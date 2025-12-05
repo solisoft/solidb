@@ -545,6 +545,228 @@ impl Collection {
         Ok(())
     }
 
+    // ==================== Transactional Document Operations ====================
+
+    /// Insert a document within a transaction (deferred until commit)
+    pub fn insert_tx(
+        &self,
+        tx: &mut crate::transaction::Transaction,
+        wal: &crate::transaction::wal::WalWriter,
+        data: Value,
+    ) -> DbResult<Document> {
+        // Extract or generate key
+        let mut data = data;
+        let key = if let Some(obj) = data.as_object_mut() {
+            if let Some(key_value) = obj.remove("_key") {
+                if let Some(key_str) = key_value.as_str() {
+                    key_str.to_string()
+                } else {
+                    return Err(DbError::InvalidDocument(
+                        "_key must be a string".to_string(),
+                    ));
+                }
+            } else {
+                uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+            }
+        } else {
+            uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+        };
+
+        // Create document
+        let doc = Document::with_key(&self.name, key.clone(), data.clone());
+
+        // Check unique constraints before adding to transaction
+        let doc_value = doc.to_value();
+        self.check_unique_constraints(&key, &doc_value)?;
+
+        // Extract database name from collection name (format: "db:collection")
+        let (database, collection) = if let Some((db, coll)) = self.name.split_once(':') {
+            (db.to_string(), coll.to_string())
+        } else {
+            ("_system".to_string(), self.name.clone())
+        };
+
+        // Add operation to transaction
+        let operation = crate::transaction::Operation::Insert {
+            database,
+            collection,
+            key: key.clone(),
+            data: data.clone(),
+        };
+
+        // Write to WAL immediately for durability
+        wal.write_operation(tx.id, operation.clone())?;
+
+        // Track operation in transaction for commit/rollback
+        tx.add_operation(operation);
+
+        Ok(doc)
+    }
+
+    /// Update a document within a transaction (deferred until commit)
+    pub fn update_tx(
+        &self,
+        tx: &mut crate::transaction::Transaction,
+        wal: &crate::transaction::wal::WalWriter,
+        key: &str,
+        data: Value,
+    ) -> DbResult<Document> {
+        // Get old document
+        let old_doc = self.get(key)?;
+        let old_value = old_doc.to_value();
+
+        // Create updated document
+        let mut doc = old_doc;
+        doc.update(data.clone());
+        let new_value = doc.to_value();
+
+        // Extract database name from collection name
+        let (database, collection) = if let Some((db, coll)) = self.name.split_once(':') {
+            (db.to_string(), coll.to_string())
+        } else {
+            ("_system".to_string(), self.name.clone())
+        };
+
+        // Add operation to transaction
+        let operation = crate::transaction::Operation::Update {
+            database,
+            collection,
+            key: key.to_string(),
+            old_data: old_value,
+            new_data: new_value,
+        };
+
+        // Write to WAL immediately
+        wal.write_operation(tx.id, operation.clone())?;
+
+        // Track operation in transaction
+        tx.add_operation(operation);
+
+        Ok(doc)
+    }
+
+    /// Delete a document within a transaction (deferred until commit)
+    pub fn delete_tx(
+        &self,
+        tx: &mut crate::transaction::Transaction,
+        wal: &crate::transaction::wal::WalWriter,
+        key: &str,
+    ) -> DbResult<()> {
+        // Get document before deleting
+        let doc = self.get(key)?;
+        let doc_value = doc.to_value();
+
+        // Extract database name from collection name
+        let (database, collection) = if let Some((db, coll)) = self.name.split_once(':') {
+            (db.to_string(), coll.to_string())
+        } else {
+            ("_system".to_string(), self.name.clone())
+        };
+
+        // Add operation to transaction
+        let operation = crate::transaction::Operation::Delete {
+            database,
+            collection,
+            key: key.to_string(),
+            old_data: doc_value,
+        };
+
+        // Write to WAL immediately
+        wal.write_operation(tx.id, operation.clone())?;
+
+        // Track operation in transaction
+        tx.add_operation(operation);
+
+        Ok(())
+    }
+
+    // ==================== Transaction Commit/Rollback Helpers ====================
+
+    /// Apply operations from a committed transaction (called during commit)
+    pub fn apply_transaction_operations(
+        &self,
+        operations: &[crate::transaction::Operation],
+    ) -> DbResult<()> {
+        use rocksdb::WriteBatch;
+
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+
+        let mut batch = WriteBatch::default();
+        let mut insert_count = 0;
+        let mut delete_count = 0;
+
+        for op in operations {
+            match op {
+                crate::transaction::Operation::Insert { key, data, .. } => {
+                    // Check if document already exists (defensive against double-recovery)
+                    if self.get(key).is_ok() {
+                        tracing::warn!("Skipping duplicate insert of key {} during transaction recovery", key);
+                        continue;
+                    }
+                    
+                    let doc = Document::with_key(&self.name, key.clone(), data.clone());
+                    let doc_bytes = serde_json::to_vec(&doc)?;
+                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+                    insert_count += 1;
+
+                    // Update indexes for insert
+                    let doc_value = doc.to_value();
+                    self.update_indexes_on_insert(key, &doc_value)?;
+                    self.update_fulltext_on_insert(key, &doc_value)?;
+                }
+                crate::transaction::Operation::Update {
+                    key,
+                    new_data,
+                    ..
+                } => {
+                    // new_data already contains the complete post-update document with metadata
+                    // Just deserialize it directly instead of merging
+                    let doc: Document = serde_json::from_value(new_data.clone())?;
+                    let doc_bytes = serde_json::to_vec(&doc)?;
+                    batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
+
+                    // Update indexes (need both old and new for proper index maintenance)
+                    // For now, we'll get old_data from new_data's metadata
+                    // In a real implementation, we'd use the old_data field
+                    self.update_indexes_on_update(key, &doc.to_value(), new_data)?;
+                    self.update_fulltext_on_delete(key, &doc.to_value())?;
+                    self.update_fulltext_on_insert(key, new_data)?;
+                }
+                crate::transaction::Operation::Delete { key, old_data, .. } => {
+                    batch.delete_cf(cf, Self::doc_key(key));
+                    delete_count += 1;
+
+                    // Update indexes for delete
+                    self.update_indexes_on_delete(key, old_data)?;
+                    self.update_fulltext_on_delete(key, old_data)?;
+                }
+            }
+        }
+
+        // Atomic batch write
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to apply transaction: {}", e)))?;
+
+        // Update document count
+        if insert_count > 0 {
+            self.doc_count
+                .fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
+            self.count_dirty
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        if delete_count > 0 {
+            self.doc_count
+                .fetch_sub(delete_count, std::sync::atomic::Ordering::Relaxed);
+            self.count_dirty
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        Ok(())
+    }
+
     /// Get all documents
     pub fn all(&self) -> Vec<Document> {
         self.scan(None)

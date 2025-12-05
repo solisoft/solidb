@@ -31,6 +31,22 @@ pub enum DbError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    // Transaction errors
+    #[error("Transaction '{0}' not found")]
+    TransactionNotFound(String),
+
+    #[error("Transaction conflict: {0}")]
+    TransactionConflict(String),
+
+    #[error("Deadlock detected: {0}")]
+    DeadlockDetected(String),
+
+    #[error("Transaction timeout: {0}")]
+    TransactionTimeout(String),
+
+    #[error("Isolation violation: {0}")]
+    IsolationViolation(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;

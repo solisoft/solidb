@@ -1,4 +1,4 @@
-<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
   <div class="mb-8">
     <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
       <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -7,46 +7,8 @@
   </div>
 
   <div class="lg:grid lg:grid-cols-12 lg:gap-12">
-    <!-- Sidebar Navigation -->
-    <div class="hidden lg:block lg:col-span-3">
-      <nav class="sticky top-6 space-y-2" aria-label="Sidebar">
-        <div class="bg-gray-900/50 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-xl">
-          <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 px-3">Contents</h3>
-          <a href="#overview" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Overview
-          </a>
-          <a href="#architecture" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Architecture
-          </a>
-          <a href="#setup" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Cluster Setup
-          </a>
-          <a href="#cli-options" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            CLI Options
-          </a>
-          <a href="#api" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Cluster API
-          </a>
-          <a href="#replication" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Replication
-          </a>
-          <a href="#conflict-resolution" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Conflict Resolution
-          </a>
-          <a href="#best-practices" class="flex items-center px-3 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-white/5 hover:text-white transition-all group">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            Best Practices
-          </a>
-        </div>
-      </nav>
-    </div>
+    <!-- Sidebar Partial -->
+    <%- Partial("cluster_sidebar") %>
 
     <!-- Main Content -->
     <main class="lg:col-span-9 space-y-12">

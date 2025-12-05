@@ -1,0 +1,96 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 space-y-8">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Contents</h3>
+      
+      <nav class="space-y-1">
+        <!-- Basic Syntax -->
+        <a href="#syntax" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Basic Syntax
+        </a>
+
+        <!-- LET & Subqueries -->
+        <a href="#let-subqueries" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          LET & Subqueries
+        </a>
+
+        <!-- Operators -->
+        <a href="#operators" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Operators
+        </a>
+
+        <!-- Bind Variables -->
+        <a href="#bind-variables" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Bind Variables
+        </a>
+
+        <!-- Data Modification -->
+        <a href="#data-modification" class="group flex items-center px-2 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+          Data Modification
+          <span class="ml-auto text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">NEW</span>
+        </a>
+
+        <div class="mt-4 pt-4 border-t border-white/5">
+            <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 px-2">Functions</h4>
+            <div class="space-y-1 pl-2">
+              <a href="#func-numeric" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-indigo-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Numeric
+              </a>
+              <a href="#func-string" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-purple-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                String
+              </a>
+              <a href="#func-date" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-pink-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Date <span class="ml-auto text-[10px] bg-pink-500/20 text-pink-300 px-1.5 rounded border border-pink-500/30">NEW</span>
+              </a>
+              <a href="#func-geo" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-green-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Geospatial
+              </a>
+              <a href="#func-fulltext" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-yellow-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Fulltext
+              </a>
+              <a href="#func-aggregation" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-blue-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Aggregation
+              </a>
+              <a href="#func-array" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-orange-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Array <span class="ml-auto text-[10px] bg-orange-500/20 text-orange-300 px-1.5 rounded border border-orange-500/30">NEW</span>
+              </a>
+              <a href="#func-object" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-gray-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Object
+              </a>
+              <a href="#func-collection" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-cyan-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Collection <span class="ml-auto text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 rounded border border-cyan-500/30">NEW</span>
+              </a>
+            </div>
+        </div>
+      </nav>
+    </div>
+
+    <!-- Quick Tip Card -->
+    <div class="bg-gradient-to-br from-indigo-900/40 to-blue-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <div class="flex items-center mb-3 relative z-10">
+        <i class="fas fa-lightbulb text-yellow-400 mr-2"></i>
+        <h4 class="text-white font-semibold">AQL Pro Tip</h4>
+      </div>
+      <p class="text-sm text-gray-300 mb-0 relative z-10 leading-relaxed">
+        Use <code>RETURN MERGE(doc, { field: "value" })</code> to add fields to result documents without modifying them in the database.
+      </p>
+    </div>
+  </div>
+</div>

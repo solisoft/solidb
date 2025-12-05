@@ -1,0 +1,59 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 space-y-8">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">On this page</h3>
+      
+      <nav class="space-y-1">
+        <!-- Installation -->
+        <a href="#installation" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Installation
+        </a>
+
+        <!-- Configuration -->
+        <a href="#configuration" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Configuration
+        </a>
+
+        <!-- Running -->
+        <a href="#running" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Running the Server
+        </a>
+
+        <!-- CLI Options -->
+        <a href="#cli-options" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          CLI Options
+        </a>
+
+        <!-- Cluster Mode -->
+        <a href="#cluster-mode" class="group flex items-center px-2 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+          Cluster Mode
+        </a>
+
+        <!-- Next Steps -->
+        <a href="#next-steps" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Next Steps
+        </a>
+      </nav>
+    </div>
+
+    <!-- Quick Tip Card -->
+    <div class="bg-gradient-to-br from-indigo-900/40 to-blue-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <div class="flex items-center mb-3 relative z-10">
+        <i class="fas fa-lightbulb text-yellow-400 mr-2"></i>
+        <h4 class="text-white font-semibold">Pro Tip</h4>
+      </div>
+      <p class="text-sm text-gray-300 mb-0 relative z-10 leading-relaxed">
+        Use <code>--node-id auto</code> when clustering to let SoliDB generate unique IDs for you.
+      </p>
+    </div>
+  </div>
+</div>
