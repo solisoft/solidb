@@ -25,6 +25,40 @@
             placeholder="e.g., users, products" />
           <p class="mt-1 text-xs text-gray-400">Only letters, numbers, and underscores allowed</p>
         </div>
+
+        <!-- Sharding Options -->
+        <div class="mb-6 border-t border-gray-700 pt-4">
+          <div class="flex items-center mb-4">
+            <input id="enableSharding" type="checkbox" checked={ state.isSharded } onchange={ toggleSharding }
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-600 rounded bg-gray-700">
+            <label for="enableSharding" class="ml-2 block text-sm text-gray-300">
+              Enable Sharding & Replication
+            </label>
+          </div>
+
+          <div if={ state.isSharded } class="space-y-4 pl-6 border-l-2 border-gray-700">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label>
+                <input type="number" value={ state.numShards } oninput={ handleNumShards } min="1" max="1024"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label>
+                <input type="number" value={ state.replicationFactor } oninput={ handleReplicationFactor } min="1"
+                  max="5"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label>
+              <input type="text" value={ state.shardKey } oninput={ handleShardKey } placeholder="_key"
+                class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p class="mt-1 text-xs text-gray-500">Field to distribute documents (default: _key)</p>
+            </div>
+          </div>
+        </div>
+
         <div class="flex justify-end space-x-3">
           <button type="button" onclick={ handleClose }
             class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">
@@ -47,11 +81,24 @@
         visible: false,
         error: null,
         name: '',
-        loading: false
+        loading: false,
+        isSharded: false,
+        numShards: 1,
+        replicationFactor: 1,
+        shardKey: '_key'
       },
 
       show() {
-        this.update({ visible: true, error: null, name: '', loading: false })
+        this.update({
+          visible: true,
+          error: null,
+          name: '',
+          loading: false,
+          isSharded: false,
+          numShards: 1,
+          replicationFactor: 1,
+          shardKey: '_key'
+        })
         setTimeout(() => {
           if (this.$('input[ref="nameInput"]')) {
             this.$('input[ref="nameInput"]').focus()
@@ -73,6 +120,22 @@
         this.update({ name: e.target.value })
       },
 
+      toggleSharding(e) {
+        this.update({ isSharded: e.target.checked })
+      },
+
+      handleNumShards(e) {
+        this.update({ numShards: parseInt(e.target.value) || 1 })
+      },
+
+      handleReplicationFactor(e) {
+        this.update({ replicationFactor: parseInt(e.target.value) || 1 })
+      },
+
+      handleShardKey(e) {
+        this.update({ shardKey: e.target.value })
+      },
+
       handleClose(e) {
         if (e) e.preventDefault()
         this.hide()
@@ -89,11 +152,19 @@
 
         this.update({ error: null, loading: true })
 
+        const payload = { name }
+
+        if (this.state.isSharded) {
+          payload.numShards = this.state.numShards
+          payload.replicationFactor = this.state.replicationFactor
+          payload.shardKey = this.state.shardKey || '_key'
+        }
+
         try {
           const response = await fetch(`${getApiUrl()}/database/${this.props.db}/collection`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
+            body: JSON.stringify(payload)
           })
 
           if (response.ok) {

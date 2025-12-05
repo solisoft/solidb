@@ -23,6 +23,7 @@ const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_PREFIX: &str = "_stats:"; // Collection statistics
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
+const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
 
 /// Compare two JSON values for sorting
 #[inline]
@@ -941,6 +942,39 @@ impl Collection {
             document_count: self.count(),
             disk_usage: self.disk_usage(),
         }
+    }
+
+    /// Set sharding configuration for this collection
+    pub fn set_shard_config(
+        &self,
+        config: &crate::sharding::coordinator::CollectionShardConfig,
+    ) -> DbResult<()> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let config_bytes = serde_json::to_vec(config)?;
+        db.put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
+            .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get sharding configuration for this collection (None if not sharded)
+    pub fn get_shard_config(&self) -> Option<crate::sharding::coordinator::CollectionShardConfig> {
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+
+        db.get_cf(cf, SHARD_CONFIG_KEY.as_bytes())
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Check if this collection is sharded
+    pub fn is_sharded(&self) -> bool {
+        self.get_shard_config().is_some()
     }
 
     /// Truncate collection - remove all documents but keep indexes

@@ -27,7 +27,7 @@
                     d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                 </svg>
               </div>
-              <div class="ml-4">
+              <div class="ml-4 min-w-0 flex-1">
                 <p class="text-sm font-medium text-gray-400">Node ID</p>
                 <p class="text-lg font-semibold text-gray-100 truncate" title={ state.status.node_id }>{
                   state.status.node_id || 'N/A' }</p>
@@ -78,7 +78,7 @@
                     d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
               </div>
-              <div class="ml-4">
+              <div class="ml-4 min-w-0 flex-1">
                 <p class="text-sm font-medium text-gray-400">Data Directory</p>
                 <p class="text-sm font-semibold text-gray-100 truncate" title={ state.status.data_dir }>{
                   state.status.data_dir || 'N/A' }</p>
@@ -161,7 +161,7 @@
                   <th scope="col"
                     class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Replication
                     Lag</th>
-                   </tr>
+                </tr>
               </thead>
               <tbody class="divide-y divide-gray-600">
                 <tr each={ (peer, idx) in state.status.peers } class="hover:bg-gray-700 transition-colors">

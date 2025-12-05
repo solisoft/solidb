@@ -2,6 +2,7 @@ pub mod aql;
 pub mod cluster;
 pub mod error;
 pub mod server;
+pub mod sharding;
 pub mod storage;
 pub mod transaction;
 

@@ -31,6 +31,7 @@ pub struct AppState {
     pub storage: Arc<StorageEngine>,
     pub cursor_store: CursorStore,
     pub replication: Option<ReplicationService>,
+    pub shard_coordinator: Option<crate::sharding::ShardCoordinator>,
 }
 
 // ==================== Request/Response Types ====================
@@ -54,17 +55,43 @@ pub struct ListDatabasesResponse {
 #[derive(Debug, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
+    /// Number of shards (optional - if not set, collection is not sharded)
+    #[serde(rename = "numShards")]
+    pub num_shards: Option<u16>,
+    /// Field to use for sharding key (default: "_key")
+    #[serde(rename = "shardKey")]
+    pub shard_key: Option<String>,
+    /// Replication factor (optional, default: 1 = no replicas)
+    #[serde(rename = "replicationFactor")]
+    pub replication_factor: Option<u16>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CreateCollectionResponse {
     pub name: String,
     pub status: String,
+    /// Number of shards (if sharded)
+    #[serde(rename = "numShards", skip_serializing_if = "Option::is_none")]
+    pub num_shards: Option<u16>,
+    /// Shard key field (if sharded)
+    #[serde(rename = "shardKey", skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<String>,
+    /// Replication factor (if sharded)
+    #[serde(rename = "replicationFactor", skip_serializing_if = "Option::is_none")]
+    pub replication_factor: Option<u16>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CollectionSummary {
+    pub name: String,
+    pub count: usize,
+    #[serde(rename = "shardConfig", skip_serializing_if = "Option::is_none")]
+    pub shard_config: Option<crate::sharding::coordinator::CollectionShardConfig>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ListCollectionsResponse {
-    pub collections: Vec<String>,
+    pub collections: Vec<CollectionSummary>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,6 +189,18 @@ pub async fn create_collection(
     let database = state.storage.get_database(&db_name)?;
     database.create_collection(req.name.clone())?;
 
+    // Store sharding configuration if specified
+    if let Some(num_shards) = req.num_shards {
+        let collection = database.get_collection(&req.name)?;
+        let shard_config = crate::sharding::coordinator::CollectionShardConfig {
+            num_shards,
+            shard_key: req.shard_key.clone().unwrap_or_else(|| "_key".to_string()),
+            replication_factor: req.replication_factor.unwrap_or(1),
+        };
+        // Store shard config in collection metadata
+        collection.set_shard_config(&shard_config)?;
+    }
+
     // Record to replication log
     if let Some(ref repl) = state.replication {
         repl.record_write(
@@ -177,6 +216,9 @@ pub async fn create_collection(
     Ok(Json(CreateCollectionResponse {
         name: req.name,
         status: "created".to_string(),
+        num_shards: req.num_shards,
+        shard_key: req.shard_key,
+        replication_factor: req.replication_factor,
     }))
 }
 
@@ -185,7 +227,24 @@ pub async fn list_collections(
     Path(db_name): Path<String>,
 ) -> Result<Json<ListCollectionsResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collections = database.list_collections();
+    let names = database.list_collections();
+    
+    let mut collections = Vec::with_capacity(names.len());
+    for name in names {
+        if let Ok(coll) = database.get_collection(&name) {
+            let count = coll.count();
+            let shard_config = coll.get_shard_config();
+            collections.push(CollectionSummary {
+                name,
+                count,
+                shard_config,
+            });
+        }
+    }
+    
+    // Sort by name for consistent UI
+    collections.sort_by(|a, b| a.name.cmp(&b.name));
+    
     Ok(Json(ListCollectionsResponse { collections }))
 }
 
@@ -319,6 +378,25 @@ pub async fn insert_document(
         return Ok(Json(doc.to_value()));
     }
 
+    // Check for sharding
+    // If sharded and we have a coordinator, use it
+    if let Some(shard_config) = collection.get_shard_config() {
+        if shard_config.num_shards > 0 {
+            if let Some(ref coordinator) = state.shard_coordinator {
+                // Check for direct shard access (prevention of infinite loops)
+                if !headers.contains_key("X-Shard-Direct") {
+                    let doc = coordinator.insert(
+                        &db_name,
+                        &coll_name,
+                        &shard_config,
+                        data
+                    ).await?;
+                    return Ok(Json(doc.to_value()));
+                }
+            }
+        }
+    }
+
     let doc = collection.insert(data)?;
 
     // Record to replication log
@@ -343,6 +421,22 @@ pub async fn get_document(
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
+
+    // Check for sharding
+    if let Some(shard_config) = collection.get_shard_config() {
+        if shard_config.num_shards > 0 {
+            if let Some(ref coordinator) = state.shard_coordinator {
+                let doc = coordinator.get(
+                    &db_name,
+                    &coll_name,
+                    &shard_config,
+                    &key
+                ).await?;
+                return Ok(Json(doc.to_value()));
+            }
+        }
+    }
+
     let doc = collection.get(&key)?;
     Ok(Json(doc.to_value()))
 }
@@ -365,6 +459,26 @@ pub async fn update_document(
 
         let doc = collection.update_tx(&mut tx, wal, &key, data)?;
         return Ok(Json(doc.to_value()));
+    }
+
+    // Check for sharding
+    // If sharded and we have a coordinator, use it
+    if let Some(shard_config) = collection.get_shard_config() {
+        if shard_config.num_shards > 0 {
+            if let Some(ref coordinator) = state.shard_coordinator {
+                // Check for direct shard access
+                if !headers.contains_key("X-Shard-Direct") {
+                    let doc = coordinator.update(
+                        &db_name,
+                        &coll_name,
+                        &shard_config,
+                        &key,
+                        data
+                    ).await?;
+                    return Ok(Json(doc.to_value()));
+                }
+            }
+        }
     }
 
     let doc = collection.update(&key, data)?;
@@ -402,6 +516,23 @@ pub async fn delete_document(
 
         collection.delete_tx(&mut tx, wal, &key)?;
         return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // Check for sharding
+    if let Some(shard_config) = collection.get_shard_config() {
+        if shard_config.num_shards > 0 {
+            if let Some(ref coordinator) = state.shard_coordinator {
+                if !headers.contains_key("X-Shard-Direct") {
+                    coordinator.delete(
+                        &db_name,
+                        &coll_name,
+                        &shard_config,
+                        &key
+                    ).await?;
+                    return Ok(StatusCode::NO_CONTENT);
+                }
+            }
+        }
     }
 
     collection.delete(&key)?;

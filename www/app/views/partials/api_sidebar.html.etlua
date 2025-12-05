@@ -17,6 +17,13 @@
           Collections
         </a>
 
+        <!-- Sharding -->
+        <a href="#sharding" class="group flex items-center px-2 py-2 text-sm font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(6,182,212,0.5)]"></span>
+          Sharding
+          <span class="ml-auto text-[10px] font-bold bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/30">NEW</span>
+        </a>
+
         <!-- Documents -->
         <a href="#documents" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform"></span>

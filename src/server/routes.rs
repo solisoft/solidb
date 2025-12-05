@@ -14,10 +14,37 @@ use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 
 pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>) -> Router {
+    // Initialize ShardCoordinator if in cluster mode
+    let shard_coordinator = if let Some(config) = storage.cluster_config() {
+        if config.is_cluster_mode() {
+            // Use peers list as cluster definition
+            // TODO: Robustly determine own index and ensure peers are HTTP API addresses
+            let node_addresses = config.peers.clone();
+            let node_index = 0; // Default to 0 for now
+            
+            let coordinator = crate::sharding::ShardCoordinator::with_health_tracking(
+                Arc::new(storage.clone()),
+                node_index,
+                node_addresses,
+                3, // failure threshold
+            );
+            
+            let coord_arc = Arc::new(coordinator);
+            coord_arc.clone().start_background_tasks();
+            
+            Some((*coord_arc).clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let state = AppState {
         storage: Arc::new(storage),
         cursor_store: CursorStore::new(Duration::from_secs(300)),
         replication,
+        shard_coordinator,
     };
 
     Router::new()
