@@ -1679,6 +1679,7 @@ dependencies = [
  "clap",
  "daemonize",
  "hostname",
+ "libc",
  "rayon",
  "reqwest",
  "rocksdb",

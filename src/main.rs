@@ -51,6 +51,52 @@ fn main() -> anyhow::Result<()> {
     if args.daemon {
         use daemonize::Daemonize;
         use std::fs::File;
+        use std::path::Path;
+
+        // Check if PID file exists and kill existing process
+        if Path::new(&args.pid_file).exists() {
+            match std::fs::read_to_string(&args.pid_file) {
+                Ok(pid_str) => {
+                    if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                        eprintln!("Found existing server with PID {}. Stopping it...", pid);
+                        
+                        // Send SIGTERM to gracefully stop the process
+                        unsafe {
+                            libc::kill(pid, libc::SIGTERM);
+                        }
+                        
+                        // Wait for the process to terminate (max 5 seconds)
+                        for i in 0..50 {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            
+                            // Check if process is still running
+                            let still_running = unsafe {
+                                libc::kill(pid, 0) == 0
+                            };
+                            
+                            if !still_running {
+                                eprintln!("Previous server stopped successfully.");
+                                break;
+                            }
+                            
+                            // After 3 seconds, send SIGKILL if still running
+                            if i == 30 {
+                                eprintln!("Process didn't stop gracefully, forcing shutdown...");
+                                unsafe {
+                                    libc::kill(pid, libc::SIGKILL);
+                                }
+                            }
+                        }
+                        
+                        // Remove the old PID file
+                        let _ = std::fs::remove_file(&args.pid_file);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not read PID file: {}", e);
+                }
+            }
+        }
 
         let stdout = File::create(&args.log_file)?;
         let stderr = File::create(&args.log_file)?;

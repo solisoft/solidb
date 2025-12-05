@@ -45,6 +45,7 @@ reqwest = { version = "0.11", features = ["json", "blocking"] }
 
 # Daemon mode (Unix only)
 daemonize = "0.5"
+libc = "0.2"
 
 # Parallel processing (for concurrent benchmarks)
 rayon = "1.8"
