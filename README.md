@@ -2,6 +2,8 @@
 
 A lightweight, high-performance database server written in Rust that implements a subset of ArangoDB's AQL (ArangoDB Query Language) for JSON document storage.
 
+https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
+
 ## Features
 
 - 🚀 **Fast & Efficient**: Built with Rust for maximum performance
