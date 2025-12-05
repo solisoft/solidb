@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -13,6 +13,7 @@ use crate::cluster::{Operation, ReplicationService};
 use crate::error::DbError;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::{GeoIndexStats, IndexStats, IndexType, StorageEngine};
+use crate::transaction::TransactionId;
 use std::collections::HashMap;
 
 /// Check if a query is potentially long-running (contains mutations or range iterations)
@@ -282,13 +283,42 @@ pub async fn get_collection_stats(
 
 // ==================== Document Handlers ====================
 
+
+fn get_transaction_id(headers: &HeaderMap) -> Option<TransactionId> {
+    headers
+        .get("X-Transaction-ID")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| {
+            // Support "tx:123" or just "123"
+            let id_str = s.strip_prefix("tx:").unwrap_or(s);
+            id_str.parse::<u64>().ok()
+        })
+        .map(TransactionId::from_u64)
+}
+
 pub async fn insert_document(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    headers: HeaderMap,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
+
+    // Check for transaction context
+    if let Some(tx_id) = get_transaction_id(&headers) {
+        let tx_manager = state.storage.transaction_manager()?;
+        let tx_arc = tx_manager.get(tx_id)?;
+        let mut tx = tx_arc.write().unwrap();
+        let wal = tx_manager.wal();
+
+        let doc = collection.insert_tx(&mut tx, wal, data)?;
+        
+        // No replication log for transactional write yet (will happen on commit)
+        
+        return Ok(Json(doc.to_value()));
+    }
+
     let doc = collection.insert(data)?;
 
     // Record to replication log
@@ -320,10 +350,23 @@ pub async fn get_document(
 pub async fn update_document(
     State(state): State<AppState>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
+    headers: HeaderMap,
     Json(data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
+
+    // Check for transaction context
+    if let Some(tx_id) = get_transaction_id(&headers) {
+        let tx_manager = state.storage.transaction_manager()?;
+        let tx_arc = tx_manager.get(tx_id)?;
+        let mut tx = tx_arc.write().unwrap();
+        let wal = tx_manager.wal();
+
+        let doc = collection.update_tx(&mut tx, wal, &key, data)?;
+        return Ok(Json(doc.to_value()));
+    }
+
     let doc = collection.update(&key, data)?;
 
     // Record to replication log
@@ -345,9 +388,22 @@ pub async fn update_document(
 pub async fn delete_document(
     State(state): State<AppState>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
+    headers: HeaderMap,
 ) -> Result<StatusCode, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
+
+    // Check for transaction context
+    if let Some(tx_id) = get_transaction_id(&headers) {
+        let tx_manager = state.storage.transaction_manager()?;
+        let tx_arc = tx_manager.get(tx_id)?;
+        let mut tx = tx_arc.write().unwrap();
+        let wal = tx_manager.wal();
+
+        collection.delete_tx(&mut tx, wal, &key)?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
     collection.delete(&key)?;
 
     // Record to replication log
@@ -363,8 +419,190 @@ pub async fn delete_document(
 pub async fn execute_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<ExecuteQueryResponse>, DbError> {
+    // Check for transaction context
+    if let Some(tx_id) = get_transaction_id(&headers) {
+        // Execute transactional AQL query
+        use crate::aql::ast::BodyClause;
+        
+        let query = parse(&req.query)?;
+        
+        // Get transaction manager
+        let tx_manager = state.storage.transaction_manager()?;
+        let tx_arc = tx_manager.get(tx_id)?;
+        let mut tx = tx_arc.write().unwrap();
+        let wal = tx_manager.wal();
+        
+        // Check if query contains mutation operations
+        let has_mutations = query.body_clauses.iter().any(|clause| {
+            matches!(clause, BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_))
+        });
+        
+        if !has_mutations {
+            // No mutations - just execute normally (read operations)
+            let executor = if req.bind_vars.is_empty() {
+                QueryExecutor::with_database(&state.storage, db_name)
+            } else {
+                QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
+            };
+            let results = executor.execute(&query)?;
+            return Ok(Json(ExecuteQueryResponse {
+                result: results.clone(),
+                count: results.len(),
+                has_more: false,
+                id: None,
+                cached: false,
+                execution_time_ms: 0.0,
+            }));
+        }
+        
+        // For mutation operations, execute transactionally
+        let executor = if req.bind_vars.is_empty() {
+            QueryExecutor::with_database(&state.storage, db_name.clone())
+        } else {
+            QueryExecutor::with_database_and_bind_vars(&state.storage, db_name.clone(), req.bind_vars.clone())
+        };
+        
+        // Execute body clauses manually to intercept mutations
+        let mut initial_bindings = std::collections::HashMap::new();
+        
+        // Merge bind variables
+        for (key, value) in &req.bind_vars {
+            initial_bindings.insert(format!("@{}", key), value.clone());
+        }
+        
+        // Process LET clauses
+        for let_clause in &query.let_clauses {
+            let value = executor.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
+            initial_bindings.insert(let_clause.variable.clone(), value);
+        }
+        
+        let mut rows: Vec<std::collections::HashMap<String, Value>> = vec![initial_bindings.clone()];
+        let mut mutation_count = 0;
+        
+        // Process body clauses in order
+        for clause in &query.body_clauses {
+            match clause {
+                BodyClause::For(for_clause) => {
+                    let mut new_rows = Vec::new();
+                    for ctx in &rows {
+                        let docs = if let Some(ref expr) = for_clause.source_expression {
+                            let value = executor.evaluate_expr_with_context(expr, ctx)?;
+                            match value {
+                                Value::Array(arr) => arr,
+                                other => vec![other],
+                            }
+                        } else {
+                            let source_name = for_clause.source_variable.as_ref().unwrap_or(&for_clause.collection);
+                            if let Some(value) = ctx.get(source_name) {
+                                match value {
+                                    Value::Array(arr) => arr.clone(),
+                                    other => vec![other.clone()],
+                                }
+                            } else {
+                                let full_coll_name = format!("{}:{}", db_name, for_clause.collection);
+                                let collection = state.storage.get_collection(&full_coll_name)?;
+                                collection.scan(None).into_iter().map(|d| d.to_value()).collect()
+                            }
+                        };
+                        
+                        for doc in docs {
+                            let mut new_ctx = ctx.clone();
+                            new_ctx.insert(for_clause.variable.clone(), doc);
+                            new_rows.push(new_ctx);
+                        }
+                    }
+                    rows = new_rows;
+                }
+                BodyClause::Let(let_clause) => {
+                    for ctx in &mut rows {
+                        let value = executor.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                        ctx.insert(let_clause.variable.clone(), value);
+                    }
+                }
+                BodyClause::Filter(filter_clause) => {
+                    rows.retain(|ctx| {
+                        executor.evaluate_filter_with_context(&filter_clause.expression, ctx).unwrap_or(false)
+                    });
+                }
+                BodyClause::Insert(insert_clause) => {
+                    let full_coll_name = format!("{}:{}", db_name, insert_clause.collection);
+                    let collection = state.storage.get_collection(&full_coll_name)?;
+                    
+                    for ctx in &rows {
+                        let doc_value = executor.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                        collection.insert_tx(&mut tx, wal, doc_value)?;
+                        mutation_count += 1;
+                    }
+                }
+                BodyClause::Update(update_clause) => {
+                    let full_coll_name = format!("{}:{}", db_name, update_clause.collection);
+                    let collection = state.storage.get_collection(&full_coll_name)?;
+                    
+                    for ctx in &rows {
+                        let selector_value = executor.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+                        let key = match &selector_value {
+                            Value::String(s) => s.clone(),
+                            Value::Object(obj) => obj.get("_key")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .ok_or_else(|| DbError::ExecutionError(
+                                    "UPDATE: selector object must have a _key field".to_string()
+                                ))?,
+                            _ => return Err(DbError::ExecutionError(
+                                "UPDATE: selector must be a string key or an object with _key field".to_string()
+                            )),
+                        };
+                        
+                        let changes_value = executor.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+                        collection.update_tx(&mut tx, wal, &key, changes_value)?;
+                        mutation_count += 1;
+                    }
+                }
+                BodyClause::Remove(remove_clause) => {
+                    let full_coll_name = format!("{}:{}", db_name, remove_clause.collection);
+                    let collection = state.storage.get_collection(&full_coll_name)?;
+                    
+                    for ctx in &rows {
+                        let selector_value = executor.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+                        let key = match &selector_value {
+                            Value::String(s) => s.clone(),
+                            Value::Object(obj) => obj.get("_key")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .ok_or_else(|| DbError::ExecutionError(
+                                    "REMOVE: selector object must have a _key field".to_string()
+                                ))?,
+                            _ => return Err(DbError::ExecutionError(
+                                "REMOVE: selector must be a string key or an object with _key field".to_string()
+                            )),
+                        };
+                        
+                        collection.delete_tx(&mut tx, wal, &key)?;
+                        mutation_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        // Return mutation result
+        return Ok(Json(ExecuteQueryResponse {
+            result: vec![serde_json::json!({
+                "mutationCount": mutation_count,
+                "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", mutation_count)
+            })],
+            count: 1,
+            has_more: false,
+            id: None,
+            cached: false,
+            execution_time_ms: 0.0,
+        }));
+    }
+
+    // Non-transactional execution (existing logic)
     let query = parse(&req.query)?;
     let batch_size = req.batch_size;
 

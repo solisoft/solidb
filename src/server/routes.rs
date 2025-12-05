@@ -96,12 +96,6 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/_api/database/:db/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/:db/transaction/:tx_id/commit", post(super::transaction_handlers::commit_transaction))
         .route("/_api/database/:db/transaction/:tx_id/rollback", post(super::transaction_handlers::rollback_transaction))
-        // Transactional document operations
-        .route("/_api/database/:db/transaction/:tx_id/document/:collection", post(super::transaction_handlers::insert_document_tx))
-        .route("/_api/database/:db/transaction/:tx_id/document/:collection/:key", put(super::transaction_handlers::update_document_tx))
-        .route("/_api/database/:db/transaction/:tx_id/document/:collection/:key", delete(super::transaction_handlers::delete_document_tx))
-        // Transactional AQL queries
-        .route("/_api/database/:db/transaction/:tx_id/query", post(super::transaction_handlers::execute_aql_transactional))
         // Cluster routes
         .route("/_api/cluster/status", get(cluster_status))
         .route("/_api/cluster/info", get(cluster_info))

@@ -266,6 +266,15 @@
             <pre><code class="language-json">{
   "isolationLevel": "read_committed"
 }</code></pre>
+            <div class="mt-3 text-xs text-gray-400 space-y-2 border-t border-white/5 pt-3">
+              <p class="font-semibold text-emerald-400">Available Isolation Levels:</p>
+              <ul class="space-y-1 list-disc list-inside">
+                <li><code class="text-white bg-white/10 px-1 rounded">read_committed</code> (Default): Balanced consistency/performance. Prevents dirty reads.</li>
+                <li><code class="text-white bg-white/10 px-1 rounded">read_uncommitted</code>: Fastest, but allows dirty reads. Good for bulk import/analytics.</li>
+                <li><code class="text-white bg-white/10 px-1 rounded">repeatable_read</code>: Consistent snapshot throughout transaction. Prevents non-repeatable reads.</li>
+                <li><code class="text-white bg-white/10 px-1 rounded">serializable</code>: Highest safety, full ACID guarantees. May impact performance.</li>
+              </ul>
+            </div>
           </div>
           <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
             <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Response</span>
@@ -280,20 +289,28 @@
       <!-- Transactional Operations -->
       <div class="group border-t border-emerald-500/20 pt-8">
         <h3 class="text-lg font-bold text-emerald-200 mb-4">Transactional Operations</h3>
-        <p class="text-gray-400 text-sm mb-4">Perform standard CRUD operations within the transaction context using the transaction ID.</p>
+        <p class="text-gray-400 text-sm mb-4">Perform standard CRUD and AQL operations within a transaction by adding the <code class="text-white bg-white/10 px-1 rounded">X-Transaction-ID</code> header to any request.</p>
         
         <div class="space-y-3">
           <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
              <span class="text-green-400 font-bold mr-2 w-12">POST</span>
-             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection</span>
+             <span class="text-gray-300">/_api/database/:db/document/:collection</span>
+             <span class="ml-auto text-emerald-400 text-xs">+ X-Transaction-ID header</span>
           </div>
            <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
              <span class="text-yellow-400 font-bold mr-2 w-12">PUT</span>
-             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection/:key</span>
+             <span class="text-gray-300">/_api/database/:db/document/:collection/:key</span>
+             <span class="ml-auto text-emerald-400 text-xs">+ X-Transaction-ID header</span>
           </div>
            <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
              <span class="text-red-400 font-bold mr-2 w-12">DELETE</span>
-             <span class="text-gray-300">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/document/:collection/:key</span>
+             <span class="text-gray-300">/_api/database/:db/document/:collection/:key</span>
+             <span class="ml-auto text-emerald-400 text-xs">+ X-Transaction-ID header</span>
+          </div>
+          <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+             <span class="text-green-400 font-bold mr-2 w-12">POST</span>
+             <span class="text-gray-300">/_api/database/:db/cursor</span>
+             <span class="ml-auto text-emerald-400 text-xs">+ X-Transaction-ID header</span>
           </div>
         </div>
       </div>
@@ -301,14 +318,15 @@
       <!-- Transactional AQL Queries -->
       <div class="group border-t border-emerald-500/20 pt-8">
         <div class="flex items-start justify-between mb-2">
-          <h3 class="text-lg font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors">Execute AQL Query</h3>
+          <h3 class="text-lg font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors">Execute AQL Query (Transactional)</h3>
           <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
         </div>
         <div class="bg-gray-900/80 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-emerald-500/30 transition-colors">
-          <span class="text-green-400">/_api/database/:db/transaction/<span class="text-emerald-400">:tx_id</span>/query</span>
+          <span class="text-green-400">/_api/database/:db/cursor</span>
+          <div class="mt-2 text-xs text-emerald-400">Header: X-Transaction-ID: <span class="text-white">tx:...</span></div>
         </div>
         <p class="mt-3 text-gray-300 text-sm">
-          Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction context. Supports FOR loops, FILTER, and LET clauses for bulk operations.
+          Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction context by adding the <code class="text-white bg-white/10 px-1 rounded">X-Transaction-ID</code> header. Supports FOR loops, FILTER, and LET clauses for bulk operations.
         </p>
         
         <div class="mt-4 bg-emerald-900/10 rounded-lg p-4 border border-emerald-500/20">
@@ -316,7 +334,7 @@
             <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span><strong>New:</strong> Full FOR loop support enables powerful bulk operations within transactions.</span>
+            <span><strong>Tip:</strong> Use the same <code class="text-white bg-white/10 px-1 rounded">/_api/database/:db/cursor</code> endpoint for both transactional and non-transactional queries. Just add the header for transactions!</span>
           </div>
         </div>
         
@@ -338,9 +356,12 @@
           <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
             <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Response</span>
             <pre><code class="language-json">{
-  "result": [],
-  "mutationCount": 42,
-  "message": "42 operation(s) staged in transaction..."
+  "result": [{
+    "mutationCount": 42,
+    "message": "42 operation(s) staged in transaction..."
+  }],
+  "count": 1,
+  "hasMore": false
 }</code></pre>
           </div>
         </div>

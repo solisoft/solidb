@@ -49,11 +49,12 @@ async fn test_transactional_aql_simple_insert() {
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute AQL INSERT
+    // 2. Execute AQL INSERT with transaction header
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri("/_api/database/testdb/cursor")
         .header("content-type", "application/json")
+        .header("X-Transaction-ID", tx_id)
         .body(Body::from(
             json!({
                 "query": "INSERT {name: 'Alice', age: 30, email: 'alice@test.com'} INTO users"
@@ -66,7 +67,7 @@ async fn test_transactional_aql_simple_insert() {
     assert_eq!(response.status(), StatusCode::OK);
     
     let aql_response: Value = parse_json_response(response).await;
-    assert_eq!(aql_response["mutationCount"], 1);
+    assert_eq!(aql_response["result"][0]["mutationCount"], 1);
 
     // 3. Verify document not visible before commit
     let request = Request::builder()
@@ -204,11 +205,12 @@ async fn test_transactional_aql_rollback() {
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute multiple AQL operations
+    // 2. Execute multiple AQL operations with header
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri("/_api/database/testdb/cursor")
         .header("content-type", "application/json")
+        .header("X-Transaction-ID", tx_id)
         .body(Body::from(
             json!({
                 "query": "INSERT {name: 'Bob', age: 25} INTO users"
@@ -220,8 +222,9 @@ async fn test_transactional_aql_rollback() {
 
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri("/_api/database/testdb/cursor")
         .header("content-type", "application/json")
+        .header("X-Transaction-ID", tx_id)
         .body(Body::from(
             json!({
                 "query": "INSERT {name: 'Charlie', age: 35} INTO users"
@@ -284,11 +287,12 @@ async fn test_transactional_aql_update() {
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute UPDATE via AQL
+    // 2. Execute UPDATE via AQL with header
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri("/_api/database/testdb/cursor")
         .header("content-type", "application/json")
+        .header("X-Transaction-ID", tx_id)
         .body(Body::from(
             json!({
                 "query": "UPDATE 'user1' WITH {age: 30, updated: true} IN users"
@@ -350,11 +354,12 @@ async fn test_transactional_aql_remove() {
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute REMOVE with FOR loop
+    // 2. Execute REMOVE with FOR loop using header
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri("/_api/database/testdb/cursor")
         .header("content-type", "application/json")
+        .header("X-Transaction-ID", tx_id)
         .body(Body::from(
             json!({
                 "query": "FOR user IN users FILTER user.age > 30 REMOVE user._key IN users"
@@ -366,7 +371,7 @@ async fn test_transactional_aql_remove() {
     let response = app.clone().oneshot(request).await.unwrap();
     let aql_response: Value = parse_json_response(response).await;
     // Should remove users with age > 30 (40, 50 = 2 users)
-    assert_eq!(aql_response["mutationCount"], 2);
+    assert_eq!(aql_response["result"][0]["mutationCount"], 2);
 
     // 3. Commit
     let request = Request::builder()
