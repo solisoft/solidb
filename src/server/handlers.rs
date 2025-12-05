@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::aql::{parse, QueryExecutor, BodyClause, Query};
+use crate::aql::{parse, BodyClause, Query, QueryExecutor};
+use crate::cluster::{Operation, ReplicationService};
 use crate::error::DbError;
-use crate::storage::{StorageEngine, IndexType, IndexStats, GeoIndexStats};
-use crate::cluster::{ReplicationService, Operation};
 use crate::server::cursor_store::CursorStore;
+use crate::storage::{GeoIndexStats, IndexStats, IndexType, StorageEngine};
 use std::collections::HashMap;
 
 /// Check if a query is potentially long-running (contains mutations or range iterations)
@@ -123,14 +123,7 @@ pub async fn create_database(
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
-        repl.record_write(
-            &req.name,
-            "",
-            Operation::CreateDatabase,
-            "",
-            None,
-            None,
-        );
+        repl.record_write(&req.name, "", Operation::CreateDatabase, "", None, None);
     }
 
     Ok(Json(CreateDatabaseResponse {
@@ -139,9 +132,7 @@ pub async fn create_database(
     }))
 }
 
-pub async fn list_databases(
-    State(state): State<AppState>,
-) -> Json<ListDatabasesResponse> {
+pub async fn list_databases(State(state): State<AppState>) -> Json<ListDatabasesResponse> {
     let databases = state.storage.list_databases();
     Json(ListDatabasesResponse { databases })
 }
@@ -154,14 +145,7 @@ pub async fn delete_database(
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
-        repl.record_write(
-            &name,
-            "",
-            Operation::DeleteDatabase,
-            "",
-            None,
-            None,
-        );
+        repl.record_write(&name, "", Operation::DeleteDatabase, "", None, None);
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -235,11 +219,9 @@ pub async fn truncate_collection(
 
     // Run in blocking task since this can be slow for large collections
     let coll = collection.clone();
-    let count = tokio::task::spawn_blocking(move || {
-        coll.truncate()
-    })
-    .await
-    .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+    let count = tokio::task::spawn_blocking(move || coll.truncate())
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
@@ -370,14 +352,7 @@ pub async fn delete_document(
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
-        repl.record_write(
-            &db_name,
-            &coll_name,
-            Operation::Delete,
-            &key,
-            None,
-            None,
-        );
+        repl.record_write(&db_name, &coll_name, Operation::Delete, &key, None, None);
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -441,7 +416,9 @@ pub async fn execute_query(
 
     if total_count > batch_size {
         let cursor_id = state.cursor_store.store(result, batch_size);
-        let (first_batch, has_more) = state.cursor_store.get_next_batch(&cursor_id)
+        let (first_batch, has_more) = state
+            .cursor_store
+            .get_next_batch(&cursor_id)
             .unwrap_or((vec![], false));
 
         Ok(Json(ExecuteQueryResponse {
@@ -499,7 +476,10 @@ pub async fn get_next_batch(
             execution_time_ms: 0.0, // Cached results, no execution time
         }))
     } else {
-        Err(DbError::DocumentNotFound(format!("Cursor not found or expired: {}", cursor_id)))
+        Err(DbError::DocumentNotFound(format!(
+            "Cursor not found or expired: {}",
+            cursor_id
+        )))
     }
 }
 
@@ -510,7 +490,10 @@ pub async fn delete_cursor(
     if state.cursor_store.delete(&cursor_id) {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(DbError::DocumentNotFound(format!("Cursor not found: {}", cursor_id)))
+        Err(DbError::DocumentNotFound(format!(
+            "Cursor not found: {}",
+            cursor_id
+        )))
     }
 }
 
@@ -557,10 +540,20 @@ pub async fn create_index(
         "hash" => IndexType::Hash,
         "persistent" | "skiplist" | "btree" => IndexType::Persistent,
         "fulltext" => IndexType::Fulltext,
-        _ => return Err(DbError::InvalidDocument(format!("Unknown index type: {}", req.index_type))),
+        _ => {
+            return Err(DbError::InvalidDocument(format!(
+                "Unknown index type: {}",
+                req.index_type
+            )))
+        }
     };
 
-    collection.create_index(req.name.clone(), req.field.clone(), index_type.clone(), req.unique)?;
+    collection.create_index(
+        req.name.clone(),
+        req.field.clone(),
+        index_type.clone(),
+        req.unique,
+    )?;
 
     Ok(Json(CreateIndexResponse {
         name: req.name,
@@ -590,11 +583,9 @@ pub async fn rebuild_indexes(
 
     // Run in blocking task since this can be slow for large collections
     let coll = collection.clone();
-    let count = tokio::task::spawn_blocking(move || {
-        coll.rebuild_all_indexes()
-    })
-    .await
-    .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+    let count = tokio::task::spawn_blocking(move || coll.rebuild_all_indexes())
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
 
     Ok(Json(serde_json::json!({
         "database": db_name,
@@ -714,8 +705,11 @@ pub async fn geo_near(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    let results = collection.geo_near(&field, req.lat, req.lon, req.limit)
-        .ok_or_else(|| DbError::InvalidDocument(format!("No geo index found on field '{}'", field)))?;
+    let results = collection
+        .geo_near(&field, req.lat, req.lon, req.limit)
+        .ok_or_else(|| {
+            DbError::InvalidDocument(format!("No geo index found on field '{}'", field))
+        })?;
 
     let geo_results: Vec<GeoResult> = results
         .into_iter()
@@ -727,7 +721,10 @@ pub async fn geo_near(
 
     let count = geo_results.len();
 
-    Ok(Json(GeoQueryResponse { results: geo_results, count }))
+    Ok(Json(GeoQueryResponse {
+        results: geo_results,
+        count,
+    }))
 }
 
 pub async fn geo_within(
@@ -738,8 +735,11 @@ pub async fn geo_within(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    let results = collection.geo_within(&field, req.lat, req.lon, req.radius)
-        .ok_or_else(|| DbError::InvalidDocument(format!("No geo index found on field '{}'", field)))?;
+    let results = collection
+        .geo_within(&field, req.lat, req.lon, req.radius)
+        .ok_or_else(|| {
+            DbError::InvalidDocument(format!("No geo index found on field '{}'", field))
+        })?;
 
     let geo_results: Vec<GeoResult> = results
         .into_iter()
@@ -751,7 +751,10 @@ pub async fn geo_within(
 
     let count = geo_results.len();
 
-    Ok(Json(GeoQueryResponse { results: geo_results, count }))
+    Ok(Json(GeoQueryResponse {
+        results: geo_results,
+        count,
+    }))
 }
 
 // ==================== Cluster Status ====================
@@ -775,13 +778,13 @@ pub struct ClusterStatusResponse {
     pub data_dir: String,
 }
 
-pub async fn cluster_status(
-    State(state): State<AppState>,
-) -> Json<ClusterStatusResponse> {
+pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
     let node_id = state.storage.node_id().to_string();
     let data_dir = state.storage.data_dir().to_string();
 
-    let replication_port = state.storage.cluster_config()
+    let replication_port = state
+        .storage
+        .cluster_config()
         .map(|c| c.replication_port)
         .unwrap_or(6746);
 
@@ -797,7 +800,9 @@ pub async fn cluster_status(
             "cluster-ready".to_string()
         };
 
-        let peers: Vec<PeerStatusResponse> = cluster_status.peers.into_iter()
+        let peers: Vec<PeerStatusResponse> = cluster_status
+            .peers
+            .into_iter()
             .map(|p| PeerStatusResponse {
                 address: p.address,
                 is_connected: p.is_connected,
@@ -844,9 +849,7 @@ pub struct ClusterConfigInfo {
     pub replication_port: u16,
 }
 
-pub async fn cluster_info(
-    State(state): State<AppState>,
-) -> Json<ClusterInfoResponse> {
+pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResponse> {
     let node_id = state.storage.node_id().to_string();
     let is_cluster_mode = state.storage.is_cluster_mode();
 

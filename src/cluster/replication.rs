@@ -1,7 +1,7 @@
+use rocksdb::{IteratorMode, Options, DB};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, RwLock};
 use std::collections::VecDeque;
-use rocksdb::{DB, Options, IteratorMode};
+use std::sync::{Arc, RwLock};
 
 use super::HybridLogicalClock;
 
@@ -121,7 +121,11 @@ impl PersistentReplicationLog {
             _ => 0,
         };
 
-        tracing::debug!("[REPL-LOG] Initialized at sequence {} (path: {})", sequence, repl_path);
+        tracing::debug!(
+            "[REPL-LOG] Initialized at sequence {} (path: {})",
+            sequence,
+            repl_path
+        );
 
         let log = Self {
             node_id,
@@ -143,7 +147,10 @@ impl PersistentReplicationLog {
         let mut cache = self.cache.write().unwrap();
         cache.clear();
 
-        let iter = db.iterator(IteratorMode::From(REPL_LOG_PREFIX, rocksdb::Direction::Forward));
+        let iter = db.iterator(IteratorMode::From(
+            REPL_LOG_PREFIX,
+            rocksdb::Direction::Forward,
+        ));
         let mut entries: Vec<ReplicationEntry> = Vec::new();
 
         for item in iter {
@@ -209,13 +216,19 @@ impl PersistentReplicationLog {
         let prefix = format!("repl:{:020}", 0);
         let end_key = format!("repl:{:020}", before_sequence);
 
-        let iter = db.iterator(IteratorMode::From(prefix.as_bytes(), rocksdb::Direction::Forward));
+        let iter = db.iterator(IteratorMode::From(
+            prefix.as_bytes(),
+            rocksdb::Direction::Forward,
+        ));
         let mut to_delete = Vec::new();
 
         for item in iter {
             if let Ok((key, _)) = item {
                 let key_str = String::from_utf8_lossy(&key);
-                if key_str.as_ref() >= end_key.as_str() || !key_str.starts_with("repl:") || key.as_ref() == REPL_SEQ_KEY {
+                if key_str.as_ref() >= end_key.as_str()
+                    || !key_str.starts_with("repl:")
+                    || key.as_ref() == REPL_SEQ_KEY
+                {
                     break;
                 }
                 to_delete.push(key.to_vec());
@@ -247,7 +260,10 @@ impl PersistentReplicationLog {
         // Fall back to disk
         let db = self.db.read().unwrap();
         let start_key = format!("repl:{:020}", after_sequence + 1);
-        let iter = db.iterator(IteratorMode::From(start_key.as_bytes(), rocksdb::Direction::Forward));
+        let iter = db.iterator(IteratorMode::From(
+            start_key.as_bytes(),
+            rocksdb::Direction::Forward,
+        ));
 
         let mut entries = Vec::new();
         for item in iter {

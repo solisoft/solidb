@@ -1,5 +1,5 @@
-use solidb::{parse, QueryExecutor, StorageEngine};
 use serde_json::json;
+use solidb::{parse, QueryExecutor, StorageEngine};
 use tempfile::TempDir;
 
 #[test]
@@ -12,19 +12,25 @@ fn test_merge_nested_behavior() {
     collection.insert(json!({"_key": "1"})).unwrap();
 
     // Test shallow merge - nested objects are replaced, not merged
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN test
         LIMIT 1
         RETURN MERGE(
             {a: 1, nested: {x: 1, y: 2}},
             {b: 2, nested: {z: 3}}
         )
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
-    println!("Result: {}", serde_json::to_string_pretty(&results[0]).unwrap());
+    println!(
+        "Result: {}",
+        serde_json::to_string_pretty(&results[0]).unwrap()
+    );
 
     // The nested object from the second argument completely replaces the first
     assert_eq!(results[0]["a"], json!(1.0));

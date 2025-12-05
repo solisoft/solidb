@@ -1,7 +1,7 @@
 // ==================== INSERT Statement Tests ====================
 
-use solidb::{parse, QueryExecutor, StorageEngine};
 use serde_json::json;
+use solidb::{parse, QueryExecutor, StorageEngine};
 use tempfile::TempDir;
 
 /// Helper to create a test storage engine
@@ -34,11 +34,14 @@ fn test_insert_in_loop() {
     storage.create_collection("numbers".to_string()).unwrap();
 
     // Insert multiple documents using FOR loop
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR i IN 1..5
           INSERT { value: i } INTO numbers
           RETURN i
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -56,11 +59,14 @@ fn test_insert_with_object_construction() {
     storage.create_collection("users".to_string()).unwrap();
 
     // Insert with object construction
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR i IN 1..3
           INSERT { name: CONCAT("User", i), index: i } INTO users
           RETURN i
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -86,11 +92,14 @@ fn test_insert_from_existing_collection() {
     storage.create_collection("target".to_string()).unwrap();
 
     // Copy documents from source to target
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN source
           INSERT { name: doc.name, age: doc.age, copied: true } INTO target
           RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 

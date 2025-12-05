@@ -1,9 +1,9 @@
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{header, Request, StatusCode},
 };
-use solidb::{create_router, StorageEngine};
 use serde_json::{json, Value};
+use solidb::{create_router, StorageEngine};
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
@@ -32,7 +32,9 @@ async fn post_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, 
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -52,7 +54,9 @@ async fn put(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -79,15 +83,30 @@ async fn test_cursor_pagination_basic() {
     let (app, _dir) = create_test_app();
 
     // Create collection and insert 250 documents
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "items"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "items"}),
+    )
+    .await;
     for i in 0..250 {
-        post_json(&app, "/_api/database/_system/document/items", json!({"id": i, "value": format!("item{}", i)})).await;
+        post_json(
+            &app,
+            "/_api/database/_system/document/items",
+            json!({"id": i, "value": format!("item{}", i)}),
+        )
+        .await;
     }
 
     // Query with default batch size (100)
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR item IN items RETURN item"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR item IN items RETURN item"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 250);
@@ -117,16 +136,31 @@ async fn test_cursor_pagination_basic() {
 async fn test_cursor_custom_batch_size() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "items"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "items"}),
+    )
+    .await;
     for i in 0..50 {
-        post_json(&app, "/_api/database/_system/document/items", json!({"id": i})).await;
+        post_json(
+            &app,
+            "/_api/database/_system/document/items",
+            json!({"id": i}),
+        )
+        .await;
     }
 
     // Query with custom batch size
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR item IN items RETURN item",
-        "batchSize": 10
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR item IN items RETURN item",
+            "batchSize": 10
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 50);
@@ -138,15 +172,30 @@ async fn test_cursor_custom_batch_size() {
 async fn test_cursor_small_result_set() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "items"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "items"}),
+    )
+    .await;
     for i in 0..5 {
-        post_json(&app, "/_api/database/_system/document/items", json!({"id": i})).await;
+        post_json(
+            &app,
+            "/_api/database/_system/document/items",
+            json!({"id": i}),
+        )
+        .await;
     }
 
     // Query with default batch size (100) - should return all results without cursor
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR item IN items RETURN item"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR item IN items RETURN item"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 5);
@@ -159,15 +208,30 @@ async fn test_cursor_small_result_set() {
 async fn test_cursor_delete() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "items"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "items"}),
+    )
+    .await;
     for i in 0..200 {
-        post_json(&app, "/_api/database/_system/document/items", json!({"id": i})).await;
+        post_json(
+            &app,
+            "/_api/database/_system/document/items",
+            json!({"id": i}),
+        )
+        .await;
     }
 
     // Create cursor
-    let (_, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR item IN items RETURN item"
-    })).await;
+    let (_, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR item IN items RETURN item"
+        }),
+    )
+    .await;
 
     let cursor_id = body["id"].as_str().unwrap();
 

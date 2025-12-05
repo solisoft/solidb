@@ -1,13 +1,13 @@
-use serde_json::{Value, json};
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use std::time::{Instant, Duration};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
-use crate::error::{DbError, DbResult};
-use crate::storage::{Collection, StorageEngine, GeoPoint, distance_meters};
-use crate::cluster::{ReplicationService, Operation};
 use super::ast::*;
+use crate::cluster::{Operation, ReplicationService};
+use crate::error::{DbError, DbResult};
+use crate::storage::{distance_meters, Collection, GeoPoint, StorageEngine};
 
 /// Execution context holding variable bindings
 type Context = HashMap<String, Value>;
@@ -116,7 +116,12 @@ impl<'a> QueryExecutor<'a> {
 
     /// Create executor with bind variables for parameterized queries
     pub fn with_bind_vars(storage: &'a StorageEngine, bind_vars: BindVars) -> Self {
-        Self { storage, bind_vars, database: None, replication: None }
+        Self {
+            storage,
+            bind_vars,
+            database: None,
+            replication: None,
+        }
     }
 
     /// Create executor with database context
@@ -130,7 +135,11 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Create executor with both database context and bind variables
-    pub fn with_database_and_bind_vars(storage: &'a StorageEngine, database: String, bind_vars: BindVars) -> Self {
+    pub fn with_database_and_bind_vars(
+        storage: &'a StorageEngine,
+        database: String,
+        bind_vars: BindVars,
+    ) -> Self {
         Self {
             storage,
             bind_vars,
@@ -146,23 +155,27 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Log a mutation to the replication service
-    fn log_mutation(&self, collection: &str, operation: Operation, key: &str, data: Option<&Value>) {
+    fn log_mutation(
+        &self,
+        collection: &str,
+        operation: Operation,
+        key: &str,
+        data: Option<&Value>,
+    ) {
         if let (Some(repl), Some(ref db)) = (&self.replication, &self.database) {
             let doc_bytes = data.and_then(|v| serde_json::to_vec(v).ok());
-            repl.record_write(
-                db,
-                collection,
-                operation,
-                key,
-                doc_bytes.as_deref(),
-                None,
-            );
+            repl.record_write(db, collection, operation, key, doc_bytes.as_deref(), None);
         }
     }
 
     /// Log multiple mutations asynchronously in a background thread
     /// Used for bulk INSERT operations to avoid blocking the response
-    fn log_mutations_async(&self, collection: &str, operation: Operation, docs: &[crate::storage::Document]) {
+    fn log_mutations_async(
+        &self,
+        collection: &str,
+        operation: Operation,
+        docs: &[crate::storage::Document],
+    ) {
         // Clone the replication service if available (needs to be done before pattern matching)
         let repl_clone = self.replication.map(|r| r.clone());
         let db_clone = self.database.clone();
@@ -171,7 +184,8 @@ impl<'a> QueryExecutor<'a> {
             let collection = collection.to_string();
 
             // Serialize documents upfront to minimize work in the thread
-            let mutations: Vec<(String, Vec<u8>)> = docs.iter()
+            let mutations: Vec<(String, Vec<u8>)> = docs
+                .iter()
                 .filter_map(|doc| {
                     serde_json::to_vec(&doc.to_value())
                         .ok()
@@ -180,7 +194,10 @@ impl<'a> QueryExecutor<'a> {
                 .collect();
 
             let count = mutations.len();
-            tracing::debug!("INSERT: Starting async replication logging for {} docs", count);
+            tracing::debug!(
+                "INSERT: Starting async replication logging for {} docs",
+                count
+            );
 
             std::thread::spawn(move || {
                 let start = std::time::Instant::now();
@@ -195,7 +212,11 @@ impl<'a> QueryExecutor<'a> {
                     );
                 }
                 let elapsed = start.elapsed();
-                tracing::debug!("INSERT: Async replication logging of {} docs completed in {:?}", count, elapsed);
+                tracing::debug!(
+                    "INSERT: Async replication logging of {} docs completed in {:?}",
+                    count,
+                    elapsed
+                );
             });
         }
     }
@@ -224,7 +245,8 @@ impl<'a> QueryExecutor<'a> {
         }
 
         for let_clause in &query.let_clauses {
-            let value = self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
+            let value =
+                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
@@ -240,19 +262,33 @@ impl<'a> QueryExecutor<'a> {
                         if let Expression::Variable(var) = base.as_ref() {
                             if var == &for_clause.variable {
                                 // Try to get collection and check for index
-                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                                    if let Some(docs) = collection.index_sorted(field, sort.ascending, Some(limit.offset + limit.count)) {
+                                if let Ok(collection) = self.get_collection(&for_clause.collection)
+                                {
+                                    if let Some(docs) = collection.index_sorted(
+                                        field,
+                                        sort.ascending,
+                                        Some(limit.offset + limit.count),
+                                    ) {
                                         // Got sorted documents from index! Apply offset and build result
                                         let start = limit.offset.min(docs.len());
                                         let end = (start + limit.count).min(docs.len());
                                         let docs = &docs[start..end];
 
                                         if let Some(ref return_clause) = query.return_clause {
-                                            let results: DbResult<Vec<Value>> = docs.iter().map(|doc| {
-                                                let mut ctx = initial_bindings.clone();
-                                                ctx.insert(for_clause.variable.clone(), doc.to_value());
-                                                self.evaluate_expr_with_context(&return_clause.expression, &ctx)
-                                            }).collect();
+                                            let results: DbResult<Vec<Value>> = docs
+                                                .iter()
+                                                .map(|doc| {
+                                                    let mut ctx = initial_bindings.clone();
+                                                    ctx.insert(
+                                                        for_clause.variable.clone(),
+                                                        doc.to_value(),
+                                                    );
+                                                    self.evaluate_expr_with_context(
+                                                        &return_clause.expression,
+                                                        &ctx,
+                                                    )
+                                                })
+                                                .collect();
                                             return results;
                                         } else {
                                             // No RETURN clause - return empty array
@@ -269,8 +305,16 @@ impl<'a> QueryExecutor<'a> {
 
         // Optimization: Check if we can push LIMIT down to storage scan
         let scan_limit = if query.sort_clause.is_none() {
-            let for_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::For(_))).count();
-            let filter_count = query.body_clauses.iter().filter(|c| matches!(c, BodyClause::Filter(_))).count();
+            let for_count = query
+                .body_clauses
+                .iter()
+                .filter(|c| matches!(c, BodyClause::For(_)))
+                .count();
+            let filter_count = query
+                .body_clauses
+                .iter()
+                .filter(|c| matches!(c, BodyClause::Filter(_)))
+                .count();
 
             if for_count == 1 && filter_count == 0 {
                 query.limit_clause.as_ref().map(|l| l.offset + l.count)
@@ -287,7 +331,8 @@ impl<'a> QueryExecutor<'a> {
             self.execute_body_clauses(&query.body_clauses, &initial_bindings, scan_limit)?
         } else {
             // Legacy path: use for_clauses and filter_clauses separately
-            let mut rows = self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
+            let mut rows =
+                self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
             for filter in &query.filter_clauses {
                 rows.retain(|ctx| {
                     self.evaluate_filter_with_context(&filter.expression, ctx)
@@ -304,15 +349,19 @@ impl<'a> QueryExecutor<'a> {
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
-                let a_val = self.evaluate_expr_with_context(
-                    &sort.expression, a
-                ).unwrap_or(Value::Null);
-                let b_val = self.evaluate_expr_with_context(
-                    &sort.expression, b
-                ).unwrap_or(Value::Null);
+                let a_val = self
+                    .evaluate_expr_with_context(&sort.expression, a)
+                    .unwrap_or(Value::Null);
+                let b_val = self
+                    .evaluate_expr_with_context(&sort.expression, b)
+                    .unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
-                if ascending { cmp } else { cmp.reverse() }
+                if ascending {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
             });
         }
 
@@ -338,7 +387,12 @@ impl<'a> QueryExecutor<'a> {
 
     /// Execute body clauses in order, supporting correlated subqueries
     /// LET clauses inside FOR loops are evaluated per-row with access to outer variables
-    fn execute_body_clauses(&self, clauses: &[BodyClause], initial_ctx: &Context, scan_limit: Option<usize>) -> DbResult<Vec<Context>> {
+    fn execute_body_clauses(
+        &self,
+        clauses: &[BodyClause],
+        initial_ctx: &Context,
+        scan_limit: Option<usize>,
+    ) -> DbResult<Vec<Context>> {
         let mut rows: Vec<Context> = vec![initial_ctx.clone()];
 
         // Optimization: Check if we can use index for FOR + FILTER pattern
@@ -362,7 +416,11 @@ impl<'a> QueryExecutor<'a> {
 
                             if is_collection {
                                 // Try to extract indexable condition
-                                self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable).is_some()
+                                self.extract_indexable_condition(
+                                    &filter_clause.expression,
+                                    &for_clause.variable,
+                                )
+                                .is_some()
                             } else {
                                 false
                             }
@@ -380,9 +438,15 @@ impl<'a> QueryExecutor<'a> {
                             let mut new_rows = Vec::new();
 
                             for ctx in &rows {
-                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                                    if let Some(condition) = self.extract_indexable_condition(&filter_clause.expression, &for_clause.variable) {
-                                        if let Some(docs) = self.use_index_for_condition(&collection, &condition) {
+                                if let Ok(collection) = self.get_collection(&for_clause.collection)
+                                {
+                                    if let Some(condition) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                    ) {
+                                        if let Some(docs) =
+                                            self.use_index_for_condition(&collection, &condition)
+                                        {
                                             if !docs.is_empty() {
                                                 used_index = true;
                                                 // Apply scan_limit to index results
@@ -394,7 +458,10 @@ impl<'a> QueryExecutor<'a> {
 
                                                 for doc in docs {
                                                     let mut new_ctx = ctx.clone();
-                                                    new_ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                                    new_ctx.insert(
+                                                        for_clause.variable.clone(),
+                                                        doc.to_value(),
+                                                    );
                                                     new_rows.push(new_ctx);
                                                 }
                                             }
@@ -449,7 +516,9 @@ impl<'a> QueryExecutor<'a> {
 
                     tracing::debug!(
                         "INSERT: {} documents, bulk_mode={}, has_indexes={}",
-                        rows.len(), bulk_mode, has_indexes
+                        rows.len(),
+                        bulk_mode,
+                        has_indexes
                     );
 
                     if bulk_mode {
@@ -457,7 +526,8 @@ impl<'a> QueryExecutor<'a> {
                         let eval_start = std::time::Instant::now();
                         let mut documents = Vec::with_capacity(rows.len());
                         for ctx in &rows {
-                            let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                            let doc_value =
+                                self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
                             documents.push(doc_value);
                         }
                         let eval_time = eval_start.elapsed();
@@ -467,21 +537,36 @@ impl<'a> QueryExecutor<'a> {
                         let insert_start = std::time::Instant::now();
                         let inserted_docs = collection.insert_batch(documents)?;
                         let insert_time = insert_start.elapsed();
-                        tracing::debug!("INSERT: Batch insert of {} docs took {:?}", inserted_docs.len(), insert_time);
+                        tracing::debug!(
+                            "INSERT: Batch insert of {} docs took {:?}",
+                            inserted_docs.len(),
+                            insert_time
+                        );
 
                         // Log to replication asynchronously for bulk inserts
-                        self.log_mutations_async(&insert_clause.collection, Operation::Insert, &inserted_docs);
+                        self.log_mutations_async(
+                            &insert_clause.collection,
+                            Operation::Insert,
+                            &inserted_docs,
+                        );
 
                         // Index ONLY the newly inserted documents asynchronously
                         if has_indexes {
-                            tracing::debug!("INSERT: Starting async indexing of {} new docs", inserted_docs.len());
+                            tracing::debug!(
+                                "INSERT: Starting async indexing of {} new docs",
+                                inserted_docs.len()
+                            );
                             let coll = collection.clone();
                             std::thread::spawn(move || {
                                 let index_start = std::time::Instant::now();
                                 let result = coll.index_documents(&inserted_docs);
                                 let index_time = index_start.elapsed();
                                 match result {
-                                    Ok(count) => tracing::debug!("INSERT: Indexed {} docs in {:?}", count, index_time),
+                                    Ok(count) => tracing::debug!(
+                                        "INSERT: Indexed {} docs in {:?}",
+                                        count,
+                                        index_time
+                                    ),
                                     Err(e) => tracing::error!("INSERT: Indexing failed: {}", e),
                                 }
                             });
@@ -490,13 +575,23 @@ impl<'a> QueryExecutor<'a> {
                         // Small inserts - use normal path with indexes
                         let insert_start = std::time::Instant::now();
                         for ctx in &rows {
-                            let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                            let doc_value =
+                                self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
                             let doc = collection.insert(doc_value)?;
                             // Log to replication
-                            self.log_mutation(&insert_clause.collection, Operation::Insert, &doc.key, Some(&doc.to_value()));
+                            self.log_mutation(
+                                &insert_clause.collection,
+                                Operation::Insert,
+                                &doc.key,
+                                Some(&doc.to_value()),
+                            );
                         }
                         let insert_time = insert_start.elapsed();
-                        tracing::debug!("INSERT: {} docs with indexes took {:?}", rows.len(), insert_time);
+                        tracing::debug!(
+                            "INSERT: {} docs with indexes took {:?}",
+                            rows.len(),
+                            insert_time
+                        );
                     }
                 }
                 BodyClause::Update(update_clause) => {
@@ -506,7 +601,8 @@ impl<'a> QueryExecutor<'a> {
                     // Update documents for each row context
                     for ctx in &rows {
                         // Evaluate selector expression to get the document key
-                        let selector_value = self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+                        let selector_value =
+                            self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
 
                         // Extract _key from selector (can be a string key or a document with _key field)
                         let key = match &selector_value {
@@ -525,19 +621,25 @@ impl<'a> QueryExecutor<'a> {
                         };
 
                         // Evaluate changes expression
-                        let changes_value = self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+                        let changes_value =
+                            self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
 
                         // Ensure changes is an object
                         if !changes_value.is_object() {
                             return Err(DbError::ExecutionError(
-                                "UPDATE: changes must be an object".to_string()
+                                "UPDATE: changes must be an object".to_string(),
                             ));
                         }
 
                         // Update the document (collection.update handles merging internally)
                         let doc = collection.update(&key, changes_value)?;
                         // Log to replication
-                        self.log_mutation(&update_clause.collection, Operation::Update, &key, Some(&doc.to_value()));
+                        self.log_mutation(
+                            &update_clause.collection,
+                            Operation::Update,
+                            &key,
+                            Some(&doc.to_value()),
+                        );
                     }
                 }
                 BodyClause::Remove(remove_clause) => {
@@ -547,7 +649,8 @@ impl<'a> QueryExecutor<'a> {
                     // Remove documents for each row context
                     for ctx in &rows {
                         // Evaluate selector expression to get the document key
-                        let selector_value = self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+                        let selector_value =
+                            self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
 
                         // Extract _key from selector (can be a string key or a document with _key field)
                         let key = match &selector_value {
@@ -579,7 +682,12 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Get documents for a FOR clause source (collection or variable)
-    fn get_for_source_docs(&self, for_clause: &ForClause, ctx: &Context, limit: Option<usize>) -> DbResult<Vec<Value>> {
+    fn get_for_source_docs(
+        &self,
+        for_clause: &ForClause,
+        ctx: &Context,
+        limit: Option<usize>,
+    ) -> DbResult<Vec<Value>> {
         // Check if source is an expression (e.g., range 1..5)
         if let Some(expr) = &for_clause.source_expression {
             let value = self.evaluate_expr_with_context(expr, ctx)?;
@@ -590,12 +698,14 @@ impl<'a> QueryExecutor<'a> {
                     } else {
                         Ok(arr)
                     }
-                },
+                }
                 other => Ok(vec![other]),
             };
         }
 
-        let source_name = for_clause.source_variable.as_ref()
+        let source_name = for_clause
+            .source_variable
+            .as_ref()
             .unwrap_or(&for_clause.collection);
 
         // Check if source is a LET variable in current context
@@ -607,14 +717,18 @@ impl<'a> QueryExecutor<'a> {
                     } else {
                         Ok(arr.clone())
                     }
-                },
+                }
                 other => Ok(vec![other.clone()]),
             };
         }
 
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&for_clause.collection)?;
-        Ok(collection.scan(limit).into_iter().map(|d| d.to_value()).collect())
+        Ok(collection
+            .scan(limit)
+            .into_iter()
+            .map(|d| d.to_value())
+            .collect())
     }
 
     /// Explain and profile a query execution
@@ -661,47 +775,62 @@ impl<'a> QueryExecutor<'a> {
         let mut total_docs_scanned = 0usize;
 
         for for_clause in &query.for_clauses {
-            let source_name = for_clause.source_variable.as_ref()
+            let source_name = for_clause
+                .source_variable
+                .as_ref()
                 .unwrap_or(&for_clause.collection);
 
             // Check if source is a LET variable or collection
-            let (docs_count, access_type, index_used, index_type) = if let_bindings.contains_key(source_name) {
-                let arr_len = match let_bindings.get(source_name) {
-                    Some(Value::Array(arr)) => arr.len(),
-                    Some(_) => 1,
-                    None => 0,
-                };
-                (arr_len, "variable_iteration".to_string(), None, None)
-            } else {
-                // It's a collection - check for potential index usage
-                let collection = self.get_collection(&for_clause.collection)?;
-                let doc_count = collection.count();
-                total_docs_scanned += doc_count;
+            let (docs_count, access_type, index_used, index_type) =
+                if let_bindings.contains_key(source_name) {
+                    let arr_len = match let_bindings.get(source_name) {
+                        Some(Value::Array(arr)) => arr.len(),
+                        Some(_) => 1,
+                        None => 0,
+                    };
+                    (arr_len, "variable_iteration".to_string(), None, None)
+                } else {
+                    // It's a collection - check for potential index usage
+                    let collection = self.get_collection(&for_clause.collection)?;
+                    let doc_count = collection.count();
+                    total_docs_scanned += doc_count;
 
-                // Check if any filter can use an index
-                let mut found_index: Option<(String, String)> = None;
-                for filter in &query.filter_clauses {
-                    if let Some(condition) = self.extract_indexable_condition(&filter.expression, &for_clause.variable) {
-                        let indexes = collection.list_indexes();
-                        for idx in &indexes {
-                            if idx.field == condition.field {
-                                found_index = Some((idx.name.clone(), format!("{:?}", idx.index_type)));
-                                break;
+                    // Check if any filter can use an index
+                    let mut found_index: Option<(String, String)> = None;
+                    for filter in &query.filter_clauses {
+                        if let Some(condition) = self
+                            .extract_indexable_condition(&filter.expression, &for_clause.variable)
+                        {
+                            let indexes = collection.list_indexes();
+                            for idx in &indexes {
+                                if idx.field == condition.field {
+                                    found_index =
+                                        Some((idx.name.clone(), format!("{:?}", idx.index_type)));
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                if found_index.is_none() && doc_count > 100 {
-                    warnings.push(format!(
+                    if found_index.is_none() && doc_count > 100 {
+                        warnings.push(format!(
                         "Full collection scan on '{}' ({} documents). Consider adding an index.",
                         for_clause.collection, doc_count
                     ));
-                }
+                    }
 
-                let access = if found_index.is_some() { "index_lookup" } else { "full_scan" };
-                (doc_count, access.to_string(), found_index.as_ref().map(|(n, _)| n.clone()), found_index.map(|(_, t)| t))
-            };
+                    let access = if found_index.is_some() {
+                        "index_lookup"
+                    } else {
+                        "full_scan"
+                    };
+                    (
+                        doc_count,
+                        access.to_string(),
+                        found_index.as_ref().map(|(n, _)| n.clone()),
+                        found_index.map(|(_, t)| t),
+                    )
+                };
 
             collections_info.push(CollectionAccess {
                 name: for_clause.collection.clone(),
@@ -741,10 +870,14 @@ impl<'a> QueryExecutor<'a> {
 
                     if !query.for_clauses.is_empty() {
                         let var_name = &query.for_clauses[0].variable;
-                        if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
+                        if let Some(condition) =
+                            self.extract_indexable_condition(&filter.expression, var_name)
+                        {
                             index_candidate = Some(condition.field.clone());
                             // Check if index exists
-                            if let Ok(collection) = self.get_collection(&query.for_clauses[0].collection) {
+                            if let Ok(collection) =
+                                self.get_collection(&query.for_clauses[0].collection)
+                            {
                                 for idx in collection.list_indexes() {
                                     if idx.field == condition.field {
                                         can_use_index = true;
@@ -785,10 +918,14 @@ impl<'a> QueryExecutor<'a> {
 
                 if !query.for_clauses.is_empty() {
                     let var_name = &query.for_clauses[0].variable;
-                    if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
+                    if let Some(condition) =
+                        self.extract_indexable_condition(&filter.expression, var_name)
+                    {
                         index_candidate = Some(condition.field.clone());
                         // Check if index exists
-                        if let Ok(collection) = self.get_collection(&query.for_clauses[0].collection) {
+                        if let Ok(collection) =
+                            self.get_collection(&query.for_clauses[0].collection)
+                        {
                             for idx in collection.list_indexes() {
                                 if idx.field == condition.field {
                                     can_use_index = true;
@@ -817,20 +954,28 @@ impl<'a> QueryExecutor<'a> {
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
-                let a_val = self.evaluate_expr_with_context(
-                    &sort.expression, a
-                ).unwrap_or(Value::Null);
-                let b_val = self.evaluate_expr_with_context(
-                    &sort.expression, b
-                ).unwrap_or(Value::Null);
+                let a_val = self
+                    .evaluate_expr_with_context(&sort.expression, a)
+                    .unwrap_or(Value::Null);
+                let b_val = self
+                    .evaluate_expr_with_context(&sort.expression, b)
+                    .unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
-                if ascending { cmp } else { cmp.reverse() }
+                if ascending {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
             });
 
             Some(SortInfo {
                 field: format!("{:?}", sort.expression),
-                direction: if sort.ascending { "ASC".to_string() } else { "DESC".to_string() },
+                direction: if sort.ascending {
+                    "ASC".to_string()
+                } else {
+                    "DESC".to_string()
+                },
                 time_us: 0, // Will be set below
             })
         } else {
@@ -921,7 +1066,7 @@ impl<'a> QueryExecutor<'a> {
     fn build_row_combinations_with_context(
         &self,
         for_clauses: &[ForClause],
-        let_bindings: &Context
+        let_bindings: &Context,
     ) -> DbResult<Vec<Context>> {
         if for_clauses.is_empty() {
             // If no FOR clauses but we have LET bindings, return single row with bindings
@@ -935,7 +1080,9 @@ impl<'a> QueryExecutor<'a> {
         let mut result: Vec<Context> = vec![let_bindings.clone()];
 
         for for_clause in for_clauses {
-            let source_name = for_clause.source_variable.as_ref()
+            let source_name = for_clause
+                .source_variable
+                .as_ref()
                 .unwrap_or(&for_clause.collection);
 
             // First check if source is a LET variable (array)
@@ -982,11 +1129,10 @@ impl<'a> QueryExecutor<'a> {
     /// Evaluate an expression with a context containing multiple variables
     fn evaluate_expr_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<Value> {
         match expr {
-            Expression::Variable(name) => {
-                ctx.get(name)
-                    .cloned()
-                    .ok_or_else(|| DbError::ExecutionError(format!("Variable '{}' not found", name)))
-            }
+            Expression::Variable(name) => ctx
+                .get(name)
+                .cloned()
+                .ok_or_else(|| DbError::ExecutionError(format!("Variable '{}' not found", name))),
 
             Expression::BindVariable(name) => {
                 // First check context (bind vars are stored with @ prefix)
@@ -994,9 +1140,12 @@ impl<'a> QueryExecutor<'a> {
                     return Ok(value.clone());
                 }
                 // Then check bind_vars directly
-                self.bind_vars.get(name)
-                    .cloned()
-                    .ok_or_else(|| DbError::ExecutionError(format!("Bind variable '@{}' not found. Did you forget to pass it in bindVars?", name)))
+                self.bind_vars.get(name).cloned().ok_or_else(|| {
+                    DbError::ExecutionError(format!(
+                        "Bind variable '@{}' not found. Did you forget to pass it in bindVars?",
+                        name
+                    ))
+                })
             }
 
             Expression::FieldAccess(base, field) => {
@@ -1012,9 +1161,12 @@ impl<'a> QueryExecutor<'a> {
                 let field_name = match field_value {
                     Value::String(s) => s,
                     Value::Number(n) => n.to_string(),
-                    _ => return Err(DbError::ExecutionError(
-                        format!("Dynamic field access requires a string or number, got: {:?}", field_value)
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "Dynamic field access requires a string or number, got: {:?}",
+                            field_value
+                        )))
+                    }
                 };
 
                 Ok(get_field_value(&base_value, &field_name))
@@ -1033,31 +1185,33 @@ impl<'a> QueryExecutor<'a> {
                         } else if let Some(f) = n.as_f64() {
                             // Convert float to integer (truncate)
                             if f < 0.0 {
-                                return Err(DbError::ExecutionError(
-                                    format!("Array index must be non-negative, got: {}", f)
-                                ));
+                                return Err(DbError::ExecutionError(format!(
+                                    "Array index must be non-negative, got: {}",
+                                    f
+                                )));
                             }
                             f as usize
                         } else {
-                            return Err(DbError::ExecutionError(
-                                format!("Invalid array index: {}", n)
-                            ));
+                            return Err(DbError::ExecutionError(format!(
+                                "Invalid array index: {}",
+                                n
+                            )));
                         }
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        format!("Array index must be a number, got: {:?}", index_value)
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "Array index must be a number, got: {:?}",
+                            index_value
+                        )))
+                    }
                 };
 
                 // Access the array element
                 match base_value {
-                    Value::Array(ref arr) => {
-                        Ok(arr.get(index).cloned().unwrap_or(Value::Null))
-                    }
+                    Value::Array(ref arr) => Ok(arr.get(index).cloned().unwrap_or(Value::Null)),
                     _ => Ok(Value::Null), // Non-arrays return null
                 }
             }
-
 
             Expression::Literal(value) => Ok(value.clone()),
 
@@ -1096,23 +1250,35 @@ impl<'a> QueryExecutor<'a> {
                 let start = match &start_val {
                     Value::Number(n) => {
                         // Try integer first, then fall back to truncating float
-                        n.as_i64().or_else(|| n.as_f64().map(|f| f as i64))
-                            .ok_or_else(|| DbError::ExecutionError("Range start must be a number".to_string()))?
+                        n.as_i64()
+                            .or_else(|| n.as_f64().map(|f| f as i64))
+                            .ok_or_else(|| {
+                                DbError::ExecutionError("Range start must be a number".to_string())
+                            })?
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        format!("Range start must be a number, got: {:?}", start_val)
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "Range start must be a number, got: {:?}",
+                            start_val
+                        )))
+                    }
                 };
 
                 let end = match &end_val {
                     Value::Number(n) => {
                         // Try integer first, then fall back to truncating float
-                        n.as_i64().or_else(|| n.as_f64().map(|f| f as i64))
-                            .ok_or_else(|| DbError::ExecutionError("Range end must be a number".to_string()))?
+                        n.as_i64()
+                            .or_else(|| n.as_f64().map(|f| f as i64))
+                            .ok_or_else(|| {
+                                DbError::ExecutionError("Range end must be a number".to_string())
+                            })?
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        format!("Range end must be a number, got: {:?}", end_val)
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "Range end must be a number, got: {:?}",
+                            end_val
+                        )))
+                    }
                 };
 
                 // Generate array from start to end (inclusive)
@@ -1123,9 +1289,7 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(arr))
             }
 
-            Expression::FunctionCall { name, args } => {
-                self.evaluate_function(name, args, ctx)
-            }
+            Expression::FunctionCall { name, args } => self.evaluate_function(name, args, ctx),
 
             Expression::Subquery(subquery) => {
                 // Execute the subquery with parent context (enables correlated subqueries)
@@ -1136,7 +1300,11 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Execute a subquery with access to parent context (for correlated subqueries)
-    fn execute_with_parent_context(&self, query: &Query, parent_ctx: &Context) -> DbResult<Vec<Value>> {
+    fn execute_with_parent_context(
+        &self,
+        query: &Query,
+        parent_ctx: &Context,
+    ) -> DbResult<Vec<Value>> {
         // Start with parent context (enables correlation with outer query)
         let mut initial_bindings = parent_ctx.clone();
 
@@ -1147,7 +1315,8 @@ impl<'a> QueryExecutor<'a> {
 
         // Evaluate initial LET clauses (before FOR)
         for let_clause in &query.let_clauses {
-            let value = self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
+            let value =
+                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
@@ -1155,7 +1324,8 @@ impl<'a> QueryExecutor<'a> {
         let rows = if !query.body_clauses.is_empty() {
             self.execute_body_clauses(&query.body_clauses, &initial_bindings, None)?
         } else {
-            let mut rows = self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
+            let mut rows =
+                self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
             for filter in &query.filter_clauses {
                 rows.retain(|ctx| {
                     self.evaluate_filter_with_context(&filter.expression, ctx)
@@ -1172,15 +1342,19 @@ impl<'a> QueryExecutor<'a> {
             let ascending = sort.ascending;
 
             rows.sort_by(|a, b| {
-                let a_val = self.evaluate_expr_with_context(
-                    &sort.expression, a
-                ).unwrap_or(Value::Null);
-                let b_val = self.evaluate_expr_with_context(
-                    &sort.expression, b
-                ).unwrap_or(Value::Null);
+                let a_val = self
+                    .evaluate_expr_with_context(&sort.expression, a)
+                    .unwrap_or(Value::Null);
+                let b_val = self
+                    .evaluate_expr_with_context(&sort.expression, b)
+                    .unwrap_or(Value::Null);
 
                 let cmp = compare_values(&a_val, &b_val);
-                if ascending { cmp } else { cmp.reverse() }
+                if ascending {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
             });
         }
 
@@ -1216,17 +1390,21 @@ impl<'a> QueryExecutor<'a> {
             "DISTANCE" => {
                 if evaluated_args.len() != 4 {
                     return Err(DbError::ExecutionError(
-                        "DISTANCE requires 4 arguments: lat1, lon1, lat2, lon2".to_string()
+                        "DISTANCE requires 4 arguments: lat1, lon1, lat2, lon2".to_string(),
                     ));
                 }
-                let lat1 = evaluated_args[0].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("DISTANCE: lat1 must be a number".to_string()))?;
-                let lon1 = evaluated_args[1].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("DISTANCE: lon1 must be a number".to_string()))?;
-                let lat2 = evaluated_args[2].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("DISTANCE: lat2 must be a number".to_string()))?;
-                let lon2 = evaluated_args[3].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("DISTANCE: lon2 must be a number".to_string()))?;
+                let lat1 = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("DISTANCE: lat1 must be a number".to_string())
+                })?;
+                let lon1 = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("DISTANCE: lon1 must be a number".to_string())
+                })?;
+                let lat2 = evaluated_args[2].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("DISTANCE: lat2 must be a number".to_string())
+                })?;
+                let lon2 = evaluated_args[3].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("DISTANCE: lon2 must be a number".to_string())
+                })?;
 
                 let dist = distance_meters(lat1, lon1, lat2, lon2);
                 Ok(Value::Number(serde_json::Number::from_f64(dist).unwrap()))
@@ -1236,13 +1414,19 @@ impl<'a> QueryExecutor<'a> {
             "GEO_DISTANCE" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "GEO_DISTANCE requires 2 arguments: point1, point2".to_string()
+                        "GEO_DISTANCE requires 2 arguments: point1, point2".to_string(),
                     ));
                 }
-                let p1 = GeoPoint::from_value(&evaluated_args[0])
-                    .ok_or_else(|| DbError::ExecutionError("GEO_DISTANCE: first argument must be a geo point".to_string()))?;
-                let p2 = GeoPoint::from_value(&evaluated_args[1])
-                    .ok_or_else(|| DbError::ExecutionError("GEO_DISTANCE: second argument must be a geo point".to_string()))?;
+                let p1 = GeoPoint::from_value(&evaluated_args[0]).ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "GEO_DISTANCE: first argument must be a geo point".to_string(),
+                    )
+                })?;
+                let p2 = GeoPoint::from_value(&evaluated_args[1]).ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "GEO_DISTANCE: second argument must be a geo point".to_string(),
+                    )
+                })?;
 
                 let dist = distance_meters(p1.lat, p1.lon, p2.lat, p2.lon);
                 Ok(Value::Number(serde_json::Number::from_f64(dist).unwrap()))
@@ -1251,13 +1435,19 @@ impl<'a> QueryExecutor<'a> {
             // LENGTH(array_or_string) - get length
             "LENGTH" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LENGTH requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LENGTH requires 1 argument".to_string(),
+                    ));
                 }
                 let len = match &evaluated_args[0] {
                     Value::Array(arr) => arr.len(),
                     Value::String(s) => s.len(),
                     Value::Object(obj) => obj.len(),
-                    _ => return Err(DbError::ExecutionError("LENGTH: argument must be array, string, or object".to_string())),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "LENGTH: argument must be array, string, or object".to_string(),
+                        ))
+                    }
                 };
                 Ok(Value::Number(serde_json::Number::from(len)))
             }
@@ -1265,43 +1455,55 @@ impl<'a> QueryExecutor<'a> {
             // SUM(array) - sum of numeric array elements
             "SUM" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SUM requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SUM requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("SUM: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("SUM: argument must be an array".to_string())
+                })?;
 
-                let sum: f64 = arr.iter()
-                    .filter_map(|v| v.as_f64())
-                    .sum();
+                let sum: f64 = arr.iter().filter_map(|v| v.as_f64()).sum();
 
-                Ok(Value::Number(serde_json::Number::from_f64(sum).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(sum).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // AVG(array) - average of numeric array elements
             "AVG" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("AVG requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "AVG requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("AVG: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("AVG: argument must be an array".to_string())
+                })?;
 
                 let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.is_empty() {
                     return Ok(Value::Null);
                 }
                 let avg = nums.iter().sum::<f64>() / nums.len() as f64;
-                Ok(Value::Number(serde_json::Number::from_f64(avg).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(avg).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // MIN(array) - minimum value in array
             "MIN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("MIN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "MIN requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("MIN: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("MIN: argument must be an array".to_string())
+                })?;
 
-                let min = arr.iter()
+                let min = arr
+                    .iter()
                     .filter_map(|v| v.as_f64())
                     .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -1314,12 +1516,16 @@ impl<'a> QueryExecutor<'a> {
             // MAX(array) - maximum value in array
             "MAX" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("MAX requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "MAX requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("MAX: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("MAX: argument must be an array".to_string())
+                })?;
 
-                let max = arr.iter()
+                let max = arr
+                    .iter()
                     .filter_map(|v| v.as_f64())
                     .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -1332,99 +1538,137 @@ impl<'a> QueryExecutor<'a> {
             // COUNT(array) - count elements in array
             "COUNT" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("COUNT requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "COUNT requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("COUNT: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("COUNT: argument must be an array".to_string())
+                })?;
                 Ok(Value::Number(serde_json::Number::from(arr.len())))
             }
 
             // COUNT_DISTINCT(array) - count distinct values in array
             "COUNT_DISTINCT" | "COUNT_UNIQUE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("COUNT_DISTINCT requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "COUNT_DISTINCT requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("COUNT_DISTINCT: argument must be an array".to_string()))?;
-                let unique: std::collections::HashSet<String> = arr.iter()
-                    .map(|v| v.to_string())
-                    .collect();
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("COUNT_DISTINCT: argument must be an array".to_string())
+                })?;
+                let unique: std::collections::HashSet<String> =
+                    arr.iter().map(|v| v.to_string()).collect();
                 Ok(Value::Number(serde_json::Number::from(unique.len())))
             }
 
             // VARIANCE_POPULATION(array) - population variance
             "VARIANCE_POPULATION" | "VARIANCE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("VARIANCE_POPULATION requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "VARIANCE_POPULATION requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("VARIANCE_POPULATION: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VARIANCE_POPULATION: argument must be an array".to_string(),
+                    )
+                })?;
                 let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.is_empty() {
                     return Ok(Value::Null);
                 }
                 let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
-                Ok(Value::Number(serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0))))
+                let variance =
+                    nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // VARIANCE_SAMPLE(array) - sample variance (n-1 denominator)
             "VARIANCE_SAMPLE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("VARIANCE_SAMPLE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "VARIANCE_SAMPLE requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("VARIANCE_SAMPLE: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VARIANCE_SAMPLE: argument must be an array".to_string(),
+                    )
+                })?;
                 let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.len() < 2 {
                     return Ok(Value::Null);
                 }
                 let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
-                Ok(Value::Number(serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0))))
+                let variance =
+                    nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(variance).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // STDDEV_POPULATION(array) - population standard deviation
             "STDDEV_POPULATION" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("STDDEV_POPULATION requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "STDDEV_POPULATION requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("STDDEV_POPULATION: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "STDDEV_POPULATION: argument must be an array".to_string(),
+                    )
+                })?;
                 let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.is_empty() {
                     return Ok(Value::Null);
                 }
                 let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+                let variance =
+                    nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
                 let stddev = variance.sqrt();
-                Ok(Value::Number(serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // STDDEV_SAMPLE(array) / STDDEV(array) - sample standard deviation (n-1 denominator)
             "STDDEV_SAMPLE" | "STDDEV" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("STDDEV_SAMPLE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "STDDEV_SAMPLE requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("STDDEV_SAMPLE: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("STDDEV_SAMPLE: argument must be an array".to_string())
+                })?;
                 let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.len() < 2 {
                     return Ok(Value::Null);
                 }
                 let mean = nums.iter().sum::<f64>() / nums.len() as f64;
-                let variance = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
+                let variance =
+                    nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nums.len() - 1) as f64;
                 let stddev = variance.sqrt();
-                Ok(Value::Number(serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(stddev).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // MEDIAN(array) - median value
             "MEDIAN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("MEDIAN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "MEDIAN requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("MEDIAN: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("MEDIAN: argument must be an array".to_string())
+                })?;
                 let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.is_empty() {
                     return Ok(Value::Null);
@@ -1436,20 +1680,32 @@ impl<'a> QueryExecutor<'a> {
                 } else {
                     nums[len / 2]
                 };
-                Ok(Value::Number(serde_json::Number::from_f64(median).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(median).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // PERCENTILE(array, p) - percentile value (p between 0 and 100)
             "PERCENTILE" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("PERCENTILE requires 2 arguments: array, percentile (0-100)".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "PERCENTILE requires 2 arguments: array, percentile (0-100)".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("PERCENTILE: first argument must be an array".to_string()))?;
-                let p = evaluated_args[1].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("PERCENTILE: second argument must be a number".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "PERCENTILE: first argument must be an array".to_string(),
+                    )
+                })?;
+                let p = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "PERCENTILE: second argument must be a number".to_string(),
+                    )
+                })?;
                 if !(0.0..=100.0).contains(&p) {
-                    return Err(DbError::ExecutionError("PERCENTILE: percentile must be between 0 and 100".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "PERCENTILE: percentile must be between 0 and 100".to_string(),
+                    ));
                 }
                 let mut nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                 if nums.is_empty() {
@@ -1465,18 +1721,24 @@ impl<'a> QueryExecutor<'a> {
                     let fraction = index - lower as f64;
                     nums[lower] * (1.0 - fraction) + nums[upper] * fraction
                 };
-                Ok(Value::Number(serde_json::Number::from_f64(result).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(result).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // UNIQUE(array) - return unique values
             "UNIQUE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("UNIQUE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "UNIQUE requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("UNIQUE: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("UNIQUE: argument must be an array".to_string())
+                })?;
                 let mut seen = std::collections::HashSet::new();
-                let unique: Vec<Value> = arr.iter()
+                let unique: Vec<Value> = arr
+                    .iter()
                     .filter(|v| seen.insert(v.to_string()))
                     .cloned()
                     .collect();
@@ -1486,20 +1748,22 @@ impl<'a> QueryExecutor<'a> {
             // SORTED(array) - sort array (ascending)
             "SORTED" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SORTED requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SORTED requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("SORTED: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("SORTED: argument must be an array".to_string())
+                })?;
                 let mut sorted = arr.clone();
-                sorted.sort_by(|a, b| {
-                    match (a, b) {
-                        (Value::Number(n1), Value::Number(n2)) => {
-                            n1.as_f64().unwrap_or(0.0).partial_cmp(&n2.as_f64().unwrap_or(0.0))
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        }
-                        (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
-                        _ => a.to_string().cmp(&b.to_string())
-                    }
+                sorted.sort_by(|a, b| match (a, b) {
+                    (Value::Number(n1), Value::Number(n2)) => n1
+                        .as_f64()
+                        .unwrap_or(0.0)
+                        .partial_cmp(&n2.as_f64().unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
+                    _ => a.to_string().cmp(&b.to_string()),
                 });
                 Ok(Value::Array(sorted))
             }
@@ -1507,24 +1771,27 @@ impl<'a> QueryExecutor<'a> {
             // SORTED_UNIQUE(array) - sort and return unique values
             "SORTED_UNIQUE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SORTED_UNIQUE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SORTED_UNIQUE requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("SORTED_UNIQUE: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("SORTED_UNIQUE: argument must be an array".to_string())
+                })?;
                 let mut seen = std::collections::HashSet::new();
-                let mut unique: Vec<Value> = arr.iter()
+                let mut unique: Vec<Value> = arr
+                    .iter()
                     .filter(|v| seen.insert(v.to_string()))
                     .cloned()
                     .collect();
-                unique.sort_by(|a, b| {
-                    match (a, b) {
-                        (Value::Number(n1), Value::Number(n2)) => {
-                            n1.as_f64().unwrap_or(0.0).partial_cmp(&n2.as_f64().unwrap_or(0.0))
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        }
-                        (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
-                        _ => a.to_string().cmp(&b.to_string())
-                    }
+                unique.sort_by(|a, b| match (a, b) {
+                    (Value::Number(n1), Value::Number(n2)) => n1
+                        .as_f64()
+                        .unwrap_or(0.0)
+                        .partial_cmp(&n2.as_f64().unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::String(s1), Value::String(s2)) => s1.cmp(s2),
+                    _ => a.to_string().cmp(&b.to_string()),
                 });
                 Ok(Value::Array(unique))
             }
@@ -1532,10 +1799,13 @@ impl<'a> QueryExecutor<'a> {
             // REVERSE(array) - reverse array
             "REVERSE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("REVERSE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "REVERSE requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("REVERSE: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("REVERSE: argument must be an array".to_string())
+                })?;
                 let mut reversed = arr.clone();
                 reversed.reverse();
                 Ok(Value::Array(reversed))
@@ -1544,44 +1814,58 @@ impl<'a> QueryExecutor<'a> {
             // FIRST(array) - first element
             "FIRST" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("FIRST requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "FIRST requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("FIRST: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("FIRST: argument must be an array".to_string())
+                })?;
                 Ok(arr.first().cloned().unwrap_or(Value::Null))
             }
 
             // LAST(array) - last element
             "LAST" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LAST requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LAST requires 1 argument".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("LAST: argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("LAST: argument must be an array".to_string())
+                })?;
                 Ok(arr.last().cloned().unwrap_or(Value::Null))
             }
 
             // NTH(array, index) - nth element (0-based)
             "NTH" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("NTH requires 2 arguments: array, index".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "NTH requires 2 arguments: array, index".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("NTH: first argument must be an array".to_string()))?;
-                let index = evaluated_args[1].as_i64()
-                    .ok_or_else(|| DbError::ExecutionError("NTH: second argument must be an integer".to_string()))? as usize;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("NTH: first argument must be an array".to_string())
+                })?;
+                let index = evaluated_args[1].as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("NTH: second argument must be an integer".to_string())
+                })? as usize;
                 Ok(arr.get(index).cloned().unwrap_or(Value::Null))
             }
 
             // SLICE(array, start, length?) - slice array
             "SLICE" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("SLICE requires 2-3 arguments: array, start, [length]".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SLICE requires 2-3 arguments: array, start, [length]".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("SLICE: first argument must be an array".to_string()))?;
-                let start = evaluated_args[1].as_i64()
-                    .ok_or_else(|| DbError::ExecutionError("SLICE: start must be an integer".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("SLICE: first argument must be an array".to_string())
+                })?;
+                let start = evaluated_args[1].as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("SLICE: start must be an integer".to_string())
+                })?;
                 let start = if start < 0 {
                     (arr.len() as i64 + start).max(0) as usize
                 } else {
@@ -1599,10 +1883,13 @@ impl<'a> QueryExecutor<'a> {
             // FLATTEN(array, depth?) - flatten nested arrays
             "FLATTEN" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError("FLATTEN requires 1-2 arguments: array, [depth]".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "FLATTEN requires 1-2 arguments: array, [depth]".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("FLATTEN: first argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("FLATTEN: first argument must be an array".to_string())
+                })?;
                 let depth = if evaluated_args.len() > 1 {
                     evaluated_args[1].as_u64().unwrap_or(1) as usize
                 } else {
@@ -1629,10 +1916,13 @@ impl<'a> QueryExecutor<'a> {
             // PUSH(array, element, unique?) - add element to array
             "PUSH" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("PUSH requires 2-3 arguments: array, element, [unique]".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "PUSH requires 2-3 arguments: array, element, [unique]".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("PUSH: first argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("PUSH: first argument must be an array".to_string())
+                })?;
                 let element = &evaluated_args[1];
                 let unique = if evaluated_args.len() > 2 {
                     evaluated_args[2].as_bool().unwrap_or(false)
@@ -1653,12 +1943,16 @@ impl<'a> QueryExecutor<'a> {
             // APPEND(array1, array2, unique?) - append arrays
             "APPEND" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("APPEND requires 2-3 arguments: array1, array2, [unique]".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "APPEND requires 2-3 arguments: array1, array2, [unique]".to_string(),
+                    ));
                 }
-                let arr1 = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("APPEND: first argument must be an array".to_string()))?;
-                let arr2 = evaluated_args[1].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("APPEND: second argument must be an array".to_string()))?;
+                let arr1 = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("APPEND: first argument must be an array".to_string())
+                })?;
+                let arr2 = evaluated_args[1].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("APPEND: second argument must be an array".to_string())
+                })?;
                 let unique = if evaluated_args.len() > 2 {
                     evaluated_args[2].as_bool().unwrap_or(false)
                 } else {
@@ -1666,7 +1960,8 @@ impl<'a> QueryExecutor<'a> {
                 };
                 let mut result = arr1.clone();
                 if unique {
-                    let existing: std::collections::HashSet<String> = result.iter().map(|v| v.to_string()).collect();
+                    let existing: std::collections::HashSet<String> =
+                        result.iter().map(|v| v.to_string()).collect();
                     for item in arr2 {
                         if !existing.contains(&item.to_string()) {
                             result.push(item.clone());
@@ -1681,13 +1976,16 @@ impl<'a> QueryExecutor<'a> {
             // UNION(array1, array2, ...) - union of arrays (unique values)
             "UNION" => {
                 if evaluated_args.is_empty() {
-                    return Err(DbError::ExecutionError("UNION requires at least 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "UNION requires at least 1 argument".to_string(),
+                    ));
                 }
                 let mut seen = std::collections::HashSet::new();
                 let mut result = Vec::new();
                 for arg in &evaluated_args {
-                    let arr = arg.as_array()
-                        .ok_or_else(|| DbError::ExecutionError("UNION: all arguments must be arrays".to_string()))?;
+                    let arr = arg.as_array().ok_or_else(|| {
+                        DbError::ExecutionError("UNION: all arguments must be arrays".to_string())
+                    })?;
                     for item in arr {
                         if seen.insert(item.to_string()) {
                             result.push(item.clone());
@@ -1700,13 +1998,18 @@ impl<'a> QueryExecutor<'a> {
             // UNION_DISTINCT(array1, array2, ...) - same as UNION (for compatibility)
             "UNION_DISTINCT" => {
                 if evaluated_args.is_empty() {
-                    return Err(DbError::ExecutionError("UNION_DISTINCT requires at least 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "UNION_DISTINCT requires at least 1 argument".to_string(),
+                    ));
                 }
                 let mut seen = std::collections::HashSet::new();
                 let mut result = Vec::new();
                 for arg in &evaluated_args {
-                    let arr = arg.as_array()
-                        .ok_or_else(|| DbError::ExecutionError("UNION_DISTINCT: all arguments must be arrays".to_string()))?;
+                    let arr = arg.as_array().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "UNION_DISTINCT: all arguments must be arrays".to_string(),
+                        )
+                    })?;
                     for item in arr {
                         if seen.insert(item.to_string()) {
                             result.push(item.clone());
@@ -1719,15 +2022,21 @@ impl<'a> QueryExecutor<'a> {
             // MINUS(array1, array2) - elements in array1 not in array2
             "MINUS" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("MINUS requires 2 arguments: array1, array2".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "MINUS requires 2 arguments: array1, array2".to_string(),
+                    ));
                 }
-                let arr1 = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("MINUS: first argument must be an array".to_string()))?;
-                let arr2 = evaluated_args[1].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("MINUS: second argument must be an array".to_string()))?;
-                let set2: std::collections::HashSet<String> = arr2.iter().map(|v| v.to_string()).collect();
+                let arr1 = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("MINUS: first argument must be an array".to_string())
+                })?;
+                let arr2 = evaluated_args[1].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("MINUS: second argument must be an array".to_string())
+                })?;
+                let set2: std::collections::HashSet<String> =
+                    arr2.iter().map(|v| v.to_string()).collect();
                 let mut seen = std::collections::HashSet::new();
-                let result: Vec<Value> = arr1.iter()
+                let result: Vec<Value> = arr1
+                    .iter()
                     .filter(|v| {
                         let key = v.to_string();
                         !set2.contains(&key) && seen.insert(key)
@@ -1740,10 +2049,15 @@ impl<'a> QueryExecutor<'a> {
             // INTERSECTION(array1, array2, ...) - common elements in all arrays
             "INTERSECTION" => {
                 if evaluated_args.is_empty() {
-                    return Err(DbError::ExecutionError("INTERSECTION requires at least 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "INTERSECTION requires at least 1 argument".to_string(),
+                    ));
                 }
-                let first = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("INTERSECTION: all arguments must be arrays".to_string()))?;
+                let first = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "INTERSECTION: all arguments must be arrays".to_string(),
+                    )
+                })?;
 
                 if evaluated_args.len() == 1 {
                     return Ok(Value::Array(first.clone()));
@@ -1752,13 +2066,17 @@ impl<'a> QueryExecutor<'a> {
                 // Build sets for all other arrays
                 let mut sets: Vec<std::collections::HashSet<String>> = Vec::new();
                 for arg in &evaluated_args[1..] {
-                    let arr = arg.as_array()
-                        .ok_or_else(|| DbError::ExecutionError("INTERSECTION: all arguments must be arrays".to_string()))?;
+                    let arr = arg.as_array().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "INTERSECTION: all arguments must be arrays".to_string(),
+                        )
+                    })?;
                     sets.push(arr.iter().map(|v| v.to_string()).collect());
                 }
 
                 let mut seen = std::collections::HashSet::new();
-                let result: Vec<Value> = first.iter()
+                let result: Vec<Value> = first
+                    .iter()
                     .filter(|v| {
                         let key = v.to_string();
                         sets.iter().all(|s| s.contains(&key)) && seen.insert(key)
@@ -1771,17 +2089,21 @@ impl<'a> QueryExecutor<'a> {
             // POSITION(array, search, start?) - find position of element in array (0-based, -1 if not found)
             "POSITION" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("POSITION requires 2-3 arguments: array, search, [start]".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "POSITION requires 2-3 arguments: array, search, [start]".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("POSITION: first argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("POSITION: first argument must be an array".to_string())
+                })?;
                 let search = &evaluated_args[1];
                 let start = if evaluated_args.len() > 2 {
                     evaluated_args[2].as_i64().unwrap_or(0) as usize
                 } else {
                     0
                 };
-                let position = arr.iter()
+                let position = arr
+                    .iter()
                     .skip(start)
                     .position(|v| v.to_string() == search.to_string())
                     .map(|p| p + start);
@@ -1794,10 +2116,15 @@ impl<'a> QueryExecutor<'a> {
             // CONTAINS_ARRAY(array, search) - check if array contains element
             "CONTAINS_ARRAY" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("CONTAINS_ARRAY requires 2 arguments: array, search".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "CONTAINS_ARRAY requires 2 arguments: array, search".to_string(),
+                    ));
                 }
-                let arr = evaluated_args[0].as_array()
-                    .ok_or_else(|| DbError::ExecutionError("CONTAINS_ARRAY: first argument must be an array".to_string()))?;
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "CONTAINS_ARRAY: first argument must be an array".to_string(),
+                    )
+                })?;
                 let search = &evaluated_args[1];
                 let contains = arr.iter().any(|v| v.to_string() == search.to_string());
                 Ok(Value::Bool(contains))
@@ -1806,10 +2133,13 @@ impl<'a> QueryExecutor<'a> {
             // ROUND(number, precision?) - round a number
             "ROUND" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                    return Err(DbError::ExecutionError("ROUND requires 1-2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ROUND requires 1-2 arguments".to_string(),
+                    ));
                 }
-                let num = evaluated_args[0].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("ROUND: first argument must be a number".to_string()))?;
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ROUND: first argument must be a number".to_string())
+                })?;
                 let precision = if evaluated_args.len() > 1 {
                     evaluated_args[1].as_i64().unwrap_or(0) as i32
                 } else {
@@ -1817,57 +2147,79 @@ impl<'a> QueryExecutor<'a> {
                 };
                 let factor = 10_f64.powi(precision);
                 let rounded = (num * factor).round() / factor;
-                Ok(Value::Number(serde_json::Number::from_f64(rounded).unwrap()))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(rounded).unwrap(),
+                ))
             }
 
             // ABS(number) - absolute value
             "ABS" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("ABS requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ABS requires 1 argument".to_string(),
+                    ));
                 }
-                let num = evaluated_args[0].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("ABS: argument must be a number".to_string()))?;
-                Ok(Value::Number(serde_json::Number::from_f64(num.abs()).unwrap()))
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ABS: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(num.abs()).unwrap(),
+                ))
             }
 
             // FLOOR(number) - floor
             "FLOOR" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("FLOOR requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "FLOOR requires 1 argument".to_string(),
+                    ));
                 }
-                let num = evaluated_args[0].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("FLOOR: argument must be a number".to_string()))?;
-                Ok(Value::Number(serde_json::Number::from_f64(num.floor()).unwrap()))
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("FLOOR: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(num.floor()).unwrap(),
+                ))
             }
 
             // CEIL(number) - ceiling
             "CEIL" => {
-
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("CEIL requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "CEIL requires 1 argument".to_string(),
+                    ));
                 }
-                let num = evaluated_args[0].as_f64()
-                    .ok_or_else(|| DbError::ExecutionError("CEIL: argument must be a number".to_string()))?;
-                Ok(Value::Number(serde_json::Number::from_f64(num.ceil()).unwrap()))
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("CEIL: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(num.ceil()).unwrap(),
+                ))
             }
 
             // UPPER(string) - uppercase
             "UPPER" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("UPPER requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "UPPER requires 1 argument".to_string(),
+                    ));
                 }
-                let s = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("UPPER: argument must be a string".to_string()))?;
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("UPPER: argument must be a string".to_string())
+                })?;
                 Ok(Value::String(s.to_uppercase()))
             }
 
             // LOWER(string) - lowercase
             "LOWER" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LOWER requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOWER requires 1 argument".to_string(),
+                    ));
                 }
-                let s = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("LOWER: argument must be a string".to_string()))?;
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("LOWER: argument must be a string".to_string())
+                })?;
                 Ok(Value::String(s.to_lowercase()))
             }
 
@@ -1880,7 +2232,11 @@ impl<'a> QueryExecutor<'a> {
                         Value::Number(n) => result.push_str(&n.to_string()),
                         Value::Bool(b) => result.push_str(&b.to_string()),
                         Value::Null => result.push_str("null"),
-                        _ => return Err(DbError::ExecutionError("CONCAT: arguments must be strings or primitives".to_string())),
+                        _ => {
+                            return Err(DbError::ExecutionError(
+                                "CONCAT: arguments must be strings or primitives".to_string(),
+                            ))
+                        }
                     }
                 }
                 Ok(Value::String(result))
@@ -1889,25 +2245,35 @@ impl<'a> QueryExecutor<'a> {
             // CONCAT_SEPARATOR(separator, array) - join array elements with separator
             "CONCAT_SEPARATOR" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("CONCAT_SEPARATOR requires 2 arguments: separator and array".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "CONCAT_SEPARATOR requires 2 arguments: separator and array".to_string(),
+                    ));
                 }
-                let separator = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("CONCAT_SEPARATOR: first argument (separator) must be a string".to_string()))?;
+                let separator = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "CONCAT_SEPARATOR: first argument (separator) must be a string".to_string(),
+                    )
+                })?;
 
                 let array = match &evaluated_args[1] {
                     Value::Array(arr) => arr,
-                    _ => return Err(DbError::ExecutionError("CONCAT_SEPARATOR: second argument must be an array".to_string())),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "CONCAT_SEPARATOR: second argument must be an array".to_string(),
+                        ))
+                    }
                 };
 
-                let strings: Vec<String> = array.iter().map(|v| {
-                    match v {
+                let strings: Vec<String> = array
+                    .iter()
+                    .map(|v| match v {
                         Value::String(s) => s.clone(),
                         Value::Number(n) => n.to_string(),
                         Value::Bool(b) => b.to_string(),
                         Value::Null => "null".to_string(),
                         _ => format!("{}", v),
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 Ok(Value::String(strings.join(separator)))
             }
@@ -1915,12 +2281,18 @@ impl<'a> QueryExecutor<'a> {
             // SUBSTRING(string, start, length?) - substring
             "SUBSTRING" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("SUBSTRING requires 2-3 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SUBSTRING requires 2-3 arguments".to_string(),
+                    ));
                 }
-                let s = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("SUBSTRING: first argument must be a string".to_string()))?;
-                let start = evaluated_args[1].as_i64()
-                    .ok_or_else(|| DbError::ExecutionError("SUBSTRING: start must be a number".to_string()))? as usize;
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "SUBSTRING: first argument must be a string".to_string(),
+                    )
+                })?;
+                let start = evaluated_args[1].as_i64().ok_or_else(|| {
+                    DbError::ExecutionError("SUBSTRING: start must be a number".to_string())
+                })? as usize;
                 let len = if evaluated_args.len() > 2 {
                     evaluated_args[2].as_i64().unwrap_or(s.len() as i64) as usize
                 } else {
@@ -1935,15 +2307,19 @@ impl<'a> QueryExecutor<'a> {
             "FULLTEXT" => {
                 if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
                     return Err(DbError::ExecutionError(
-                        "FULLTEXT requires 3-4 arguments: collection, field, query, [maxDistance]".to_string()
+                        "FULLTEXT requires 3-4 arguments: collection, field, query, [maxDistance]"
+                            .to_string(),
                     ));
                 }
-                let collection_name = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("FULLTEXT: collection must be a string".to_string()))?;
-                let field = evaluated_args[1].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("FULLTEXT: field must be a string".to_string()))?;
-                let query = evaluated_args[2].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("FULLTEXT: query must be a string".to_string()))?;
+                let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FULLTEXT: collection must be a string".to_string())
+                })?;
+                let field = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FULLTEXT: field must be a string".to_string())
+                })?;
+                let query = evaluated_args[2].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FULLTEXT: query must be a string".to_string())
+                })?;
                 let max_distance = if evaluated_args.len() == 4 {
                     evaluated_args[3].as_u64().unwrap_or(2) as usize
                 } else {
@@ -1954,19 +2330,23 @@ impl<'a> QueryExecutor<'a> {
 
                 match collection.fulltext_search(field, query, max_distance) {
                     Some(matches) => {
-                        let results: Vec<Value> = matches.iter().filter_map(|m| {
-                            collection.get(&m.doc_key).ok().map(|doc| {
-                                let mut obj = serde_json::Map::new();
-                                obj.insert("doc".to_string(), doc.to_value());
-                                obj.insert("score".to_string(), json!(m.score));
-                                obj.insert("matched".to_string(), json!(m.matched_terms));
-                                Value::Object(obj)
+                        let results: Vec<Value> = matches
+                            .iter()
+                            .filter_map(|m| {
+                                collection.get(&m.doc_key).ok().map(|doc| {
+                                    let mut obj = serde_json::Map::new();
+                                    obj.insert("doc".to_string(), doc.to_value());
+                                    obj.insert("score".to_string(), json!(m.score));
+                                    obj.insert("matched".to_string(), json!(m.matched_terms));
+                                    Value::Object(obj)
+                                })
                             })
-                        }).collect();
+                            .collect();
                         Ok(Value::Array(results))
                     }
                     None => Err(DbError::ExecutionError(format!(
-                        "No fulltext index found on field '{}' in collection '{}'", field, collection_name
+                        "No fulltext index found on field '{}' in collection '{}'",
+                        field, collection_name
                     ))),
                 }
             }
@@ -1975,13 +2355,19 @@ impl<'a> QueryExecutor<'a> {
             "LEVENSHTEIN" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "LEVENSHTEIN requires 2 arguments: string1, string2".to_string()
+                        "LEVENSHTEIN requires 2 arguments: string1, string2".to_string(),
                     ));
                 }
-                let s1 = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("LEVENSHTEIN: first argument must be a string".to_string()))?;
-                let s2 = evaluated_args[1].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("LEVENSHTEIN: second argument must be a string".to_string()))?;
+                let s1 = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "LEVENSHTEIN: first argument must be a string".to_string(),
+                    )
+                })?;
+                let s2 = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "LEVENSHTEIN: second argument must be a string".to_string(),
+                    )
+                })?;
 
                 let distance = crate::storage::levenshtein_distance(s1, s2);
                 Ok(Value::Number(serde_json::Number::from(distance)))
@@ -1993,19 +2379,21 @@ impl<'a> QueryExecutor<'a> {
             "BM25" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "BM25 requires 2 arguments: field, query".to_string()
+                        "BM25 requires 2 arguments: field, query".to_string(),
                     ));
                 }
-                
+
                 // Get the field value (should be a string from the document)
-                let field_text = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("BM25: field must be a string".to_string()))?;
-                
-                let query = evaluated_args[1].as_str()
-                    .ok_or_else(|| DbError::ExecutionError("BM25: query must be a string".to_string()))?;
+                let field_text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("BM25: field must be a string".to_string())
+                })?;
+
+                let query = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("BM25: query must be a string".to_string())
+                })?;
 
                 // Tokenize query and document
-                use crate::storage::{tokenize, bm25_score};
+                use crate::storage::{bm25_score, tokenize};
                 let query_terms = tokenize(query);
                 let doc_terms = tokenize(field_text);
                 let doc_length = doc_terms.len();
@@ -2016,7 +2404,7 @@ impl<'a> QueryExecutor<'a> {
                 // For now, use a simplified version with estimated parameters
                 let avg_doc_length = 100.0; // Estimated average
                 let total_docs = 1000; // Estimated total
-                
+
                 // Create a simple term document frequency map
                 // In a real implementation, this would come from the collection's fulltext index
                 let mut term_doc_freq = std::collections::HashMap::new();
@@ -2034,14 +2422,16 @@ impl<'a> QueryExecutor<'a> {
                     &term_doc_freq,
                 );
 
-                Ok(Value::Number(serde_json::Number::from_f64(score).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(score).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
 
             // MERGE(obj1, obj2, ...) - merge multiple objects (later objects override earlier ones)
             "MERGE" => {
                 if evaluated_args.is_empty() {
                     return Err(DbError::ExecutionError(
-                        "MERGE requires at least 1 argument".to_string()
+                        "MERGE requires at least 1 argument".to_string(),
                     ));
                 }
 
@@ -2060,9 +2450,10 @@ impl<'a> QueryExecutor<'a> {
                             continue;
                         }
                         _ => {
-                            return Err(DbError::ExecutionError(
-                                format!("MERGE: all arguments must be objects, got: {:?}", arg)
-                            ));
+                            return Err(DbError::ExecutionError(format!(
+                                "MERGE: all arguments must be objects, got: {:?}",
+                                arg
+                            )));
                         }
                     }
                 }
@@ -2070,11 +2461,12 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Object(result))
             }
 
-
             // DATE_NOW() - current timestamp in milliseconds since Unix epoch
             "DATE_NOW" => {
                 if !evaluated_args.is_empty() {
-                    return Err(DbError::ExecutionError("DATE_NOW requires 0 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_NOW requires 0 arguments".to_string(),
+                    ));
                 }
                 let timestamp = Utc::now().timestamp_millis();
                 Ok(Value::Number(serde_json::Number::from(timestamp)))
@@ -2084,13 +2476,14 @@ impl<'a> QueryExecutor<'a> {
             "COLLECTION_COUNT" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError(
-                        "COLLECTION_COUNT requires 1 argument: collection name".to_string()
+                        "COLLECTION_COUNT requires 1 argument: collection name".to_string(),
                     ));
                 }
-                let collection_name = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "COLLECTION_COUNT: argument must be a string (collection name)".to_string()
-                    ))?;
+                let collection_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "COLLECTION_COUNT: argument must be a string (collection name)".to_string(),
+                    )
+                })?;
 
                 let collection = self.get_collection(collection_name)?;
                 let count = collection.count();
@@ -2100,7 +2493,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_ISO8601(date) - convert timestamp to ISO 8601 string
             "DATE_ISO8601" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_ISO8601 requires 1 argument: timestamp in milliseconds".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_ISO8601 requires 1 argument: timestamp in milliseconds".to_string(),
+                    ));
                 }
 
                 // Handle both integer and float timestamps
@@ -2114,7 +2509,12 @@ impl<'a> QueryExecutor<'a> {
                             return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string()));
                         }
                     }
-                    _ => return Err(DbError::ExecutionError("DATE_ISO8601: argument must be a number (timestamp in milliseconds)".to_string())),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_ISO8601: argument must be a number (timestamp in milliseconds)"
+                                .to_string(),
+                        ))
+                    }
                 };
 
                 // Convert milliseconds to seconds for chrono
@@ -2125,9 +2525,12 @@ impl<'a> QueryExecutor<'a> {
                 use chrono::TimeZone;
                 let datetime = match Utc.timestamp_opt(timestamp_secs, nanos) {
                     chrono::LocalResult::Single(dt) => dt,
-                    _ => return Err(DbError::ExecutionError(
-                        format!("DATE_ISO8601: invalid timestamp: {}", timestamp_ms)
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(format!(
+                            "DATE_ISO8601: invalid timestamp: {}",
+                            timestamp_ms
+                        )))
+                    }
                 };
 
                 // Format as ISO 8601 string (e.g., "2023-12-03T13:44:00.000Z")
@@ -2139,21 +2542,24 @@ impl<'a> QueryExecutor<'a> {
             "DATE_TIMESTAMP" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError(
-                        "DATE_TIMESTAMP requires 1 argument: ISO 8601 date string".to_string()
+                        "DATE_TIMESTAMP requires 1 argument: ISO 8601 date string".to_string(),
                     ));
                 }
 
-                let date_str = evaluated_args[0].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_TIMESTAMP: argument must be a string (ISO 8601 date)".to_string()
-                    ))?;
+                let date_str = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "DATE_TIMESTAMP: argument must be a string (ISO 8601 date)".to_string(),
+                    )
+                })?;
 
                 // Parse ISO 8601 string to DateTime
                 use chrono::DateTime;
-                let datetime = DateTime::parse_from_rfc3339(date_str)
-                    .map_err(|e| DbError::ExecutionError(
-                        format!("DATE_TIMESTAMP: invalid ISO 8601 date '{}': {}", date_str, e)
-                    ))?;
+                let datetime = DateTime::parse_from_rfc3339(date_str).map_err(|e| {
+                    DbError::ExecutionError(format!(
+                        "DATE_TIMESTAMP: invalid ISO 8601 date '{}': {}",
+                        date_str, e
+                    ))
+                })?;
 
                 // Convert to milliseconds since Unix epoch
                 let timestamp_ms = datetime.timestamp_millis();
@@ -2164,11 +2570,11 @@ impl<'a> QueryExecutor<'a> {
             "DATE_TRUNC" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
                     return Err(DbError::ExecutionError(
-                        "DATE_TRUNC requires 2-3 arguments: date, unit, [timezone]".to_string()
+                        "DATE_TRUNC requires 2-3 arguments: date, unit, [timezone]".to_string(),
                     ));
                 }
 
-                use chrono::{DateTime, Datelike, Timelike, TimeZone, NaiveDateTime};
+                use chrono::{DateTime, Datelike, NaiveDateTime, TimeZone, Timelike};
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
@@ -2180,47 +2586,56 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_TRUNC: invalid timestamp".to_string()
+                                "DATE_TRUNC: invalid timestamp".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_TRUNC: invalid timestamp: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_TRUNC: invalid timestamp: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_TRUNC: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_TRUNC: invalid ISO 8601 date '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_TRUNC: first argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        ))
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_TRUNC: first argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
                 };
 
                 // Parse the unit
-                let unit = evaluated_args[1].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_TRUNC: unit must be a string".to_string()
-                    ))?
+                let unit = evaluated_args[1]
+                    .as_str()
+                    .ok_or_else(|| {
+                        DbError::ExecutionError("DATE_TRUNC: unit must be a string".to_string())
+                    })?
                     .to_lowercase();
 
                 // Parse optional timezone
                 let tz: Tz = if evaluated_args.len() == 3 {
-                    let tz_str = evaluated_args[2].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_TRUNC: timezone must be a string".to_string()
-                        ))?;
-                    tz_str.parse::<Tz>()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_TRUNC: unknown timezone '{}'", tz_str)
-                        ))?
+                    let tz_str = evaluated_args[2].as_str().ok_or_else(|| {
+                        DbError::ExecutionError("DATE_TRUNC: timezone must be a string".to_string())
+                    })?;
+                    tz_str.parse::<Tz>().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_TRUNC: unknown timezone '{}'",
+                            tz_str
+                        ))
+                    })?
                 } else {
                     chrono_tz::UTC
                 };
@@ -2315,11 +2730,11 @@ impl<'a> QueryExecutor<'a> {
             "DATE_DAYS_IN_MONTH" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
                     return Err(DbError::ExecutionError(
-                        "DATE_DAYS_IN_MONTH requires 1-2 arguments: date, [timezone]".to_string()
+                        "DATE_DAYS_IN_MONTH requires 1-2 arguments: date, [timezone]".to_string(),
                     ));
                 }
 
-                use chrono::{DateTime, Datelike, TimeZone, NaiveDate};
+                use chrono::{DateTime, Datelike, NaiveDate, TimeZone};
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
@@ -2331,40 +2746,48 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_DAYS_IN_MONTH: invalid timestamp".to_string()
+                                "DATE_DAYS_IN_MONTH: invalid timestamp".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_DAYS_IN_MONTH: invalid timestamp: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_DAYS_IN_MONTH: invalid timestamp: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_DAYS_IN_MONTH: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
-                    }
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_DAYS_IN_MONTH: invalid ISO 8601 date '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
                     _ => return Err(DbError::ExecutionError(
-                        "DATE_DAYS_IN_MONTH: first argument must be a timestamp or ISO 8601 string".to_string()
+                        "DATE_DAYS_IN_MONTH: first argument must be a timestamp or ISO 8601 string"
+                            .to_string(),
                     )),
                 };
 
                 // Get year and month, optionally in a specific timezone
                 let (year, month) = if evaluated_args.len() == 2 {
-                    let tz_str = evaluated_args[1].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_DAYS_IN_MONTH: timezone must be a string".to_string()
-                        ))?;
-                    let tz: Tz = tz_str.parse()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_DAYS_IN_MONTH: unknown timezone '{}'", tz_str)
-                        ))?;
+                    let tz_str = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "DATE_DAYS_IN_MONTH: timezone must be a string".to_string(),
+                        )
+                    })?;
+                    let tz: Tz = tz_str.parse().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_DAYS_IN_MONTH: unknown timezone '{}'",
+                            tz_str
+                        ))
+                    })?;
                     let dt_tz = datetime_utc.with_timezone(&tz);
                     (dt_tz.year(), dt_tz.month())
                 } else {
@@ -2378,9 +2801,10 @@ impl<'a> QueryExecutor<'a> {
                 } else {
                     NaiveDate::from_ymd_opt(year, month + 1, 1)
                 }
-                .and_then(|next_month| NaiveDate::from_ymd_opt(year, month, 1).map(|this_month| {
-                    (next_month - this_month).num_days()
-                }))
+                .and_then(|next_month| {
+                    NaiveDate::from_ymd_opt(year, month, 1)
+                        .map(|this_month| (next_month - this_month).num_days())
+                })
                 .unwrap_or(30) as u32; // Fallback, though this shouldn't happen
 
                 Ok(Value::Number(serde_json::Number::from(days_in_month)))
@@ -2390,7 +2814,7 @@ impl<'a> QueryExecutor<'a> {
             "DATE_DAYOFYEAR" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
                     return Err(DbError::ExecutionError(
-                        "DATE_DAYOFYEAR requires 1-2 arguments: date, [timezone]".to_string()
+                        "DATE_DAYOFYEAR requires 1-2 arguments: date, [timezone]".to_string(),
                     ));
                 }
 
@@ -2398,48 +2822,57 @@ impl<'a> QueryExecutor<'a> {
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
-                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
-                    Value::Number(n) => {
-                        let timestamp_ms = if let Some(i) = n.as_i64() {
-                            i
-                        } else if let Some(f) = n.as_f64() {
-                            f as i64
-                        } else {
-                            return Err(DbError::ExecutionError(
-                                "DATE_DAYOFYEAR: invalid timestamp".to_string()
-                            ));
-                        };
-                        let secs = timestamp_ms / 1000;
-                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
-                        match Utc.timestamp_opt(secs, nanos) {
-                            chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_DAYOFYEAR: invalid timestamp: {}", timestamp_ms)
-                            )),
+                let datetime_utc: DateTime<Utc> =
+                    match &evaluated_args[0] {
+                        Value::Number(n) => {
+                            let timestamp_ms = if let Some(i) = n.as_i64() {
+                                i
+                            } else if let Some(f) = n.as_f64() {
+                                f as i64
+                            } else {
+                                return Err(DbError::ExecutionError(
+                                    "DATE_DAYOFYEAR: invalid timestamp".to_string(),
+                                ));
+                            };
+                            let secs = timestamp_ms / 1000;
+                            let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                            match Utc.timestamp_opt(secs, nanos) {
+                                chrono::LocalResult::Single(dt) => dt,
+                                _ => {
+                                    return Err(DbError::ExecutionError(format!(
+                                        "DATE_DAYOFYEAR: invalid timestamp: {}",
+                                        timestamp_ms
+                                    )))
+                                }
+                            }
                         }
-                    }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_DAYOFYEAR: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
-                    }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_DAYOFYEAR: first argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
-                };
+                        Value::String(s) => DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| {
+                                DbError::ExecutionError(format!(
+                                    "DATE_DAYOFYEAR: invalid ISO 8601 date '{}': {}",
+                                    s, e
+                                ))
+                            })?
+                            .with_timezone(&Utc),
+                        _ => return Err(DbError::ExecutionError(
+                            "DATE_DAYOFYEAR: first argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        )),
+                    };
 
                 // Parse optional timezone
                 let day_of_year = if evaluated_args.len() == 2 {
-                    let tz_str = evaluated_args[1].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_DAYOFYEAR: timezone must be a string".to_string()
-                        ))?;
-                    let tz: Tz = tz_str.parse()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_DAYOFYEAR: unknown timezone '{}'", tz_str)
-                        ))?;
+                    let tz_str = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "DATE_DAYOFYEAR: timezone must be a string".to_string(),
+                        )
+                    })?;
+                    let tz: Tz = tz_str.parse().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_DAYOFYEAR: unknown timezone '{}'",
+                            tz_str
+                        ))
+                    })?;
                     datetime_utc.with_timezone(&tz).ordinal()
                 } else {
                     datetime_utc.ordinal()
@@ -2452,7 +2885,7 @@ impl<'a> QueryExecutor<'a> {
             "DATE_ISOWEEK" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError(
-                        "DATE_ISOWEEK requires 1 argument: date".to_string()
+                        "DATE_ISOWEEK requires 1 argument: date".to_string(),
                     ));
                 }
 
@@ -2467,28 +2900,35 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_ISOWEEK: invalid timestamp".to_string()
+                                "DATE_ISOWEEK: invalid timestamp".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_ISOWEEK: invalid timestamp: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_ISOWEEK: invalid timestamp: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_ISOWEEK: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_ISOWEEK: invalid ISO 8601 date '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_ISOWEEK: argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        ))
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_ISOWEEK: argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
                 };
 
                 // Get ISO week number
@@ -2500,7 +2940,7 @@ impl<'a> QueryExecutor<'a> {
             "DATE_FORMAT" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
                     return Err(DbError::ExecutionError(
-                        "DATE_FORMAT requires 2-3 arguments: date, format, [timezone]".to_string()
+                        "DATE_FORMAT requires 2-3 arguments: date, format, [timezone]".to_string(),
                     ));
                 }
 
@@ -2508,54 +2948,62 @@ impl<'a> QueryExecutor<'a> {
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
-                let datetime_utc: DateTime<Utc> = match &evaluated_args[0] {
-                    Value::Number(n) => {
-                        let timestamp_ms = if let Some(i) = n.as_i64() {
-                            i
-                        } else if let Some(f) = n.as_f64() {
-                            f as i64
-                        } else {
-                            return Err(DbError::ExecutionError(
-                                "DATE_FORMAT: invalid timestamp".to_string()
-                            ));
-                        };
-                        let secs = timestamp_ms / 1000;
-                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
-                        match Utc.timestamp_opt(secs, nanos) {
-                            chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_FORMAT: invalid timestamp: {}", timestamp_ms)
-                            )),
+                let datetime_utc: DateTime<Utc> =
+                    match &evaluated_args[0] {
+                        Value::Number(n) => {
+                            let timestamp_ms = if let Some(i) = n.as_i64() {
+                                i
+                            } else if let Some(f) = n.as_f64() {
+                                f as i64
+                            } else {
+                                return Err(DbError::ExecutionError(
+                                    "DATE_FORMAT: invalid timestamp".to_string(),
+                                ));
+                            };
+                            let secs = timestamp_ms / 1000;
+                            let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                            match Utc.timestamp_opt(secs, nanos) {
+                                chrono::LocalResult::Single(dt) => dt,
+                                _ => {
+                                    return Err(DbError::ExecutionError(format!(
+                                        "DATE_FORMAT: invalid timestamp: {}",
+                                        timestamp_ms
+                                    )))
+                                }
+                            }
                         }
-                    }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_FORMAT: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
-                    }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_FORMAT: first argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
-                };
+                        Value::String(s) => DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| {
+                                DbError::ExecutionError(format!(
+                                    "DATE_FORMAT: invalid ISO 8601 date '{}': {}",
+                                    s, e
+                                ))
+                            })?
+                            .with_timezone(&Utc),
+                        _ => return Err(DbError::ExecutionError(
+                            "DATE_FORMAT: first argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        )),
+                    };
 
                 // Parse the format string
-                let format_str = evaluated_args[1].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_FORMAT: format must be a string".to_string()
-                    ))?;
+                let format_str = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("DATE_FORMAT: format must be a string".to_string())
+                })?;
 
                 // Parse optional timezone
                 let tz: Tz = if evaluated_args.len() == 3 {
-                    let tz_str = evaluated_args[2].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_FORMAT: timezone must be a string".to_string()
-                        ))?;
-                    tz_str.parse::<Tz>()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_FORMAT: unknown timezone '{}'", tz_str)
-                        ))?
+                    let tz_str = evaluated_args[2].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "DATE_FORMAT: timezone must be a string".to_string(),
+                        )
+                    })?;
+                    tz_str.parse::<Tz>().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_FORMAT: unknown timezone '{}'",
+                            tz_str
+                        ))
+                    })?
                 } else {
                     chrono_tz::UTC
                 };
@@ -2573,11 +3021,12 @@ impl<'a> QueryExecutor<'a> {
             "DATE_ADD" => {
                 if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
                     return Err(DbError::ExecutionError(
-                        "DATE_ADD requires 3-4 arguments: date, amount, unit, [timezone]".to_string()
+                        "DATE_ADD requires 3-4 arguments: date, amount, unit, [timezone]"
+                            .to_string(),
                     ));
                 }
 
-                use chrono::{DateTime, Datelike, Timelike, TimeZone, Duration};
+                use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike};
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
@@ -2589,28 +3038,35 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_ADD: invalid timestamp".to_string()
+                                "DATE_ADD: invalid timestamp".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_ADD: invalid timestamp: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_ADD: invalid timestamp: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_ADD: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_ADD: invalid ISO 8601 date '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_ADD: first argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        ))
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_ADD: first argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
                 };
 
                 // Parse the amount
@@ -2622,32 +3078,33 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_ADD: amount must be a number".to_string()
+                                "DATE_ADD: amount must be a number".to_string(),
                             ));
                         }
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_ADD: amount must be a number".to_string()
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_ADD: amount must be a number".to_string(),
+                        ))
+                    }
                 };
 
                 // Parse the unit
-                let unit = evaluated_args[2].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_ADD: unit must be a string".to_string()
-                    ))?
+                let unit = evaluated_args[2]
+                    .as_str()
+                    .ok_or_else(|| {
+                        DbError::ExecutionError("DATE_ADD: unit must be a string".to_string())
+                    })?
                     .to_lowercase();
 
                 // Parse optional timezone
                 let tz: Tz = if evaluated_args.len() == 4 {
-                    let tz_str = evaluated_args[3].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_ADD: timezone must be a string".to_string()
-                        ))?;
-                    tz_str.parse::<Tz>()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_ADD: unknown timezone '{}'", tz_str)
-                        ))?
+                    let tz_str = evaluated_args[3].as_str().ok_or_else(|| {
+                        DbError::ExecutionError("DATE_ADD: timezone must be a string".to_string())
+                    })?;
+                    tz_str.parse::<Tz>().map_err(|_| {
+                        DbError::ExecutionError(format!("DATE_ADD: unknown timezone '{}'", tz_str))
+                    })?
                 } else {
                     chrono_tz::UTC
                 };
@@ -2762,7 +3219,8 @@ impl<'a> QueryExecutor<'a> {
             "DATE_SUBTRACT" => {
                 if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
                     return Err(DbError::ExecutionError(
-                        "DATE_SUBTRACT requires 3-4 arguments: date, amount, unit, [timezone]".to_string()
+                        "DATE_SUBTRACT requires 3-4 arguments: date, amount, unit, [timezone]"
+                            .to_string(),
                     ));
                 }
 
@@ -2775,13 +3233,15 @@ impl<'a> QueryExecutor<'a> {
                             Value::Number(serde_json::Number::from_f64(-f).unwrap())
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_SUBTRACT: amount must be a number".to_string()
+                                "DATE_SUBTRACT: amount must be a number".to_string(),
                             ));
                         }
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_SUBTRACT: amount must be a number".to_string()
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_SUBTRACT: amount must be a number".to_string(),
+                        ))
+                    }
                 };
 
                 // Build new evaluated_args with negated amount
@@ -2794,41 +3254,47 @@ impl<'a> QueryExecutor<'a> {
 
                 // Actually, let's just duplicate the key parts of DATE_ADD logic here
                 // but with the negated amount
-                use chrono::{DateTime, Datelike, Timelike, TimeZone, Duration};
+                use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike};
                 use chrono_tz::Tz;
 
                 // Parse the date (can be timestamp or ISO string)
-                let datetime_utc: DateTime<Utc> = match &new_evaluated_args[0] {
-                    Value::Number(n) => {
-                        let timestamp_ms = if let Some(i) = n.as_i64() {
-                            i
-                        } else if let Some(f) = n.as_f64() {
-                            f as i64
-                        } else {
-                            return Err(DbError::ExecutionError(
-                                "DATE_SUBTRACT: invalid timestamp".to_string()
-                            ));
-                        };
-                        let secs = timestamp_ms / 1000;
-                        let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
-                        match Utc.timestamp_opt(secs, nanos) {
-                            chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_SUBTRACT: invalid timestamp: {}", timestamp_ms)
-                            )),
+                let datetime_utc: DateTime<Utc> =
+                    match &new_evaluated_args[0] {
+                        Value::Number(n) => {
+                            let timestamp_ms = if let Some(i) = n.as_i64() {
+                                i
+                            } else if let Some(f) = n.as_f64() {
+                                f as i64
+                            } else {
+                                return Err(DbError::ExecutionError(
+                                    "DATE_SUBTRACT: invalid timestamp".to_string(),
+                                ));
+                            };
+                            let secs = timestamp_ms / 1000;
+                            let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+                            match Utc.timestamp_opt(secs, nanos) {
+                                chrono::LocalResult::Single(dt) => dt,
+                                _ => {
+                                    return Err(DbError::ExecutionError(format!(
+                                        "DATE_SUBTRACT: invalid timestamp: {}",
+                                        timestamp_ms
+                                    )))
+                                }
+                            }
                         }
-                    }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_SUBTRACT: invalid ISO 8601 date '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
-                    }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_SUBTRACT: first argument must be a timestamp or ISO 8601 string".to_string()
-                    )),
-                };
+                        Value::String(s) => DateTime::parse_from_rfc3339(s)
+                            .map_err(|e| {
+                                DbError::ExecutionError(format!(
+                                    "DATE_SUBTRACT: invalid ISO 8601 date '{}': {}",
+                                    s, e
+                                ))
+                            })?
+                            .with_timezone(&Utc),
+                        _ => return Err(DbError::ExecutionError(
+                            "DATE_SUBTRACT: first argument must be a timestamp or ISO 8601 string"
+                                .to_string(),
+                        )),
+                    };
 
                 // Parse the negated amount
                 let amount = match &new_evaluated_args[1] {
@@ -2839,32 +3305,38 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_SUBTRACT: amount must be a number".to_string()
+                                "DATE_SUBTRACT: amount must be a number".to_string(),
                             ));
                         }
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_SUBTRACT: amount must be a number".to_string()
-                    )),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_SUBTRACT: amount must be a number".to_string(),
+                        ))
+                    }
                 };
 
                 // Parse the unit
-                let unit = new_evaluated_args[2].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_SUBTRACT: unit must be a string".to_string()
-                    ))?
+                let unit = new_evaluated_args[2]
+                    .as_str()
+                    .ok_or_else(|| {
+                        DbError::ExecutionError("DATE_SUBTRACT: unit must be a string".to_string())
+                    })?
                     .to_lowercase();
 
                 // Parse optional timezone
                 let tz: Tz = if new_evaluated_args.len() == 4 {
-                    let tz_str = new_evaluated_args[3].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_SUBTRACT: timezone must be a string".to_string()
-                        ))?;
-                    tz_str.parse::<Tz>()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_SUBTRACT: unknown timezone '{}'", tz_str)
-                        ))?
+                    let tz_str = new_evaluated_args[3].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "DATE_SUBTRACT: timezone must be a string".to_string(),
+                        )
+                    })?;
+                    tz_str.parse::<Tz>().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_SUBTRACT: unknown timezone '{}'",
+                            tz_str
+                        ))
+                    })?
                 } else {
                     chrono_tz::UTC
                 };
@@ -2984,28 +3456,34 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_DIFF: invalid timestamp for date1".to_string()
+                                "DATE_DIFF: invalid timestamp for date1".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_DIFF: invalid timestamp for date1: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_DIFF: invalid timestamp for date1: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_DIFF: invalid ISO 8601 date for date1 '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_DIFF: invalid ISO 8601 date for date1 '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_DIFF: date1 must be a timestamp or ISO 8601 string".to_string(),
+                        ))
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_DIFF: date1 must be a timestamp or ISO 8601 string".to_string()
-                    )),
                 };
 
                 // Parse date2 (can be timestamp or ISO string)
@@ -3017,35 +3495,42 @@ impl<'a> QueryExecutor<'a> {
                             f as i64
                         } else {
                             return Err(DbError::ExecutionError(
-                                "DATE_DIFF: invalid timestamp for date2".to_string()
+                                "DATE_DIFF: invalid timestamp for date2".to_string(),
                             ));
                         };
                         let secs = timestamp_ms / 1000;
                         let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
                         match Utc.timestamp_opt(secs, nanos) {
                             chrono::LocalResult::Single(dt) => dt,
-                            _ => return Err(DbError::ExecutionError(
-                                format!("DATE_DIFF: invalid timestamp for date2: {}", timestamp_ms)
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(format!(
+                                    "DATE_DIFF: invalid timestamp for date2: {}",
+                                    timestamp_ms
+                                )))
+                            }
                         }
                     }
-                    Value::String(s) => {
-                        DateTime::parse_from_rfc3339(s)
-                            .map_err(|e| DbError::ExecutionError(
-                                format!("DATE_DIFF: invalid ISO 8601 date for date2 '{}': {}", s, e)
-                            ))?
-                            .with_timezone(&Utc)
+                    Value::String(s) => DateTime::parse_from_rfc3339(s)
+                        .map_err(|e| {
+                            DbError::ExecutionError(format!(
+                                "DATE_DIFF: invalid ISO 8601 date for date2 '{}': {}",
+                                s, e
+                            ))
+                        })?
+                        .with_timezone(&Utc),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "DATE_DIFF: date2 must be a timestamp or ISO 8601 string".to_string(),
+                        ))
                     }
-                    _ => return Err(DbError::ExecutionError(
-                        "DATE_DIFF: date2 must be a timestamp or ISO 8601 string".to_string()
-                    )),
                 };
 
                 // Parse the unit
-                let unit = evaluated_args[2].as_str()
-                    .ok_or_else(|| DbError::ExecutionError(
-                        "DATE_DIFF: unit must be a string".to_string()
-                    ))?
+                let unit = evaluated_args[2]
+                    .as_str()
+                    .ok_or_else(|| {
+                        DbError::ExecutionError("DATE_DIFF: unit must be a string".to_string())
+                    })?
                     .to_lowercase();
 
                 // Parse optional asFloat (default: false)
@@ -3057,26 +3542,30 @@ impl<'a> QueryExecutor<'a> {
 
                 // Parse optional timezones
                 let (tz1, tz2) = if evaluated_args.len() >= 5 {
-                    let tz1_str = evaluated_args[4].as_str()
-                        .ok_or_else(|| DbError::ExecutionError(
-                            "DATE_DIFF: timezone1 must be a string".to_string()
-                        ))?;
-                    let tz1: Tz = tz1_str.parse()
-                        .map_err(|_| DbError::ExecutionError(
-                            format!("DATE_DIFF: unknown timezone1 '{}'", tz1_str)
-                        ))?;
+                    let tz1_str = evaluated_args[4].as_str().ok_or_else(|| {
+                        DbError::ExecutionError("DATE_DIFF: timezone1 must be a string".to_string())
+                    })?;
+                    let tz1: Tz = tz1_str.parse().map_err(|_| {
+                        DbError::ExecutionError(format!(
+                            "DATE_DIFF: unknown timezone1 '{}'",
+                            tz1_str
+                        ))
+                    })?;
 
                     let tz2 = if evaluated_args.len() >= 6 {
-                        let tz2_str = evaluated_args[5].as_str()
-                            .ok_or_else(|| DbError::ExecutionError(
-                                "DATE_DIFF: timezone2 must be a string".to_string()
-                            ))?;
-                        tz2_str.parse::<Tz>()
-                            .map_err(|_| DbError::ExecutionError(
-                                format!("DATE_DIFF: unknown timezone2 '{}'", tz2_str)
-                            ))?
+                        let tz2_str = evaluated_args[5].as_str().ok_or_else(|| {
+                            DbError::ExecutionError(
+                                "DATE_DIFF: timezone2 must be a string".to_string(),
+                            )
+                        })?;
+                        tz2_str.parse::<Tz>().map_err(|_| {
+                            DbError::ExecutionError(format!(
+                                "DATE_DIFF: unknown timezone2 '{}'",
+                                tz2_str
+                            ))
+                        })?
                     } else {
-                        tz1  // If timezone2 not specified, use timezone1 for both
+                        tz1 // If timezone2 not specified, use timezone1 for both
                     };
 
                     (tz1, tz2)
@@ -3178,8 +3667,10 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(serde_json::Number::from_f64(diff).unwrap()))
             }
 
-            _ => Err(DbError::ExecutionError(format!("Unknown function: {}", name))),
-
+            _ => Err(DbError::ExecutionError(format!(
+                "Unknown function: {}",
+                name
+            ))),
         }
     }
 
@@ -3194,7 +3685,8 @@ impl<'a> QueryExecutor<'a> {
         var_name: &str,
     ) -> Option<Vec<Value>> {
         for filter in filter_clauses {
-            if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name) {
+            if let Some(condition) = self.extract_indexable_condition(&filter.expression, var_name)
+            {
                 if let Some(docs) = self.use_index_for_condition(collection, &condition) {
                     return Some(docs.iter().map(|d| d.to_value()).collect());
                 }
@@ -3204,15 +3696,19 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Extract a simple indexable condition from a filter expression
-    fn extract_indexable_condition(&self, expr: &Expression, var_name: &str) -> Option<IndexableCondition> {
+    fn extract_indexable_condition(
+        &self,
+        expr: &Expression,
+        var_name: &str,
+    ) -> Option<IndexableCondition> {
         match expr {
             Expression::BinaryOp { left, op, right } => {
                 match op {
-                    BinaryOperator::Equal |
-                    BinaryOperator::LessThan |
-                    BinaryOperator::LessThanOrEqual |
-                    BinaryOperator::GreaterThan |
-                    BinaryOperator::GreaterThanOrEqual => {
+                    BinaryOperator::Equal
+                    | BinaryOperator::LessThan
+                    | BinaryOperator::LessThanOrEqual
+                    | BinaryOperator::GreaterThan
+                    | BinaryOperator::GreaterThanOrEqual => {
                         // Try left = field access, right = literal
                         if let Some(field) = self.extract_field_path(left, var_name) {
                             if let Expression::Literal(value) = right.as_ref() {
@@ -3228,9 +3724,13 @@ impl<'a> QueryExecutor<'a> {
                             if let Expression::Literal(value) = left.as_ref() {
                                 let reversed_op = match op {
                                     BinaryOperator::LessThan => BinaryOperator::GreaterThan,
-                                    BinaryOperator::LessThanOrEqual => BinaryOperator::GreaterThanOrEqual,
+                                    BinaryOperator::LessThanOrEqual => {
+                                        BinaryOperator::GreaterThanOrEqual
+                                    }
                                     BinaryOperator::GreaterThan => BinaryOperator::LessThan,
-                                    BinaryOperator::GreaterThanOrEqual => BinaryOperator::LessThanOrEqual,
+                                    BinaryOperator::GreaterThanOrEqual => {
+                                        BinaryOperator::LessThanOrEqual
+                                    }
                                     other => other.clone(),
                                 };
                                 return Some(IndexableCondition {
@@ -3300,18 +3800,27 @@ impl<'a> QueryExecutor<'a> {
         match condition.op {
             BinaryOperator::Equal => {
                 // Try with normalized value first
-                if let Some(docs) = collection.index_lookup_eq(&condition.field, &normalized_value) {
+                if let Some(docs) = collection.index_lookup_eq(&condition.field, &normalized_value)
+                {
                     if !docs.is_empty() {
                         return Some(docs);
                     }
                 }
                 // Fall back to original value
                 collection.index_lookup_eq(&condition.field, &condition.value)
-            },
-            BinaryOperator::GreaterThan => collection.index_lookup_gt(&condition.field, &normalized_value),
-            BinaryOperator::GreaterThanOrEqual => collection.index_lookup_gte(&condition.field, &normalized_value),
-            BinaryOperator::LessThan => collection.index_lookup_lt(&condition.field, &normalized_value),
-            BinaryOperator::LessThanOrEqual => collection.index_lookup_lte(&condition.field, &normalized_value),
+            }
+            BinaryOperator::GreaterThan => {
+                collection.index_lookup_gt(&condition.field, &normalized_value)
+            }
+            BinaryOperator::GreaterThanOrEqual => {
+                collection.index_lookup_gte(&condition.field, &normalized_value)
+            }
+            BinaryOperator::LessThan => {
+                collection.index_lookup_lt(&condition.field, &normalized_value)
+            }
+            BinaryOperator::LessThanOrEqual => {
+                collection.index_lookup_lte(&condition.field, &normalized_value)
+            }
             _ => None,
         }
     }
@@ -3362,18 +3871,18 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::Equal => Ok(Value::Bool(values_equal(left, right))),
         BinaryOperator::NotEqual => Ok(Value::Bool(!values_equal(left, right))),
 
-        BinaryOperator::LessThan => {
-            Ok(Value::Bool(compare_values(left, right) == std::cmp::Ordering::Less))
-        }
-        BinaryOperator::LessThanOrEqual => {
-            Ok(Value::Bool(compare_values(left, right) != std::cmp::Ordering::Greater))
-        }
-        BinaryOperator::GreaterThan => {
-            Ok(Value::Bool(compare_values(left, right) == std::cmp::Ordering::Greater))
-        }
-        BinaryOperator::GreaterThanOrEqual => {
-            Ok(Value::Bool(compare_values(left, right) != std::cmp::Ordering::Less))
-        }
+        BinaryOperator::LessThan => Ok(Value::Bool(
+            compare_values(left, right) == std::cmp::Ordering::Less,
+        )),
+        BinaryOperator::LessThanOrEqual => Ok(Value::Bool(
+            compare_values(left, right) != std::cmp::Ordering::Greater,
+        )),
+        BinaryOperator::GreaterThan => Ok(Value::Bool(
+            compare_values(left, right) == std::cmp::Ordering::Greater,
+        )),
+        BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(
+            compare_values(left, right) != std::cmp::Ordering::Less,
+        )),
 
         BinaryOperator::And => Ok(Value::Bool(to_bool(left) && to_bool(right))),
         BinaryOperator::Or => Ok(Value::Bool(to_bool(left) || to_bool(right))),
@@ -3384,7 +3893,9 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             } else if let (Some(a), Some(b)) = (left.as_str(), right.as_str()) {
                 Ok(Value::String(format!("{}{}", a, b)))
             } else {
-                Err(DbError::ExecutionError("Cannot add these types".to_string()))
+                Err(DbError::ExecutionError(
+                    "Cannot add these types".to_string(),
+                ))
             }
         }
 
@@ -3392,7 +3903,9 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from_f64(a - b).unwrap()))
             } else {
-                Err(DbError::ExecutionError("Cannot subtract non-numbers".to_string()))
+                Err(DbError::ExecutionError(
+                    "Cannot subtract non-numbers".to_string(),
+                ))
             }
         }
 
@@ -3400,7 +3913,9 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from_f64(a * b).unwrap()))
             } else {
-                Err(DbError::ExecutionError("Cannot multiply non-numbers".to_string()))
+                Err(DbError::ExecutionError(
+                    "Cannot multiply non-numbers".to_string(),
+                ))
             }
         }
 
@@ -3412,7 +3927,9 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                     Ok(Value::Number(serde_json::Number::from_f64(a / b).unwrap()))
                 }
             } else {
-                Err(DbError::ExecutionError("Cannot divide non-numbers".to_string()))
+                Err(DbError::ExecutionError(
+                    "Cannot divide non-numbers".to_string(),
+                ))
             }
         }
     }
@@ -3426,7 +3943,9 @@ fn evaluate_unary_op(op: &UnaryOperator, operand: &Value) -> DbResult<Value> {
             if let Some(n) = operand.as_f64() {
                 Ok(Value::Number(serde_json::Number::from_f64(-n).unwrap()))
             } else {
-                Err(DbError::ExecutionError("Cannot negate non-number".to_string()))
+                Err(DbError::ExecutionError(
+                    "Cannot negate non-number".to_string(),
+                ))
             }
         }
     }

@@ -145,10 +145,7 @@ pub enum Expression {
     Range(Box<Expression>, Box<Expression>),
 
     /// Function call (e.g., DISTANCE(lat1, lon1, lat2, lon2))
-    FunctionCall {
-        name: String,
-        args: Vec<Expression>,
-    },
+    FunctionCall { name: String, args: Vec<Expression> },
 
     /// Subquery (FOR ... RETURN ...) wrapped in parentheses
     Subquery(Box<Query>),

@@ -26,34 +26,34 @@ pub enum Token {
 
     // Identifiers and literals
     Identifier(String),
-    BindVar(String),    // @variable for bind parameters
+    BindVar(String), // @variable for bind parameters
     Number(f64),
     String(String),
 
     // Operators
-    Equal,          // ==
-    Assign,         // =
-    NotEqual,       // !=
-    LessThan,       // <
-    LessThanEq,     // <=
-    GreaterThan,    // >
-    GreaterThanEq,  // >=
-    Plus,           // +
-    Minus,          // -
-    Star,           // *
-    Slash,          // /
+    Equal,         // ==
+    Assign,        // =
+    NotEqual,      // !=
+    LessThan,      // <
+    LessThanEq,    // <=
+    GreaterThan,   // >
+    GreaterThanEq, // >=
+    Plus,          // +
+    Minus,         // -
+    Star,          // *
+    Slash,         // /
 
     // Delimiters
-    Dot,            // .
-    DotDot,         // .. (range operator)
-    Comma,          // ,
-    LeftBrace,      // {
-    RightBrace,     // }
-    LeftBracket,    // [
-    RightBracket,   // ]
-    LeftParen,      // (
-    RightParen,     // )
-    Colon,          // :
+    Dot,          // .
+    DotDot,       // .. (range operator)
+    Comma,        // ,
+    LeftBrace,    // {
+    RightBrace,   // }
+    LeftBracket,  // [
+    RightBracket, // ]
+    LeftParen,    // (
+    RightParen,   // )
+    Colon,        // :
 
     // Special
     Eof,
@@ -120,7 +120,8 @@ impl Lexer {
             }
         }
 
-        num_str.parse::<f64>()
+        num_str
+            .parse::<f64>()
             .map(Token::Number)
             .map_err(|_| DbError::ParseError(format!("Invalid number: {}", num_str)))
     }
@@ -211,7 +212,9 @@ impl Lexer {
         }
 
         if name.is_empty() {
-            return Err(DbError::ParseError("Expected bind variable name after '@'".to_string()));
+            return Err(DbError::ParseError(
+                "Expected bind variable name after '@'".to_string(),
+            ));
         }
 
         Ok(Token::BindVar(name))
@@ -279,10 +282,22 @@ impl Lexer {
                 }
             }
 
-            Some('+') => { self.advance(); Token::Plus }
-            Some('-') => { self.advance(); Token::Minus }
-            Some('*') => { self.advance(); Token::Star }
-            Some('/') => { self.advance(); Token::Slash }
+            Some('+') => {
+                self.advance();
+                Token::Plus
+            }
+            Some('-') => {
+                self.advance();
+                Token::Minus
+            }
+            Some('*') => {
+                self.advance();
+                Token::Star
+            }
+            Some('/') => {
+                self.advance();
+                Token::Slash
+            }
             Some('.') => {
                 self.advance();
                 if self.current_char == Some('.') {
@@ -292,14 +307,38 @@ impl Lexer {
                     Token::Dot
                 }
             }
-            Some(',') => { self.advance(); Token::Comma }
-            Some('{') => { self.advance(); Token::LeftBrace }
-            Some('}') => { self.advance(); Token::RightBrace }
-            Some('[') => { self.advance(); Token::LeftBracket }
-            Some(']') => { self.advance(); Token::RightBracket }
-            Some('(') => { self.advance(); Token::LeftParen }
-            Some(')') => { self.advance(); Token::RightParen }
-            Some(':') => { self.advance(); Token::Colon }
+            Some(',') => {
+                self.advance();
+                Token::Comma
+            }
+            Some('{') => {
+                self.advance();
+                Token::LeftBrace
+            }
+            Some('}') => {
+                self.advance();
+                Token::RightBrace
+            }
+            Some('[') => {
+                self.advance();
+                Token::LeftBracket
+            }
+            Some(']') => {
+                self.advance();
+                Token::RightBracket
+            }
+            Some('(') => {
+                self.advance();
+                Token::LeftParen
+            }
+            Some(')') => {
+                self.advance();
+                Token::RightParen
+            }
+            Some(':') => {
+                self.advance();
+                Token::Colon
+            }
 
             Some(ch) => {
                 return Err(DbError::ParseError(format!("Unexpected character: {}", ch)));

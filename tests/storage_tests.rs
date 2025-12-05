@@ -1,8 +1,8 @@
 //! Storage Engine Tests
 //! Tests for RocksDB-backed storage, collections, and documents
 
-use solidb::{StorageEngine, DbError};
 use serde_json::json;
+use solidb::{DbError, StorageEngine};
 use tempfile::TempDir;
 
 /// Helper to create a test storage engine with a temporary directory
@@ -88,10 +88,12 @@ fn test_insert_document() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    let doc = collection.insert(json!({
-        "name": "Alice",
-        "age": 30
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "name": "Alice",
+            "age": 30
+        }))
+        .unwrap();
 
     assert!(!doc.key.is_empty());
     assert!(doc.id.starts_with("users/"));
@@ -103,11 +105,13 @@ fn test_insert_document_with_custom_key() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    let doc = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "age": 30
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "age": 30
+        }))
+        .unwrap();
 
     assert_eq!(doc.key, "alice");
 }
@@ -118,11 +122,13 @@ fn test_get_document() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    let inserted = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "age": 30
-    })).unwrap();
+    let inserted = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "age": 30
+        }))
+        .unwrap();
 
     let retrieved = collection.get("alice").unwrap();
     assert_eq!(retrieved.key, inserted.key);
@@ -144,16 +150,23 @@ fn test_update_document() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "age": 30
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "age": 30
+        }))
+        .unwrap();
 
-    let updated = collection.update("alice", json!({
-        "age": 31,
-        "city": "Paris"
-    })).unwrap();
+    let updated = collection
+        .update(
+            "alice",
+            json!({
+                "age": 31,
+                "city": "Paris"
+            }),
+        )
+        .unwrap();
 
     let doc_value = updated.to_value();
     assert_eq!(doc_value["age"], 31);
@@ -167,10 +180,12 @@ fn test_delete_document() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
 
     let result = collection.delete("alice");
     assert!(result.is_ok());
@@ -215,12 +230,14 @@ fn test_create_index() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    let stats = collection.create_index(
-        "idx_age".to_string(),
-        "age".to_string(),
-        solidb::IndexType::Persistent,
-        false
-    ).unwrap();
+    let stats = collection
+        .create_index(
+            "idx_age".to_string(),
+            "age".to_string(),
+            solidb::IndexType::Persistent,
+            false,
+        )
+        .unwrap();
 
     assert_eq!(stats.name, "idx_age");
     assert_eq!(stats.field, "age");
@@ -233,17 +250,25 @@ fn test_index_lookup_eq() {
     let collection = storage.get_collection("users").unwrap();
 
     // Insert documents first
-    collection.insert(json!({"_key": "alice", "name": "Alice", "age": 30})).unwrap();
-    collection.insert(json!({"_key": "bob", "name": "Bob", "age": 25})).unwrap();
-    collection.insert(json!({"_key": "charlie", "name": "Charlie", "age": 30})).unwrap();
+    collection
+        .insert(json!({"_key": "alice", "name": "Alice", "age": 30}))
+        .unwrap();
+    collection
+        .insert(json!({"_key": "bob", "name": "Bob", "age": 25}))
+        .unwrap();
+    collection
+        .insert(json!({"_key": "charlie", "name": "Charlie", "age": 30}))
+        .unwrap();
 
     // Create index
-    collection.create_index(
-        "idx_age".to_string(),
-        "age".to_string(),
-        solidb::IndexType::Hash,
-        false
-    ).unwrap();
+    collection
+        .create_index(
+            "idx_age".to_string(),
+            "age".to_string(),
+            solidb::IndexType::Hash,
+            false,
+        )
+        .unwrap();
 
     // Lookup
     let results = collection.index_lookup_eq("age", &json!(30));
@@ -258,8 +283,22 @@ fn test_list_indexes() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    collection.create_index("idx_age".to_string(), "age".to_string(), solidb::IndexType::Persistent, false).unwrap();
-    collection.create_index("idx_name".to_string(), "name".to_string(), solidb::IndexType::Hash, false).unwrap();
+    collection
+        .create_index(
+            "idx_age".to_string(),
+            "age".to_string(),
+            solidb::IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    collection
+        .create_index(
+            "idx_name".to_string(),
+            "name".to_string(),
+            solidb::IndexType::Hash,
+            false,
+        )
+        .unwrap();
 
     let indexes = collection.list_indexes();
     assert_eq!(indexes.len(), 2);
@@ -271,7 +310,14 @@ fn test_drop_index() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    collection.create_index("idx_age".to_string(), "age".to_string(), solidb::IndexType::Persistent, false).unwrap();
+    collection
+        .create_index(
+            "idx_age".to_string(),
+            "age".to_string(),
+            solidb::IndexType::Persistent,
+            false,
+        )
+        .unwrap();
 
     let result = collection.drop_index("idx_age");
     assert!(result.is_ok());
@@ -292,11 +338,13 @@ fn test_data_persists_after_reopen() {
         let storage = StorageEngine::new(&path).unwrap();
         storage.create_collection("users".to_string()).unwrap();
         let collection = storage.get_collection("users").unwrap();
-        collection.insert(json!({
-            "_key": "alice",
-            "name": "Alice",
-            "age": 30
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": "alice",
+                "name": "Alice",
+                "age": 30
+            }))
+            .unwrap();
     }
 
     // Reopen storage and verify data
@@ -323,8 +371,17 @@ fn test_index_persists_after_reopen() {
         let storage = StorageEngine::new(&path).unwrap();
         storage.create_collection("users".to_string()).unwrap();
         let collection = storage.get_collection("users").unwrap();
-        collection.insert(json!({"_key": "alice", "age": 30})).unwrap();
-        collection.create_index("idx_age".to_string(), "age".to_string(), solidb::IndexType::Persistent, false).unwrap();
+        collection
+            .insert(json!({"_key": "alice", "age": 30}))
+            .unwrap();
+        collection
+            .create_index(
+                "idx_age".to_string(),
+                "age".to_string(),
+                solidb::IndexType::Persistent,
+                false,
+            )
+            .unwrap();
     }
 
     // Reopen and verify index
@@ -345,10 +402,9 @@ fn test_create_geo_index() {
     storage.create_collection("places".to_string()).unwrap();
     let collection = storage.get_collection("places").unwrap();
 
-    let stats = collection.create_geo_index(
-        "idx_location".to_string(),
-        "location".to_string()
-    ).unwrap();
+    let stats = collection
+        .create_geo_index("idx_location".to_string(), "location".to_string())
+        .unwrap();
 
     assert_eq!(stats.name, "idx_location");
     assert_eq!(stats.field, "location");
@@ -361,24 +417,32 @@ fn test_geo_near() {
     let collection = storage.get_collection("places").unwrap();
 
     // Insert places
-    collection.insert(json!({
-        "_key": "eiffel",
-        "name": "Eiffel Tower",
-        "location": {"lat": 48.8584, "lon": 2.2945}
-    })).unwrap();
-    collection.insert(json!({
-        "_key": "louvre",
-        "name": "Louvre Museum",
-        "location": {"lat": 48.8606, "lon": 2.3376}
-    })).unwrap();
-    collection.insert(json!({
-        "_key": "notre_dame",
-        "name": "Notre Dame",
-        "location": {"lat": 48.8530, "lon": 2.3499}
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "eiffel",
+            "name": "Eiffel Tower",
+            "location": {"lat": 48.8584, "lon": 2.2945}
+        }))
+        .unwrap();
+    collection
+        .insert(json!({
+            "_key": "louvre",
+            "name": "Louvre Museum",
+            "location": {"lat": 48.8606, "lon": 2.3376}
+        }))
+        .unwrap();
+    collection
+        .insert(json!({
+            "_key": "notre_dame",
+            "name": "Notre Dame",
+            "location": {"lat": 48.8530, "lon": 2.3499}
+        }))
+        .unwrap();
 
     // Create geo index
-    collection.create_geo_index("idx_location".to_string(), "location".to_string()).unwrap();
+    collection
+        .create_geo_index("idx_location".to_string(), "location".to_string())
+        .unwrap();
 
     // Query near Eiffel Tower
     let results = collection.geo_near("location", 48.8584, 2.2945, 3);
@@ -399,19 +463,25 @@ fn test_geo_within() {
     let collection = storage.get_collection("places").unwrap();
 
     // Insert places
-    collection.insert(json!({
-        "_key": "eiffel",
-        "name": "Eiffel Tower",
-        "location": {"lat": 48.8584, "lon": 2.2945}
-    })).unwrap();
-    collection.insert(json!({
-        "_key": "london_eye",
-        "name": "London Eye",
-        "location": {"lat": 51.5033, "lon": -0.1196}
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "eiffel",
+            "name": "Eiffel Tower",
+            "location": {"lat": 48.8584, "lon": 2.2945}
+        }))
+        .unwrap();
+    collection
+        .insert(json!({
+            "_key": "london_eye",
+            "name": "London Eye",
+            "location": {"lat": 51.5033, "lon": -0.1196}
+        }))
+        .unwrap();
 
     // Create geo index
-    collection.create_geo_index("idx_location".to_string(), "location".to_string()).unwrap();
+    collection
+        .create_geo_index("idx_location".to_string(), "location".to_string())
+        .unwrap();
 
     // Query within 10km of Eiffel Tower (should not include London Eye)
     let results = collection.geo_within("location", 48.8584, 2.2945, 10_000.0);
@@ -429,10 +499,12 @@ fn test_document_has_revision() {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    let doc = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
 
     // Document should have a _rev field
     let value = doc.to_value();
@@ -448,16 +520,23 @@ fn test_revision_changes_on_update() {
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
-    let doc = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
     let original_rev = doc.revision().to_string();
 
     // Update document
-    let updated_doc = collection.update("alice", json!({
-        "name": "Alice Updated"
-    })).unwrap();
+    let updated_doc = collection
+        .update(
+            "alice",
+            json!({
+                "name": "Alice Updated"
+            }),
+        )
+        .unwrap();
     let new_rev = updated_doc.revision().to_string();
 
     // Revision should change
@@ -471,16 +550,22 @@ fn test_update_with_rev_success() {
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
-    let doc = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
     let current_rev = doc.revision().to_string();
 
     // Update with correct revision should succeed
-    let result = collection.update_with_rev("alice", &current_rev, json!({
-        "name": "Alice Updated"
-    }));
+    let result = collection.update_with_rev(
+        "alice",
+        &current_rev,
+        json!({
+            "name": "Alice Updated"
+        }),
+    );
 
     assert!(result.is_ok());
     let updated = result.unwrap();
@@ -494,21 +579,32 @@ fn test_update_with_rev_conflict() {
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
-    let doc = collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    let doc = collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
     let original_rev = doc.revision().to_string();
 
     // Simulate another update (changes revision)
-    collection.update("alice", json!({
-        "status": "active"
-    })).unwrap();
+    collection
+        .update(
+            "alice",
+            json!({
+                "status": "active"
+            }),
+        )
+        .unwrap();
 
     // Try to update with old revision - should fail
-    let result = collection.update_with_rev("alice", &original_rev, json!({
-        "name": "Alice Conflict"
-    }));
+    let result = collection.update_with_rev(
+        "alice",
+        &original_rev,
+        json!({
+            "name": "Alice Conflict"
+        }),
+    );
 
     assert!(result.is_err());
     assert!(matches!(result, Err(DbError::ConflictError(_))));
@@ -521,10 +617,12 @@ fn test_revision_accessible_via_get() {
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+        }))
+        .unwrap();
 
     // Get document and check _rev is accessible
     let doc = collection.get("alice").unwrap();
@@ -533,4 +631,3 @@ fn test_revision_accessible_via_get() {
     assert!(rev.is_some());
     assert!(rev.unwrap().is_string());
 }
-

@@ -1,13 +1,16 @@
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
-use std::collections::{HashMap, HashSet};
 use rocksdb::DB;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
 
-use crate::error::{DbError, DbResult};
 use super::document::Document;
-use super::index::{Index, IndexType, IndexStats, extract_field_value, generate_ngrams, tokenize, levenshtein_distance, FulltextMatch, NGRAM_SIZE};
 use super::geo::{GeoIndex, GeoIndexStats};
+use super::index::{
+    extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch, Index,
+    IndexStats, IndexType, NGRAM_SIZE,
+};
+use crate::error::{DbError, DbResult};
 
 /// Key prefixes for different data types
 const DOC_PREFIX: &str = "doc:";
@@ -15,10 +18,10 @@ const IDX_PREFIX: &str = "idx:";
 const IDX_META_PREFIX: &str = "idx_meta:";
 const GEO_PREFIX: &str = "geo:";
 const GEO_META_PREFIX: &str = "geo_meta:";
-const FT_PREFIX: &str = "ft:";          // Fulltext n-gram entries
+const FT_PREFIX: &str = "ft:"; // Fulltext n-gram entries
 const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
-const STATS_PREFIX: &str = "_stats:";   // Collection statistics
+const STATS_PREFIX: &str = "_stats:"; // Collection statistics
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 
 /// Compare two JSON values for sorting
@@ -108,16 +111,17 @@ impl Collection {
             let db_guard = db.read().unwrap();
             if let Some(cf) = db_guard.cf_handle(&name) {
                 match db_guard.get_cf(cf, STATS_COUNT_KEY.as_bytes()) {
-                    Ok(Some(bytes)) => {
-                        String::from_utf8_lossy(&bytes)
-                            .parse::<usize>()
-                            .unwrap_or(0)
-                    }
+                    Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
+                        .parse::<usize>()
+                        .unwrap_or(0),
                     _ => {
                         // No cached count - calculate from documents
                         let prefix = DOC_PREFIX.as_bytes();
-                        db_guard.prefix_iterator_cf(cf, prefix)
-                            .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                        db_guard
+                            .prefix_iterator_cf(cf, prefix)
+                            .take_while(|r| {
+                                r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix))
+                            })
                             .count()
                     }
                 }
@@ -198,7 +202,9 @@ impl Collection {
         let prep_start = std::time::Instant::now();
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         let mut batch = WriteBatch::default();
         let mut inserted_docs = Vec::with_capacity(total_docs);
@@ -238,8 +244,10 @@ impl Collection {
         tracing::debug!("insert_batch: RocksDB write took {:?}", write_time);
 
         // Update document count
-        self.doc_count.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
-        self.count_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.doc_count
+            .fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+        self.count_dirty
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         Ok(inserted_docs)
     }
@@ -256,7 +264,10 @@ impl Collection {
 
         tracing::info!(
             "index_documents: Indexing {} docs with {} regular, {} geo, {} fulltext indexes",
-            docs.len(), indexes.len(), geo_indexes.len(), ft_indexes.len()
+            docs.len(),
+            indexes.len(),
+            geo_indexes.len(),
+            ft_indexes.len()
         );
 
         if indexes.is_empty() && geo_indexes.is_empty() && ft_indexes.is_empty() {
@@ -264,7 +275,9 @@ impl Collection {
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Build regular indexes
         if !indexes.is_empty() {
@@ -283,7 +296,10 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("index_documents: Regular indexes took {:?}", idx_start.elapsed());
+            tracing::info!(
+                "index_documents: Regular indexes took {:?}",
+                idx_start.elapsed()
+            );
         }
 
         // Build geo indexes
@@ -305,7 +321,10 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("index_documents: Geo indexes took {:?}", geo_start.elapsed());
+            tracing::info!(
+                "index_documents: Geo indexes took {:?}",
+                geo_start.elapsed()
+            );
         }
 
         // Build fulltext indexes
@@ -336,7 +355,10 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("index_documents: Fulltext indexes took {:?}", ft_start.elapsed());
+            tracing::info!(
+                "index_documents: Fulltext indexes took {:?}",
+                ft_start.elapsed()
+            );
         }
 
         tracing::info!("index_documents: Total time {:?}", total_start.elapsed());
@@ -351,7 +373,9 @@ impl Collection {
                 if let Some(key_str) = key_value.as_str() {
                     key_str.to_string()
                 } else {
-                    return Err(DbError::InvalidDocument("_key must be a string".to_string()));
+                    return Err(DbError::InvalidDocument(
+                        "_key must be a string".to_string(),
+                    ));
                 }
             } else {
                 uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
@@ -372,7 +396,9 @@ impl Collection {
         let doc_bytes = serde_json::to_vec(&doc)?;
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::doc_key(&key), &doc_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
         }
@@ -392,9 +418,12 @@ impl Collection {
     /// Get a document by key
     pub fn get(&self, key: &str) -> DbResult<Document> {
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
-        let bytes = db.get_cf(cf, Self::doc_key(key))
+        let bytes = db
+            .get_cf(cf, Self::doc_key(key))
             .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
             .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
 
@@ -404,9 +433,7 @@ impl Collection {
 
     /// Get multiple documents by keys
     pub fn get_many(&self, keys: &[String]) -> Vec<Document> {
-        keys.iter()
-            .filter_map(|k| self.get(k).ok())
-            .collect()
+        keys.iter().filter_map(|k| self.get(k).ok()).collect()
     }
 
     /// Update a document
@@ -424,7 +451,9 @@ impl Collection {
         // Store updated document
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::doc_key(key), &doc_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
         }
@@ -441,7 +470,12 @@ impl Collection {
 
     /// Update a document with revision check (optimistic concurrency control)
     /// Returns error if the current revision doesn't match expected_rev
-    pub fn update_with_rev(&self, key: &str, expected_rev: &str, data: Value) -> DbResult<Document> {
+    pub fn update_with_rev(
+        &self,
+        key: &str,
+        expected_rev: &str,
+        data: Value,
+    ) -> DbResult<Document> {
         // Get old document for index updates
         let old_doc = self.get(key)?;
 
@@ -449,7 +483,9 @@ impl Collection {
         if old_doc.revision() != expected_rev {
             return Err(DbError::ConflictError(format!(
                 "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
-                key, expected_rev, old_doc.revision()
+                key,
+                expected_rev,
+                old_doc.revision()
             )));
         }
 
@@ -464,7 +500,9 @@ impl Collection {
         // Store updated document
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::doc_key(key), &doc_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
         }
@@ -488,7 +526,9 @@ impl Collection {
         // Delete document
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.delete_cf(cf, Self::doc_key(key))
                 .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
         }
@@ -513,7 +553,9 @@ impl Collection {
     /// Scan documents with an optional limit
     pub fn scan(&self, limit: Option<usize>) -> Vec<Document> {
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
         let prefix = DOC_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, prefix);
 
@@ -583,7 +625,8 @@ impl Collection {
 
         // Count document keys
         let prefix = DOC_PREFIX.as_bytes();
-        let count = db.prefix_iterator_cf(cf, prefix)
+        let count = db
+            .prefix_iterator_cf(cf, prefix)
             .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
             .count();
 
@@ -599,12 +642,14 @@ impl Collection {
         let db = self.db.read().unwrap();
         let cf = match db.cf_handle(&self.name) {
             Some(cf) => cf,
-            None => return DiskUsage {
-                sst_files_size: 0,
-                live_data_size: 0,
-                num_sst_files: 0,
-                memtable_size: 0,
-            },
+            None => {
+                return DiskUsage {
+                    sst_files_size: 0,
+                    live_data_size: 0,
+                    num_sst_files: 0,
+                    memtable_size: 0,
+                }
+            }
         };
 
         // Get SST files size
@@ -679,7 +724,9 @@ impl Collection {
     /// Truncate collection - remove all documents but keep indexes
     pub fn truncate(&self) -> DbResult<usize> {
         let mut db = self.db.write().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Collect all document keys
         let prefix = DOC_PREFIX.as_bytes();
@@ -793,7 +840,9 @@ impl Collection {
     /// Get all index metadata
     fn get_all_indexes(&self) -> Vec<Index> {
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
         let prefix = IDX_META_PREFIX.as_bytes();
         let iter = db.prefix_iterator_cf(cf, prefix);
 
@@ -823,7 +872,9 @@ impl Collection {
     fn check_unique_constraints(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for index in indexes {
             if index.unique {
@@ -856,14 +907,17 @@ impl Collection {
     fn update_indexes_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for index in indexes {
             let field_value = extract_field_value(doc_value, &index.field);
             if !field_value.is_null() {
                 let entry_key = Self::idx_entry_key(&index.name, &field_value, doc_key);
-                db.put_cf(cf, entry_key, doc_key.as_bytes())
-                    .map_err(|e| DbError::InternalError(format!("Failed to update index: {}", e)))?;
+                db.put_cf(cf, entry_key, doc_key.as_bytes()).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update index: {}", e))
+                })?;
             }
         }
         drop(db);
@@ -871,15 +925,18 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for geo_index in geo_indexes {
             let field_value = extract_field_value(doc_value, &geo_index.field);
             if !field_value.is_null() {
                 let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
                 let geo_data = serde_json::to_vec(&field_value)?;
-                db.put_cf(cf, entry_key, &geo_data)
-                    .map_err(|e| DbError::InternalError(format!("Failed to update geo index: {}", e)))?;
+                db.put_cf(cf, entry_key, &geo_data).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update geo index: {}", e))
+                })?;
             }
         }
 
@@ -887,10 +944,17 @@ impl Collection {
     }
 
     /// Update indexes on document update
-    fn update_indexes_on_update(&self, doc_key: &str, old_value: &Value, new_value: &Value) -> DbResult<()> {
+    fn update_indexes_on_update(
+        &self,
+        doc_key: &str,
+        old_value: &Value,
+        new_value: &Value,
+    ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for index in indexes {
             let old_field = extract_field_value(old_value, &index.field);
@@ -899,15 +963,18 @@ impl Collection {
             // Remove old entry
             if !old_field.is_null() {
                 let old_entry_key = Self::idx_entry_key(&index.name, &old_field, doc_key);
-                db.delete_cf(cf, old_entry_key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to update index: {}", e)))?;
+                db.delete_cf(cf, old_entry_key).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update index: {}", e))
+                })?;
             }
 
             // Add new entry
             if !new_field.is_null() {
                 let new_entry_key = Self::idx_entry_key(&index.name, &new_field, doc_key);
                 db.put_cf(cf, new_entry_key, doc_key.as_bytes())
-                    .map_err(|e| DbError::InternalError(format!("Failed to update index: {}", e)))?;
+                    .map_err(|e| {
+                        DbError::InternalError(format!("Failed to update index: {}", e))
+                    })?;
             }
         }
         drop(db);
@@ -915,7 +982,9 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for geo_index in geo_indexes {
             let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
@@ -923,11 +992,13 @@ impl Collection {
 
             if !new_field.is_null() {
                 let geo_data = serde_json::to_vec(&new_field)?;
-                db.put_cf(cf, entry_key, &geo_data)
-                    .map_err(|e| DbError::InternalError(format!("Failed to update geo index: {}", e)))?;
+                db.put_cf(cf, entry_key, &geo_data).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update geo index: {}", e))
+                })?;
             } else {
-                db.delete_cf(cf, entry_key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to update geo index: {}", e)))?;
+                db.delete_cf(cf, entry_key).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update geo index: {}", e))
+                })?;
             }
         }
 
@@ -938,14 +1009,17 @@ impl Collection {
     fn update_indexes_on_delete(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for index in indexes {
             let field_value = extract_field_value(doc_value, &index.field);
             if !field_value.is_null() {
                 let entry_key = Self::idx_entry_key(&index.name, &field_value, doc_key);
-                db.delete_cf(cf, entry_key)
-                    .map_err(|e| DbError::InternalError(format!("Failed to update index: {}", e)))?;
+                db.delete_cf(cf, entry_key).map_err(|e| {
+                    DbError::InternalError(format!("Failed to update index: {}", e))
+                })?;
             }
         }
         drop(db);
@@ -953,22 +1027,34 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for geo_index in geo_indexes {
             let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
-            db.delete_cf(cf, entry_key)
-                .map_err(|e| DbError::InternalError(format!("Failed to update geo index: {}", e)))?;
+            db.delete_cf(cf, entry_key).map_err(|e| {
+                DbError::InternalError(format!("Failed to update geo index: {}", e))
+            })?;
         }
 
         Ok(())
     }
 
     /// Create an index on a field
-    pub fn create_index(&self, name: String, field: String, index_type: IndexType, unique: bool) -> DbResult<IndexStats> {
+    pub fn create_index(
+        &self,
+        name: String,
+        field: String,
+        index_type: IndexType,
+        unique: bool,
+    ) -> DbResult<IndexStats> {
         // Check if index already exists
         if self.get_index(&name).is_some() {
-            return Err(DbError::InvalidDocument(format!("Index '{}' already exists", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Index '{}' already exists",
+                name
+            )));
         }
 
         // Create index metadata
@@ -978,7 +1064,9 @@ impl Collection {
         // Store index metadata and build index
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::idx_meta_key(&name), &index_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to create index: {}", e)))?;
         }
@@ -986,7 +1074,9 @@ impl Collection {
         // Build index from existing documents
         let docs = self.all();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for doc in &docs {
             let doc_value = doc.to_value();
@@ -1011,11 +1101,16 @@ impl Collection {
     /// Drop an index
     pub fn drop_index(&self, name: &str) -> DbResult<()> {
         if self.get_index(name).is_none() {
-            return Err(DbError::InvalidDocument(format!("Index '{}' not found", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Index '{}' not found",
+                name
+            )));
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Delete index metadata
         db.delete_cf(cf, Self::idx_meta_key(name))
@@ -1028,8 +1123,9 @@ impl Collection {
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(prefix.as_bytes()) {
-                    db.delete_cf(cf, &key)
-                        .map_err(|e| DbError::InternalError(format!("Failed to drop index entry: {}", e)))?;
+                    db.delete_cf(cf, &key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to drop index entry: {}", e))
+                    })?;
                 } else {
                     break;
                 }
@@ -1060,7 +1156,9 @@ impl Collection {
 
         tracing::info!(
             "rebuild_all_indexes: {} regular, {} geo, {} fulltext indexes",
-            indexes.len(), geo_indexes.len(), ft_indexes.len()
+            indexes.len(),
+            geo_indexes.len(),
+            ft_indexes.len()
         );
 
         if indexes.is_empty() && geo_indexes.is_empty() && ft_indexes.is_empty() {
@@ -1071,7 +1169,9 @@ impl Collection {
         let clear_start = std::time::Instant::now();
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             let mut batch = WriteBatch::default();
 
             // Clear regular indexes
@@ -1133,19 +1233,28 @@ impl Collection {
 
             let _ = db.write(batch);
         }
-        tracing::info!("rebuild_all_indexes: Clear phase took {:?}", clear_start.elapsed());
+        tracing::info!(
+            "rebuild_all_indexes: Clear phase took {:?}",
+            clear_start.elapsed()
+        );
 
         // Load all documents
         let load_start = std::time::Instant::now();
         let docs = self.all();
         let doc_count = docs.len();
-        tracing::info!("rebuild_all_indexes: Loaded {} docs in {:?}", doc_count, load_start.elapsed());
+        tracing::info!(
+            "rebuild_all_indexes: Loaded {} docs in {:?}",
+            doc_count,
+            load_start.elapsed()
+        );
 
         // Rebuild regular indexes using WriteBatch
         if !indexes.is_empty() {
             let idx_start = std::time::Instant::now();
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             let mut batch = WriteBatch::default();
 
             for doc in &docs {
@@ -1160,14 +1269,19 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("rebuild_all_indexes: Regular indexes took {:?}", idx_start.elapsed());
+            tracing::info!(
+                "rebuild_all_indexes: Regular indexes took {:?}",
+                idx_start.elapsed()
+            );
         }
 
         // Rebuild geo indexes using WriteBatch
         if !geo_indexes.is_empty() {
             let geo_start = std::time::Instant::now();
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             let mut batch = WriteBatch::default();
 
             for doc in &docs {
@@ -1184,14 +1298,19 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("rebuild_all_indexes: Geo indexes took {:?}", geo_start.elapsed());
+            tracing::info!(
+                "rebuild_all_indexes: Geo indexes took {:?}",
+                geo_start.elapsed()
+            );
         }
 
         // Rebuild fulltext indexes (this is the slow part - n-gram generation)
         if !ft_indexes.is_empty() {
             let ft_start = std::time::Instant::now();
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             let mut batch = WriteBatch::default();
 
             for doc in &docs {
@@ -1219,10 +1338,16 @@ impl Collection {
             }
 
             let _ = db.write(batch);
-            tracing::info!("rebuild_all_indexes: Fulltext indexes took {:?}", ft_start.elapsed());
+            tracing::info!(
+                "rebuild_all_indexes: Fulltext indexes took {:?}",
+                ft_start.elapsed()
+            );
         }
 
-        tracing::info!("rebuild_all_indexes: Total time {:?}", total_start.elapsed());
+        tracing::info!(
+            "rebuild_all_indexes: Total time {:?}",
+            total_start.elapsed()
+        );
         Ok(doc_count)
     }
 
@@ -1236,9 +1361,13 @@ impl Collection {
         // Count entries
         let prefix = format!("{}{}:", IDX_PREFIX, name);
         let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-        let count = iter.filter(|r| {
-            r.as_ref().map(|(k, _)| k.starts_with(prefix.as_bytes())).unwrap_or(false)
-        }).count();
+        let count = iter
+            .filter(|r| {
+                r.as_ref()
+                    .map(|(k, _)| k.starts_with(prefix.as_bytes()))
+                    .unwrap_or(false)
+            })
+            .count();
 
         Some(IndexStats {
             name: index.name,
@@ -1316,7 +1445,12 @@ impl Collection {
     }
 
     /// Lookup documents using index (equality) with limit - for high-cardinality fields
-    pub fn index_lookup_eq_limit(&self, field: &str, value: &Value, limit: usize) -> Option<Vec<Document>> {
+    pub fn index_lookup_eq_limit(
+        &self,
+        field: &str,
+        value: &Value,
+        limit: usize,
+    ) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
         let value_str = serde_json::to_string(value).ok()?;
 
@@ -1376,7 +1510,12 @@ impl Collection {
 
     /// Get documents sorted by indexed field with optional limit
     /// Returns documents in sorted order by the indexed field
-    pub fn index_sorted(&self, field: &str, ascending: bool, limit: Option<usize>) -> Option<Vec<Document>> {
+    pub fn index_sorted(
+        &self,
+        field: &str,
+        ascending: bool,
+        limit: Option<usize>,
+    ) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
@@ -1411,7 +1550,11 @@ impl Collection {
         // Sort entries by value
         entries.sort_by(|(a, _), (b, _)| {
             let cmp = compare_json_values(a, b);
-            if ascending { cmp } else { cmp.reverse() }
+            if ascending {
+                cmp
+            } else {
+                cmp.reverse()
+            }
         });
 
         // Apply limit
@@ -1426,7 +1569,8 @@ impl Collection {
 
         // Preserve order from index
         let mut result: Vec<Document> = Vec::with_capacity(entries.len());
-        let doc_map: std::collections::HashMap<_, _> = docs.into_iter().map(|d| (d.key.clone(), d)).collect();
+        let doc_map: std::collections::HashMap<_, _> =
+            docs.into_iter().map(|d| (d.key.clone(), d)).collect();
         for key in entries {
             if let Some(doc) = doc_map.get(&key) {
                 result.push(doc.clone());
@@ -1473,7 +1617,10 @@ impl Collection {
     /// Create a geo index on a field
     pub fn create_geo_index(&self, name: String, field: String) -> DbResult<GeoIndexStats> {
         if self.get_geo_index(&name).is_some() {
-            return Err(DbError::InvalidDocument(format!("Geo index '{}' already exists", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Geo index '{}' already exists",
+                name
+            )));
         }
 
         let geo_index = GeoIndex::new(name.clone(), field.clone());
@@ -1482,15 +1629,21 @@ impl Collection {
         // Store geo index metadata
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::geo_meta_key(&name), &index_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to create geo index: {}", e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create geo index: {}", e))
+                })?;
         }
 
         // Build index from existing documents
         let docs = self.all();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for doc in &docs {
             let doc_value = doc.to_value();
@@ -1498,8 +1651,9 @@ impl Collection {
             if !field_value.is_null() {
                 let entry_key = Self::geo_entry_key(&name, &doc.key);
                 let geo_data = serde_json::to_vec(&field_value)?;
-                db.put_cf(cf, entry_key, &geo_data)
-                    .map_err(|e| DbError::InternalError(format!("Failed to build geo index: {}", e)))?;
+                db.put_cf(cf, entry_key, &geo_data).map_err(|e| {
+                    DbError::InternalError(format!("Failed to build geo index: {}", e))
+                })?;
             }
         }
 
@@ -1509,11 +1663,16 @@ impl Collection {
     /// Drop a geo index
     pub fn drop_geo_index(&self, name: &str) -> DbResult<()> {
         if self.get_geo_index(name).is_none() {
-            return Err(DbError::InvalidDocument(format!("Geo index '{}' not found", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Geo index '{}' not found",
+                name
+            )));
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Delete geo index metadata
         db.delete_cf(cf, Self::geo_meta_key(name))
@@ -1526,8 +1685,9 @@ impl Collection {
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(prefix.as_bytes()) {
-                    db.delete_cf(cf, &key)
-                        .map_err(|e| DbError::InternalError(format!("Failed to drop geo index entry: {}", e)))?;
+                    db.delete_cf(cf, &key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to drop geo index entry: {}", e))
+                    })?;
                 } else {
                     break;
                 }
@@ -1546,10 +1706,17 @@ impl Collection {
     }
 
     /// Find documents near a point
-    pub fn geo_near(&self, field: &str, lat: f64, lon: f64, limit: usize) -> Option<Vec<(Document, f64)>> {
-        use super::geo::{GeoPoint, haversine_distance};
+    pub fn geo_near(
+        &self,
+        field: &str,
+        lat: f64,
+        lon: f64,
+        limit: usize,
+    ) -> Option<Vec<(Document, f64)>> {
+        use super::geo::{haversine_distance, GeoPoint};
 
-        let geo_index = self.get_all_geo_indexes()
+        let geo_index = self
+            .get_all_geo_indexes()
             .into_iter()
             .find(|idx| idx.field == field)?;
 
@@ -1579,19 +1746,24 @@ impl Collection {
 
         let docs: Vec<(Document, f64)> = results
             .into_iter()
-            .filter_map(|(key, dist)| {
-                self.get(&key).ok().map(|doc| (doc, dist))
-            })
+            .filter_map(|(key, dist)| self.get(&key).ok().map(|doc| (doc, dist)))
             .collect();
 
         Some(docs)
     }
 
     /// Find documents within a radius of a point
-    pub fn geo_within(&self, field: &str, lat: f64, lon: f64, radius_meters: f64) -> Option<Vec<(Document, f64)>> {
-        use super::geo::{GeoPoint, haversine_distance};
+    pub fn geo_within(
+        &self,
+        field: &str,
+        lat: f64,
+        lon: f64,
+        radius_meters: f64,
+    ) -> Option<Vec<(Document, f64)>> {
+        use super::geo::{haversine_distance, GeoPoint};
 
-        let geo_index = self.get_all_geo_indexes()
+        let geo_index = self
+            .get_all_geo_indexes()
             .into_iter()
             .find(|idx| idx.field == field)?;
 
@@ -1624,9 +1796,7 @@ impl Collection {
 
         let docs: Vec<(Document, f64)> = results
             .into_iter()
-            .filter_map(|(key, dist)| {
-                self.get(&key).ok().map(|doc| (doc, dist))
-            })
+            .filter_map(|(key, dist)| self.get(&key).ok().map(|doc| (doc, dist)))
             .collect();
 
         Some(docs)
@@ -1675,9 +1845,17 @@ impl Collection {
     }
 
     /// Create a fulltext index on a field
-    pub fn create_fulltext_index(&self, name: String, field: String, min_length: Option<usize>) -> DbResult<IndexStats> {
+    pub fn create_fulltext_index(
+        &self,
+        name: String,
+        field: String,
+        min_length: Option<usize>,
+    ) -> DbResult<IndexStats> {
         if self.get_fulltext_index(&name).is_some() {
-            return Err(DbError::InvalidDocument(format!("Fulltext index '{}' already exists", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Fulltext index '{}' already exists",
+                name
+            )));
         }
 
         let min_len = min_length.unwrap_or(3);
@@ -1691,15 +1869,21 @@ impl Collection {
         // Store fulltext index metadata
         {
             let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name).expect("Column family should exist");
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
             db.put_cf(cf, Self::ft_meta_key(&name), &index_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to create fulltext index: {}", e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create fulltext index: {}", e))
+                })?;
         }
 
         // Build index from existing documents
         let docs = self.all();
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for doc in &docs {
             let doc_value = doc.to_value();
@@ -1710,8 +1894,9 @@ impl Collection {
                 for term in &terms {
                     if term.len() >= min_len {
                         let term_key = Self::ft_term_key(&name, term, &doc.key);
-                        db.put_cf(cf, term_key, doc.key.as_bytes())
-                            .map_err(|e| DbError::InternalError(format!("Failed to build fulltext index: {}", e)))?;
+                        db.put_cf(cf, term_key, doc.key.as_bytes()).map_err(|e| {
+                            DbError::InternalError(format!("Failed to build fulltext index: {}", e))
+                        })?;
                     }
                 }
 
@@ -1719,8 +1904,9 @@ impl Collection {
                 let ngrams = generate_ngrams(text, NGRAM_SIZE);
                 for ngram in &ngrams {
                     let ngram_key = Self::ft_ngram_key(&name, ngram, &doc.key);
-                    db.put_cf(cf, ngram_key, doc.key.as_bytes())
-                        .map_err(|e| DbError::InternalError(format!("Failed to build fulltext index: {}", e)))?;
+                    db.put_cf(cf, ngram_key, doc.key.as_bytes()).map_err(|e| {
+                        DbError::InternalError(format!("Failed to build fulltext index: {}", e))
+                    })?;
                 }
             }
         }
@@ -1738,11 +1924,16 @@ impl Collection {
     /// Drop a fulltext index
     pub fn drop_fulltext_index(&self, name: &str) -> DbResult<()> {
         if self.get_fulltext_index(name).is_none() {
-            return Err(DbError::InvalidDocument(format!("Fulltext index '{}' not found", name)));
+            return Err(DbError::InvalidDocument(format!(
+                "Fulltext index '{}' not found",
+                name
+            )));
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Delete fulltext index metadata
         db.delete_cf(cf, Self::ft_meta_key(name))
@@ -1754,8 +1945,9 @@ impl Collection {
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(ngram_prefix.as_bytes()) {
-                    db.delete_cf(cf, &key)
-                        .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
+                    db.delete_cf(cf, &key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to drop fulltext index: {}", e))
+                    })?;
                 } else {
                     break;
                 }
@@ -1768,8 +1960,9 @@ impl Collection {
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(term_prefix.as_bytes()) {
-                    db.delete_cf(cf, &key)
-                        .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
+                    db.delete_cf(cf, &key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to drop fulltext index: {}", e))
+                    })?;
                 } else {
                     break;
                 }
@@ -1787,7 +1980,9 @@ impl Collection {
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for ft_index in ft_indexes {
             let field_value = extract_field_value(doc_value, &ft_index.field);
@@ -1797,8 +1992,12 @@ impl Collection {
                 for term in &terms {
                     if term.len() >= ft_index.min_length {
                         let term_key = Self::ft_term_key(&ft_index.name, term, doc_key);
-                        db.put_cf(cf, term_key, doc_key.as_bytes())
-                            .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))?;
+                        db.put_cf(cf, term_key, doc_key.as_bytes()).map_err(|e| {
+                            DbError::InternalError(format!(
+                                "Failed to update fulltext index: {}",
+                                e
+                            ))
+                        })?;
                     }
                 }
 
@@ -1806,8 +2005,9 @@ impl Collection {
                 let ngrams = generate_ngrams(text, NGRAM_SIZE);
                 for ngram in &ngrams {
                     let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
-                    db.put_cf(cf, ngram_key, doc_key.as_bytes())
-                        .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))?;
+                    db.put_cf(cf, ngram_key, doc_key.as_bytes()).map_err(|e| {
+                        DbError::InternalError(format!("Failed to update fulltext index: {}", e))
+                    })?;
                 }
             }
         }
@@ -1823,7 +2023,9 @@ impl Collection {
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         for ft_index in ft_indexes {
             let field_value = extract_field_value(doc_value, &ft_index.field);
@@ -1851,8 +2053,14 @@ impl Collection {
 
     /// Fulltext search with fuzzy matching
     /// Returns documents matching the query with relevance scores
-    pub fn fulltext_search(&self, field: &str, query: &str, max_distance: usize) -> Option<Vec<FulltextMatch>> {
-        let ft_index = self.get_all_fulltext_indexes()
+    pub fn fulltext_search(
+        &self,
+        field: &str,
+        query: &str,
+        max_distance: usize,
+    ) -> Option<Vec<FulltextMatch>> {
+        let ft_index = self
+            .get_all_fulltext_indexes()
             .into_iter()
             .find(|idx| idx.field == field)?;
 
@@ -1875,7 +2083,9 @@ impl Collection {
                     if key.starts_with(term_prefix.as_bytes()) {
                         let key_str = String::from_utf8(key.to_vec()).ok()?;
                         if let Some(doc_key) = key_str.strip_prefix(&term_prefix) {
-                            let entry = candidate_scores.entry(doc_key.to_string()).or_insert((0, HashSet::new()));
+                            let entry = candidate_scores
+                                .entry(doc_key.to_string())
+                                .or_insert((0, HashSet::new()));
                             entry.0 += 10; // High score for exact match
                             entry.1.insert(term.clone());
                         }
@@ -1896,7 +2106,9 @@ impl Collection {
                     if key.starts_with(ngram_prefix.as_bytes()) {
                         let key_str = String::from_utf8(key.to_vec()).ok()?;
                         if let Some(doc_key) = key_str.strip_prefix(&ngram_prefix) {
-                            let entry = candidate_scores.entry(doc_key.to_string()).or_insert((0, HashSet::new()));
+                            let entry = candidate_scores
+                                .entry(doc_key.to_string())
+                                .or_insert((0, HashSet::new()));
                             entry.0 += 1; // Lower score for n-gram match
                         }
                     } else {
@@ -1948,7 +2160,11 @@ impl Collection {
         }
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Some(results)
     }

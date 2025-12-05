@@ -1,8 +1,8 @@
 use serde_json::Value;
 
-use crate::error::{DbError, DbResult};
 use super::ast::*;
 use super::lexer::{Lexer, Token};
+use crate::error::{DbError, DbResult};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -117,8 +117,12 @@ impl Parser {
             // 1. A RETURN clause (with or without FOR)
             // 2. A mutation (INSERT/UPDATE/REMOVE)
             // FOR without RETURN or mutation is invalid
-            let has_mutation = body_clauses.iter().any(|c| matches!(c,
-                BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)));
+            let has_mutation = body_clauses.iter().any(|c| {
+                matches!(
+                    c,
+                    BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_)
+                )
+            });
 
             if return_clause.is_none() && !has_mutation {
                 // Check if there are unexpected tokens
@@ -129,7 +133,8 @@ impl Parser {
                     )));
                 }
                 return Err(DbError::ParseError(
-                    "Invalid query: missing RETURN clause or mutation (INSERT/UPDATE/REMOVE)".to_string()
+                    "Invalid query: missing RETURN clause or mutation (INSERT/UPDATE/REMOVE)"
+                        .to_string(),
                 ));
             }
 
@@ -161,14 +166,19 @@ impl Parser {
             self.advance();
             var
         } else {
-            return Err(DbError::ParseError("Expected variable name after LET".to_string()));
+            return Err(DbError::ParseError(
+                "Expected variable name after LET".to_string(),
+            ));
         };
 
         self.expect(Token::Assign)?;
 
         let expression = self.parse_expression()?;
 
-        Ok(LetClause { variable, expression })
+        Ok(LetClause {
+            variable,
+            expression,
+        })
     }
 
     fn parse_for_clause(&mut self) -> DbResult<ForClause> {
@@ -179,7 +189,9 @@ impl Parser {
             self.advance();
             var
         } else {
-            return Err(DbError::ParseError("Expected variable name after FOR".to_string()));
+            return Err(DbError::ParseError(
+                "Expected variable name after FOR".to_string(),
+            ));
         };
 
         self.expect(Token::In)?;
@@ -224,10 +236,15 @@ impl Parser {
             self.advance();
             coll
         } else {
-            return Err(DbError::ParseError("Expected collection name after INTO".to_string()));
+            return Err(DbError::ParseError(
+                "Expected collection name after INTO".to_string(),
+            ));
         };
 
-        Ok(InsertClause { document, collection })
+        Ok(InsertClause {
+            document,
+            collection,
+        })
     }
 
     fn parse_update_clause(&mut self) -> DbResult<UpdateClause> {
@@ -251,10 +268,16 @@ impl Parser {
             self.advance();
             coll
         } else {
-            return Err(DbError::ParseError("Expected collection name after IN".to_string()));
+            return Err(DbError::ParseError(
+                "Expected collection name after IN".to_string(),
+            ));
         };
 
-        Ok(UpdateClause { selector, changes, collection })
+        Ok(UpdateClause {
+            selector,
+            changes,
+            collection,
+        })
     }
 
     fn parse_remove_clause(&mut self) -> DbResult<RemoveClause> {
@@ -272,10 +295,15 @@ impl Parser {
             self.advance();
             coll
         } else {
-            return Err(DbError::ParseError("Expected collection name after IN".to_string()));
+            return Err(DbError::ParseError(
+                "Expected collection name after IN".to_string(),
+            ));
         };
 
-        Ok(RemoveClause { selector, collection })
+        Ok(RemoveClause {
+            selector,
+            collection,
+        })
     }
 
     fn parse_sort_clause(&mut self) -> DbResult<SortClause> {
@@ -296,7 +324,10 @@ impl Parser {
             _ => true, // Default to ascending
         };
 
-        Ok(SortClause { expression, ascending })
+        Ok(SortClause {
+            expression,
+            ascending,
+        })
     }
 
     fn parse_limit_clause(&mut self) -> DbResult<LimitClause> {
@@ -307,7 +338,9 @@ impl Parser {
             self.advance();
             num
         } else {
-            return Err(DbError::ParseError("Expected number after LIMIT".to_string()));
+            return Err(DbError::ParseError(
+                "Expected number after LIMIT".to_string(),
+            ));
         };
 
         // Check for offset, count syntax
@@ -319,12 +352,20 @@ impl Parser {
                 self.advance();
                 num
             } else {
-                return Err(DbError::ParseError("Expected count after comma in LIMIT".to_string()));
+                return Err(DbError::ParseError(
+                    "Expected count after comma in LIMIT".to_string(),
+                ));
             };
 
-            Ok(LimitClause { offset: first, count })
+            Ok(LimitClause {
+                offset: first,
+                count,
+            })
         } else {
-            Ok(LimitClause { offset: 0, count: first })
+            Ok(LimitClause {
+                offset: 0,
+                count: first,
+            })
         }
     }
 
@@ -488,7 +529,9 @@ impl Parser {
                         self.advance();
                         expr = Expression::FieldAccess(Box::new(expr), field_name);
                     } else {
-                        return Err(DbError::ParseError("Expected field name after '.'".to_string()));
+                        return Err(DbError::ParseError(
+                            "Expected field name after '.'".to_string(),
+                        ));
                     }
                 }
                 Token::LeftBracket => {
@@ -511,7 +554,10 @@ impl Parser {
                         }
                         _ => {
                             // Dynamic field access: doc[@field], doc[someVar], etc.
-                            expr = Expression::DynamicFieldAccess(Box::new(expr), Box::new(index_expr));
+                            expr = Expression::DynamicFieldAccess(
+                                Box::new(expr),
+                                Box::new(index_expr),
+                            );
                         }
                     }
                 }
@@ -556,7 +602,7 @@ impl Parser {
                 let num = *n;
                 self.advance();
                 Ok(Expression::Literal(Value::Number(
-                    serde_json::Number::from_f64(num).unwrap()
+                    serde_json::Number::from_f64(num).unwrap(),
                 )))
             }
 
@@ -587,19 +633,15 @@ impl Parser {
                 Ok(Expression::BindVariable(var_name))
             }
 
-            Token::LeftBrace => {
-                self.parse_object_expression()
-            }
+            Token::LeftBrace => self.parse_object_expression(),
 
-            Token::LeftBracket => {
-                self.parse_array_expression()
-            }
+            Token::LeftBracket => self.parse_array_expression(),
 
             Token::LeftParen => {
                 self.advance();
                 // Check if this is a subquery (starts with FOR or LET)
                 if matches!(self.current_token(), Token::For | Token::Let) {
-                    let subquery = self.parse_query(false)?;  // Don't check trailing for subqueries
+                    let subquery = self.parse_query(false)?; // Don't check trailing for subqueries
                     self.expect(Token::RightParen)?;
                     Ok(Expression::Subquery(Box::new(subquery)))
                 } else {
@@ -631,7 +673,9 @@ impl Parser {
                 self.advance();
                 k
             } else {
-                return Err(DbError::ParseError("Expected field name in object".to_string()));
+                return Err(DbError::ParseError(
+                    "Expected field name in object".to_string(),
+                ));
             };
 
             self.expect(Token::Colon)?;
@@ -689,7 +733,9 @@ impl Parser {
                 path.push_str(field);
                 self.advance();
             } else {
-                return Err(DbError::ParseError("Expected field name after '.'".to_string()));
+                return Err(DbError::ParseError(
+                    "Expected field name after '.'".to_string(),
+                ));
             }
         }
 

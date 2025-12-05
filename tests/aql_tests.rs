@@ -1,8 +1,8 @@
 //! AQL Parser and Query Executor Tests
 //! Tests for the AQL query language implementation
 
-use solidb::{parse, QueryExecutor, StorageEngine, BindVars};
 use serde_json::json;
+use solidb::{parse, BindVars, QueryExecutor, StorageEngine};
 use std::collections::HashMap;
 use tempfile::TempDir;
 
@@ -18,29 +18,35 @@ fn setup_users_collection(storage: &StorageEngine) {
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "age": 30,
-        "city": "Paris",
-        "active": true
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "age": 30,
+            "city": "Paris",
+            "active": true
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "bob",
-        "name": "Bob",
-        "age": 25,
-        "city": "London",
-        "active": true
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "bob",
+            "name": "Bob",
+            "age": 25,
+            "city": "London",
+            "active": true
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "charlie",
-        "name": "Charlie",
-        "age": 35,
-        "city": "Paris",
-        "active": false
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "charlie",
+            "name": "Charlie",
+            "age": 35,
+            "city": "Paris",
+            "active": false
+        }))
+        .unwrap();
 }
 
 // ==================== Parser Tests ====================
@@ -61,7 +67,8 @@ fn test_parse_filter() {
 
 #[test]
 fn test_parse_multiple_filters() {
-    let query = parse("FOR doc IN users FILTER doc.age > 25 FILTER doc.active == true RETURN doc").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.age > 25 FILTER doc.active == true RETURN doc").unwrap();
     assert_eq!(query.filter_clauses.len(), 2);
 }
 
@@ -205,7 +212,6 @@ fn test_multiple_let_with_return_only() {
     assert_eq!(results[0], json!(30.0));
 }
 
-
 // ==================== Query Executor Tests ====================
 
 #[test]
@@ -298,8 +304,8 @@ fn test_execute_sort_ascending() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 3);
-    assert_eq!(results[0], json!("Bob"));    // 25
-    assert_eq!(results[1], json!("Alice"));  // 30
+    assert_eq!(results[0], json!("Bob")); // 25
+    assert_eq!(results[1], json!("Alice")); // 30
     assert_eq!(results[2], json!("Charlie")); // 35
 }
 
@@ -314,8 +320,8 @@ fn test_execute_sort_descending() {
 
     assert_eq!(results.len(), 3);
     assert_eq!(results[0], json!("Charlie")); // 35
-    assert_eq!(results[1], json!("Alice"));   // 30
-    assert_eq!(results[2], json!("Bob"));     // 25
+    assert_eq!(results[1], json!("Alice")); // 30
+    assert_eq!(results[2], json!("Bob")); // 25
 }
 
 #[test]
@@ -350,7 +356,9 @@ fn test_execute_object_projection() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN {n: doc.name, a: doc.age}").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN {n: doc.name, a: doc.age}")
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -379,7 +387,10 @@ fn test_execute_multiple_filters() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.city == \"Paris\" FILTER doc.active == true RETURN doc.name").unwrap();
+    let query = parse(
+        "FOR doc IN users FILTER doc.city == \"Paris\" FILTER doc.active == true RETURN doc.name",
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -392,7 +403,8 @@ fn test_execute_and_condition() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.age > 25 AND doc.age < 35 RETURN doc.name").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.age > 25 AND doc.age < 35 RETURN doc.name").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -405,7 +417,8 @@ fn test_execute_or_condition() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.age == 25 OR doc.age == 35 RETURN doc.name").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.age == 25 OR doc.age == 35 RETURN doc.name").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -419,7 +432,10 @@ fn test_execute_combined_clauses() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.active == true SORT doc.age DESC LIMIT 1 RETURN doc.name").unwrap();
+    let query = parse(
+        "FOR doc IN users FILTER doc.active == true SORT doc.age DESC LIMIT 1 RETURN doc.name",
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -442,9 +458,15 @@ fn test_execute_join() {
     // Create orders
     storage.create_collection("orders".to_string()).unwrap();
     let orders = storage.get_collection("orders").unwrap();
-    orders.insert(json!({"_key": "o1", "user_id": "1", "product": "Laptop"})).unwrap();
-    orders.insert(json!({"_key": "o2", "user_id": "1", "product": "Phone"})).unwrap();
-    orders.insert(json!({"_key": "o3", "user_id": "2", "product": "Tablet"})).unwrap();
+    orders
+        .insert(json!({"_key": "o1", "user_id": "1", "product": "Laptop"}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "o2", "user_id": "1", "product": "Phone"}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "o3", "user_id": "2", "product": "Tablet"}))
+        .unwrap();
 
     let query = parse("FOR u IN users FOR o IN orders FILTER o.user_id == u._key RETURN {user: u.name, product: o.product}").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -453,9 +475,7 @@ fn test_execute_join() {
     assert_eq!(results.len(), 3);
 
     // Check Alice's orders
-    let alice_orders: Vec<_> = results.iter()
-        .filter(|r| r["user"] == "Alice")
-        .collect();
+    let alice_orders: Vec<_> = results.iter().filter(|r| r["user"] == "Alice").collect();
     assert_eq!(alice_orders.len(), 2);
 }
 
@@ -480,7 +500,8 @@ fn test_execute_upper_function() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN UPPER(doc.name)").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN UPPER(doc.name)").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -493,7 +514,8 @@ fn test_execute_lower_function() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN LOWER(doc.name)").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN LOWER(doc.name)").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -506,7 +528,9 @@ fn test_execute_round_function() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("numbers".to_string()).unwrap();
     let collection = storage.get_collection("numbers").unwrap();
-    collection.insert(json!({"_key": "1", "value": 3.7})).unwrap();
+    collection
+        .insert(json!({"_key": "1", "value": 3.7}))
+        .unwrap();
 
     let query = parse("FOR doc IN numbers RETURN ROUND(doc.value)").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -521,7 +545,9 @@ fn test_execute_abs_function() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("numbers".to_string()).unwrap();
     let collection = storage.get_collection("numbers").unwrap();
-    collection.insert(json!({"_key": "1", "value": -42})).unwrap();
+    collection
+        .insert(json!({"_key": "1", "value": -42}))
+        .unwrap();
 
     let query = parse("FOR doc IN numbers RETURN ABS(doc.value)").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -536,10 +562,12 @@ fn test_execute_concat_separator_function() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("data".to_string()).unwrap();
     let collection = storage.get_collection("data").unwrap();
-    collection.insert(json!({
-        "_key": "1",
-        "tags": ["rust", "database", "aql"]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "1",
+            "tags": ["rust", "database", "aql"]
+        }))
+        .unwrap();
 
     let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\", \", doc.tags)").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -554,10 +582,12 @@ fn test_execute_concat_separator_with_numbers() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("data".to_string()).unwrap();
     let collection = storage.get_collection("data").unwrap();
-    collection.insert(json!({
-        "_key": "1",
-        "values": [1, 2, 3, 4, 5]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "1",
+            "values": [1, 2, 3, 4, 5]
+        }))
+        .unwrap();
 
     let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\"-\", doc.values)").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -572,10 +602,12 @@ fn test_execute_concat_separator_empty_array() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("data".to_string()).unwrap();
     let collection = storage.get_collection("data").unwrap();
-    collection.insert(json!({
-        "_key": "1",
-        "items": []
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "1",
+            "items": []
+        }))
+        .unwrap();
 
     let query = parse("FOR doc IN data RETURN CONCAT_SEPARATOR(\",\", doc.items)").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -592,11 +624,14 @@ fn test_merge_two_objects() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN MERGE({a: 1, b: 2}, {c: 3, d: 4})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -613,11 +648,14 @@ fn test_merge_override_values() {
     setup_users_collection(&storage);
 
     // Later objects should override earlier ones
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN MERGE({a: 1, b: 2}, {b: 99, c: 3})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -632,11 +670,14 @@ fn test_merge_multiple_objects() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN MERGE({a: 1}, {b: 2}, {c: 3}, {d: 4})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -653,11 +694,14 @@ fn test_merge_with_document() {
     setup_users_collection(&storage);
 
     // Merge document with additional fields
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Alice"
         RETURN MERGE(doc, {status: "premium", points: 100})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -674,11 +718,14 @@ fn test_merge_with_null() {
     setup_users_collection(&storage);
 
     // Null values should be skipped
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN MERGE({a: 1}, null, {b: 2})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -692,11 +739,14 @@ fn test_merge_single_object() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN MERGE({a: 1, b: 2})
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -705,7 +755,6 @@ fn test_merge_single_object() {
     assert_eq!(results[0]["b"], json!(2.0));
 }
 
-
 // ==================== Geo Function Tests ====================
 
 #[test]
@@ -713,14 +762,18 @@ fn test_execute_distance_function() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("places".to_string()).unwrap();
     let collection = storage.get_collection("places").unwrap();
-    collection.insert(json!({
-        "_key": "eiffel",
-        "lat": 48.8584,
-        "lon": 2.2945
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "eiffel",
+            "lat": 48.8584,
+            "lon": 2.2945
+        }))
+        .unwrap();
 
     // Distance from Eiffel Tower to Arc de Triomphe (approx 48.8738, 2.2950)
-    let query = parse("FOR doc IN places RETURN ROUND(DISTANCE(doc.lat, doc.lon, 48.8738, 2.2950))").unwrap();
+    let query =
+        parse("FOR doc IN places RETURN ROUND(DISTANCE(doc.lat, doc.lon, 48.8738, 2.2950))")
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -761,14 +814,16 @@ fn test_nested_field_access() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "address": {
-            "city": "Paris",
-            "country": "France"
-        }
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "address": {
+                "city": "Paris",
+                "country": "France"
+            }
+        }))
+        .unwrap();
 
     let query = parse("FOR doc IN users RETURN doc.address.city").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -783,18 +838,23 @@ fn test_filter_nested_field() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice",
-        "address": {"city": "Paris"}
-    })).unwrap();
-    collection.insert(json!({
-        "_key": "bob",
-        "name": "Bob",
-        "address": {"city": "London"}
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice",
+            "address": {"city": "Paris"}
+        }))
+        .unwrap();
+    collection
+        .insert(json!({
+            "_key": "bob",
+            "name": "Bob",
+            "address": {"city": "London"}
+        }))
+        .unwrap();
 
-    let query = parse("FOR doc IN users FILTER doc.address.city == \"Paris\" RETURN doc.name").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.address.city == \"Paris\" RETURN doc.name").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -807,11 +867,13 @@ fn test_null_field_handling() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("users".to_string()).unwrap();
     let collection = storage.get_collection("users").unwrap();
-    collection.insert(json!({
-        "_key": "alice",
-        "name": "Alice"
-        // No age field
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "alice",
+            "name": "Alice"
+            // No age field
+        }))
+        .unwrap();
 
     let query = parse("FOR doc IN users RETURN doc.age").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -832,7 +894,8 @@ fn test_parse_let_clause() {
 
 #[test]
 fn test_parse_let_with_subquery() {
-    let query = parse("LET allUsers = (FOR u IN users RETURN u) FOR x IN allUsers RETURN x").unwrap();
+    let query =
+        parse("LET allUsers = (FOR u IN users RETURN u) FOR x IN allUsers RETURN x").unwrap();
     assert_eq!(query.let_clauses.len(), 1);
     assert_eq!(query.let_clauses[0].variable, "allUsers");
 }
@@ -850,12 +913,13 @@ fn test_execute_let_with_literal() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("LET minAge = 30 FOR doc IN users FILTER doc.age >= minAge RETURN doc.name").unwrap();
+    let query =
+        parse("LET minAge = 30 FOR doc IN users FILTER doc.age >= minAge RETURN doc.name").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 2);
-    assert!(results.contains(&json!("Alice")));   // age 30
+    assert!(results.contains(&json!("Alice"))); // age 30
     assert!(results.contains(&json!("Charlie"))); // age 35
 }
 
@@ -866,7 +930,9 @@ fn test_execute_let_with_subquery() {
 
     // LET somedata = (FOR u IN users RETURN u)
     // FOR item IN somedata RETURN item.name
-    let query = parse("LET somedata = (FOR u IN users RETURN u) FOR item IN somedata RETURN item.name").unwrap();
+    let query =
+        parse("LET somedata = (FOR u IN users RETURN u) FOR item IN somedata RETURN item.name")
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -904,7 +970,7 @@ fn test_execute_let_subquery_with_sort_limit() {
 
     assert_eq!(results.len(), 2);
     assert!(results.contains(&json!("Charlie"))); // age 35
-    assert!(results.contains(&json!("Alice")));   // age 30
+    assert!(results.contains(&json!("Alice"))); // age 30
 }
 
 #[test]
@@ -913,12 +979,15 @@ fn test_execute_multiple_let_clauses() {
     setup_users_collection(&storage);
 
     // Two LET clauses with different filters
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET parisUsers = (FOR u IN users FILTER u.city == "Paris" RETURN u)
         LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u)
         FOR p IN parisUsers
         RETURN p.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -933,7 +1002,10 @@ fn test_execute_let_with_length() {
     setup_users_collection(&storage);
 
     // Use LENGTH function on subquery result
-    let query = parse("LET allUsers = (FOR u IN users RETURN u) FOR doc IN users LIMIT 1 RETURN LENGTH(allUsers)").unwrap();
+    let query = parse(
+        "LET allUsers = (FOR u IN users RETURN u) FOR doc IN users LIMIT 1 RETURN LENGTH(allUsers)",
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -1049,10 +1121,12 @@ fn test_array_access_from_document() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("data".to_string()).unwrap();
     let collection = storage.get_collection("data").unwrap();
-    collection.insert(json!({
-        "_key": "1",
-        "tags": ["rust", "database", "aql"]
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "1",
+            "tags": ["rust", "database", "aql"]
+        }))
+        .unwrap();
 
     // Access array field from document
     let query = parse("FOR doc IN data RETURN doc.tags[0]").unwrap();
@@ -1062,7 +1136,6 @@ fn test_array_access_from_document() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0], json!("rust"));
 }
-
 
 // ==================== Bind Variables Tests (Security) ====================
 
@@ -1104,7 +1177,7 @@ fn test_execute_bind_variable_number() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 2);
-    assert!(results.contains(&json!("Alice")));   // age 30
+    assert!(results.contains(&json!("Alice"))); // age 30
     assert!(results.contains(&json!("Charlie"))); // age 35
 }
 
@@ -1130,7 +1203,9 @@ fn test_execute_multiple_bind_variables() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.age >= @minAge AND doc.city == @city RETURN doc.name").unwrap();
+    let query =
+        parse("FOR doc IN users FILTER doc.age >= @minAge AND doc.city == @city RETURN doc.name")
+            .unwrap();
 
     let mut bind_vars: BindVars = HashMap::new();
     bind_vars.insert("minAge".to_string(), json!(30));
@@ -1140,7 +1215,7 @@ fn test_execute_multiple_bind_variables() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 2);
-    assert!(results.contains(&json!("Alice")));   // age 30, Paris
+    assert!(results.contains(&json!("Alice"))); // age 30, Paris
     assert!(results.contains(&json!("Charlie"))); // age 35, Paris
 }
 
@@ -1149,7 +1224,10 @@ fn test_execute_bind_variable_in_return() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse("FOR doc IN users FILTER doc.name == \"Alice\" RETURN { name: doc.name, label: @label }").unwrap();
+    let query = parse(
+        "FOR doc IN users FILTER doc.name == \"Alice\" RETURN { name: doc.name, label: @label }",
+    )
+    .unwrap();
 
     let mut bind_vars: BindVars = HashMap::new();
     bind_vars.insert("label".to_string(), json!("VIP Customer"));
@@ -1303,7 +1381,10 @@ fn test_dynamic_field_access_combined_with_static() {
     setup_users_collection(&storage);
 
     // Combine dynamic and static field access
-    let query = parse("FOR doc IN users FILTER doc[@field] == @value AND doc.active == true RETURN doc.name").unwrap();
+    let query = parse(
+        "FOR doc IN users FILTER doc[@field] == @value AND doc.active == true RETURN doc.name",
+    )
+    .unwrap();
 
     let mut bind_vars: BindVars = HashMap::new();
     bind_vars.insert("field".to_string(), json!("city"));
@@ -1422,12 +1503,15 @@ fn test_explain_with_multiple_subqueries() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET parisUsers = (FOR u IN users FILTER u.city == "Paris" RETURN u)
         LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u)
         FOR p IN parisUsers
         RETURN p.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let explain = executor.explain(&query).unwrap();
 
@@ -1448,13 +1532,16 @@ fn test_explain_complex_query() {
     setup_users_collection(&storage);
 
     // Complex query with subquery, filter, sort, and limit
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET topUsers = (FOR u IN users FILTER u.age >= 25 SORT u.age DESC RETURN u)
         FOR user IN topUsers
         FILTER user.active == true
         LIMIT 1
         RETURN { name: user.name, age: user.age }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let explain = executor.explain(&query).unwrap();
 
@@ -1503,17 +1590,21 @@ fn setup_articles_collection(storage: &StorageEngine) {
     let collection = storage.get_collection("articles").unwrap();
 
     // Insert articles with text content
-    collection.insert(json!({
-        "_key": "1",
-        "title": "Introduction to Rust Programming",
-        "content": "Rust is a systems programming language focused on safety and performance"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "1",
+            "title": "Introduction to Rust Programming",
+            "content": "Rust is a systems programming language focused on safety and performance"
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "2",
-        "title": "Learning Python for Beginners",
-        "content": "Python is a great language for beginners to learn programming"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "2",
+            "title": "Learning Python for Beginners",
+            "content": "Python is a great language for beginners to learn programming"
+        }))
+        .unwrap();
 
     collection.insert(json!({
         "_key": "3",
@@ -1521,20 +1612,26 @@ fn setup_articles_collection(storage: &StorageEngine) {
         "content": "This article covers advanced patterns in Rust including traits and lifetimes"
     })).unwrap();
 
-    collection.insert(json!({
-        "_key": "4",
-        "title": "Database Design Fundamentals",
-        "content": "Learn about database normalization, indexing, and query optimization"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "4",
+            "title": "Database Design Fundamentals",
+            "content": "Learn about database normalization, indexing, and query optimization"
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "5",
-        "title": "Rust vs Go Comparison",
-        "content": "Comparing Rust and Go for systems programming and web services"
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "5",
+            "title": "Rust vs Go Comparison",
+            "content": "Comparing Rust and Go for systems programming and web services"
+        }))
+        .unwrap();
 
     // Create fulltext index on title
-    collection.create_fulltext_index("ft_title".to_string(), "title".to_string(), Some(3)).unwrap();
+    collection
+        .create_fulltext_index("ft_title".to_string(), "title".to_string(), Some(3))
+        .unwrap();
 }
 
 #[test]
@@ -1576,10 +1673,15 @@ fn test_fulltext_fuzzy_match() {
     // Search for "ryst" with fuzzy matching - shares "yst" with no direct match
     // but should find "rust" via n-gram overlap ("rus" from rust) and Levenshtein
     // Let's use "introduction" which is in article 1 - search for "introductoin" (typo)
-    let results = collection.fulltext_search("title", "introductoin", 2).unwrap();
+    let results = collection
+        .fulltext_search("title", "introductoin", 2)
+        .unwrap();
 
     // Should find "introduction" via fuzzy match (distance 2: swap o and i)
-    assert!(!results.is_empty(), "Expected fuzzy match for 'introductoin' -> 'introduction'");
+    assert!(
+        !results.is_empty(),
+        "Expected fuzzy match for 'introductoin' -> 'introduction'"
+    );
 }
 
 #[test]
@@ -1590,7 +1692,9 @@ fn test_fulltext_multiple_terms() {
     let collection = storage.get_collection("articles").unwrap();
 
     // Search for multiple terms
-    let results = collection.fulltext_search("title", "rust programming", 1).unwrap();
+    let results = collection
+        .fulltext_search("title", "rust programming", 1)
+        .unwrap();
 
     // Should find articles matching either term
     assert!(!results.is_empty());
@@ -1660,15 +1764,21 @@ fn test_fulltext_aql_function() {
     setup_articles_collection(&storage);
 
     // Use FULLTEXT function in AQL - need to iterate over result
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET matches = FULLTEXT("articles", "title", "rust")
         FOR m IN matches
         RETURN m
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
-    assert!(!results.is_empty(), "Expected FULLTEXT to return matches for 'rust'");
+    assert!(
+        !results.is_empty(),
+        "Expected FULLTEXT to return matches for 'rust'"
+    );
 
     // Each match should have doc, score, and matched fields
     let first_match = &results[0];
@@ -1683,16 +1793,22 @@ fn test_fulltext_with_max_distance() {
     setup_articles_collection(&storage);
 
     // Use FULLTEXT function with custom max distance
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET matches = FULLTEXT("articles", "title", "pythn", 2)
         FOR m IN matches
         RETURN m
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
     // Should find "python" with distance 2 from "pythn"
-    assert!(!results.is_empty(), "Expected fuzzy match for 'pythn' -> 'python'");
+    assert!(
+        !results.is_empty(),
+        "Expected fuzzy match for 'pythn' -> 'python'"
+    );
 }
 
 // ==================== Correlated Subquery Tests ====================
@@ -1702,33 +1818,41 @@ fn setup_orders_collection(storage: &StorageEngine) {
     let collection = storage.get_collection("orders").unwrap();
 
     // Orders referencing users by name
-    collection.insert(json!({
-        "_key": "o1",
-        "user": "Alice",
-        "product": "Laptop",
-        "amount": 1200
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "o1",
+            "user": "Alice",
+            "product": "Laptop",
+            "amount": 1200
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "o2",
-        "user": "Alice",
-        "product": "Mouse",
-        "amount": 50
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "o2",
+            "user": "Alice",
+            "product": "Mouse",
+            "amount": 50
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "o3",
-        "user": "Bob",
-        "product": "Keyboard",
-        "amount": 100
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "o3",
+            "user": "Bob",
+            "product": "Keyboard",
+            "amount": 100
+        }))
+        .unwrap();
 
-    collection.insert(json!({
-        "_key": "o4",
-        "user": "Charlie",
-        "product": "Monitor",
-        "amount": 500
-    })).unwrap();
+    collection
+        .insert(json!({
+            "_key": "o4",
+            "user": "Charlie",
+            "product": "Monitor",
+            "amount": 500
+        }))
+        .unwrap();
 }
 
 #[test]
@@ -1738,11 +1862,14 @@ fn test_correlated_subquery_basic() {
     setup_orders_collection(&storage);
 
     // For each user, get their orders using a correlated subquery
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET userOrders = (FOR o IN orders FILTER o.user == u.name RETURN o.product)
         RETURN { name: u.name, orders: userOrders }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1750,7 +1877,8 @@ fn test_correlated_subquery_basic() {
     assert_eq!(results.len(), 3); // 3 users
 
     // Find Alice's result
-    let alice = results.iter()
+    let alice = results
+        .iter()
         .find(|r| r["name"] == "Alice")
         .expect("Alice should be in results");
     let alice_orders = alice["orders"].as_array().unwrap();
@@ -1759,7 +1887,8 @@ fn test_correlated_subquery_basic() {
     assert!(alice_orders.contains(&json!("Mouse")));
 
     // Find Bob's result
-    let bob = results.iter()
+    let bob = results
+        .iter()
         .find(|r| r["name"] == "Bob")
         .expect("Bob should be in results");
     let bob_orders = bob["orders"].as_array().unwrap();
@@ -1774,11 +1903,14 @@ fn test_correlated_subquery_with_aggregation() {
     setup_orders_collection(&storage);
 
     // For each user, count their orders
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET orderCount = LENGTH((FOR o IN orders FILTER o.user == u.name RETURN o))
         RETURN { name: u.name, orderCount: orderCount }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1802,11 +1934,14 @@ fn test_correlated_subquery_with_sum() {
     setup_orders_collection(&storage);
 
     // For each user, sum their order amounts
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET totalSpent = SUM((FOR o IN orders FILTER o.user == u.name RETURN o.amount))
         RETURN { name: u.name, totalSpent: totalSpent }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1825,16 +1960,21 @@ fn test_correlated_subquery_empty_result() {
     // Add a user with no orders
     storage.create_collection("users2".to_string()).unwrap();
     let users = storage.get_collection("users2").unwrap();
-    users.insert(json!({"_key": "1", "name": "NoOrders"})).unwrap();
+    users
+        .insert(json!({"_key": "1", "name": "NoOrders"}))
+        .unwrap();
 
     storage.create_collection("orders2".to_string()).unwrap();
     // No orders collection is empty
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users2
         LET orders = (FOR o IN orders2 FILTER o.user == u.name RETURN o)
         RETURN { name: u.name, orders: orders }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1850,13 +1990,16 @@ fn test_multiple_correlated_subqueries() {
     setup_orders_collection(&storage);
 
     // Multiple LET clauses inside FOR
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET orders = (FOR o IN orders FILTER o.user == u.name RETURN o.product)
         LET orderCount = LENGTH(orders)
         FILTER orderCount > 0
         RETURN { name: u.name, products: orders, count: orderCount }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1877,12 +2020,15 @@ fn test_correlated_subquery_nested_filter() {
     setup_orders_collection(&storage);
 
     // Get users who spent more than 500 total
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET totalSpent = SUM((FOR o IN orders FILTER o.user == u.name RETURN o.amount))
         FILTER totalSpent > 500
         RETURN { name: u.name, spent: totalSpent }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1898,11 +2044,14 @@ fn test_correlated_let_simple_expression() {
     setup_users_collection(&storage);
 
     // LET inside FOR with simple expression using outer variable
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR u IN users
         LET greeting = CONCAT("Hello, ", u.name)
         RETURN greeting
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
@@ -1947,10 +2096,13 @@ fn test_collection_count_multiple_collections() {
     setup_users_collection(&storage);
     setup_orders_collection(&storage);
 
-    let query = parse(r#"RETURN {
+    let query = parse(
+        r#"RETURN {
         users: COLLECTION_COUNT("users"),
         orders: COLLECTION_COUNT("orders")
-    }"#).unwrap();
+    }"#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -1994,11 +2146,14 @@ fn test_collection_count_in_for_loop() {
     setup_users_collection(&storage);
 
     // Use COLLECTION_COUNT inside a FOR loop
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         LIMIT 1
         RETURN COLLECTION_COUNT("users")
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2039,11 +2194,14 @@ fn test_date_timestamp_roundtrip() {
     let (storage, _dir) = create_test_storage();
 
     // Convert timestamp to ISO and back
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET ts = 1764770387000
         LET iso = DATE_ISO8601(ts)
         RETURN DATE_TIMESTAMP(iso)
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2101,12 +2259,15 @@ fn test_date_iso8601_and_timestamp_consistency() {
     let (storage, _dir) = create_test_storage();
 
     // Get current time, convert to ISO, parse back
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET now = DATE_NOW()
         LET iso = DATE_ISO8601(now)
         LET back = DATE_TIMESTAMP(iso)
         RETURN { original: now, converted: back, match: now == back }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2250,7 +2411,9 @@ fn test_date_trunc_with_timezone() {
 
     // 2025-06-15T20:30:00Z in New York (UTC-4 during DST) is 2025-06-15T16:30:00 local
     // Truncating to day in NY timezone should give 2025-06-15T00:00:00 NY = 2025-06-15T04:00:00Z
-    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T20:30:00.000Z", "day", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_TRUNC("2025-06-15T20:30:00.000Z", "day", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2276,7 +2439,8 @@ fn test_date_trunc_europe_timezone() {
 
     // 2025-06-15T01:30:00Z in Berlin (UTC+2 during DST) is 2025-06-15T03:30:00 local
     // Truncating to day in Berlin timezone should give 2025-06-15T00:00:00 Berlin = 2025-06-14T22:00:00Z
-    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T01:30:00.000Z", "day", "Europe/Berlin")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_TRUNC("2025-06-15T01:30:00.000Z", "day", "Europe/Berlin")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2301,7 +2465,9 @@ fn test_date_trunc_invalid_unit() {
 fn test_date_trunc_invalid_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "day", "Invalid/Timezone")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_TRUNC("2025-06-15T14:30:45.123Z", "day", "Invalid/Timezone")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -2355,7 +2521,8 @@ fn test_date_format_time() {
 fn test_date_format_full_datetime() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d %H:%M:%S")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d %H:%M:%S")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2391,7 +2558,9 @@ fn test_date_format_with_timezone() {
     let (storage, _dir) = create_test_storage();
 
     // 14:30 UTC should be 10:30 in New York (EDT, UTC-4)
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2403,7 +2572,9 @@ fn test_date_format_timezone_date_change() {
     let (storage, _dir) = create_test_storage();
 
     // 02:00 UTC on June 15 should be June 14 22:00 in New York (EDT, UTC-4)
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T02:00:00.000Z", "%Y-%m-%d", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T02:00:00.000Z", "%Y-%m-%d", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2429,7 +2600,9 @@ fn test_date_format_custom_format() {
     let (storage, _dir) = create_test_storage();
 
     // Custom format with text
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Date: %d/%m/%Y Time: %H:%M")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Date: %d/%m/%Y Time: %H:%M")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2441,7 +2614,8 @@ fn test_date_format_iso_week() {
     let (storage, _dir) = create_test_storage();
 
     // %V = ISO week number, %G = ISO year
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Week %V of %G")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "Week %V of %G")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2476,7 +2650,9 @@ fn test_date_format_day_of_year() {
 fn test_date_format_invalid_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d", "Invalid/TZ")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%Y-%m-%d", "Invalid/TZ")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -2490,7 +2666,9 @@ fn test_date_format_europe_timezone() {
     let (storage, _dir) = create_test_storage();
 
     // 14:30 UTC should be 16:30 in Berlin (CEST, UTC+2)
-    let query = parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "Europe/Berlin")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_FORMAT("2025-06-15T14:30:45.123Z", "%H:%M", "Europe/Berlin")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2647,7 +2825,8 @@ fn test_date_dayofyear_with_timezone() {
     let (storage, _dir) = create_test_storage();
 
     // 2025-01-01T02:00:00Z in New York (UTC-5 in winter) is still Dec 31, 2024
-    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-01-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYOFYEAR("2025-01-01T02:00:00.000Z", "America/New_York")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2660,7 +2839,8 @@ fn test_date_dayofyear_timezone_europe() {
     let (storage, _dir) = create_test_storage();
 
     // 2025-06-15T22:00:00Z in Berlin (UTC+2 during DST) is June 16, 00:00
-    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T22:00:00.000Z", "Europe/Berlin")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T22:00:00.000Z", "Europe/Berlin")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2672,7 +2852,8 @@ fn test_date_dayofyear_timezone_europe() {
 fn test_date_dayofyear_invalid_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYOFYEAR("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -2760,7 +2941,9 @@ fn test_date_days_in_month_with_timezone() {
 
     // 2025-02-01T02:00:00Z in New York (UTC-5) is still January 31
     // January has 31 days
-    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-02-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-02-01T02:00:00.000Z", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2773,7 +2956,9 @@ fn test_date_days_in_month_timezone_february_leap() {
     let (storage, _dir) = create_test_storage();
 
     // 2024-03-01T02:00:00Z in New York (UTC-5) is still February 29 (leap year)
-    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2024-03-01T02:00:00.000Z", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYS_IN_MONTH("2024-03-01T02:00:00.000Z", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2785,7 +2970,8 @@ fn test_date_days_in_month_timezone_february_leap() {
 fn test_date_days_in_month_invalid_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DAYS_IN_MONTH("2025-06-15T14:30:45.123Z", "Invalid/TZ")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -2884,7 +3070,8 @@ fn test_date_add_seconds() {
 fn test_date_add_milliseconds() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 500, "milliseconds")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 500, "milliseconds")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -2989,7 +3176,8 @@ fn test_date_add_with_timezone() {
     let (storage, _dir) = create_test_storage();
 
     // Add 1 day with timezone
-    let query = parse(r#"RETURN DATE_ADD("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_ADD("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3067,7 +3255,9 @@ fn test_date_add_invalid_date() {
 fn test_date_add_invalid_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 1, "day", "Invalid/Timezone")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_ADD("2025-06-15T14:30:45.123Z", 1, "day", "Invalid/Timezone")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -3169,7 +3359,9 @@ fn test_date_subtract_with_timestamp() {
 fn test_date_subtract_with_timezone() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_SUBTRACT("2025-06-15T20:00:00Z", 1, "day", "America/New_York")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3207,7 +3399,8 @@ fn test_date_subtract_zero() {
 fn test_date_subtract_invalid_amount() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", "invalid", "days")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_SUBTRACT("2025-06-15T14:30:45.123Z", "invalid", "days")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -3223,7 +3416,9 @@ fn test_date_diff_days() {
     let (storage, _dir) = create_test_storage();
 
     // 10 days difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-11T00:00:00Z", "days")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-11T00:00:00Z", "days")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3236,7 +3431,9 @@ fn test_date_diff_hours() {
     let (storage, _dir) = create_test_storage();
 
     // 5 hours difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T10:00:00Z", "2025-06-15T15:00:00Z", "hours")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T10:00:00Z", "2025-06-15T15:00:00Z", "hours")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3249,7 +3446,9 @@ fn test_date_diff_months() {
     let (storage, _dir) = create_test_storage();
 
     // 3 months difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-03-15T00:00:00Z", "2025-06-15T00:00:00Z", "months")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-03-15T00:00:00Z", "2025-06-15T00:00:00Z", "months")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3262,7 +3461,9 @@ fn test_date_diff_years() {
     let (storage, _dir) = create_test_storage();
 
     // 2 years difference
-    let query = parse(r#"RETURN DATE_DIFF("2023-06-15T00:00:00Z", "2025-06-15T00:00:00Z", "years")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2023-06-15T00:00:00Z", "2025-06-15T00:00:00Z", "years")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3275,7 +3476,9 @@ fn test_date_diff_negative() {
     let (storage, _dir) = create_test_storage();
 
     // Negative difference (date2 before date1)
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-10T00:00:00Z", "days")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3288,7 +3491,9 @@ fn test_date_diff_with_float() {
     let (storage, _dir) = create_test_storage();
 
     // With asFloat=true for decimal precision
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-15T12:00:00Z", "days", true)"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-15T12:00:00Z", "days", true)"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3342,7 +3547,9 @@ fn test_date_diff_minutes() {
     let (storage, _dir) = create_test_storage();
 
     // 90 minutes difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:00:00Z", "2025-06-15T15:30:00Z", "minutes")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T14:00:00Z", "2025-06-15T15:30:00Z", "minutes")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3355,7 +3562,9 @@ fn test_date_diff_seconds() {
     let (storage, _dir) = create_test_storage();
 
     // 120 seconds difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:32:00Z", "seconds")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:32:00Z", "seconds")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3368,7 +3577,9 @@ fn test_date_diff_weeks() {
     let (storage, _dir) = create_test_storage();
 
     // 2 weeks difference
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-15T00:00:00Z", "weeks")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-01T00:00:00Z", "2025-06-15T00:00:00Z", "weeks")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3381,7 +3592,9 @@ fn test_date_diff_zero() {
     let (storage, _dir) = create_test_storage();
 
     // Same date
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:30:00Z", "days")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T14:30:00Z", "2025-06-15T14:30:00Z", "days")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3393,7 +3606,9 @@ fn test_date_diff_zero() {
 fn test_date_diff_invalid_unit() {
     let (storage, _dir) = create_test_storage();
 
-    let query = parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-16T00:00:00Z", "invalid")"#).unwrap();
+    let query =
+        parse(r#"RETURN DATE_DIFF("2025-06-15T00:00:00Z", "2025-06-16T00:00:00Z", "invalid")"#)
+            .unwrap();
     let executor = QueryExecutor::new(&storage);
     let result = executor.execute(&query);
 
@@ -3401,7 +3616,6 @@ fn test_date_diff_invalid_unit() {
     let err = result.unwrap_err();
     assert!(err.to_string().contains("unknown unit"));
 }
-
 
 // ==================== INSERT Statement Tests ====================
 
@@ -3412,12 +3626,15 @@ fn test_insert_simple() {
     storage.create_collection("numbers".to_string()).unwrap();
 
     // Insert documents using FOR loop with LET array
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET nums = [1, 2, 3, 4, 5]
         FOR i IN nums
           INSERT { value: i } INTO numbers
           RETURN i
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3436,12 +3653,15 @@ fn test_insert_with_object_construction() {
     storage.create_collection("users".to_string()).unwrap();
 
     // Insert with object construction
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET nums = [1, 2, 3]
         FOR i IN nums
           INSERT { name: CONCAT("User", i), index: i } INTO users
           RETURN i
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3461,12 +3681,15 @@ fn test_update_simple() {
     setup_users_collection(&storage);
 
     // Get Alice's document and update it
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Alice"
         UPDATE doc WITH { status: "premium" } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3488,12 +3711,15 @@ fn test_update_multiple_fields() {
     setup_users_collection(&storage);
 
     // Update multiple fields
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Bob"
         UPDATE doc WITH { status: "vip", level: 5, verified: true } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3513,12 +3739,15 @@ fn test_update_overwrite_field() {
     setup_users_collection(&storage);
 
     // Update (overwrite) an existing field
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Charlie"
         UPDATE doc WITH { age: 40 } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3528,7 +3757,7 @@ fn test_update_overwrite_field() {
     let collection = storage.get_collection("users").unwrap();
     let charlie = collection.get("charlie").unwrap();
     assert_eq!(charlie.to_value()["age"], json!(40.0)); // Was 35, now 40
-    // Original name should still exist
+                                                        // Original name should still exist
     assert_eq!(charlie.to_value()["name"], json!("Charlie"));
 }
 
@@ -3538,12 +3767,15 @@ fn test_update_multiple_documents() {
     setup_users_collection(&storage);
 
     // Update all users from Paris
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.city == "Paris"
         UPDATE doc WITH { region: "Europe" } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3563,12 +3795,15 @@ fn test_update_with_expression() {
     setup_users_collection(&storage);
 
     // Update with computed value using CONCAT
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Alice"
         UPDATE doc WITH { fullName: CONCAT(doc.name, " from ", doc.city) } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3585,12 +3820,15 @@ fn test_update_with_bind_vars() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == @name
         UPDATE doc WITH { points: @points } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let mut bind_vars: BindVars = HashMap::new();
     bind_vars.insert("name".to_string(), json!("Alice"));
@@ -3613,12 +3851,15 @@ fn test_update_no_match() {
     setup_users_collection(&storage);
 
     // Filter matches no documents - update should not fail
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "NonExistent"
         UPDATE doc WITH { status: "updated" } IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3631,12 +3872,15 @@ fn test_update_preserves_key() {
     setup_users_collection(&storage);
 
     // Update should preserve _key
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Alice"
         UPDATE doc WITH { name: "Alice Updated" } IN users
         RETURN doc._key
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3709,10 +3953,13 @@ fn test_range_in_for_loop() {
     let (storage, _dir) = create_test_storage();
 
     // Use range in FOR loop
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR i IN 1..5
         RETURN i * 2
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3729,11 +3976,14 @@ fn test_range_with_expressions() {
     let (storage, _dir) = create_test_storage();
 
     // Range with expressions
-    let query = parse(r#"
+    let query = parse(
+        r#"
         LET start = 2
         LET end = 6
         RETURN start..end
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3761,11 +4011,14 @@ fn test_range_for_insert() {
     storage.create_collection("items".to_string()).unwrap();
 
     // Use range in FOR loop for insert
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR i IN 1..3
         INSERT { index: i, name: CONCAT("Item", i) } INTO items
         RETURN i
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3789,12 +4042,15 @@ fn test_remove_simple() {
     assert!(count_before > 0);
 
     // Remove Alice
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "Alice"
         REMOVE doc IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3813,12 +4069,15 @@ fn test_remove_multiple_documents() {
     setup_users_collection(&storage);
 
     // Remove all users from Paris (Alice and Charlie)
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.city == "Paris"
         REMOVE doc IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3838,12 +4097,15 @@ fn test_remove_by_key() {
     setup_users_collection(&storage);
 
     // Remove by key string
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc._key == "bob"
         REMOVE doc IN users
         RETURN doc._key
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3864,12 +4126,15 @@ fn test_remove_no_match() {
     let count_before = collection.count();
 
     // Filter matches no documents - remove should not fail
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == "NonExistent"
         REMOVE doc IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3885,12 +4150,15 @@ fn test_remove_with_bind_vars() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         FILTER doc.name == @name
         REMOVE doc IN users
         RETURN doc.name
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let mut bind_vars: BindVars = HashMap::new();
     bind_vars.insert("name".to_string(), json!("Charlie"));
@@ -3912,11 +4180,14 @@ fn test_remove_all() {
     setup_users_collection(&storage);
 
     // Remove all documents
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN users
         REMOVE doc IN users
         RETURN doc._key
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3934,17 +4205,22 @@ fn test_bm25_basic_scoring() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("articles".to_string()).unwrap();
     let collection = storage.get_collection("articles").unwrap();
-    
-    collection.insert(json!({
-        "_key": "1",
-        "title": "Introduction to Machine Learning",
-        "content": "Machine learning is a subset of artificial intelligence"
-    })).unwrap();
 
-    let query = parse(r#"
+    collection
+        .insert(json!({
+            "_key": "1",
+            "title": "Introduction to Machine Learning",
+            "content": "Machine learning is a subset of artificial intelligence"
+        }))
+        .unwrap();
+
+    let query = parse(
+        r#"
         FOR doc IN articles
         RETURN BM25(doc.content, "machine learning")
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3958,30 +4234,39 @@ fn test_bm25_sort_descending() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("articles".to_string()).unwrap();
     let collection = storage.get_collection("articles").unwrap();
-    
-    collection.insert(json!({
-        "_key": "1",
-        "title": "ML Basics",
-        "content": "Machine learning and artificial intelligence"
-    })).unwrap();
-    
-    collection.insert(json!({
-        "_key": "2",
-        "title": "Advanced ML",
-        "content": "Machine learning machine learning deep learning neural networks"
-    })).unwrap();
-    
-    collection.insert(json!({
-        "_key": "3",
-        "title": "Other Topic",
-        "content": "This is about something completely different"
-    })).unwrap();
 
-    let query = parse(r#"
+    collection
+        .insert(json!({
+            "_key": "1",
+            "title": "ML Basics",
+            "content": "Machine learning and artificial intelligence"
+        }))
+        .unwrap();
+
+    collection
+        .insert(json!({
+            "_key": "2",
+            "title": "Advanced ML",
+            "content": "Machine learning machine learning deep learning neural networks"
+        }))
+        .unwrap();
+
+    collection
+        .insert(json!({
+            "_key": "3",
+            "title": "Other Topic",
+            "content": "This is about something completely different"
+        }))
+        .unwrap();
+
+    let query = parse(
+        r#"
         FOR doc IN articles
         SORT BM25(doc.content, "machine learning") DESC
         RETURN {title: doc.title, score: BM25(doc.content, "machine learning")}
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -3997,20 +4282,25 @@ fn test_bm25_with_limit() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("articles".to_string()).unwrap();
     let collection = storage.get_collection("articles").unwrap();
-    
+
     for i in 1..=10 {
-        collection.insert(json!({
-            "_key": i.to_string(),
-            "content": format!("Article {} about machine learning", i)
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": i.to_string(),
+                "content": format!("Article {} about machine learning", i)
+            }))
+            .unwrap();
     }
 
-    let query = parse(r#"
+    let query = parse(
+        r#"
         FOR doc IN articles
         SORT BM25(doc.content, "machine learning") DESC
         LIMIT 3
         RETURN doc._key
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -4022,16 +4312,21 @@ fn test_bm25_no_matches() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("articles".to_string()).unwrap();
     let collection = storage.get_collection("articles").unwrap();
-    
-    collection.insert(json!({
-        "_key": "1",
-        "content": "This is about databases and storage"
-    })).unwrap();
 
-    let query = parse(r#"
+    collection
+        .insert(json!({
+            "_key": "1",
+            "content": "This is about databases and storage"
+        }))
+        .unwrap();
+
+    let query = parse(
+        r#"
         FOR doc IN articles
         RETURN BM25(doc.content, "machine learning")
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 
@@ -4045,16 +4340,21 @@ fn test_bm25_empty_query() {
     let (storage, _dir) = create_test_storage();
     storage.create_collection("articles".to_string()).unwrap();
     let collection = storage.get_collection("articles").unwrap();
-    
-    collection.insert(json!({
-        "_key": "1",
-        "content": "Some content here"
-    })).unwrap();
 
-    let query = parse(r#"
+    collection
+        .insert(json!({
+            "_key": "1",
+            "content": "Some content here"
+        }))
+        .unwrap();
+
+    let query = parse(
+        r#"
         FOR doc IN articles
         RETURN BM25(doc.content, "")
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();
 

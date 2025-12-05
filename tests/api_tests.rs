@@ -3,10 +3,10 @@
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{header, Request, StatusCode},
 };
-use solidb::{create_router, StorageEngine};
 use serde_json::{json, Value};
+use solidb::{create_router, StorageEngine};
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
@@ -35,7 +35,9 @@ async fn post_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, 
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -55,7 +57,9 @@ async fn get(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -93,7 +97,9 @@ async fn put_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, V
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -104,7 +110,12 @@ async fn put_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, V
 async fn test_create_collection() {
     let (app, _dir) = create_test_app();
 
-    let (status, body) = post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["name"], "users");
@@ -115,8 +126,18 @@ async fn test_create_collection() {
 async fn test_create_duplicate_collection() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    let (status, body) = post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(body["error"].as_str().unwrap().contains("already exists"));
@@ -126,8 +147,18 @@ async fn test_create_duplicate_collection() {
 async fn test_list_collections() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "products"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "products"}),
+    )
+    .await;
 
     let (status, body) = get(&app, "/_api/database/_system/collection").await;
 
@@ -140,7 +171,12 @@ async fn test_list_collections() {
 async fn test_delete_collection() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
     let status = delete(&app, "/_api/database/_system/collection/users").await;
 
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -157,11 +193,21 @@ async fn test_delete_collection() {
 async fn test_insert_document() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    let (status, body) = post_json(&app, "/_api/database/_system/document/users", json!({
-        "name": "Alice",
-        "age": 30
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({
+            "name": "Alice",
+            "age": 30
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["name"], "Alice");
@@ -174,11 +220,21 @@ async fn test_insert_document() {
 async fn test_insert_document_with_custom_key() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    let (status, body) = post_json(&app, "/_api/database/_system/document/users", json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({
+            "_key": "alice",
+            "name": "Alice"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["_key"], "alice");
@@ -188,11 +244,21 @@ async fn test_insert_document_with_custom_key() {
 async fn test_get_document() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({
+            "_key": "alice",
+            "name": "Alice"
+        }),
+    )
+    .await;
 
     let (status, body) = get(&app, "/_api/database/_system/document/users/alice").await;
 
@@ -204,7 +270,12 @@ async fn test_get_document() {
 async fn test_get_nonexistent_document() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
     let (status, body) = get(&app, "/_api/database/_system/document/users/nonexistent").await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -215,21 +286,36 @@ async fn test_get_nonexistent_document() {
 async fn test_update_document() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({
-        "_key": "alice",
-        "name": "Alice",
-        "age": 30
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({
+            "_key": "alice",
+            "name": "Alice",
+            "age": 30
+        }),
+    )
+    .await;
 
-    let (status, body) = put_json(&app, "/_api/database/_system/document/users/alice", json!({
-        "age": 31,
-        "city": "Paris"
-    })).await;
+    let (status, body) = put_json(
+        &app,
+        "/_api/database/_system/document/users/alice",
+        json!({
+            "age": 31,
+            "city": "Paris"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["name"], "Alice"); // Original preserved
-    assert_eq!(body["age"], 31);       // Updated
+    assert_eq!(body["age"], 31); // Updated
     assert_eq!(body["city"], "Paris"); // Added
 }
 
@@ -237,11 +323,21 @@ async fn test_update_document() {
 async fn test_delete_document() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({
-        "_key": "alice",
-        "name": "Alice"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({
+            "_key": "alice",
+            "name": "Alice"
+        }),
+    )
+    .await;
 
     let status = delete(&app, "/_api/database/_system/document/users/alice").await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -257,13 +353,33 @@ async fn test_delete_document() {
 async fn test_execute_query() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR doc IN users RETURN doc.name"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR doc IN users RETURN doc.name"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 2);
@@ -276,13 +392,33 @@ async fn test_execute_query() {
 async fn test_execute_query_with_filter() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR doc IN users FILTER doc.age > 26 RETURN doc.name"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR doc IN users FILTER doc.age > 26 RETURN doc.name"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 1);
@@ -293,14 +429,39 @@ async fn test_execute_query_with_filter() {
 async fn test_execute_query_with_sort() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Charlie", "age": 35})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Charlie", "age": 35}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR doc IN users SORT doc.age DESC RETURN doc.name"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR doc IN users SORT doc.age DESC RETURN doc.name"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     let results = body["result"].as_array().unwrap();
@@ -313,9 +474,14 @@ async fn test_execute_query_with_sort() {
 async fn test_execute_invalid_query() {
     let (app, _dir) = create_test_app();
 
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "INVALID QUERY SYNTAX"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "INVALID QUERY SYNTAX"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().is_some());
@@ -327,12 +493,22 @@ async fn test_execute_invalid_query() {
 async fn test_create_index() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    let (status, body) = post_json(&app, "/_api/database/_system/index/users", json!({
-        "name": "idx_age",
-        "field": "age",
-        "type": "persistent"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/index/users",
+        json!({
+            "name": "idx_age",
+            "field": "age",
+            "type": "persistent"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["name"], "idx_age");
@@ -344,12 +520,22 @@ async fn test_create_index() {
 async fn test_list_indexes() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/index/users", json!({
-        "name": "idx_age",
-        "field": "age",
-        "type": "persistent"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/index/users",
+        json!({
+            "name": "idx_age",
+            "field": "age",
+            "type": "persistent"
+        }),
+    )
+    .await;
 
     let (status, body) = get(&app, "/_api/database/_system/index/users").await;
 
@@ -363,12 +549,22 @@ async fn test_list_indexes() {
 async fn test_delete_index() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/index/users", json!({
-        "name": "idx_age",
-        "field": "age",
-        "type": "persistent"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/index/users",
+        json!({
+            "name": "idx_age",
+            "field": "age",
+            "type": "persistent"
+        }),
+    )
+    .await;
 
     let status = delete(&app, "/_api/database/_system/index/users/idx_age").await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -385,11 +581,21 @@ async fn test_delete_index() {
 async fn test_create_geo_index() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "places"})).await;
-    let (status, body) = post_json(&app, "/_api/database/_system/geo/places", json!({
-        "name": "idx_location",
-        "field": "location"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "places"}),
+    )
+    .await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/geo/places",
+        json!({
+            "name": "idx_location",
+            "field": "location"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["name"], "idx_location");
@@ -401,28 +607,53 @@ async fn test_geo_near_query() {
     let (app, _dir) = create_test_app();
 
     // Setup
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "places"})).await;
-    post_json(&app, "/_api/database/_system/document/places", json!({
-        "_key": "eiffel",
-        "name": "Eiffel Tower",
-        "location": {"lat": 48.8584, "lon": 2.2945}
-    })).await;
-    post_json(&app, "/_api/database/_system/document/places", json!({
-        "_key": "louvre",
-        "name": "Louvre Museum",
-        "location": {"lat": 48.8606, "lon": 2.3376}
-    })).await;
-    post_json(&app, "/_api/database/_system/geo/places", json!({
-        "name": "idx_location",
-        "field": "location"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "places"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/places",
+        json!({
+            "_key": "eiffel",
+            "name": "Eiffel Tower",
+            "location": {"lat": 48.8584, "lon": 2.2945}
+        }),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/places",
+        json!({
+            "_key": "louvre",
+            "name": "Louvre Museum",
+            "location": {"lat": 48.8606, "lon": 2.3376}
+        }),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/geo/places",
+        json!({
+            "name": "idx_location",
+            "field": "location"
+        }),
+    )
+    .await;
 
     // Query
-    let (status, body) = post_json(&app, "/_api/database/_system/geo/places/location/near", json!({
-        "lat": 48.8584,
-        "lon": 2.2945,
-        "limit": 2
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/geo/places/location/near",
+        json!({
+            "lat": 48.8584,
+            "lon": 2.2945,
+            "limit": 2
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(body["count"].as_u64().unwrap() > 0);
@@ -437,28 +668,53 @@ async fn test_geo_within_query() {
     let (app, _dir) = create_test_app();
 
     // Setup
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "places"})).await;
-    post_json(&app, "/_api/database/_system/document/places", json!({
-        "_key": "eiffel",
-        "name": "Eiffel Tower",
-        "location": {"lat": 48.8584, "lon": 2.2945}
-    })).await;
-    post_json(&app, "/_api/database/_system/document/places", json!({
-        "_key": "london_eye",
-        "name": "London Eye",
-        "location": {"lat": 51.5033, "lon": -0.1196}
-    })).await;
-    post_json(&app, "/_api/database/_system/geo/places", json!({
-        "name": "idx_location",
-        "field": "location"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "places"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/places",
+        json!({
+            "_key": "eiffel",
+            "name": "Eiffel Tower",
+            "location": {"lat": 48.8584, "lon": 2.2945}
+        }),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/places",
+        json!({
+            "_key": "london_eye",
+            "name": "London Eye",
+            "location": {"lat": 51.5033, "lon": -0.1196}
+        }),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/geo/places",
+        json!({
+            "name": "idx_location",
+            "field": "location"
+        }),
+    )
+    .await;
 
     // Query within 10km of Eiffel Tower
-    let (status, body) = post_json(&app, "/_api/database/_system/geo/places/location/within", json!({
-        "lat": 48.8584,
-        "lon": 2.2945,
-        "radius": 10000
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/geo/places/location/within",
+        json!({
+            "lat": 48.8584,
+            "lon": 2.2945,
+            "radius": 10000
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 1);
@@ -505,13 +761,33 @@ async fn test_explain_simple_query() {
     let (app, _dir) = create_test_app();
 
     // Setup collection with documents
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users RETURN doc"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users RETURN doc"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -536,14 +812,39 @@ async fn test_explain_simple_query() {
 async fn test_explain_with_filter() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Charlie", "age": 35})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Charlie", "age": 35}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users FILTER doc.age > 26 RETURN doc"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users FILTER doc.age > 26 RETURN doc"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -562,13 +863,33 @@ async fn test_explain_with_filter() {
 async fn test_explain_with_sort() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users SORT doc.age DESC RETURN doc"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users SORT doc.age DESC RETURN doc"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -583,14 +904,39 @@ async fn test_explain_with_sort() {
 async fn test_explain_with_limit() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Charlie", "age": 35})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Charlie", "age": 35}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users LIMIT 2 RETURN doc"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users LIMIT 2 RETURN doc"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -606,10 +952,30 @@ async fn test_explain_with_limit() {
 async fn test_explain_with_let_subquery() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30, "active": true})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25, "active": true})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Charlie", "age": 35, "active": false})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30, "active": true}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25, "active": true}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Charlie", "age": 35, "active": false}),
+    )
+    .await;
 
     let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
         "query": "LET activeUsers = (FOR u IN users FILTER u.active == true RETURN u) FOR item IN activeUsers RETURN item.name"
@@ -632,12 +998,27 @@ async fn test_explain_with_let_subquery() {
 async fn test_explain_timing_breakdown() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users FILTER doc.age > 20 SORT doc.name LIMIT 10 RETURN doc"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users FILTER doc.age > 20 SORT doc.name LIMIT 10 RETURN doc"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -660,16 +1041,36 @@ async fn test_explain_timing_breakdown() {
 async fn test_explain_with_bind_vars() {
     let (app, _dir) = create_test_app();
 
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "FOR doc IN users FILTER doc.age > @minAge RETURN doc",
-        "bindVars": {
-            "minAge": 28
-        }
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "FOR doc IN users FILTER doc.age > @minAge RETURN doc",
+            "bindVars": {
+                "minAge": 28
+            }
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -684,11 +1085,15 @@ async fn test_explain_with_bind_vars() {
 async fn test_explain_invalid_query() {
     let (app, _dir) = create_test_app();
 
-    let (status, body) = post_json(&app, "/_api/database/_system/explain", json!({
-        "query": "INVALID QUERY SYNTAX"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/explain",
+        json!({
+            "query": "INVALID QUERY SYNTAX"
+        }),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().is_some());
 }
-

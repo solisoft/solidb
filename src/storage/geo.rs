@@ -23,7 +23,11 @@ impl GeoPoint {
         // Try object format { lat, lon }
         if let Some(obj) = value.as_object() {
             let lat = obj.get("lat").or(obj.get("latitude"))?.as_f64()?;
-            let lon = obj.get("lon").or(obj.get("lng")).or(obj.get("longitude"))?.as_f64()?;
+            let lon = obj
+                .get("lon")
+                .or(obj.get("lng"))
+                .or(obj.get("longitude"))?
+                .as_f64()?;
             return Some(Self::new(lat, lon));
         }
 

@@ -76,7 +76,10 @@ impl HybridLogicalClock {
             (other.physical_time, other.logical_counter + 1)
         } else {
             // Same physical time, take max logical and increment
-            (self.physical_time, self.logical_counter.max(other.logical_counter) + 1)
+            (
+                self.physical_time,
+                self.logical_counter.max(other.logical_counter) + 1,
+            )
         };
 
         Self {
@@ -89,12 +92,10 @@ impl HybridLogicalClock {
     /// Compare two HLCs. Returns Ordering.
     pub fn compare(&self, other: &HybridLogicalClock) -> std::cmp::Ordering {
         match self.physical_time.cmp(&other.physical_time) {
-            std::cmp::Ordering::Equal => {
-                match self.logical_counter.cmp(&other.logical_counter) {
-                    std::cmp::Ordering::Equal => self.node_id.cmp(&other.node_id),
-                    other => other,
-                }
-            }
+            std::cmp::Ordering::Equal => match self.logical_counter.cmp(&other.logical_counter) {
+                std::cmp::Ordering::Equal => self.node_id.cmp(&other.node_id),
+                other => other,
+            },
             other => other,
         }
     }
@@ -106,7 +107,10 @@ impl HybridLogicalClock {
 
     /// Serialize to a string for storage (sortable)
     pub fn to_string_key(&self) -> String {
-        format!("{:016x}-{:08x}-{}", self.physical_time, self.logical_counter, self.node_id)
+        format!(
+            "{:016x}-{:08x}-{}",
+            self.physical_time, self.logical_counter, self.node_id
+        )
     }
 
     /// Parse from a string key
@@ -171,9 +175,11 @@ impl HlcGenerator {
             };
 
             // Try to update atomically
-            if self.last_physical.compare_exchange(
-                last_phys, new_phys, Ordering::SeqCst, Ordering::SeqCst
-            ).is_ok() {
+            if self
+                .last_physical
+                .compare_exchange(last_phys, new_phys, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 self.last_logical.store(new_log, Ordering::SeqCst);
                 return HybridLogicalClock {
                     physical_time: new_phys,
@@ -207,9 +213,11 @@ impl HlcGenerator {
                 (last_phys, last_log.max(remote.logical_counter as u64) + 1)
             };
 
-            if self.last_physical.compare_exchange(
-                last_phys, new_phys, Ordering::SeqCst, Ordering::SeqCst
-            ).is_ok() {
+            if self
+                .last_physical
+                .compare_exchange(last_phys, new_phys, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 self.last_logical.store(new_log, Ordering::SeqCst);
                 return HybridLogicalClock {
                     physical_time: new_phys,
@@ -268,4 +276,3 @@ mod tests {
         }
     }
 }
-

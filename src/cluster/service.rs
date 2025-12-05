@@ -1,15 +1,15 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::StorageEngine;
-use super::{ClusterConfig, ReplicationEntry, PersistentReplicationLog, Operation};
 use super::hlc::HlcGenerator;
+use super::{ClusterConfig, Operation, PersistentReplicationLog, ReplicationEntry};
+use crate::StorageEngine;
 
 /// Messages exchanged between nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,16 +55,11 @@ pub enum ReplicationMessage {
     },
 
     /// Leave notification
-    LeaveNotification {
-        from_node: String,
-    },
+    LeaveNotification { from_node: String },
 
     // ==================== Full Sync Messages ====================
-
     /// Request full sync (for new nodes)
-    FullSyncRequest {
-        from_node: String,
-    },
+    FullSyncRequest { from_node: String },
 
     /// Start of full sync - metadata
     FullSyncStart {
@@ -76,15 +71,10 @@ pub enum ReplicationMessage {
     },
 
     /// Database definition
-    FullSyncDatabase {
-        name: String,
-    },
+    FullSyncDatabase { name: String },
 
     /// Collection definition
-    FullSyncCollection {
-        database: String,
-        name: String,
-    },
+    FullSyncCollection { database: String, name: String },
 
     /// Batch of documents
     FullSyncDocuments {
@@ -120,11 +110,11 @@ impl ReplicationMessage {
 #[derive(Debug, Clone)]
 pub struct PeerState {
     pub address: String,
-    pub node_id: Option<String>,  // Learned from Ping/Pong messages
+    pub node_id: Option<String>, // Learned from Ping/Pong messages
     pub last_seen: std::time::Instant,
-    pub last_sequence_sent: u64,      // Highest of OUR sequences sent to them
-    pub last_sequence_acked: u64,     // Highest of OUR sequences they confirmed receiving (for lag)
-    pub last_sequence_received: u64,  // Highest of THEIR sequences we received (for sync requests)
+    pub last_sequence_sent: u64,  // Highest of OUR sequences sent to them
+    pub last_sequence_acked: u64, // Highest of OUR sequences they confirmed receiving (for lag)
+    pub last_sequence_received: u64, // Highest of THEIR sequences we received (for sync requests)
     pub is_connected: bool,
 }
 
@@ -149,23 +139,27 @@ impl ReplicationService {
         let replication_log = PersistentReplicationLog::new(
             node_id.clone(),
             data_dir,
-            100000 // Keep last 100k entries
-        ).expect("Failed to create replication log");
+            100000, // Keep last 100k entries
+        )
+        .expect("Failed to create replication log");
 
         let hlc_generator = Arc::new(HlcGenerator::new(node_id.clone()));
 
         // Initialize peer states from config
         let mut peer_states = HashMap::new();
         for peer in &config.peers {
-            peer_states.insert(peer.clone(), PeerState {
-                address: peer.clone(),
-                node_id: None,
-                last_seen: std::time::Instant::now(),
-                last_sequence_sent: 0,
-                last_sequence_acked: 0,
-                last_sequence_received: 0,
-                is_connected: false,
-            });
+            peer_states.insert(
+                peer.clone(),
+                PeerState {
+                    address: peer.clone(),
+                    node_id: None,
+                    last_seen: std::time::Instant::now(),
+                    last_sequence_sent: 0,
+                    last_sequence_acked: 0,
+                    last_sequence_received: 0,
+                    is_connected: false,
+                },
+            );
         }
 
         // Load saved peers from _system._config
@@ -176,15 +170,18 @@ impl ReplicationService {
                 continue;
             }
             tracing::debug!("[PEER] Loading saved peer from config: {}", peer);
-            peer_states.insert(peer.clone(), PeerState {
-                address: peer,
-                node_id: None,
-                last_seen: std::time::Instant::now(),
-                last_sequence_sent: 0,
-                last_sequence_acked: 0,
-                last_sequence_received: 0,
-                is_connected: false,
-            });
+            peer_states.insert(
+                peer.clone(),
+                PeerState {
+                    address: peer,
+                    node_id: None,
+                    last_seen: std::time::Instant::now(),
+                    last_sequence_sent: 0,
+                    last_sequence_acked: 0,
+                    last_sequence_received: 0,
+                    is_connected: false,
+                },
+            );
         }
 
         Self {
@@ -207,7 +204,11 @@ impl ReplicationService {
                             .iter()
                             .filter_map(|v| v.as_str().map(|s| s.to_string()))
                             .collect();
-                        tracing::debug!("[PEER] Loaded {} saved peers from _system._config: {:?}", saved.len(), saved);
+                        tracing::debug!(
+                            "[PEER] Loaded {} saved peers from _system._config: {:?}",
+                            saved.len(),
+                            saved
+                        );
                         return saved;
                     }
                 }
@@ -219,12 +220,13 @@ impl ReplicationService {
 
     /// Save peer addresses to _system._config collection
     fn save_peers(&self) {
-        let peers: Vec<String> = self.peer_states.read().unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
 
-        tracing::debug!("[PEER] Saving {} peers to _system._config: {:?}", peers.len(), peers);
+        tracing::debug!(
+            "[PEER] Saving {} peers to _system._config: {:?}",
+            peers.len(),
+            peers
+        );
 
         if let Ok(db) = self.storage.get_database("_system") {
             // Create _config collection if it doesn't exist
@@ -270,20 +272,24 @@ impl ReplicationService {
         let listener = TcpListener::bind(&listen_addr).await?;
 
         // Get all peers (configured + saved)
-        let all_peers: Vec<String> = self.peer_states.read().unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let all_peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
 
         tracing::debug!("╔════════════════════════════════════════════════════════════╗");
         tracing::debug!("║           REPLICATION SERVICE STARTED                       ║");
         tracing::debug!("╠════════════════════════════════════════════════════════════╣");
         tracing::debug!("║ Node ID: {:<49} ║", self.config.node_id);
         tracing::debug!("║ Listening on: {:<44} ║", listen_addr);
-        tracing::debug!("║ Current sequence: {:<40} ║", self.replication_log.current_sequence());
+        tracing::debug!(
+            "║ Current sequence: {:<40} ║",
+            self.replication_log.current_sequence()
+        );
         tracing::debug!("║ Total peers (config + saved): {:<28} ║", all_peers.len());
         for peer in &all_peers {
-            let source = if self.config.peers.contains(peer) { "config" } else { "saved" };
+            let source = if self.config.peers.contains(peer) {
+                "config"
+            } else {
+                "saved"
+            };
             tracing::debug!("║   - {:<44} ({}) ║", peer, source);
         }
         tracing::debug!("╚════════════════════════════════════════════════════════════╝");
@@ -338,7 +344,10 @@ impl ReplicationService {
             from_node: self.config.node_id.clone(),
         };
 
-        let peer_addresses: Vec<String> = self.peer_states.read().unwrap()
+        let peer_addresses: Vec<String> = self
+            .peer_states
+            .read()
+            .unwrap()
             .values()
             .filter(|p| p.is_connected)
             .map(|p| p.address.clone())
@@ -383,7 +392,11 @@ impl ReplicationService {
             };
 
             // Extract peer's replication address from Ping messages
-            if let ReplicationMessage::Ping { replication_addr: Some(ref advertised_addr), .. } = &message {
+            if let ReplicationMessage::Ping {
+                replication_addr: Some(ref advertised_addr),
+                ..
+            } = &message
+            {
                 if let Some(port) = advertised_addr.split(':').last() {
                     if let Some(ip) = addr.split(':').next() {
                         peer_repl_addr = Some(format!("{}:{}", ip, port));
@@ -409,7 +422,10 @@ impl ReplicationService {
     }
 
     /// Send full database sync to a new node
-    async fn send_full_sync<W: tokio::io::AsyncWrite + Unpin>(&self, writer: &mut W) -> anyhow::Result<()> {
+    async fn send_full_sync<W: tokio::io::AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+    ) -> anyhow::Result<()> {
         tracing::debug!("╔════════════════════════════════════════════════════════════╗");
         tracing::debug!("║              SENDING FULL SYNC                             ║");
         tracing::debug!("╚════════════════════════════════════════════════════════════╝");
@@ -441,8 +457,12 @@ impl ReplicationService {
         };
         writer.write_all(&start_msg.to_bytes()).await?;
 
-        tracing::debug!("[FULL-SYNC] Sending {} databases, {} collections, {} documents",
-            databases.len(), total_collections, total_documents);
+        tracing::debug!(
+            "[FULL-SYNC] Sending {} databases, {} collections, {} documents",
+            databases.len(),
+            total_collections,
+            total_documents
+        );
 
         let mut docs_sent = 0;
 
@@ -472,9 +492,8 @@ impl ReplicationService {
                         let batch_size = 100;
 
                         for chunk in all_docs.chunks(batch_size) {
-                            let doc_values: Vec<Value> = chunk.iter()
-                                .map(|d| d.to_value())
-                                .collect();
+                            let doc_values: Vec<Value> =
+                                chunk.iter().map(|d| d.to_value()).collect();
 
                             let docs_msg = ReplicationMessage::FullSyncDocuments {
                                 database: db_name.clone(),
@@ -494,7 +513,11 @@ impl ReplicationService {
                                     total: total_documents,
                                 };
                                 writer.write_all(&progress_msg.to_bytes()).await?;
-                                tracing::debug!("[FULL-SYNC] Progress: {}/{} documents", docs_sent, total_documents);
+                                tracing::debug!(
+                                    "[FULL-SYNC] Progress: {}/{} documents",
+                                    docs_sent,
+                                    total_documents
+                                );
                             }
                         }
                     }
@@ -519,9 +542,16 @@ impl ReplicationService {
     }
 
     /// Handle a replication message
-    async fn handle_message(&self, message: ReplicationMessage, from_addr: &str) -> Option<ReplicationMessage> {
+    async fn handle_message(
+        &self,
+        message: ReplicationMessage,
+        from_addr: &str,
+    ) -> Option<ReplicationMessage> {
         match message {
-            ReplicationMessage::Ping { from_node, replication_addr } => {
+            ReplicationMessage::Ping {
+                from_node,
+                replication_addr,
+            } => {
                 tracing::debug!("[PING] Received from {} ({})", from_node, from_addr);
 
                 // If they provided their replication port, construct their actual address
@@ -541,7 +571,10 @@ impl ReplicationService {
                 }
 
                 // Return list of known peers for discovery (only replication addresses, not ephemeral)
-                let known_peers: Vec<String> = self.peer_states.read().unwrap()
+                let known_peers: Vec<String> = self
+                    .peer_states
+                    .read()
+                    .unwrap()
                     .values()
                     .filter(|p| p.is_connected)
                     .map(|p| p.address.clone())
@@ -554,16 +587,29 @@ impl ReplicationService {
                 })
             }
 
-            ReplicationMessage::Pong { from_node, current_sequence, known_peers } => {
-                tracing::debug!("[PONG] From {} - their sequence: {}, our sequence: {}, known peers: {:?}",
-                    from_node, current_sequence, self.replication_log.current_sequence(), known_peers);
+            ReplicationMessage::Pong {
+                from_node,
+                current_sequence,
+                known_peers,
+            } => {
+                tracing::debug!(
+                    "[PONG] From {} - their sequence: {}, our sequence: {}, known peers: {:?}",
+                    from_node,
+                    current_sequence,
+                    self.replication_log.current_sequence(),
+                    known_peers
+                );
 
                 // Update node_id for this peer (from_addr is the address we're connected to)
                 {
                     let mut peers = self.peer_states.write().unwrap();
                     if let Some(state) = peers.get_mut(from_addr) {
                         if state.node_id.is_none() {
-                            tracing::debug!("[PONG] Learning node_id {} for peer {}", from_node, from_addr);
+                            tracing::debug!(
+                                "[PONG] Learning node_id {} for peer {}",
+                                from_node,
+                                from_addr
+                            );
                             state.node_id = Some(from_node.clone());
                         }
                     }
@@ -571,7 +617,11 @@ impl ReplicationService {
 
                 // Try to connect to any newly discovered peers
                 for peer_addr in known_peers {
-                    tracing::debug!("[DISCOVERY] Received peer {} from {}, attempting connection", peer_addr, from_node);
+                    tracing::debug!(
+                        "[DISCOVERY] Received peer {} from {}, attempting connection",
+                        peer_addr,
+                        from_node
+                    );
                     self.try_connect_to_peer(peer_addr);
                 }
 
@@ -587,7 +637,10 @@ impl ReplicationService {
                 None
             }
 
-            ReplicationMessage::SyncRequest { from_node, after_sequence } => {
+            ReplicationMessage::SyncRequest {
+                from_node,
+                after_sequence,
+            } => {
                 // Note: Peer registration is handled in Ping handler with proper replication address
                 let _ = from_node; // Used for logging
 
@@ -604,24 +657,48 @@ impl ReplicationService {
                 })
             }
 
-            ReplicationMessage::SyncResponse { from_node, entries, current_sequence } => {
+            ReplicationMessage::SyncResponse {
+                from_node,
+                entries,
+                current_sequence,
+            } => {
                 if entries.is_empty() {
-                    tracing::debug!("[SYNC-RESP] From {} - no new entries (their seq: {}, our seq: {})",
-                        from_node, current_sequence, self.replication_log.current_sequence());
+                    tracing::debug!(
+                        "[SYNC-RESP] From {} - no new entries (their seq: {}, our seq: {})",
+                        from_node,
+                        current_sequence,
+                        self.replication_log.current_sequence()
+                    );
                 } else {
-                    tracing::debug!("╔════════════════════════════════════════════════════════════╗");
-                    tracing::debug!("║                  SYNC DATA RECEIVED                        ║");
-                    tracing::debug!("╠════════════════════════════════════════════════════════════╣");
+                    tracing::debug!(
+                        "╔════════════════════════════════════════════════════════════╗"
+                    );
+                    tracing::debug!(
+                        "║                  SYNC DATA RECEIVED                        ║"
+                    );
+                    tracing::debug!(
+                        "╠════════════════════════════════════════════════════════════╣"
+                    );
                     tracing::debug!("║ From: {:<52} ║", from_node);
                     tracing::debug!("║ Entries received: {:<40} ║", entries.len());
                     tracing::debug!("║ Their sequence: {:<42} ║", current_sequence);
-                    tracing::debug!("║ Our sequence before: {:<37} ║", self.replication_log.current_sequence());
+                    tracing::debug!(
+                        "║ Our sequence before: {:<37} ║",
+                        self.replication_log.current_sequence()
+                    );
 
                     for entry in &entries {
-                        tracing::debug!("║   {:?} {}/{} key={:<30} ║",
-                            entry.operation, entry.database, entry.collection, entry.document_key);
+                        tracing::debug!(
+                            "║   {:?} {}/{} key={:<30} ║",
+                            entry.operation,
+                            entry.database,
+                            entry.collection,
+                            entry.document_key
+                        );
                     }
-                    tracing::debug!("╚════════════════════════════════════════════════════════════╝");
+                    tracing::debug!(
+                        "╚════════════════════════════════════════════════════════════╝"
+                    );
                 }
 
                 self.apply_entries(&entries).await;
@@ -644,17 +721,30 @@ impl ReplicationService {
                 let _ = &from_node; // Used for logging
 
                 if !entries.is_empty() {
-                    tracing::debug!("╔════════════════════════════════════════════════════════════╗");
-                    tracing::debug!("║                  PUSH DATA RECEIVED                        ║");
-                    tracing::debug!("╠════════════════════════════════════════════════════════════╣");
+                    tracing::debug!(
+                        "╔════════════════════════════════════════════════════════════╗"
+                    );
+                    tracing::debug!(
+                        "║                  PUSH DATA RECEIVED                        ║"
+                    );
+                    tracing::debug!(
+                        "╠════════════════════════════════════════════════════════════╣"
+                    );
                     tracing::debug!("║ From: {:<52} ║", from_node);
                     tracing::debug!("║ Entries pushed: {:<42} ║", entries.len());
 
                     for entry in &entries {
-                        tracing::debug!("║   {:?} {}/{} key={:<30} ║",
-                            entry.operation, entry.database, entry.collection, entry.document_key);
+                        tracing::debug!(
+                            "║   {:?} {}/{} key={:<30} ║",
+                            entry.operation,
+                            entry.database,
+                            entry.collection,
+                            entry.document_key
+                        );
                     }
-                    tracing::debug!("╚════════════════════════════════════════════════════════════╝");
+                    tracing::debug!(
+                        "╚════════════════════════════════════════════════════════════╝"
+                    );
                 }
 
                 self.apply_entries(&entries).await;
@@ -663,7 +753,11 @@ impl ReplicationService {
                     // Update our tracking of what we've received FROM this peer (their sequence numbers)
                     self.update_peer_received(from_addr, last.sequence);
 
-                    tracing::debug!("[ACK] Sending Ack to {} for sequence {}", from_addr, last.sequence);
+                    tracing::debug!(
+                        "[ACK] Sending Ack to {} for sequence {}",
+                        from_addr,
+                        last.sequence
+                    );
                     Some(ReplicationMessage::Ack {
                         from_node: self.config.node_id.clone(),
                         up_to_sequence: last.sequence,
@@ -673,8 +767,16 @@ impl ReplicationService {
                 }
             }
 
-            ReplicationMessage::Ack { from_node, up_to_sequence } => {
-                tracing::debug!("[ACK] Received from {} (addr: {}) - they acked up to sequence {}", from_node, from_addr, up_to_sequence);
+            ReplicationMessage::Ack {
+                from_node,
+                up_to_sequence,
+            } => {
+                tracing::debug!(
+                    "[ACK] Received from {} (addr: {}) - they acked up to sequence {}",
+                    from_node,
+                    from_addr,
+                    up_to_sequence
+                );
                 // Use from_addr (the peer's address) rather than from_node (the node ID)
                 // because peer_states is keyed by address
                 self.update_peer_acked(from_addr, up_to_sequence);
@@ -682,7 +784,13 @@ impl ReplicationService {
             }
 
             // Full sync messages are handled in receive_full_sync
-            ReplicationMessage::FullSyncStart { from_node, total_databases, total_collections, total_documents, current_sequence } => {
+            ReplicationMessage::FullSyncStart {
+                from_node,
+                total_databases,
+                total_collections,
+                total_documents,
+                current_sequence,
+            } => {
                 tracing::debug!("╔════════════════════════════════════════════════════════════╗");
                 tracing::debug!("║              FULL SYNC STARTING                            ║");
                 tracing::debug!("╠════════════════════════════════════════════════════════════╣");
@@ -714,9 +822,17 @@ impl ReplicationService {
                 None
             }
 
-            ReplicationMessage::FullSyncDocuments { database, collection, documents } => {
-                tracing::debug!("[FULL-SYNC] Receiving {} documents for {}/{}",
-                    documents.len(), database, collection);
+            ReplicationMessage::FullSyncDocuments {
+                database,
+                collection,
+                documents,
+            } => {
+                tracing::debug!(
+                    "[FULL-SYNC] Receiving {} documents for {}/{}",
+                    documents.len(),
+                    database,
+                    collection
+                );
 
                 if let Ok(db) = self.storage.get_database(&database) {
                     if let Ok(coll) = db.get_collection(&collection) {
@@ -742,12 +858,20 @@ impl ReplicationService {
                 None
             }
 
-            ReplicationMessage::FullSyncProgress { from_node: _, phase, current, total } => {
+            ReplicationMessage::FullSyncProgress {
+                from_node: _,
+                phase,
+                current,
+                total,
+            } => {
                 tracing::debug!("[FULL-SYNC] Progress: {} {}/{}", phase, current, total);
                 None
             }
 
-            ReplicationMessage::FullSyncComplete { from_node, current_sequence } => {
+            ReplicationMessage::FullSyncComplete {
+                from_node,
+                current_sequence,
+            } => {
                 tracing::debug!("╔════════════════════════════════════════════════════════════╗");
                 tracing::debug!("║              FULL SYNC COMPLETE                            ║");
                 tracing::debug!("╠════════════════════════════════════════════════════════════╣");
@@ -772,23 +896,42 @@ impl ReplicationService {
 
         // Check if this is a configured peer (from --peers)
         let is_configured = self.config.peers.contains(&peer_addr);
-        let max_failures = if is_configured { max_failures_for_configured } else { max_failures_for_discovered };
+        let max_failures = if is_configured {
+            max_failures_for_configured
+        } else {
+            max_failures_for_discovered
+        };
 
         loop {
             consecutive_failures += 1;
 
             if consecutive_failures == 1 || consecutive_failures % 10 == 0 {
-                tracing::debug!("[PEER] Connecting to {} (attempt {})", peer_addr, consecutive_failures);
+                tracing::debug!(
+                    "[PEER] Connecting to {} (attempt {})",
+                    peer_addr,
+                    consecutive_failures
+                );
             }
 
             match TcpStream::connect(&peer_addr).await {
                 Ok(socket) => {
-                    tracing::debug!("╔════════════════════════════════════════════════════════════╗");
-                    tracing::debug!("║                  PEER CONNECTED                            ║");
-                    tracing::debug!("╠════════════════════════════════════════════════════════════╣");
+                    tracing::debug!(
+                        "╔════════════════════════════════════════════════════════════╗"
+                    );
+                    tracing::debug!(
+                        "║                  PEER CONNECTED                            ║"
+                    );
+                    tracing::debug!(
+                        "╠════════════════════════════════════════════════════════════╣"
+                    );
                     tracing::debug!("║ Peer: {:<52} ║", peer_addr);
-                    tracing::debug!("║ Our sequence: {:<44} ║", self.replication_log.current_sequence());
-                    tracing::debug!("╚════════════════════════════════════════════════════════════╝");
+                    tracing::debug!(
+                        "║ Our sequence: {:<44} ║",
+                        self.replication_log.current_sequence()
+                    );
+                    tracing::debug!(
+                        "╚════════════════════════════════════════════════════════════╝"
+                    );
 
                     retry_delay = Duration::from_secs(1);
                     consecutive_failures = 0; // Reset on successful connection
@@ -804,14 +947,22 @@ impl ReplicationService {
                 }
                 Err(e) => {
                     if consecutive_failures == 1 || consecutive_failures % 10 == 0 {
-                        tracing::warn!("[PEER] Failed to connect to {}: {} (attempt {}/{})",
-                            peer_addr, e, consecutive_failures, max_failures);
+                        tracing::warn!(
+                            "[PEER] Failed to connect to {}: {} (attempt {}/{})",
+                            peer_addr,
+                            e,
+                            consecutive_failures,
+                            max_failures
+                        );
                     }
 
                     // Remove peer after too many failures
                     if consecutive_failures >= max_failures {
-                        tracing::warn!("[PEER] Removing unreachable peer {} after {} failed attempts",
-                            peer_addr, consecutive_failures);
+                        tracing::warn!(
+                            "[PEER] Removing unreachable peer {} after {} failed attempts",
+                            peer_addr,
+                            consecutive_failures
+                        );
                         self.remove_peer(&peer_addr);
                         return; // Exit the loop
                     }
@@ -854,11 +1005,14 @@ impl ReplicationService {
                 }
 
                 if let Ok(message) = serde_json::from_str::<ReplicationMessage>(&line) {
-                    let is_complete = matches!(message, ReplicationMessage::FullSyncComplete { .. });
+                    let is_complete =
+                        matches!(message, ReplicationMessage::FullSyncComplete { .. });
                     self.handle_message(message, peer_addr).await;
 
                     if is_complete {
-                        tracing::debug!("[FULL-SYNC] Full sync completed, switching to incremental sync");
+                        tracing::debug!(
+                            "[FULL-SYNC] Full sync completed, switching to incremental sync"
+                        );
                         break;
                     }
                 }
@@ -866,20 +1020,30 @@ impl ReplicationService {
         }
 
         // Now do incremental sync
-        let last_sequence = self.peer_states.read().unwrap()
+        let last_sequence = self
+            .peer_states
+            .read()
+            .unwrap()
             .get(peer_addr)
             .map(|p| p.last_sequence_received)
             .unwrap_or(0);
 
         // Send initial ping to announce ourselves and get peer list
-        tracing::debug!("[SYNC] Sending initial ping to {} to discover peers", peer_addr);
+        tracing::debug!(
+            "[SYNC] Sending initial ping to {} to discover peers",
+            peer_addr
+        );
         let ping = ReplicationMessage::Ping {
             from_node: self.config.node_id.clone(),
             replication_addr: Some(self.config.replication_addr()),
         };
         writer.write_all(&ping.to_bytes()).await?;
 
-        tracing::debug!("[SYNC] Requesting entries from {} after sequence {}", peer_addr, last_sequence);
+        tracing::debug!(
+            "[SYNC] Requesting entries from {} after sequence {}",
+            peer_addr,
+            last_sequence
+        );
         let sync_request = ReplicationMessage::SyncRequest {
             from_node: self.config.node_id.clone(),
             after_sequence: last_sequence,
@@ -975,7 +1139,11 @@ impl ReplicationService {
             match &entry.operation {
                 Operation::CreateDatabase => {
                     if let Err(e) = self.storage.create_database(entry.database.clone()) {
-                        tracing::debug!("[APPLY] Create database {} (may already exist): {}", entry.database, e);
+                        tracing::debug!(
+                            "[APPLY] Create database {} (may already exist): {}",
+                            entry.database,
+                            e
+                        );
                     } else {
                         tracing::debug!("[APPLY] Created database {}", entry.database);
                     }
@@ -984,7 +1152,11 @@ impl ReplicationService {
                 Operation::DeleteDatabase => {
                     match self.storage.delete_database(&entry.database) {
                         Ok(_) => tracing::debug!("[APPLY] Deleted database {}", entry.database),
-                        Err(e) => tracing::debug!("[APPLY] Delete database {} skipped: {}", entry.database, e),
+                        Err(e) => tracing::debug!(
+                            "[APPLY] Delete database {} skipped: {}",
+                            entry.database,
+                            e
+                        ),
                     }
                     continue;
                 }
@@ -998,13 +1170,21 @@ impl ReplicationService {
                     // Auto-create the database
                     tracing::debug!("[APPLY] Auto-creating database: {}", entry.database);
                     if let Err(e) = self.storage.create_database(entry.database.clone()) {
-                        tracing::error!("[APPLY] Failed to create database {}: {}", entry.database, e);
+                        tracing::error!(
+                            "[APPLY] Failed to create database {}: {}",
+                            entry.database,
+                            e
+                        );
                         continue;
                     }
                     match self.storage.get_database(&entry.database) {
                         Ok(db) => db,
                         Err(e) => {
-                            tracing::error!("[APPLY] Database {} still not found after creation: {}", entry.database, e);
+                            tracing::error!(
+                                "[APPLY] Database {} still not found after creation: {}",
+                                entry.database,
+                                e
+                            );
                             continue;
                         }
                     }
@@ -1015,16 +1195,34 @@ impl ReplicationService {
             match &entry.operation {
                 Operation::CreateCollection => {
                     if let Err(e) = db.create_collection(entry.collection.clone()) {
-                        tracing::debug!("[APPLY] Create collection {}/{} (may already exist): {}", entry.database, entry.collection, e);
+                        tracing::debug!(
+                            "[APPLY] Create collection {}/{} (may already exist): {}",
+                            entry.database,
+                            entry.collection,
+                            e
+                        );
                     } else {
-                        tracing::debug!("[APPLY] Created collection {}/{}", entry.database, entry.collection);
+                        tracing::debug!(
+                            "[APPLY] Created collection {}/{}",
+                            entry.database,
+                            entry.collection
+                        );
                     }
                     continue;
                 }
                 Operation::DeleteCollection => {
                     match db.delete_collection(&entry.collection) {
-                        Ok(_) => tracing::debug!("[APPLY] Deleted collection {}/{}", entry.database, entry.collection),
-                        Err(e) => tracing::debug!("[APPLY] Delete collection {}/{} skipped: {}", entry.database, entry.collection, e),
+                        Ok(_) => tracing::debug!(
+                            "[APPLY] Deleted collection {}/{}",
+                            entry.database,
+                            entry.collection
+                        ),
+                        Err(e) => tracing::debug!(
+                            "[APPLY] Delete collection {}/{} skipped: {}",
+                            entry.database,
+                            entry.collection,
+                            e
+                        ),
                     }
                     continue;
                 }
@@ -1036,15 +1234,29 @@ impl ReplicationService {
                 Ok(col) => col,
                 Err(_) => {
                     // Auto-create the collection
-                    tracing::debug!("[APPLY] Auto-creating collection: {}/{}", entry.database, entry.collection);
+                    tracing::debug!(
+                        "[APPLY] Auto-creating collection: {}/{}",
+                        entry.database,
+                        entry.collection
+                    );
                     if let Err(e) = db.create_collection(entry.collection.clone()) {
-                        tracing::error!("[APPLY] Failed to create collection {}/{}: {}", entry.database, entry.collection, e);
+                        tracing::error!(
+                            "[APPLY] Failed to create collection {}/{}: {}",
+                            entry.database,
+                            entry.collection,
+                            e
+                        );
                         continue;
                     }
                     match db.get_collection(&entry.collection) {
                         Ok(col) => col,
                         Err(e) => {
-                            tracing::error!("[APPLY] Collection {}/{} still not found after creation: {}", entry.database, entry.collection, e);
+                            tracing::error!(
+                                "[APPLY] Collection {}/{} still not found after creation: {}",
+                                entry.database,
+                                entry.collection,
+                                e
+                            );
                             continue;
                         }
                     }
@@ -1061,19 +1273,25 @@ impl ReplicationService {
                             if let Some(existing_updated) = existing_value.get("_updated_at") {
                                 let our_time = existing_updated.as_str().unwrap_or("");
                                 let their_time = chrono::DateTime::from_timestamp_millis(
-                                    entry.hlc.physical_time as i64
-                                ).map(|t| t.to_rfc3339()).unwrap_or_default();
+                                    entry.hlc.physical_time as i64,
+                                )
+                                .map(|t| t.to_rfc3339())
+                                .unwrap_or_default();
 
                                 if our_time > their_time.as_str() {
-                                    tracing::debug!("[APPLY] Skipping older update for {}/{}",
-                                        entry.collection, entry.document_key);
+                                    tracing::debug!(
+                                        "[APPLY] Skipping older update for {}/{}",
+                                        entry.collection,
+                                        entry.document_key
+                                    );
                                     continue;
                                 }
                             }
                         }
 
                         // Parse and apply the document
-                        if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
+                        if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data)
+                        {
                             // Strip system fields to avoid duplication (they get regenerated on insert)
                             if let Some(obj) = doc_value.as_object_mut() {
                                 obj.remove("_key");
@@ -1082,7 +1300,10 @@ impl ReplicationService {
                                 obj.remove("_created_at");
                                 obj.remove("_updated_at");
                                 // Re-add only _key which is needed for insert
-                                obj.insert("_key".to_string(), serde_json::Value::String(entry.document_key.clone()));
+                                obj.insert(
+                                    "_key".to_string(),
+                                    serde_json::Value::String(entry.document_key.clone()),
+                                );
                             }
 
                             let result = match collection.get(&entry.document_key) {
@@ -1092,9 +1313,17 @@ impl ReplicationService {
 
                             match result {
                                 Ok(doc) => {
-                                    tracing::debug!("[APPLY] {} {}/{}/{}",
-                                        if entry.operation == Operation::Insert { "Inserted" } else { "Updated" },
-                                        entry.database, entry.collection, doc.key);
+                                    tracing::debug!(
+                                        "[APPLY] {} {}/{}/{}",
+                                        if entry.operation == Operation::Insert {
+                                            "Inserted"
+                                        } else {
+                                            "Updated"
+                                        },
+                                        entry.database,
+                                        entry.collection,
+                                        doc.key
+                                    );
                                 }
                                 Err(e) => {
                                     tracing::error!("[APPLY] Failed: {}", e);
@@ -1103,32 +1332,42 @@ impl ReplicationService {
                         }
                     }
                 }
-                Operation::Delete => {
-                    match collection.delete(&entry.document_key) {
-                        Ok(_) => {
-                            tracing::debug!("[APPLY] Deleted {}/{}/{}",
-                                entry.database, entry.collection, entry.document_key);
-                        }
-                        Err(e) => {
-                            tracing::debug!("[APPLY] Delete skipped (may not exist): {}", e);
-                        }
+                Operation::Delete => match collection.delete(&entry.document_key) {
+                    Ok(_) => {
+                        tracing::debug!(
+                            "[APPLY] Deleted {}/{}/{}",
+                            entry.database,
+                            entry.collection,
+                            entry.document_key
+                        );
                     }
-                }
-                Operation::TruncateCollection => {
-                    match collection.truncate() {
-                        Ok(count) => {
-                            tracing::debug!("[APPLY] Truncated {}/{} - {} documents removed",
-                                entry.database, entry.collection, count);
-                        }
-                        Err(e) => {
-                            tracing::error!("[APPLY] Truncate failed for {}/{}: {}",
-                                entry.database, entry.collection, e);
-                        }
+                    Err(e) => {
+                        tracing::debug!("[APPLY] Delete skipped (may not exist): {}", e);
                     }
-                }
+                },
+                Operation::TruncateCollection => match collection.truncate() {
+                    Ok(count) => {
+                        tracing::debug!(
+                            "[APPLY] Truncated {}/{} - {} documents removed",
+                            entry.database,
+                            entry.collection,
+                            count
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "[APPLY] Truncate failed for {}/{}: {}",
+                            entry.database,
+                            entry.collection,
+                            e
+                        );
+                    }
+                },
                 // These are handled earlier in the function
-                Operation::CreateCollection | Operation::DeleteCollection |
-                Operation::CreateDatabase | Operation::DeleteDatabase => {
+                Operation::CreateCollection
+                | Operation::DeleteCollection
+                | Operation::CreateDatabase
+                | Operation::DeleteDatabase => {
                     unreachable!("Should have been handled earlier");
                 }
             }
@@ -1160,8 +1399,14 @@ impl ReplicationService {
         );
 
         let seq = self.replication_log.append(entry);
-        tracing::debug!("[REPL-LOG] Recorded {:?} {}/{}/{} as seq {}",
-            operation, database, collection, document_key, seq);
+        tracing::debug!(
+            "[REPL-LOG] Recorded {:?} {}/{}/{} as seq {}",
+            operation,
+            database,
+            collection,
+            document_key,
+            seq
+        );
         seq
     }
 
@@ -1175,7 +1420,11 @@ impl ReplicationService {
 
         // Log all peer addresses for debugging
         let peer_addrs: Vec<_> = peers.keys().cloned().collect();
-        tracing::debug!("[ACK] Looking for peer '{}' in peer_states: {:?}", node_id_or_addr, peer_addrs);
+        tracing::debug!(
+            "[ACK] Looking for peer '{}' in peer_states: {:?}",
+            node_id_or_addr,
+            peer_addrs
+        );
 
         // Try to find the peer by node_id first, then by address
         let found = peers.values_mut().find(|p| {
@@ -1184,12 +1433,19 @@ impl ReplicationService {
 
         if let Some(state) = found {
             if state.last_sequence_acked < sequence {
-                tracing::debug!("[ACK] Updating peer {} acked sequence: {} -> {}",
-                    state.address, state.last_sequence_acked, sequence);
+                tracing::debug!(
+                    "[ACK] Updating peer {} acked sequence: {} -> {}",
+                    state.address,
+                    state.last_sequence_acked,
+                    sequence
+                );
                 state.last_sequence_acked = sequence;
             }
         } else {
-            tracing::warn!("[ACK] ✗ Could not find peer with node_id or address: '{}'", node_id_or_addr);
+            tracing::warn!(
+                "[ACK] ✗ Could not find peer with node_id or address: '{}'",
+                node_id_or_addr
+            );
         }
     }
 
@@ -1204,8 +1460,12 @@ impl ReplicationService {
         let mut peers = self.peer_states.write().unwrap();
         if let Some(state) = peers.get_mut(peer_addr) {
             if state.last_sequence_received < sequence {
-                tracing::debug!("[RECV] Updating peer {} received sequence: {} -> {}",
-                    state.address, state.last_sequence_received, sequence);
+                tracing::debug!(
+                    "[RECV] Updating peer {} received sequence: {} -> {}",
+                    state.address,
+                    state.last_sequence_received,
+                    sequence
+                );
                 state.last_sequence_received = sequence;
             }
         }
@@ -1226,16 +1486,23 @@ impl ReplicationService {
             let exists = peers.values().any(|p| p.address == address);
 
             if !exists {
-                tracing::debug!("[PEER] Registering new incoming peer: {} ({})", node_id, address);
-                peers.insert(address.to_string(), PeerState {
-                    address: address.to_string(),
-                    node_id: Some(node_id.to_string()),
-                    last_seen: std::time::Instant::now(),
-                    last_sequence_sent: 0,
-                    last_sequence_acked: 0,
-                    last_sequence_received: 0,
-                    is_connected: true,
-                });
+                tracing::debug!(
+                    "[PEER] Registering new incoming peer: {} ({})",
+                    node_id,
+                    address
+                );
+                peers.insert(
+                    address.to_string(),
+                    PeerState {
+                        address: address.to_string(),
+                        node_id: Some(node_id.to_string()),
+                        last_seen: std::time::Instant::now(),
+                        last_sequence_sent: 0,
+                        last_sequence_acked: 0,
+                        last_sequence_received: 0,
+                        is_connected: true,
+                    },
+                );
                 true
             } else {
                 if let Some(state) = peers.get_mut(address) {
@@ -1273,7 +1540,9 @@ impl ReplicationService {
     /// Try to connect to a discovered peer (non-blocking)
     fn try_connect_to_peer(&self, addr: String) {
         // Skip if it's our own address
-        if addr == self.config.replication_addr() || addr.ends_with(&format!(":{}", self.config.replication_port)) {
+        if addr == self.config.replication_addr()
+            || addr.ends_with(&format!(":{}", self.config.replication_port))
+        {
             tracing::debug!("[DISCOVERY] Skipping {} - it's our own address", addr);
             return;
         }
@@ -1293,16 +1562,22 @@ impl ReplicationService {
                 false
             } else {
                 // Add peer immediately to prevent duplicate sync loops
-                tracing::debug!("[DISCOVERY] Discovered new peer: {}, adding to peer list", addr);
-                peers.insert(addr.clone(), PeerState {
-                    address: addr.clone(),
-                    node_id: None,
-                    last_seen: std::time::Instant::now(),
-                    last_sequence_sent: 0,
-                    last_sequence_acked: 0,
-                    last_sequence_received: 0,
-                    is_connected: false,
-                });
+                tracing::debug!(
+                    "[DISCOVERY] Discovered new peer: {}, adding to peer list",
+                    addr
+                );
+                peers.insert(
+                    addr.clone(),
+                    PeerState {
+                        address: addr.clone(),
+                        node_id: None,
+                        last_seen: std::time::Instant::now(),
+                        last_sequence_sent: 0,
+                        last_sequence_acked: 0,
+                        last_sequence_received: 0,
+                        is_connected: false,
+                    },
+                );
                 true
             }
         };
@@ -1319,13 +1594,19 @@ impl ReplicationService {
 
     /// Get cluster status information
     pub fn get_status(&self) -> ClusterStatus {
-        let peers: Vec<PeerStatus> = self.peer_states.read().unwrap()
+        let peers: Vec<PeerStatus> = self
+            .peer_states
+            .read()
+            .unwrap()
             .values()
             .map(|p| PeerStatus {
                 address: p.address.clone(),
                 is_connected: p.is_connected,
                 last_seen_secs_ago: p.last_seen.elapsed().as_secs(),
-                replication_lag: self.replication_log.current_sequence().saturating_sub(p.last_sequence_acked),
+                replication_lag: self
+                    .replication_log
+                    .current_sequence()
+                    .saturating_sub(p.last_sequence_acked),
             })
             .collect();
 

@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Represents a JSON document in the database
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,14 +1,14 @@
 //! HTTP API Benchmark Suite
 //! Tests the performance of the REST API endpoints
-//! 
+//!
 //! Usage:
 //!   1. Start the server: cargo run --release
 //!   2. Run this benchmark: cargo run --release --bin http-benchmark
 
+use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde_json::json;
-use std::time::{Instant, Duration};
-use rayon::prelude::*;
+use std::time::{Duration, Instant};
 
 const SERVER_URL: &str = "http://localhost:6745";
 const DATABASE: &str = "_system";
@@ -28,7 +28,7 @@ fn main() {
 
     // Create client with connection pooling and keep-alive
     let client = Client::builder()
-        .pool_max_idle_per_host(10)  // Keep up to 10 idle connections per host
+        .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
         .pool_idle_timeout(std::time::Duration::from_secs(90))
         .tcp_keepalive(std::time::Duration::from_secs(60))
         .build()
@@ -66,26 +66,35 @@ fn main() {
 
 fn setup_collection(client: &Client) {
     println!("🔧 Setting up test collection...");
-    
+
     // Delete collection if exists
     let _ = client
-        .delete(format!("{}/api/database/{}/collection/bench_http", SERVER_URL, DATABASE))
+        .delete(format!(
+            "{}/api/database/{}/collection/bench_http",
+            SERVER_URL, DATABASE
+        ))
         .send();
-    
+
     // Create collection
     client
-        .post(format!("{}/api/database/{}/collection", SERVER_URL, DATABASE))
+        .post(format!(
+            "{}/api/database/{}/collection",
+            SERVER_URL, DATABASE
+        ))
         .json(&json!({"name": "bench_http"}))
         .send()
         .expect("Failed to create collection");
-    
+
     println!("   Collection 'bench_http' created\n");
 }
 
 fn cleanup(client: &Client) {
     println!("\n🧹 Cleaning up...");
     client
-        .delete(format!("{}/api/database/{}/collection/bench_http", SERVER_URL, DATABASE))
+        .delete(format!(
+            "{}/api/database/{}/collection/bench_http",
+            SERVER_URL, DATABASE
+        ))
         .send()
         .expect("Failed to delete collection");
     println!("   Test collection deleted");
@@ -130,7 +139,10 @@ fn bench_insert(client: &Client) {
     println!("📝 INSERT DOCUMENT BENCHMARKS");
     print_separator();
 
-    let url = format!("{}/api/database/{}/document/bench_http", SERVER_URL, DATABASE);
+    let url = format!(
+        "{}/api/database/{}/document/bench_http",
+        SERVER_URL, DATABASE
+    );
 
     // Small batch
     let start = Instant::now();
@@ -143,11 +155,8 @@ fn bench_insert(client: &Client) {
             "active": i % 2 == 0,
             "score": (i * 17) % 1000
         });
-        
-        client.post(&url)
-            .json(&doc)
-            .send()
-            .expect("Insert failed");
+
+        client.post(&url).json(&doc).send().expect("Insert failed");
     }
     print_result("POST /document (small)", SMALL, start.elapsed());
 
@@ -162,11 +171,8 @@ fn bench_insert(client: &Client) {
             "active": i % 2 == 0,
             "score": (i * 17) % 1000
         });
-        
-        client.post(&url)
-            .json(&doc)
-            .send()
-            .expect("Insert failed");
+
+        client.post(&url).json(&doc).send().expect("Insert failed");
     }
     print_result("POST /document (medium)", MEDIUM, start.elapsed());
 
@@ -180,11 +186,11 @@ fn bench_get_document(client: &Client) {
     // Sequential reads
     let start = Instant::now();
     for i in 0..SMALL {
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, i);
-        client.get(&url)
-            .send()
-            .expect("Get failed");
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client.get(&url).send().expect("Get failed");
     }
     print_result("GET /document/:key (sequential)", SMALL, start.elapsed());
 
@@ -192,11 +198,11 @@ fn bench_get_document(client: &Client) {
     let start = Instant::now();
     for i in 0..SMALL {
         let key_idx = (i * 7919) % (SMALL + MEDIUM); // Prime for pseudo-random
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, key_idx);
-        client.get(&url)
-            .send()
-            .expect("Get failed");
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, key_idx
+        );
+        client.get(&url).send().expect("Get failed");
     }
     print_result("GET /document/:key (random)", SMALL, start.elapsed());
 
@@ -210,9 +216,12 @@ fn bench_update_document(client: &Client) {
     // Update single field
     let start = Instant::now();
     for i in 0..SMALL {
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, i);
-        client.put(&url)
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client
+            .put(&url)
             .json(&json!({"score": i * 2}))
             .send()
             .expect("Update failed");
@@ -222,9 +231,12 @@ fn bench_update_document(client: &Client) {
     // Update multiple fields
     let start = Instant::now();
     for i in 0..SMALL {
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, i);
-        client.put(&url)
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client
+            .put(&url)
             .json(&json!({
                 "score": i * 3,
                 "active": false,
@@ -249,10 +261,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http LIMIT 100 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("FOR...LIMIT 100", SMALL, start.elapsed());
 
@@ -260,10 +269,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http FILTER u.age > 50 LIMIT 100 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("FOR...FILTER...LIMIT 100", SMALL, start.elapsed());
 
@@ -271,10 +277,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http FILTER u.age > 50 AND u.active == true LIMIT 100 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("FOR...FILTER(AND)...LIMIT 100", SMALL, start.elapsed());
 
@@ -282,10 +285,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http SORT u.score DESC LIMIT 10 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("SORT...LIMIT 10", SMALL, start.elapsed());
 
@@ -293,10 +293,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http LIMIT 100 RETURN {name: u.name, age: u.age}"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("Projection (100 docs)", SMALL, start.elapsed());
 
@@ -304,10 +301,7 @@ fn bench_aql_queries(client: &Client) {
     let query = json!({"query": "RETURN COLLECTION_COUNT(\"bench_http\")"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("COLLECTION_COUNT", SMALL, start.elapsed());
 
@@ -318,10 +312,7 @@ fn bench_aql_queries(client: &Client) {
     });
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
-            .json(&query)
-            .send()
-            .expect("Query failed");
+        client.post(&url).json(&query).send().expect("Query failed");
     }
     print_result("Query with bind variables", SMALL, start.elapsed());
 
@@ -338,7 +329,8 @@ fn bench_explain_query(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http LIMIT 100 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Explain failed");
@@ -349,7 +341,8 @@ fn bench_explain_query(client: &Client) {
     let query = json!({"query": "FOR u IN bench_http FILTER u.age > 50 AND u.active == true SORT u.score DESC LIMIT 10 RETURN u"});
     let start = Instant::now();
     for _ in 0..SMALL {
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Explain failed");
@@ -365,11 +358,11 @@ fn bench_delete_document(client: &Client) {
 
     let start = Instant::now();
     for i in 0..SMALL {
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, i);
-        client.delete(&url)
-            .send()
-            .expect("Delete failed");
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client.delete(&url).send().expect("Delete failed");
     }
     print_result("DELETE /document/:key", SMALL, start.elapsed());
 
@@ -379,7 +372,10 @@ fn bench_delete_document(client: &Client) {
 fn bench_concurrent() {
     println!("⚡ CONCURRENT BENCHMARKS (Multi-threaded)");
     print_separator();
-    println!("  Using {} threads for {} concurrent requests\n", NUM_THREADS, CONCURRENT_REQUESTS);
+    println!(
+        "  Using {} threads for {} concurrent requests\n",
+        NUM_THREADS, CONCURRENT_REQUESTS
+    );
 
     // Configure rayon thread pool
     rayon::ThreadPoolBuilder::new()
@@ -392,13 +388,17 @@ fn bench_concurrent() {
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|i| {
         let client = Client::new();
         let key_idx = i % (SMALL + MEDIUM);
-        let url = format!("{}/api/database/{}/document/bench_http/user_{}", 
-                         SERVER_URL, DATABASE, key_idx);
-        client.get(&url)
-            .send()
-            .expect("Concurrent GET failed");
+        let url = format!(
+            "{}/api/database/{}/document/bench_http/user_{}",
+            SERVER_URL, DATABASE, key_idx
+        );
+        client.get(&url).send().expect("Concurrent GET failed");
     });
-    print_result("GET /document (concurrent)", CONCURRENT_REQUESTS, start.elapsed());
+    print_result(
+        "GET /document (concurrent)",
+        CONCURRENT_REQUESTS,
+        start.elapsed(),
+    );
 
     // Concurrent AQL queries
     let start = Instant::now();
@@ -406,12 +406,17 @@ fn bench_concurrent() {
         let client = Client::new();
         let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
         let query = json!({"query": "FOR u IN bench_http LIMIT 10 RETURN u"});
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Concurrent query failed");
     });
-    print_result("AQL query (concurrent)", CONCURRENT_REQUESTS, start.elapsed());
+    print_result(
+        "AQL query (concurrent)",
+        CONCURRENT_REQUESTS,
+        start.elapsed(),
+    );
 
     // Concurrent filtered queries
     let start = Instant::now();
@@ -423,12 +428,17 @@ fn bench_concurrent() {
             "query": "FOR u IN bench_http FILTER u.age > @minAge LIMIT 10 RETURN u",
             "bindVars": {"minAge": min_age}
         });
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Concurrent filtered query failed");
     });
-    print_result("Filtered query (concurrent)", CONCURRENT_REQUESTS, start.elapsed());
+    print_result(
+        "Filtered query (concurrent)",
+        CONCURRENT_REQUESTS,
+        start.elapsed(),
+    );
 
     // Concurrent COUNT queries
     let start = Instant::now();
@@ -436,12 +446,17 @@ fn bench_concurrent() {
         let client = Client::new();
         let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
         let query = json!({"query": "RETURN COLLECTION_COUNT(\"bench_http\")"});
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Concurrent COUNT failed");
     });
-    print_result("COLLECTION_COUNT (concurrent)", CONCURRENT_REQUESTS, start.elapsed());
+    print_result(
+        "COLLECTION_COUNT (concurrent)",
+        CONCURRENT_REQUESTS,
+        start.elapsed(),
+    );
 
     println!();
 }

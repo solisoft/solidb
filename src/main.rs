@@ -1,7 +1,10 @@
 use clap::Parser;
-use solidb::{create_router, StorageEngine, cluster::{ClusterConfig, ReplicationService}};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use solidb::{
+    cluster::{ClusterConfig, ReplicationService},
+    create_router, StorageEngine,
+};
 use std::sync::Arc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb")]
@@ -91,11 +94,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         .init();
 
     // Build cluster configuration
-    let cluster_config = ClusterConfig::new(
-        args.node_id,
-        args.peers,
-        args.replication_port,
-    );
+    let cluster_config = ClusterConfig::new(args.node_id, args.peers, args.replication_port);
     tracing::info!("Node ID: {}", cluster_config.node_id);
 
     // Initialize storage engine with cluster config
@@ -107,8 +106,12 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let storage_for_shutdown = Arc::new(storage.clone());
 
     // Always start replication service (to accept incoming connections)
-    tracing::info!("Starting replication service on port {}", cluster_config.replication_port);
-    let replication_service = ReplicationService::new(storage.clone(), cluster_config.clone(), &args.data_dir);
+    tracing::info!(
+        "Starting replication service on port {}",
+        cluster_config.replication_port
+    );
+    let replication_service =
+        ReplicationService::new(storage.clone(), cluster_config.clone(), &args.data_dir);
     let service_handle = replication_service.clone();
     tokio::spawn(async move {
         if let Err(e) = service_handle.start().await {

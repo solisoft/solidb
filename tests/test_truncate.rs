@@ -1,9 +1,9 @@
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{header, Request, StatusCode},
 };
-use solidb::{create_router, StorageEngine};
 use serde_json::{json, Value};
+use solidb::{create_router, StorageEngine};
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
@@ -32,7 +32,9 @@ async fn post_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, 
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -52,7 +54,9 @@ async fn put(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -72,7 +76,9 @@ async fn get(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .unwrap();
 
     let status = response.status();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap_or(json!(null));
     (status, json)
 }
@@ -82,24 +88,54 @@ async fn test_truncate_collection() {
     let (app, _dir) = create_test_app();
 
     // Create collection
-    post_json(&app, "/_api/database/_system/collection", json!({"name": "users"})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/collection",
+        json!({"name": "users"}),
+    )
+    .await;
 
     // Insert documents
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Alice", "age": 30})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Bob", "age": 25})).await;
-    post_json(&app, "/_api/database/_system/document/users", json!({"name": "Charlie", "age": 35})).await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Alice", "age": 30}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Bob", "age": 25}),
+    )
+    .await;
+    post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Charlie", "age": 35}),
+    )
+    .await;
 
     // Create an index
-    post_json(&app, "/_api/database/_system/index/users", json!({
-        "name": "idx_age",
-        "field": "age",
-        "type": "persistent"
-    })).await;
+    post_json(
+        &app,
+        "/_api/database/_system/index/users",
+        json!({
+            "name": "idx_age",
+            "field": "age",
+            "type": "persistent"
+        }),
+    )
+    .await;
 
     // Verify documents exist
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR u IN users RETURN u"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR u IN users RETURN u"
+        }),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 3);
 
@@ -111,9 +147,14 @@ async fn test_truncate_collection() {
     assert_eq!(body["status"], "truncated");
 
     // Verify all documents are gone
-    let (status, body) = post_json(&app, "/_api/database/_system/cursor", json!({
-        "query": "FOR u IN users RETURN u"
-    })).await;
+    let (status, body) = post_json(
+        &app,
+        "/_api/database/_system/cursor",
+        json!({
+            "query": "FOR u IN users RETURN u"
+        }),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["count"], 0);
 
@@ -125,7 +166,12 @@ async fn test_truncate_collection() {
     assert_eq!(indexes[0]["name"], "idx_age");
 
     // Verify we can still insert documents
-    let (status, _) = post_json(&app, "/_api/database/_system/document/users", json!({"name": "Dave", "age": 40})).await;
+    let (status, _) = post_json(
+        &app,
+        "/_api/database/_system/document/users",
+        json!({"name": "Dave", "age": 40}),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -134,6 +180,10 @@ async fn test_truncate_nonexistent_collection() {
     let (app, _dir) = create_test_app();
 
     // Try to truncate non-existent collection
-    let (status, _) = put(&app, "/_api/database/_system/collection/nonexistent/truncate").await;
+    let (status, _) = put(
+        &app,
+        "/_api/database/_system/collection/nonexistent/truncate",
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

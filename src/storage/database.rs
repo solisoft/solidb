@@ -1,9 +1,9 @@
+use rocksdb::DB;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use rocksdb::DB;
 
-use crate::error::{DbError, DbResult};
 use super::collection::Collection;
+use crate::error::{DbError, DbResult};
 
 /// Represents a database that contains multiple collections
 #[derive(Clone)]

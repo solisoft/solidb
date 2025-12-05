@@ -1,7 +1,7 @@
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use serde_json::Value;
 use uuid::Uuid;
 
 /// Stores query results for cursor-based pagination
@@ -39,17 +39,17 @@ impl CursorStore {
 
         let mut cursors = self.cursors.write().unwrap();
         cursors.insert(cursor_id.clone(), cursor);
-        
+
         // Clean up expired cursors
         self.cleanup_expired(&mut cursors);
-        
+
         cursor_id
     }
 
     /// Get the next batch of results from a cursor
     pub fn get_next_batch(&self, cursor_id: &str) -> Option<(Vec<Value>, bool)> {
         let mut cursors = self.cursors.write().unwrap();
-        
+
         if let Some(cursor) = cursors.get_mut(cursor_id) {
             // Check if cursor has expired
             if cursor.created_at.elapsed() > self.ttl {
@@ -59,7 +59,7 @@ impl CursorStore {
 
             let start = cursor.position;
             let end = (start + cursor.batch_size).min(cursor.results.len());
-            
+
             if start >= cursor.results.len() {
                 // No more results
                 cursors.remove(cursor_id);
@@ -68,14 +68,14 @@ impl CursorStore {
 
             let batch = cursor.results[start..end].to_vec();
             cursor.position = end;
-            
+
             let has_more = end < cursor.results.len();
-            
+
             // Remove cursor if no more results
             if !has_more {
                 cursors.remove(cursor_id);
             }
-            
+
             Some((batch, has_more))
         } else {
             None
@@ -110,16 +110,16 @@ mod tests {
     fn test_store_and_retrieve() {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2}), json!({"id": 3})];
-        
+
         let cursor_id = store.store(results, 2);
-        
+
         // First batch
         let (batch, has_more) = store.get_next_batch(&cursor_id).unwrap();
         assert_eq!(batch.len(), 2);
         assert_eq!(batch[0], json!({"id": 1}));
         assert_eq!(batch[1], json!({"id": 2}));
         assert!(has_more);
-        
+
         // Second batch
         let (batch, has_more) = store.get_next_batch(&cursor_id).unwrap();
         assert_eq!(batch.len(), 1);
@@ -131,12 +131,12 @@ mod tests {
     fn test_cursor_expiration() {
         let store = CursorStore::new(Duration::from_millis(100));
         let results = vec![json!({"id": 1})];
-        
+
         let cursor_id = store.store(results, 10);
-        
+
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Should return None (expired)
         assert!(store.get_next_batch(&cursor_id).is_none());
     }
@@ -145,12 +145,12 @@ mod tests {
     fn test_delete_cursor() {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1})];
-        
+
         let cursor_id = store.store(results, 10);
-        
+
         // Delete cursor
         assert!(store.delete(&cursor_id));
-        
+
         // Should return None (deleted)
         assert!(store.get_next_batch(&cursor_id).is_none());
     }
@@ -159,9 +159,9 @@ mod tests {
     fn test_small_result_set() {
         let store = CursorStore::new(Duration::from_secs(300));
         let results = vec![json!({"id": 1}), json!({"id": 2})];
-        
+
         let cursor_id = store.store(results, 10);
-        
+
         // Single batch contains all results
         let (batch, has_more) = store.get_next_batch(&cursor_id).unwrap();
         assert_eq!(batch.len(), 2);

@@ -1,10 +1,13 @@
-pub mod error;
-pub mod storage;
 pub mod aql;
-pub mod server;
 pub mod cluster;
+pub mod error;
+pub mod server;
+pub mod storage;
 
+pub use aql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};
-pub use storage::{Document, Collection, StorageEngine, Index, IndexType, IndexStats, GeoIndex, GeoPoint, GeoIndexStats, distance_meters};
-pub use aql::{parse, QueryExecutor, BindVars, QueryExplain};
 pub use server::create_router;
+pub use storage::{
+    distance_meters, Collection, Document, GeoIndex, GeoIndexStats, GeoPoint, Index, IndexStats,
+    IndexType, StorageEngine,
+};

@@ -1,9 +1,9 @@
 //! Database Benchmark Suite
 //! Run with: cargo run --release --bin benchmark
 
-use solidb::{StorageEngine, QueryExecutor, parse, IndexType};
 use serde_json::json;
-use std::time::{Instant, Duration};
+use solidb::{parse, IndexType, QueryExecutor, StorageEngine};
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 const SMALL_DATASET: usize = 500;
@@ -75,52 +75,64 @@ fn bench_insert(storage: &StorageEngine) {
     print_separator();
 
     // Small dataset
-    storage.create_collection("bench_insert_small".to_string()).unwrap();
+    storage
+        .create_collection("bench_insert_small".to_string())
+        .unwrap();
     let collection = storage.get_collection("bench_insert_small").unwrap();
 
     let start = Instant::now();
     for i in 0..SMALL_DATASET {
-        collection.insert(json!({
-            "name": format!("User{}", i),
-            "email": format!("user{}@example.com", i),
-            "age": i % 100,
-            "city": get_city(i),
-            "score": (i * 17) % 1000
-        })).unwrap();
+        collection
+            .insert(json!({
+                "name": format!("User{}", i),
+                "email": format!("user{}@example.com", i),
+                "age": i % 100,
+                "city": get_city(i),
+                "score": (i * 17) % 1000
+            }))
+            .unwrap();
     }
     print_result("Insert (small)", SMALL_DATASET, start.elapsed());
 
     // Medium dataset
-    storage.create_collection("bench_insert_medium".to_string()).unwrap();
+    storage
+        .create_collection("bench_insert_medium".to_string())
+        .unwrap();
     let collection = storage.get_collection("bench_insert_medium").unwrap();
 
     let start = Instant::now();
     for i in 0..MEDIUM_DATASET {
-        collection.insert(json!({
-            "name": format!("User{}", i),
-            "email": format!("user{}@example.com", i),
-            "age": i % 100,
-            "city": get_city(i),
-            "score": (i * 17) % 1000
-        })).unwrap();
+        collection
+            .insert(json!({
+                "name": format!("User{}", i),
+                "email": format!("user{}@example.com", i),
+                "age": i % 100,
+                "city": get_city(i),
+                "score": (i * 17) % 1000
+            }))
+            .unwrap();
     }
     print_result("Insert (medium)", MEDIUM_DATASET, start.elapsed());
 
     // Large dataset with custom keys
-    storage.create_collection("bench_users".to_string()).unwrap();
+    storage
+        .create_collection("bench_users".to_string())
+        .unwrap();
     let collection = storage.get_collection("bench_users").unwrap();
 
     let start = Instant::now();
     for i in 0..LARGE_DATASET {
-        collection.insert(json!({
-            "_key": format!("user_{}", i),
-            "name": format!("User{}", i),
-            "email": format!("user{}@example.com", i),
-            "age": i % 100,
-            "city": get_city(i),
-            "active": i % 2 == 0,
-            "score": (i * 17) % 1000
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": format!("user_{}", i),
+                "name": format!("User{}", i),
+                "email": format!("user{}@example.com", i),
+                "age": i % 100,
+                "city": get_city(i),
+                "active": i % 2 == 0,
+                "score": (i * 17) % 1000
+            }))
+            .unwrap();
     }
     print_result("Insert (large, with keys)", LARGE_DATASET, start.elapsed());
     println!();
@@ -167,11 +179,16 @@ fn bench_update(storage: &StorageEngine) {
     let start = Instant::now();
     for i in 0..SMALL_DATASET {
         let key = format!("user_{}", i);
-        collection.update(&key, json!({
-            "score": i * 3,
-            "active": false,
-            "updated": true
-        })).unwrap();
+        collection
+            .update(
+                &key,
+                json!({
+                    "score": i * 3,
+                    "active": false,
+                    "updated": true
+                }),
+            )
+            .unwrap();
     }
     print_result("Update multiple fields", SMALL_DATASET, start.elapsed());
     println!();
@@ -182,15 +199,19 @@ fn bench_delete(storage: &StorageEngine) {
     print_separator();
 
     // Create a collection for delete tests
-    storage.create_collection("bench_delete".to_string()).unwrap();
+    storage
+        .create_collection("bench_delete".to_string())
+        .unwrap();
     let collection = storage.get_collection("bench_delete").unwrap();
 
     // Insert documents
     for i in 0..SMALL_DATASET {
-        collection.insert(json!({
-            "_key": format!("del_{}", i),
-            "name": format!("DeleteMe{}", i)
-        })).unwrap();
+        collection
+            .insert(json!({
+                "_key": format!("del_{}", i),
+                "name": format!("DeleteMe{}", i)
+            }))
+            .unwrap();
     }
 
     let start = Instant::now();
@@ -209,27 +230,35 @@ fn bench_index_lookup(storage: &StorageEngine) {
 
     // Create index on age field
     let start = Instant::now();
-    collection.create_index(
-        "idx_age".to_string(),
-        "age".to_string(),
-        IndexType::Persistent,
-        false
-    ).unwrap();
-    println!("  Index creation (age, {}K docs)........ {:>10}",
-             LARGE_DATASET / 1000,
-             format_duration(start.elapsed()));
+    collection
+        .create_index(
+            "idx_age".to_string(),
+            "age".to_string(),
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    println!(
+        "  Index creation (age, {}K docs)........ {:>10}",
+        LARGE_DATASET / 1000,
+        format_duration(start.elapsed())
+    );
 
     // Create index on city field
     let start = Instant::now();
-    collection.create_index(
-        "idx_city".to_string(),
-        "city".to_string(),
-        IndexType::Hash,
-        false
-    ).unwrap();
-    println!("  Index creation (city, {}K docs)....... {:>10}",
-             LARGE_DATASET / 1000,
-             format_duration(start.elapsed()));
+    collection
+        .create_index(
+            "idx_city".to_string(),
+            "city".to_string(),
+            IndexType::Hash,
+            false,
+        )
+        .unwrap();
+    println!(
+        "  Index creation (city, {}K docs)....... {:>10}",
+        LARGE_DATASET / 1000,
+        format_duration(start.elapsed())
+    );
 
     // Index lookups
     let start = Instant::now();
@@ -243,14 +272,22 @@ fn bench_index_lookup(storage: &StorageEngine) {
     for i in 0..SMALL_DATASET {
         let _ = collection.index_lookup_eq("city", &json!(cities[i % 5]));
     }
-    print_result("Index lookup (city, ~10K each)", SMALL_DATASET, start.elapsed());
+    print_result(
+        "Index lookup (city, ~10K each)",
+        SMALL_DATASET,
+        start.elapsed(),
+    );
 
     // City lookup with limit (more realistic)
     let start = Instant::now();
     for i in 0..SMALL_DATASET {
         let _ = collection.index_lookup_eq_limit("city", &json!(cities[i % 5]), 100);
     }
-    print_result("Index lookup (city, LIMIT 100)", SMALL_DATASET, start.elapsed());
+    print_result(
+        "Index lookup (city, LIMIT 100)",
+        SMALL_DATASET,
+        start.elapsed(),
+    );
     println!();
 }
 
@@ -268,7 +305,8 @@ fn bench_aql_queries(storage: &StorageEngine) {
     print_result("FOR...LIMIT 100 (x100 runs)", 100, start.elapsed());
 
     // FOR with FILTER
-    let query = parse(r#"FOR u IN bench_users FILTER u.city == "Paris" LIMIT 100 RETURN u"#).unwrap();
+    let query =
+        parse(r#"FOR u IN bench_users FILTER u.city == "Paris" LIMIT 100 RETURN u"#).unwrap();
     let start = Instant::now();
     for _ in 0..100 {
         let executor = QueryExecutor::new(storage);
@@ -277,7 +315,9 @@ fn bench_aql_queries(storage: &StorageEngine) {
     print_result("FOR...FILTER...LIMIT 100 (x100)", 100, start.elapsed());
 
     // FOR with multiple filters
-    let query = parse(r#"FOR u IN bench_users FILTER u.city == "Paris" AND u.age > 50 LIMIT 100 RETURN u"#).unwrap();
+    let query =
+        parse(r#"FOR u IN bench_users FILTER u.city == "Paris" AND u.age > 50 LIMIT 100 RETURN u"#)
+            .unwrap();
     let start = Instant::now();
     for _ in 0..100 {
         let executor = QueryExecutor::new(storage);
@@ -286,7 +326,8 @@ fn bench_aql_queries(storage: &StorageEngine) {
     print_result("FOR...FILTER(AND)...LIMIT (x100)", 100, start.elapsed());
 
     // Projection
-    let query = parse(r#"FOR u IN bench_users LIMIT 1000 RETURN { name: u.name, city: u.city }"#).unwrap();
+    let query =
+        parse(r#"FOR u IN bench_users LIMIT 1000 RETURN { name: u.name, city: u.city }"#).unwrap();
     let start = Instant::now();
     for _ in 0..10 {
         let executor = QueryExecutor::new(storage);

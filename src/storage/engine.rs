@@ -1,12 +1,12 @@
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
-use rocksdb::{DB, Options, ColumnFamilyDescriptor};
 
-use crate::error::{DbError, DbResult};
-use crate::cluster::ClusterConfig;
 use super::collection::Collection;
 use super::database::Database;
+use crate::cluster::ClusterConfig;
+use crate::error::{DbError, DbResult};
 
 /// Metadata column family name
 const META_CF: &str = "_meta";
@@ -87,7 +87,10 @@ impl StorageEngine {
     }
 
     /// Create a new storage engine with cluster configuration
-    pub fn with_cluster_config<P: AsRef<Path>>(data_dir: P, config: ClusterConfig) -> DbResult<Self> {
+    pub fn with_cluster_config<P: AsRef<Path>>(
+        data_dir: P,
+        config: ClusterConfig,
+    ) -> DbResult<Self> {
         let mut engine = Self::new(data_dir)?;
         engine.cluster_config = Some(config);
         Ok(engine)
@@ -100,12 +103,18 @@ impl StorageEngine {
 
     /// Check if running in cluster mode
     pub fn is_cluster_mode(&self) -> bool {
-        self.cluster_config.as_ref().map(|c| c.is_cluster_mode()).unwrap_or(false)
+        self.cluster_config
+            .as_ref()
+            .map(|c| c.is_cluster_mode())
+            .unwrap_or(false)
     }
 
     /// Get node ID (returns "standalone" if not in cluster mode)
     pub fn node_id(&self) -> &str {
-        self.cluster_config.as_ref().map(|c| c.node_id.as_str()).unwrap_or("standalone")
+        self.cluster_config
+            .as_ref()
+            .map(|c| c.node_id.as_str())
+            .unwrap_or("standalone")
     }
 
     /// Get the data directory path
@@ -148,7 +157,10 @@ impl StorageEngine {
         }
 
         if total_collections > 0 {
-            tracing::info!("Recalculated document counts for {} collections", total_collections);
+            tracing::info!(
+                "Recalculated document counts for {} collections",
+                total_collections
+            );
         }
     }
 
@@ -179,13 +191,18 @@ impl StorageEngine {
     pub fn create_database(&self, name: String) -> DbResult<()> {
         // Validate database name
         if name.is_empty() || name.contains(':') {
-            return Err(DbError::InvalidDocument("Invalid database name".to_string()));
+            return Err(DbError::InvalidDocument(
+                "Invalid database name".to_string(),
+            ));
         }
 
         // Check if database already exists by looking for any collection with this prefix
         let existing_dbs = self.list_databases();
         if existing_dbs.contains(&name) {
-            return Err(DbError::CollectionAlreadyExists(format!("Database '{}' already exists", name)));
+            return Err(DbError::CollectionAlreadyExists(format!(
+                "Database '{}' already exists",
+                name
+            )));
         }
 
         // Store database metadata
@@ -202,7 +219,9 @@ impl StorageEngine {
     pub fn delete_database(&self, name: &str) -> DbResult<()> {
         // Prevent deletion of _system database
         if name == "_system" {
-            return Err(DbError::InvalidDocument("Cannot delete _system database".to_string()));
+            return Err(DbError::InvalidDocument(
+                "Cannot delete _system database".to_string(),
+            ));
         }
 
         // Get database to ensure it exists
@@ -263,7 +282,10 @@ impl StorageEngine {
         // Verify database exists
         let databases = self.list_databases();
         if !databases.contains(&name.to_string()) {
-            return Err(DbError::CollectionNotFound(format!("Database '{}' not found", name)));
+            return Err(DbError::CollectionNotFound(format!(
+                "Database '{}' not found",
+                name
+            )));
         }
 
         // Create and cache the database
