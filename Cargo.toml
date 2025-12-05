@@ -2,6 +2,7 @@
 name = "solidb"
 version = "0.1.0"
 edition = "2021"
+default-run = "solidb"
 
 [dependencies]
 # Async runtime
@@ -39,11 +40,19 @@ rocksdb = "0.22"
 # Temp directories (needed by benchmark)
 tempfile = "3.10"
 
+# HTTP client (for benchmarks)
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+
+# Daemon mode (Unix only)
+daemonize = "0.5"
+
+# Parallel processing (for concurrent benchmarks)
+rayon = "1.8"
+
 # Default binary
 [[bin]]
 name = "solidb"
 path = "src/main.rs"
 
 [dev-dependencies]
-reqwest = { version = "0.11", features = ["json"] }
 tokio-test = "0.4"

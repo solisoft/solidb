@@ -26,14 +26,42 @@ A lightweight, high-performance database server written in Rust that implements 
 git clone <repository-url>
 cd solidb
 
+# Build and install system-wide
+cargo install --path .
+
+# The solidb command is now available globally
+solidb --help
+```
+
+**Alternative: Build without installing**
+
+```bash
 # Build the project
 cargo build --release
 
-# Run the server
+# Run from the target directory
+./target/release/solidb
+
+# Or run with cargo
 cargo run --release
 ```
 
 The server will start on `http://localhost:6745`.
+
+### Ubuntu/Debian Build Requirements
+
+Before building on Ubuntu or Debian-based systems, install the required development libraries:
+
+```bash
+# Install zstd compression library (required by RocksDB)
+sudo apt-get update
+sudo apt-get install -y libzstd-dev
+
+# Install additional build dependencies
+sudo apt-get install -y build-essential clang libclang-dev
+```
+
+**Note**: The `libzstd-dev` package is required for the `zstd-sys` crate used by RocksDB. Without it, compilation will fail with an error like `failed to run custom build command for zstd-sys`.
 
 ### Command Line Options
 
@@ -46,12 +74,52 @@ Options:
       --peer <PEER>              Peer nodes to replicate with (can be repeated)
       --replication-port <PORT>  Port for inter-node replication [default: 6746]
       --data-dir <PATH>          Data directory path [default: ./data]
+  -d, --daemon                   Run as a daemon (background process)
+      --pid-file <PATH>          PID file path (used in daemon mode) [default: ./solidb.pid]
+      --log-file <PATH>          Log file path (used in daemon mode) [default: ./solidb.log]
 ```
+
+### Daemon Mode
+
+Run SoliDB as a background daemon process (Unix/Linux only):
+
+```bash
+# Start as daemon with default settings
+solidb --daemon
+
+# Start daemon with custom paths
+solidb --daemon --pid-file /var/run/solidb.pid --log-file /var/log/solidb.log
+
+# Start daemon with custom port and data directory
+solidb --daemon --port 8080 --data-dir /var/lib/solidb
+```
+
+**Managing the daemon:**
+
+```bash
+# Check if daemon is running
+ps aux | grep solidb
+
+# View daemon logs
+tail -f ./solidb.log
+
+# Stop the daemon gracefully
+kill -TERM $(cat ./solidb.pid)
+
+# Force stop the daemon
+kill -9 $(cat ./solidb.pid)
+```
+
+**Note**: The daemon mode uses PID file locking to prevent multiple instances from running simultaneously.
+
 
 ### Single Node Mode
 
 ```bash
 # Run a single server (default)
+solidb
+
+# Or with cargo during development
 cargo run --release
 ```
 
@@ -59,13 +127,13 @@ cargo run --release
 
 ```bash
 # Node 1 (initial node)
-cargo run --release -- --data-dir ./data1 --port 6745 --replication-port 6746
+solidb --data-dir ./data1 --port 6745 --replication-port 6746
 
 # Node 2 (joins the cluster)
-cargo run --release -- --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746
+solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746
 
 # Node 3 (joins via any existing node)
-cargo run --release -- --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
+solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
 ```
 
 ### Basic Usage
@@ -611,6 +679,51 @@ The dashboard will be available at `http://localhost:8080`.
 - 📈 **Cluster Status**: Monitor cluster health and replication lag (in cluster mode)
 - 📚 **Documentation**: Built-in API and AQL reference
 
+## Benchmarking
+
+### HTTP API Benchmarks (Recommended: oha)
+
+For accurate HTTP load testing, use [oha](https://github.com/hatoo/oha):
+
+```bash
+# Install oha
+cargo install oha
+
+# Simple query benchmark (10K requests, 8 concurrent)
+oha -n 10000 -c 8 -m POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "FOR u IN users LIMIT 1 RETURN u"}' \
+  http://localhost:6745/_api/database/_system/cursor
+
+# Document GET benchmark
+oha -n 10000 -c 8 \
+  http://localhost:6745/_api/database/_system/document/users/user_1
+
+# With bind variables
+oha -n 10000 -c 8 -m POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "FOR u IN users FILTER u.age > @minAge LIMIT @limit RETURN u", "bindVars": {"minAge": 30, "limit": 10}}' \
+  http://localhost:6745/_api/database/_system/cursor
+```
+
+**Example Results:**
+```
+Success rate:  100.00%
+Total:         168.65 ms
+Requests/sec:  59,295.76
+Average:       0.13 ms
+```
+
+### Built-in Benchmarks
+
+```bash
+# Storage layer benchmark (no HTTP overhead)
+cargo run --release --bin benchmark
+
+# HTTP API benchmark (with connection pooling)
+cargo run --release --bin http-benchmark
+```
+
 ## Development
 
 ### Running Tests
@@ -628,6 +741,11 @@ RUST_LOG=debug cargo run
 ### Building for Production
 
 ```bash
+# Install system-wide (recommended)
+cargo install --path .
+solidb
+
+# Or build and run from target directory
 cargo build --release
 ./target/release/solidb
 ```
@@ -673,18 +791,18 @@ SoliDB supports multi-node replication for high availability and horizontal scal
 #### Step 1: Start the First Node
 
 ```bash
-./solidb --data-dir ./data1 --port 6745 --replication-port 6746 --node-id node1
+solidb --data-dir ./data1 --port 6745 --replication-port 6746 --node-id node1
 ```
 
 #### Step 2: Start Additional Nodes
 
 ```bash
 # Join via the first node
-./solidb --data-dir ./data2 --port 6755 --replication-port 6756 \
+solidb --data-dir ./data2 --port 6755 --replication-port 6756 \
          --node-id node2 --peer 192.168.1.10:6746
 
 # Or join via any existing node
-./solidb --data-dir ./data3 --port 6765 --replication-port 6766 \
+solidb --data-dir ./data3 --port 6765 --replication-port 6766 \
          --node-id node3 --peer 192.168.1.11:6756
 ```
 

@@ -26,12 +26,61 @@ struct Args {
     /// Data directory path
     #[arg(long, default_value = "./data")]
     data_dir: String,
+
+    /// Run as a daemon (background process)
+    #[arg(short, long)]
+    daemon: bool,
+
+    /// PID file path (used in daemon mode)
+    #[arg(long, default_value = "./solidb.pid")]
+    pid_file: String,
+
+    /// Log file path (used in daemon mode)
+    #[arg(long, default_value = "./solidb.log")]
+    log_file: String,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Handle daemonization before starting async runtime
+    #[cfg(unix)]
+    if args.daemon {
+        use daemonize::Daemonize;
+        use std::fs::File;
+
+        let stdout = File::create(&args.log_file)?;
+        let stderr = File::create(&args.log_file)?;
+
+        let daemonize = Daemonize::new()
+            .pid_file(&args.pid_file)
+            .working_directory(".")
+            .stdout(stdout)
+            .stderr(stderr);
+
+        match daemonize.start() {
+            Ok(_) => {
+                // We're now in the daemon process
+            }
+            Err(e) => {
+                eprintln!("Error starting daemon: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    if args.daemon {
+        eprintln!("Daemon mode is only supported on Unix systems");
+        std::process::exit(1);
+    }
+
+    // Start the async runtime
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async_main(args))
+}
+
+async fn async_main(args: Args) -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::registry()
         .with(
