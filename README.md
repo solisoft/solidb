@@ -4,6 +4,8 @@ A lightweight, high-performance database server written in Rust that implements 
 
 https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
+[![CI](https://github.com/solisoft/solidb/actions/workflows/ci.yml/badge.svg)](https://github.com/solisoft/solidb/actions/workflows/ci.yml)
+
 ## Features
 
 - 🚀 **Fast & Efficient**: Built with Rust for maximum performance
