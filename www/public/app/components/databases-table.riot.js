@@ -1,3 +1,5 @@
+import { getApiUrl } from '/api-config.js'
+
 export default {
   css: null,
 
@@ -14,9 +16,9 @@ export default {
 
     async loadDatabases() {
       this.update({ loading: true, error: null })
-      
+
       try {
-        const url = 'http://localhost:6745/_api'
+        const url = getApiUrl()
         const response = await fetch(`${url}/databases`)
         const data = await response.json()
         const databases = data.databases || []
@@ -45,13 +47,13 @@ export default {
       if (!confirm(`Are you sure you want to DELETE database "${name}"? This will permanently remove the database and all its collections and data. This action cannot be undone.`)) {
         return
       }
-      
+
       try {
-        const url = 'http://localhost:6745/_api'
+        const url = getApiUrl()
         const response = await fetch(`${url}/database/${name}`, {
           method: 'DELETE'
         })
-        
+
         if (response.ok) {
           // Success - reload databases
           this.loadDatabases()
@@ -71,13 +73,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr231="expr231" class="flex justify-center items-center py-12"></div><div expr232="expr232" class="text-center py-12"></div><div expr235="expr235" class="text-center py-12"></div><table expr237="expr237" class="min-w-full divide-y divide-gray-700"></table></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr56="expr56" class="flex justify-center items-center py-12"></div><div expr57="expr57" class="text-center py-12"></div><div expr60="expr60" class="text-center py-12"></div><table expr62="expr62" class="min-w-full divide-y\n      divide-gray-700"></table></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr231',
-        selector: '[expr231]',
+        redundantAttribute: 'expr56',
+        selector: '[expr56]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading databases...</span>',
@@ -87,15 +89,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr232',
-        selector: '[expr232]',
+        redundantAttribute: 'expr57',
+        selector: '[expr57]',
 
         template: template(
-          '<p expr233="expr233" class="text-red-400"> </p><button expr234="expr234" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr58="expr58" class="text-red-400"> </p><button expr59="expr59" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr233',
-              selector: '[expr233]',
+              redundantAttribute: 'expr58',
+              selector: '[expr58]',
 
               expressions: [
                 {
@@ -112,8 +114,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr234',
-              selector: '[expr234]',
+              redundantAttribute: 'expr59',
+              selector: '[expr59]',
 
               expressions: [
                 {
@@ -128,16 +130,16 @@ export default {
       },
       {
         type: bindingTypes.IF,
-        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length === 0,
-        redundantAttribute: 'expr235',
-        selector: '[expr235]',
+        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length===0,
+        redundantAttribute: 'expr60',
+        selector: '[expr60]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No databases</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new database.</p><div class="mt-6"><button expr236="expr236" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Database\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No databases</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new database.</p><div class="mt-6"><button expr61="expr61" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Database\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr236',
-              selector: '[expr236]',
+              redundantAttribute: 'expr61',
+              selector: '[expr61]',
 
               expressions: [
                 {
@@ -152,12 +154,12 @@ export default {
       },
       {
         type: bindingTypes.IF,
-        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length > 0,
-        redundantAttribute: 'expr237',
-        selector: '[expr237]',
+        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length> 0,
+        redundantAttribute: 'expr62',
+        selector: '[expr62]',
 
         template: template(
-          '<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Collections</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type</th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr238="expr238" class="hover:bg-gray-750 transition-colors"></tr></tbody>',
+          '<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Collections</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr63="expr63" class="hover:bg-gray-750 transition-colors"></tr></tbody>',
           [
             {
               type: bindingTypes.EACH,
@@ -165,11 +167,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><a expr239="expr239" class="text-sm font-medium text-gray-100 hover:text-indigo-400 transition-colors"> </a></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr240="expr240" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr241="expr241"> </span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr242="expr242" class="text-red-400 hover:text-red-300 transition-colors" title="Delete database"></button><span expr243="expr243" class="text-gray-600"></span></td>',
+                '<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><a expr64="expr64" class="text-sm font-medium text-gray-100 hover:text-indigo-400 transition-colors"> </a></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr65="expr65" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr66="expr66"> </span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr67="expr67" class="text-red-400\n              hover:text-red-300 transition-colors" title="Delete database"></button><span expr68="expr68" class="text-gray-600"></span></td>',
                 [
                   {
-                    redundantAttribute: 'expr239',
-                    selector: '[expr239]',
+                    redundantAttribute: 'expr64',
+                    selector: '[expr64]',
 
                     expressions: [
                       {
@@ -193,8 +195,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr240',
-                    selector: '[expr240]',
+                    redundantAttribute: 'expr65',
+                    selector: '[expr65]',
 
                     expressions: [
                       {
@@ -205,8 +207,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr241',
-                    selector: '[expr241]',
+                    redundantAttribute: 'expr66',
+                    selector: '[expr66]',
 
                     expressions: [
                       {
@@ -236,8 +238,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.db.name !== '_system',
-                    redundantAttribute: 'expr242',
-                    selector: '[expr242]',
+                    redundantAttribute: 'expr67',
+                    selector: '[expr67]',
 
                     template: template(
                       '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>',
@@ -257,8 +259,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.db.name === '_system',
-                    redundantAttribute: 'expr243',
-                    selector: '[expr243]',
+                    redundantAttribute: 'expr68',
+                    selector: '[expr68]',
 
                     template: template(
                       'Protected',
@@ -268,8 +270,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr238',
-              selector: '[expr238]',
+              redundantAttribute: 'expr63',
+              selector: '[expr63]',
               itemName: 'db',
               indexName: null,
               evaluate: _scope => _scope.state.databases

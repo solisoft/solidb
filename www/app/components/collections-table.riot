@@ -93,6 +93,8 @@
   </div>
 
   <script>
+    import { getApiUrl } from '/api-config.js'
+
     export default {
       state: {
         collections: [],
@@ -108,7 +110,7 @@
         this.update({ loading: true, error: null })
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           const response = await fetch(`${url}/collection`)
           const data = await response.json()
           const collections = data.collections || []
@@ -143,7 +145,7 @@
         }
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           const response = await fetch(`${url}/collection/${name}/truncate`, {
             method: 'PUT'
           })
@@ -167,7 +169,7 @@
         }
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           const response = await fetch(`${url}/collection/${name}`, {
             method: 'DELETE'
           })

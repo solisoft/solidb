@@ -2,6 +2,7 @@ pub mod error;
 pub mod storage;
 pub mod aql;
 pub mod server;
+pub mod cluster;
 
 pub use error::{DbError, DbResult};
 pub use storage::{Document, Collection, StorageEngine, Index, IndexType, IndexStats, GeoIndex, GeoPoint, GeoIndexStats, distance_meters};

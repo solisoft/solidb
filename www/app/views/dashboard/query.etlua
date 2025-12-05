@@ -108,9 +108,13 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
-<script>
+<script type="module">
+import { getApiUrl } from '<%= PublicPath("/api-config.js") %>';
+
 let db = "<%= Params['db'] %>";
-const url = "http://localhost:6745/_api/database/" + db;
+function getUrl() {
+  return `${getApiUrl()}/database/${db}`;
+}
 let editor;
 let queryResults = []; // Store all query results
 
@@ -186,7 +190,7 @@ async function executeQuery() {
   const startTime = performance.now();
 
   try {
-    const response = await fetch(url + '/cursor', {
+    const response = await fetch(getUrl() + '/cursor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })
@@ -227,7 +231,7 @@ async function explainQuery() {
   const startTime = performance.now();
 
   try {
-    const response = await fetch(url + '/explain', {
+    const response = await fetch(getUrl() + '/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })

@@ -10,13 +10,21 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-  <script src="<%= PublicPath('/app_vendor.js') %>"></script> 
+  <script src="<%= PublicPath('/app_vendor.js') %>"></script>
 </head>
 
 <body class="min-h-screen flex flex-col bg-gray-900 font-sans text-gray-100">
-  <%- Partial("header") %>
-  
-  <main class="flex-grow">
+
+
+
+  <!-- Global Background Decorations -->
+  <div class="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+    <div class="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-indigo-900/20 rounded-full blur-[120px]"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-purple-900/20 rounded-full blur-[120px]"></div>
+  </div>
+
+  <main class="grow relative z-10">
+    <%- Partial("header") %>
     @yield
   </main>
 
@@ -45,7 +53,7 @@
     pre::-webkit-scrollbar-thumb:hover {
       background: #6b7280;
     }
-    
+
     /* Ensure code blocks have rounded corners and nice spacing */
     pre {
       border-radius: 0.5rem !important;
@@ -53,7 +61,7 @@
       margin-bottom: 1.5rem !important;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
-    
+
     /* Override prose max-width for code blocks if needed, but usually prose is fine */
     .prose pre {
       background-color: #282c34 !important; /* Match atom-one-dark */

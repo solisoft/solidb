@@ -23,6 +23,10 @@ local app = {
 
   documents = function()
     Page("dashboard/documents", "app")
+  end,
+
+  cluster = function()
+    Page("dashboard/cluster", "app")
   end
 }
 

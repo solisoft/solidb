@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::aql::{parse, QueryExecutor, BodyClause, Query};
 use crate::error::DbError;
 use crate::storage::{StorageEngine, IndexType, IndexStats, GeoIndexStats};
+use crate::cluster::{ReplicationService, Operation};
 use crate::server::cursor_store::CursorStore;
 use std::collections::HashMap;
 
@@ -28,6 +29,7 @@ fn is_long_running_query(query: &Query) -> bool {
 pub struct AppState {
     pub storage: Arc<StorageEngine>,
     pub cursor_store: CursorStore,
+    pub replication: Option<ReplicationService>,
 }
 
 // ==================== Request/Response Types ====================
@@ -119,6 +121,18 @@ pub async fn create_database(
 ) -> Result<Json<CreateDatabaseResponse>, DbError> {
     state.storage.create_database(req.name.clone())?;
 
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &req.name,
+            "",
+            Operation::CreateDatabase,
+            "",
+            None,
+            None,
+        );
+    }
+
     Ok(Json(CreateDatabaseResponse {
         name: req.name,
         status: "created".to_string(),
@@ -137,6 +151,19 @@ pub async fn delete_database(
     Path(name): Path<String>,
 ) -> Result<StatusCode, DbError> {
     state.storage.delete_database(&name)?;
+
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &name,
+            "",
+            Operation::DeleteDatabase,
+            "",
+            None,
+            None,
+        );
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -149,6 +176,18 @@ pub async fn create_collection(
 ) -> Result<Json<CreateCollectionResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     database.create_collection(req.name.clone())?;
+
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &db_name,
+            &req.name,
+            Operation::CreateCollection,
+            "",
+            None,
+            None,
+        );
+    }
 
     Ok(Json(CreateCollectionResponse {
         name: req.name,
@@ -171,6 +210,19 @@ pub async fn delete_collection(
 ) -> Result<StatusCode, DbError> {
     let database = state.storage.get_database(&db_name)?;
     database.delete_collection(&coll_name)?;
+
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::DeleteCollection,
+            "",
+            None,
+            None,
+        );
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -188,6 +240,18 @@ pub async fn truncate_collection(
     })
     .await
     .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::TruncateCollection,
+            "",
+            None,
+            None,
+        );
+    }
 
     Ok(Json(serde_json::json!({
         "database": db_name,
@@ -245,6 +309,19 @@ pub async fn insert_document(
     let collection = database.get_collection(&coll_name)?;
     let doc = collection.insert(data)?;
 
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::Insert,
+            &doc.key,
+            doc_bytes.as_deref(),
+            None,
+        );
+    }
+
     Ok(Json(doc.to_value()))
 }
 
@@ -267,6 +344,19 @@ pub async fn update_document(
     let collection = database.get_collection(&coll_name)?;
     let doc = collection.update(&key, data)?;
 
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::Update,
+            &doc.key,
+            doc_bytes.as_deref(),
+            Some(&doc.rev),
+        );
+    }
+
     Ok(Json(doc.to_value()))
 }
 
@@ -277,6 +367,18 @@ pub async fn delete_document(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     collection.delete(&key)?;
+
+    // Record to replication log
+    if let Some(ref repl) = state.replication {
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::Delete,
+            &key,
+            None,
+            None,
+        );
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -296,13 +398,19 @@ pub async fn execute_query(
     let (result, execution_time_ms) = if is_long_running_query(&query) {
         let storage = state.storage.clone();
         let bind_vars = req.bind_vars.clone();
+        let replication = state.replication.clone();
 
         tokio::task::spawn_blocking(move || {
-            let executor = if bind_vars.is_empty() {
+            let mut executor = if bind_vars.is_empty() {
                 QueryExecutor::with_database(&storage, db_name)
             } else {
                 QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
             };
+
+            // Add replication service for mutation logging
+            if let Some(ref repl) = replication {
+                executor = executor.with_replication(repl);
+            }
 
             let start = std::time::Instant::now();
             let result = executor.execute(&query)?;
@@ -312,11 +420,16 @@ pub async fn execute_query(
         .await
         .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
     } else {
-        let executor = if req.bind_vars.is_empty() {
+        let mut executor = if req.bind_vars.is_empty() {
             QueryExecutor::with_database(&state.storage, db_name)
         } else {
             QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
         };
+
+        // Add replication service for mutation logging
+        if let Some(ref repl) = state.replication {
+            executor = executor.with_replication(repl);
+        }
 
         let start = std::time::Instant::now();
         let result = executor.execute(&query)?;
@@ -639,4 +752,113 @@ pub async fn geo_within(
     let count = geo_results.len();
 
     Ok(Json(GeoQueryResponse { results: geo_results, count }))
+}
+
+// ==================== Cluster Status ====================
+
+#[derive(Debug, Serialize)]
+pub struct PeerStatusResponse {
+    pub address: String,
+    pub is_connected: bool,
+    pub last_seen_secs_ago: u64,
+    pub replication_lag: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClusterStatusResponse {
+    pub node_id: String,
+    pub status: String,
+    pub replication_port: u16,
+    pub current_sequence: u64,
+    pub log_entries: usize,
+    pub peers: Vec<PeerStatusResponse>,
+    pub data_dir: String,
+}
+
+pub async fn cluster_status(
+    State(state): State<AppState>,
+) -> Json<ClusterStatusResponse> {
+    let node_id = state.storage.node_id().to_string();
+    let data_dir = state.storage.data_dir().to_string();
+
+    let replication_port = state.storage.cluster_config()
+        .map(|c| c.replication_port)
+        .unwrap_or(6746);
+
+    // Get live status from replication service if available
+    if let Some(ref replication) = state.replication {
+        let cluster_status = replication.get_status();
+
+        let status = if cluster_status.peers.iter().any(|p| p.is_connected) {
+            "cluster".to_string()
+        } else if !cluster_status.peers.is_empty() {
+            "cluster-connecting".to_string()
+        } else {
+            "cluster-ready".to_string()
+        };
+
+        let peers: Vec<PeerStatusResponse> = cluster_status.peers.into_iter()
+            .map(|p| PeerStatusResponse {
+                address: p.address,
+                is_connected: p.is_connected,
+                last_seen_secs_ago: p.last_seen_secs_ago,
+                replication_lag: p.replication_lag,
+            })
+            .collect();
+
+        Json(ClusterStatusResponse {
+            node_id: cluster_status.node_id,
+            status,
+            replication_port,
+            current_sequence: cluster_status.current_sequence,
+            log_entries: cluster_status.log_entries,
+            peers,
+            data_dir,
+        })
+    } else {
+        Json(ClusterStatusResponse {
+            node_id,
+            status: "standalone".to_string(),
+            replication_port,
+            current_sequence: 0,
+            log_entries: 0,
+            peers: vec![],
+            data_dir,
+        })
+    }
+}
+
+// ==================== Cluster Info ====================
+
+#[derive(Debug, Serialize)]
+pub struct ClusterInfoResponse {
+    pub node_id: String,
+    pub is_cluster_mode: bool,
+    pub cluster_config: Option<ClusterConfigInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClusterConfigInfo {
+    pub node_id: String,
+    pub peers: Vec<String>,
+    pub replication_port: u16,
+}
+
+pub async fn cluster_info(
+    State(state): State<AppState>,
+) -> Json<ClusterInfoResponse> {
+    let node_id = state.storage.node_id().to_string();
+    let is_cluster_mode = state.storage.is_cluster_mode();
+
+    let cluster_config = state.storage.cluster_config().map(|c| ClusterConfigInfo {
+        node_id: c.node_id.clone(),
+        peers: c.peers.clone(),
+        replication_port: c.replication_port,
+    });
+
+    Json(ClusterInfoResponse {
+        node_id,
+        is_cluster_mode,
+        cluster_config,
+    })
 }

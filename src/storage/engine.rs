@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use rocksdb::{DB, Options, ColumnFamilyDescriptor};
 
 use crate::error::{DbError, DbResult};
+use crate::cluster::ClusterConfig;
 use super::collection::Collection;
 use super::database::Database;
 
@@ -20,6 +21,8 @@ pub struct StorageEngine {
     collections: Arc<RwLock<HashMap<String, Collection>>>,
     /// Cached database handles
     databases: Arc<RwLock<HashMap<String, Database>>>,
+    /// Cluster configuration (if running in cluster mode)
+    cluster_config: Option<ClusterConfig>,
 }
 
 impl Clone for StorageEngine {
@@ -29,6 +32,7 @@ impl Clone for StorageEngine {
             path: self.path.clone(),
             collections: self.collections.clone(),
             databases: self.databases.clone(),
+            cluster_config: self.cluster_config.clone(),
         }
     }
 }
@@ -78,7 +82,35 @@ impl StorageEngine {
             path,
             collections: Arc::new(RwLock::new(HashMap::new())),
             databases: Arc::new(RwLock::new(HashMap::new())),
+            cluster_config: None,
         })
+    }
+
+    /// Create a new storage engine with cluster configuration
+    pub fn with_cluster_config<P: AsRef<Path>>(data_dir: P, config: ClusterConfig) -> DbResult<Self> {
+        let mut engine = Self::new(data_dir)?;
+        engine.cluster_config = Some(config);
+        Ok(engine)
+    }
+
+    /// Get the cluster configuration
+    pub fn cluster_config(&self) -> Option<&ClusterConfig> {
+        self.cluster_config.as_ref()
+    }
+
+    /// Check if running in cluster mode
+    pub fn is_cluster_mode(&self) -> bool {
+        self.cluster_config.as_ref().map(|c| c.is_cluster_mode()).unwrap_or(false)
+    }
+
+    /// Get node ID (returns "standalone" if not in cluster mode)
+    pub fn node_id(&self) -> &str {
+        self.cluster_config.as_ref().map(|c| c.node_id.as_str()).unwrap_or("standalone")
+    }
+
+    /// Get the data directory path
+    pub fn data_dir(&self) -> &str {
+        self.path.to_str().unwrap_or("./data")
     }
 
     /// Initialize the storage engine with default _system database

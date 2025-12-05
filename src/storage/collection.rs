@@ -228,14 +228,14 @@ impl Collection {
 
         let count = inserted_docs.len();
         let prep_time = prep_start.elapsed();
-        tracing::info!("insert_batch: Prepared {} docs in {:?}", count, prep_time);
+        tracing::debug!("insert_batch: Prepared {} docs in {:?}", count, prep_time);
 
         // Write all documents in one batch operation
         let write_start = std::time::Instant::now();
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
         let write_time = write_start.elapsed();
-        tracing::info!("insert_batch: RocksDB write took {:?}", write_time);
+        tracing::debug!("insert_batch: RocksDB write took {:?}", write_time);
 
         // Update document count
         self.doc_count.fetch_add(count, std::sync::atomic::Ordering::Relaxed);

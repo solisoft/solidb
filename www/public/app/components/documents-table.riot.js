@@ -1,3 +1,5 @@
+import { getApiUrl } from '/api-config.js'
+
 export default {
   css: `documents-table .scrollbar-hidden,[is="documents-table"] .scrollbar-hidden{ -ms-overflow-style: none; scrollbar-width: none; }documents-table .scrollbar-hidden::-webkit-scrollbar,[is="documents-table"] .scrollbar-hidden::-webkit-scrollbar{ display: none; }`,
 
@@ -19,7 +21,7 @@ export default {
       this.update({ loading: true, error: null })
 
       try {
-        const url = `http://localhost:6745/_api/database/${this.props.db}`
+        const url = `${getApiUrl()}/database/${this.props.db}`
 
         // First, get the total count using COLLECT WITH COUNT
         const countQuery = `RETURN COLLECTION_COUNT("${this.props.collection}")`
@@ -122,13 +124,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr926="expr926" class="flex justify-center items-center py-12"></div><div expr927="expr927" class="text-center py-12"></div><div expr930="expr930" class="text-center py-12"></div><div expr932="expr932" class="max-h-[60vh] overflow-y-auto"></div><div expr938="expr938" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr69="expr69" class="flex justify-center items-center py-12"></div><div expr70="expr70" class="text-center py-12"></div><div expr73="expr73" class="text-center py-12"></div><div expr75="expr75" class="max-h-[60vh] overflow-y-auto"></div><div expr81="expr81" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr926',
-        selector: '[expr926]',
+        redundantAttribute: 'expr69',
+        selector: '[expr69]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>',
@@ -138,15 +140,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr927',
-        selector: '[expr927]',
+        redundantAttribute: 'expr70',
+        selector: '[expr70]',
 
         template: template(
-          '<p expr928="expr928" class="text-red-400"> </p><button expr929="expr929" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr71="expr71" class="text-red-400"> </p><button expr72="expr72" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr928',
-              selector: '[expr928]',
+              redundantAttribute: 'expr71',
+              selector: '[expr71]',
 
               expressions: [
                 {
@@ -163,8 +165,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr929',
-              selector: '[expr929]',
+              redundantAttribute: 'expr72',
+              selector: '[expr72]',
 
               expressions: [
                 {
@@ -180,15 +182,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length===0,
-        redundantAttribute: 'expr930',
-        selector: '[expr930]',
+        redundantAttribute: 'expr73',
+        selector: '[expr73]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr931="expr931" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr74="expr74" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr931',
-              selector: '[expr931]',
+              redundantAttribute: 'expr74',
+              selector: '[expr74]',
 
               expressions: [
                 {
@@ -204,11 +206,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
-        redundantAttribute: 'expr932',
-        selector: '[expr932]',
+        redundantAttribute: 'expr75',
+        selector: '[expr75]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr933="expr933" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr76="expr76" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -216,11 +218,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr934="expr934" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr935="expr935" class="text-blue-400 hover:text-blue-300 transition-colors" title="View document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button><button expr936="expr936" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Edit document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr937="expr937" class="text-red-400 hover:text-red-300 transition-colors" title="Delete document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
+                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr77="expr77" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr78="expr78" class="text-blue-400 hover:text-blue-300 transition-colors" title="View document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button><button expr79="expr79" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Edit document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr80="expr80" class="text-red-400 hover:text-red-300\n                transition-colors" title="Delete document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr934',
-                    selector: '[expr934]',
+                    redundantAttribute: 'expr77',
+                    selector: '[expr77]',
 
                     expressions: [
                       {
@@ -234,8 +236,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr935',
-                    selector: '[expr935]',
+                    redundantAttribute: 'expr78',
+                    selector: '[expr78]',
 
                     expressions: [
                       {
@@ -246,8 +248,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr936',
-                    selector: '[expr936]',
+                    redundantAttribute: 'expr79',
+                    selector: '[expr79]',
 
                     expressions: [
                       {
@@ -258,8 +260,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr937',
-                    selector: '[expr937]',
+                    redundantAttribute: 'expr80',
+                    selector: '[expr80]',
 
                     expressions: [
                       {
@@ -272,8 +274,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr933',
-              selector: '[expr933]',
+              redundantAttribute: 'expr76',
+              selector: '[expr76]',
               itemName: 'doc',
               indexName: 'idx',
               evaluate: _scope => _scope.state.documents
@@ -284,15 +286,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount> 0,
-        redundantAttribute: 'expr938',
-        selector: '[expr938]',
+        redundantAttribute: 'expr81',
+        selector: '[expr81]',
 
         template: template(
-          '<div expr939="expr939" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr940="expr940" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr941="expr941" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
+          '<div expr82="expr82" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr83="expr83" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr84="expr84" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr939',
-              selector: '[expr939]',
+              redundantAttribute: 'expr82',
+              selector: '[expr82]',
 
               expressions: [
                 {
@@ -317,8 +319,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr940',
-              selector: '[expr940]',
+              redundantAttribute: 'expr83',
+              selector: '[expr83]',
 
               expressions: [
                 {
@@ -335,8 +337,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr941',
-              selector: '[expr941]',
+              redundantAttribute: 'expr84',
+              selector: '[expr84]',
 
               expressions: [
                 {

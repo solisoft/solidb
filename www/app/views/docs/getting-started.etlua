@@ -6,7 +6,7 @@
   <div class="prose prose-invert prose-lg text-gray-400 mx-auto max-w-4xl">
     <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-4">Getting Started with SoliDB</h1>
     <p class="lead text-xl text-gray-300 mb-10">SoliDB is a high-performance, Rust-based database server designed for performance and ease of use.</p>
-    
+
     <div class="mt-12">
       <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Installation</h2>
       <p class="mb-4">To install SoliDB, run the following command in your terminal:</p>
@@ -17,7 +17,7 @@
         <code class="text-green-400">curl -sL https://solidb.io/install.sh | bash</code>
       </div>
     </div>
-    
+
     <div class="mt-12">
       <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Configuration</h2>
       <p class="mb-4">Configuration is done via the <code>solidb.toml</code> file. By default, SoliDB listens on port 3000.</p>
@@ -33,7 +33,7 @@ port = 3000
 path = "./data"</code></pre>
       </div>
     </div>
-    
+
     <div class="mt-12">
       <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Running the Server</h2>
       <p class="mb-4">Once installed and configured, you can start the server:</p>
@@ -41,16 +41,77 @@ path = "./data"</code></pre>
         <div class="flex items-center justify-between mb-2">
           <span class="text-xs text-gray-500 uppercase tracking-wider">Terminal</span>
         </div>
-        <code class="text-green-400">solidb start</code>
+        <code class="text-green-400">./solidb --port 6745 --data-dir ./data</code>
       </div>
+    </div>
+
+    <div class="mt-12">
+      <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Command Line Options</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-700">
+              <th class="text-left py-2 px-3 text-gray-400">Option</th>
+              <th class="text-left py-2 px-3 text-gray-400">Default</th>
+              <th class="text-left py-2 px-3 text-gray-400">Description</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr>
+              <td class="py-2 px-3"><code class="text-indigo-400">-p, --port</code></td>
+              <td class="py-2 px-3 text-gray-500">6745</td>
+              <td class="py-2 px-3 text-gray-300">HTTP API port</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3"><code class="text-indigo-400">--data-dir</code></td>
+              <td class="py-2 px-3 text-gray-500">./data</td>
+              <td class="py-2 px-3 text-gray-300">Data directory path</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3"><code class="text-indigo-400">--node-id</code></td>
+              <td class="py-2 px-3 text-gray-500">auto</td>
+              <td class="py-2 px-3 text-gray-300">Unique node identifier (for clustering)</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3"><code class="text-indigo-400">--peer</code></td>
+              <td class="py-2 px-3 text-gray-500">none</td>
+              <td class="py-2 px-3 text-gray-300">Peer node address (for clustering)</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3"><code class="text-indigo-400">--replication-port</code></td>
+              <td class="py-2 px-3 text-gray-500">6746</td>
+              <td class="py-2 px-3 text-gray-300">Replication port (for clustering)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-12">
+      <h2 class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Cluster Mode (Quick Start)</h2>
+      <p class="mb-4">To run SoliDB as a cluster, start multiple nodes with peer connections:</p>
+      <div class="bg-gray-800 rounded-md p-4 font-mono text-sm border border-gray-700 shadow-sm mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Node 1 (first node)</span>
+        </div>
+        <code class="text-green-400">./solidb --data-dir ./data1 --port 6745 --replication-port 6746</code>
+      </div>
+      <div class="bg-gray-800 rounded-md p-4 font-mono text-sm border border-gray-700 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Node 2 (joins cluster)</span>
+        </div>
+        <code class="text-green-400">./solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746</code>
+      </div>
+      <p class="mt-4 text-sm text-gray-400">See the <a href="/docs/cluster" class="text-indigo-400 hover:text-indigo-300">Clustering documentation</a> for detailed setup instructions.</p>
     </div>
 
     <div class="mt-16 p-6 bg-indigo-900/20 rounded-xl border border-indigo-500/30">
       <h3 class="text-xl font-bold text-indigo-300 mb-2">Next Steps</h3>
       <p class="text-gray-300 mb-4">Now that you have SoliDB running, explore the API or learn about AQL.</p>
-      <div class="flex space-x-4">
+      <div class="flex flex-wrap gap-3">
         <a href="/docs/api" class="text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-md text-sm font-medium transition-colors">API Reference</a>
         <a href="/docs/aql" class="text-indigo-300 bg-indigo-900/50 hover:bg-indigo-800 px-4 py-2 rounded-md text-sm font-medium transition-colors">AQL Guide</a>
+        <a href="/docs/cluster" class="text-emerald-300 bg-emerald-900/50 hover:bg-emerald-800 px-4 py-2 rounded-md text-sm font-medium transition-colors">Clustering</a>
       </div>
     </div>
   </div>

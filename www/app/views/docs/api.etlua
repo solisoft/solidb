@@ -404,6 +404,87 @@
     </div>
 
     <div class="mt-16">
+      <h2 id="cluster" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Cluster <span class="ml-2 text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30">NEW</span></h2>
+
+      <div class="my-8">
+        <h3 class="text-xl font-semibold text-gray-200 mb-3">Get Cluster Status</h3>
+        <div class="bg-gray-800 rounded-md p-4 mt-2 font-mono text-sm border-l-4 border-blue-500 shadow-sm">
+          <span class="text-blue-400 font-bold">GET</span> <span class="text-gray-300">/_api/cluster/status</span>
+        </div>
+        <p class="mt-2">Returns the current cluster status including node information, replication state, and peer connections.</p>
+        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response</h4>
+        <pre><code class="language-json">{
+  "node_id": "node1",
+  "is_cluster_mode": true,
+  "current_sequence": 1234,
+  "log_entries": 1234,
+  "peers": [
+    {
+      "address": "192.168.1.11:6756",
+      "is_connected": true,
+      "last_seen_secs_ago": 2,
+      "replication_lag": 0
+    }
+  ]
+}</code></pre>
+        <h4 class="text-xs font-bold mt-4 text-gray-500 uppercase tracking-wider">Response Fields</h4>
+        <div class="overflow-x-auto mt-2">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-700">
+                <th class="text-left py-2 px-3 text-gray-400">Field</th>
+                <th class="text-left py-2 px-3 text-gray-400">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">node_id</code></td>
+                <td class="py-2 px-3 text-gray-300">Unique identifier for this node</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">is_cluster_mode</code></td>
+                <td class="py-2 px-3 text-gray-300">Whether clustering is active (peers configured)</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">current_sequence</code></td>
+                <td class="py-2 px-3 text-gray-300">Latest sequence number in replication log</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">log_entries</code></td>
+                <td class="py-2 px-3 text-gray-300">Total entries in replication log</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">peers[].address</code></td>
+                <td class="py-2 px-3 text-gray-300">Replication address of the peer</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">peers[].is_connected</code></td>
+                <td class="py-2 px-3 text-gray-300">Whether currently connected to peer</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">peers[].last_seen_secs_ago</code></td>
+                <td class="py-2 px-3 text-gray-300">Seconds since last heartbeat from peer</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3"><code class="text-emerald-400">peers[].replication_lag</code></td>
+                <td class="py-2 px-3 text-gray-300">Number of operations not yet acknowledged by peer</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="bg-blue-900/20 border-l-4 border-blue-500 p-4 mt-4 rounded-r-md">
+          <div class="flex">
+            <div class="ml-3">
+              <p class="text-sm text-blue-200">
+                <strong>Note:</strong> In single-node mode, <code>is_cluster_mode</code> will be <code>false</code> and <code>peers</code> will be an empty array.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-16">
       <h2 id="date-functions" class="text-2xl font-bold text-gray-100 border-b border-gray-700 pb-2 mb-6">Date Functions</h2>
 
       <div class="my-8">
@@ -431,9 +512,9 @@
         <pre><code class="language-sql">FOR doc IN events
   LET eventDate = DATE_ISO8601(doc.timestamp)
   FILTER doc.timestamp > DATE_NOW() - 86400000 -- Last 24 hours
-  RETURN { 
-    event: doc.name, 
-    date: eventDate 
+  RETURN {
+    event: doc.name,
+    date: eventDate
   }</code></pre>
       </div>
     </div>

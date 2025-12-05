@@ -1,3 +1,5 @@
+import { getApiUrl } from '/api-config.js'
+
 export default {
   css: null,
 
@@ -118,7 +120,7 @@ export default {
       }
 
       try {
-        const url = `http://localhost:6745/_api/database/${this.props.db}`
+        const url = `${getApiUrl()}/database/${this.props.db}`
         let response
 
         if (this.state.document) {
@@ -162,20 +164,20 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr432="expr432" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
+    '<div expr101="expr101" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr432',
-        selector: '[expr432]',
+        redundantAttribute: 'expr101',
+        selector: '[expr101]',
 
         template: template(
-          '<div class="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><h3 expr433="expr433" class="text-xl font-bold text-gray-100 mb-2"> </h3><div expr434="expr434" class="mb-4 p-3 bg-gray-900 rounded border border-gray-700"></div><div expr438="expr438" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr440="expr440"><div expr441="expr441" class="mb-4"></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border: 1px solid #4B5563; border-radius: 0.375rem;"></div><p class="mt-1 text-xs text-gray-400">Enter valid JSON (without _key, _id, _rev - they will be added\n            automatically)</p></div><div class="flex justify-end space-x-3"><button expr442="expr442" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n            Save\n          </button></div></form></div>',
+          '<div class="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><h3 expr102="expr102" class="text-xl font-bold text-gray-100 mb-2"> </h3><div expr103="expr103" class="mb-4 p-3 bg-gray-900 rounded border border-gray-700"></div><div expr107="expr107" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr109="expr109"><div expr110="expr110" class="mb-4"></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border: 1px solid #4B5563; border-radius: 0.375rem;"></div><p class="mt-1 text-xs text-gray-400">Enter valid JSON (without _key, _id, _rev - they will be added\n            automatically)</p></div><div class="flex justify-end space-x-3"><button expr111="expr111" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n            Save\n          </button></div></form></div>',
           [
             {
-              redundantAttribute: 'expr433',
-              selector: '[expr433]',
+              redundantAttribute: 'expr102',
+              selector: '[expr102]',
 
               expressions: [
                 {
@@ -188,15 +190,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.document,
-              redundantAttribute: 'expr434',
-              selector: '[expr434]',
+              redundantAttribute: 'expr103',
+              selector: '[expr103]',
 
               template: template(
-                '<div class="grid grid-cols-2 gap-2 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr435="expr435" class="text-gray-300"> </span></div><div><span class="text-gray-500">_key:</span><span expr436="expr436" class="text-gray-300"> </span></div><div><span class="text-gray-500">_rev:</span><span expr437="expr437" class="text-gray-300"> </span></div></div>',
+                '<div class="grid grid-cols-2 gap-2 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr104="expr104" class="text-gray-300"> </span></div><div><span class="text-gray-500">_key:</span><span expr105="expr105" class="text-gray-300"> </span></div><div><span class="text-gray-500">_rev:</span><span expr106="expr106" class="text-gray-300"> </span></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr435',
-                    selector: '[expr435]',
+                    redundantAttribute: 'expr104',
+                    selector: '[expr104]',
 
                     expressions: [
                       {
@@ -207,8 +209,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr436',
-                    selector: '[expr436]',
+                    redundantAttribute: 'expr105',
+                    selector: '[expr105]',
 
                     expressions: [
                       {
@@ -219,8 +221,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr437',
-                    selector: '[expr437]',
+                    redundantAttribute: 'expr106',
+                    selector: '[expr106]',
 
                     expressions: [
                       {
@@ -236,15 +238,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.error,
-              redundantAttribute: 'expr438',
-              selector: '[expr438]',
+              redundantAttribute: 'expr107',
+              selector: '[expr107]',
 
               template: template(
-                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr439="expr439" class="text-sm text-red-300"> </p></div>',
+                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr108="expr108" class="text-sm text-red-300"> </p></div>',
                 [
                   {
-                    redundantAttribute: 'expr439',
-                    selector: '[expr439]',
+                    redundantAttribute: 'expr108',
+                    selector: '[expr108]',
 
                     expressions: [
                       {
@@ -258,8 +260,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr440',
-              selector: '[expr440]',
+              redundantAttribute: 'expr109',
+              selector: '[expr109]',
 
               expressions: [
                 {
@@ -272,8 +274,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => !_scope.state.document,
-              redundantAttribute: 'expr441',
-              selector: '[expr441]',
+              redundantAttribute: 'expr110',
+              selector: '[expr110]',
 
               template: template(
                 '<label class="block text-sm font-medium text-gray-300 mb-2">Document Key (optional)</label><input type="text" ref="keyInput" pattern="[a-zA-Z0-9_-]+" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Leave empty to auto-generate"/><p class="mt-1 text-xs text-gray-400">Only letters, numbers, hyphens, and underscores allowed</p>',
@@ -281,8 +283,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr442',
-              selector: '[expr442]',
+              redundantAttribute: 'expr111',
+              selector: '[expr111]',
 
               expressions: [
                 {

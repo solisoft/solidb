@@ -1,67 +1,307 @@
-<div class="min-h-screen flex items-center justify-center bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-md w-full space-y-8">
-    <div>
-      <div class="mx-auto h-16 w-16 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
-        <svg class="h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-        </svg>
-      </div>
-      <h2 class="mt-6 text-center text-3xl font-extrabold text-white">
-        SoliDB Admin Console
-      </h2>
-      <p class="mt-2 text-center text-sm text-gray-400">
-        Select a database to manage
-      </p>
-    </div>
+<div class="min-h-screen flex items-center justify-center bg-gray-900 relative overflow-hidden">
+  
+  <div class="max-w-md w-full relative z-10 px-4 sm:px-0">
+    <!-- Header -->
 
-    <div class="mt-8 space-y-6 bg-gray-800 py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-700">
-      <div class="space-y-6">
-        <div>
-          <label for="database-select" class="block text-sm font-medium text-gray-300">
-            Database
-          </label>
-          <div class="mt-1 relative">
-            <select id="database-select" name="database" class="block w-full pl-3 pr-10 py-2 text-base border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md bg-gray-700 text-white">
-              <option value="" disabled selected>Loading databases...</option>
-            </select>
-            <div id="db-loading-indicator" class="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-none">
-              <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
+
+    <!-- Main Card -->
+    <div class="bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-700/50 p-8 transform transition-all hover:border-gray-600/50">
+
+      <!-- Connection Status Overlay (Success Mode) -->
+      <div id="success-overlay" class="hidden mb-6 bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex items-center justify-between">
+        <div class="flex items-center">
+          <div class="bg-green-500/20 p-2 rounded-lg mr-3">
+            <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-green-400">Connected</p>
+            <p id="connected-server-text" class="text-xs text-green-500/70 mt-0.5">localhost:6745</p>
+          </div>
+        </div>
+        <button id="change-server-link-btn" class="text-xs text-gray-400 hover:text-white transition-colors underline decoration-gray-600 hover:decoration-white underline-offset-2">
+          Change
+        </button>
+      </div>
+
+      <!-- Server Form -->
+      <div id="server-form-container" class="space-y-5 transition-all duration-300">
+        <div class="space-y-4">
+          <div>
+            <label for="server-host" class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+              Host
+            </label>
+            <div class="relative group">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-5 w-5 text-gray-500 group-focus-within:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                id="server-host"
+                value="http://localhost"
+                required
+                class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
+                placeholder="http://localhost"
+              />
             </div>
           </div>
-          <p id="db-error-msg" class="mt-2 text-sm text-red-400 hidden"></p>
+
+          <div>
+            <label for="server-port" class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+              Port
+            </label>
+            <div class="relative group">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-5 w-5 text-gray-500 group-focus-within:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                id="server-port"
+                value="6745"
+                required
+                class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
+                placeholder="6745"
+              />
+            </div>
+          </div>
         </div>
 
-        <div>
-          <button id="enter-btn" type="button" disabled class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            Enter Console
-          </button>
+        <!-- Connection Status (Error/Loading) -->
+        <div id="connection-status" class="hidden rounded-lg p-3 text-sm flex items-start">
+          <div id="status-icon" class="mr-2.5 mt-0.5 flex-shrink-0"></div>
+          <span id="status-message" class="text-gray-300 leading-snug"></span>
+        </div>
+
+        <button id="connect-btn" type="button" class="group w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all transform active:scale-[0.98]">
+          <span class="flex items-center">
+            Connect Server
+            <svg class="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      <!-- Database Selection (Initially Hidden or Disabled) -->
+      <div id="database-section" class="mt-6 pt-6 border-t border-gray-700/50 transition-all duration-300 opacity-50 pointer-events-none">
+        <label for="database-select" class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+          Select Database
+        </label>
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+            </svg>
+          </div>
+          <select id="database-select" disabled class="block w-full pl-10 pr-10 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 sm:text-sm appearance-none cursor-pointer disabled:cursor-not-allowed transition-all">
+            <option value="" disabled selected>Waiting for connection...</option>
+          </select>
+          <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+          <div id="db-loading-indicator" class="hidden absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-none">
+            <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        </div>
+        <p id="db-error-msg" class="mt-2 text-xs text-red-400 hidden"></p>
+
+        <button id="enter-btn" type="button" disabled class="mt-4 w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform active:scale-[0.98]">
+           Enter Console
+        </button>
+      </div>
+
+      <!-- Recent Servers (Optional, collapsed by default) -->
+      <div id="recent-servers-container" class="mt-6 pt-6 border-t border-gray-700/50 hidden">
+        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Recent Servers</h4>
+        <div id="recent-servers-list" class="space-y-2">
+           <!-- Populated by JS -->
         </div>
       </div>
     </div>
+
+    <p class="text-center text-gray-500 text-xs mt-8">
+      &copy; Solisoft 2025. All rights reserved.
+    </p>
   </div>
 </div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', async () => {
-    const dbSelect = document.getElementById('database-select');
-    const loadingIndicator = document.getElementById('db-loading-indicator');
-    const errorMsg = document.getElementById('db-error-msg');
-    const enterBtn = document.getElementById('enter-btn');
+<script type="module">
+import { getServerConfig, setServerConfig, testConnection, getRecentServers, addRecentServer } from '<%= PublicPath("/api-config.js") %>';
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Elements
+  const serverHost = document.getElementById('server-host');
+  const serverPort = document.getElementById('server-port');
+  const connectBtn = document.getElementById('connect-btn');
+  const serverFormContainer = document.getElementById('server-form-container');
+
+  const dbSelect = document.getElementById('database-select');
+  const dbSection = document.getElementById('database-section');
+  const loadingIndicator = document.getElementById('db-loading-indicator');
+  const errorMsg = document.getElementById('db-error-msg');
+  const enterBtn = document.getElementById('enter-btn');
+
+  const connectionStatus = document.getElementById('connection-status');
+  const statusIcon = document.getElementById('status-icon');
+  const statusMessage = document.getElementById('status-message');
+
+  const successOverlay = document.getElementById('success-overlay');
+  const connectedServerText = document.getElementById('connected-server-text');
+  const changeServerLinkBtn = document.getElementById('change-server-link-btn');
+
+  const recentServersContainer = document.getElementById('recent-servers-container');
+  const recentServersList = document.getElementById('recent-servers-list');
+
+  // Load Recent Servers
+  renderRecentServers();
+
+  // Check saved config
+  const savedConfig = getServerConfig();
+  if (savedConfig && savedConfig.host && savedConfig.port) {
+    serverHost.value = savedConfig.host;
+    serverPort.value = savedConfig.port;
+
+    // Auto-connect flow
+    setUIConnectedState(savedConfig);
+    loadDatabases();
+  }
+
+  // --- UI State Helpers ---
+
+  function setUIConnectedState(config) {
+    // Hide form, show success overlay
+    serverFormContainer.classList.add('hidden');
+    successOverlay.classList.remove('hidden');
+    connectedServerText.textContent = `${config.host}:${config.port}`;
+
+    // Enable database section
+    dbSection.classList.remove('opacity-50', 'pointer-events-none');
+
+    // Hide status messages
+    connectionStatus.classList.add('hidden');
+  }
+
+  function setUIDisconnectedState() {
+    // Show form, hide success overlay
+    serverFormContainer.classList.remove('hidden');
+    successOverlay.classList.add('hidden');
+
+    // Disable database section
+    dbSection.classList.add('opacity-50', 'pointer-events-none');
+    dbSelect.innerHTML = '<option value="" disabled selected>Waiting for connection...</option>';
+    dbSelect.disabled = true;
+    enterBtn.disabled = true;
+
+    // Enable connect button
+    connectBtn.disabled = false;
+    connectBtn.innerHTML = `
+      <span class="flex items-center">
+        Connect Server
+        <svg class="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </span>
+    `;
+
+    // Clear errors
+    connectionStatus.classList.add('hidden');
+  }
+
+  function showStatus(type, message) {
+    connectionStatus.classList.remove('hidden', 'bg-red-500/10', 'border-red-500/20', 'bg-yellow-500/10', 'border-yellow-500/20');
+
+    if (type === 'error') {
+      connectionStatus.classList.add('bg-red-500/10', 'border', 'border-red-500/20');
+      statusIcon.innerHTML = '<svg class="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+      statusMessage.className = 'text-red-400';
+    } else { // testing
+      connectionStatus.classList.add('bg-yellow-500/10', 'border', 'border-yellow-500/20');
+      statusIcon.innerHTML = '<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></div>';
+      statusMessage.className = 'text-yellow-400';
+    }
+    statusMessage.textContent = message;
+  }
+
+  function renderRecentServers() {
+    const servers = getRecentServers();
+    if (servers.length === 0) return;
+
+    recentServersContainer.classList.remove('hidden');
+    recentServersList.innerHTML = '';
+
+    servers.forEach(server => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'w-full text-left px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 transition-colors flex items-center justify-between group';
+      btn.innerHTML = `
+        <div>
+          <div class="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">${server.label || 'Server'}</div>
+          <div class="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">${server.host}:${server.port}</div>
+        </div>
+        <svg class="h-4 w-4 text-gray-600 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+      `;
+      btn.onclick = () => {
+        serverHost.value = server.host;
+        serverPort.value = server.port;
+        // Auto-connect on click
+        connectBtn.click();
+      };
+      recentServersList.appendChild(btn);
+    });
+  }
+
+  // --- Handlers ---
+
+  changeServerLinkBtn.addEventListener('click', () => {
+    localStorage.removeItem('solidb_server_config');
+    setUIDisconnectedState();
+  });
+
+  connectBtn.addEventListener('click', loadDatabases);
+
+  async function loadDatabases() {
+    const host = serverHost.value.trim();
+    const port = serverPort.value.trim();
+
+    if (!host || !port) {
+      showStatus('error', 'Please enter both host and port.');
+      return;
+    }
+
+    // UI Loading State
+    showStatus('testing', 'Connecting to server...');
+    connectBtn.disabled = true;
+    connectBtn.innerHTML = '<span class="flex items-center">Connecting...</span>';
 
     try {
-      const response = await fetch('http://localhost:6745/_api/databases');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      // 1. Test Connection
+      const connected = await testConnection({ host, port });
+      if (!connected) throw new Error('Connection failed');
+
+      // 2. Fetch Databases
+      const response = await fetch(`${host}:${port}/_api/databases`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
 
-      // Clear loading state
-      dbSelect.innerHTML = '';
-      loadingIndicator.classList.add('hidden');
+      // Success Logic
+      setServerConfig({ host, port });
+      addRecentServer({ host, port, label: 'Custom Connection' });
+      renderRecentServers(); // Refresh list
 
+      setUIConnectedState({ host, port });
+
+      // Populate DB Select
+      dbSelect.innerHTML = '';
       if (data.databases && data.databases.length > 0) {
         data.databases.forEach(db => {
           const option = document.createElement('option');
@@ -70,34 +310,40 @@
           dbSelect.appendChild(option);
         });
 
-        // Select _system by default if available
+        // Auto-select _system
         if (data.databases.includes('_system')) {
           dbSelect.value = '_system';
         }
 
+        dbSelect.disabled = false;
         enterBtn.disabled = false;
       } else {
-        const option = document.createElement('option');
-        option.textContent = "No databases found";
-        dbSelect.appendChild(option);
+        dbSelect.innerHTML = '<option disabled>No databases found</option>';
       }
+
     } catch (error) {
-      console.error('Failed to fetch databases:', error);
-      loadingIndicator.classList.add('hidden');
-      dbSelect.innerHTML = '<option disabled>Error loading databases</option>';
-      errorMsg.textContent = 'Failed to connect to server. Please ensure SoliDB is running.';
-      errorMsg.classList.remove('hidden');
+      console.error(error);
+      showStatus('error', 'Failed to connect. Check server details.');
+
+      // Reset button
+      connectBtn.disabled = false;
+      connectBtn.innerHTML = `
+        <span class="flex items-center">
+          Retry Connection
+          <svg class="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </span>
+      `;
     }
+  }
 
-    enterBtn.addEventListener('click', () => {
-      const selectedDb = dbSelect.value;
-      if (selectedDb) {
-        // Store selected DB in localStorage for persistence across sessions
-        localStorage.setItem('solidb_current_db', selectedDb);
-
-        // Redirect to dashboard
-        window.location.href = `/database/${selectedDb}/collections`;
-      }
-    });
+  enterBtn.addEventListener('click', () => {
+    const selectedDb = dbSelect.value;
+    if (selectedDb) {
+      localStorage.setItem('solidb_current_db', selectedDb);
+      window.location.href = `/database/${selectedDb}/collections`;
+    }
   });
+});
 </script>

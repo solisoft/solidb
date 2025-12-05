@@ -32,7 +32,8 @@
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
               Document
             </th>
-            <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">
+            <th scope="col"
+              class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">
               Actions</th>
           </tr>
         </thead>
@@ -60,7 +61,8 @@
                     d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </button>
-              <button onclick={ ()=> deleteDocument(doc._key) } class="text-red-400 hover:text-red-300 transition-colors"
+              <button onclick={ ()=> deleteDocument(doc._key) } class="text-red-400 hover:text-red-300
+                transition-colors"
                 title="Delete document">
                 <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -95,6 +97,8 @@
   </div>
 
   <script>
+    import { getApiUrl } from '/api-config.js'
+
     export default {
       state: {
         documents: [],
@@ -113,7 +117,7 @@
         this.update({ loading: true, error: null })
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
 
           // First, get the total count using COLLECT WITH COUNT
           const countQuery = `RETURN COLLECTION_COUNT("${this.props.collection}")`
@@ -216,6 +220,7 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+
     .scrollbar-hidden::-webkit-scrollbar {
       display: none;
     }

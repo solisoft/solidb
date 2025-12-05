@@ -6,6 +6,7 @@ use chrono::Utc;
 
 use crate::error::{DbError, DbResult};
 use crate::storage::{Collection, StorageEngine, GeoPoint, distance_meters};
+use crate::cluster::{ReplicationService, Operation};
 use super::ast::*;
 
 /// Execution context holding variable bindings
@@ -92,6 +93,7 @@ pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
     database: Option<String>,
+    replication: Option<&'a ReplicationService>,
 }
 
 /// Extracted filter condition for index optimization
@@ -108,12 +110,13 @@ impl<'a> QueryExecutor<'a> {
             storage,
             bind_vars: HashMap::new(),
             database: None,
+            replication: None,
         }
     }
 
     /// Create executor with bind variables for parameterized queries
     pub fn with_bind_vars(storage: &'a StorageEngine, bind_vars: BindVars) -> Self {
-        Self { storage, bind_vars, database: None }
+        Self { storage, bind_vars, database: None, replication: None }
     }
 
     /// Create executor with database context
@@ -122,6 +125,7 @@ impl<'a> QueryExecutor<'a> {
             storage,
             bind_vars: HashMap::new(),
             database: Some(database),
+            replication: None,
         }
     }
 
@@ -131,6 +135,68 @@ impl<'a> QueryExecutor<'a> {
             storage,
             bind_vars,
             database: Some(database),
+            replication: None,
+        }
+    }
+
+    /// Set replication service for logging mutations
+    pub fn with_replication(mut self, replication: &'a ReplicationService) -> Self {
+        self.replication = Some(replication);
+        self
+    }
+
+    /// Log a mutation to the replication service
+    fn log_mutation(&self, collection: &str, operation: Operation, key: &str, data: Option<&Value>) {
+        if let (Some(repl), Some(ref db)) = (&self.replication, &self.database) {
+            let doc_bytes = data.and_then(|v| serde_json::to_vec(v).ok());
+            repl.record_write(
+                db,
+                collection,
+                operation,
+                key,
+                doc_bytes.as_deref(),
+                None,
+            );
+        }
+    }
+
+    /// Log multiple mutations asynchronously in a background thread
+    /// Used for bulk INSERT operations to avoid blocking the response
+    fn log_mutations_async(&self, collection: &str, operation: Operation, docs: &[crate::storage::Document]) {
+        // Clone the replication service if available (needs to be done before pattern matching)
+        let repl_clone = self.replication.map(|r| r.clone());
+        let db_clone = self.database.clone();
+
+        if let (Some(repl), Some(db)) = (repl_clone, db_clone) {
+            let collection = collection.to_string();
+
+            // Serialize documents upfront to minimize work in the thread
+            let mutations: Vec<(String, Vec<u8>)> = docs.iter()
+                .filter_map(|doc| {
+                    serde_json::to_vec(&doc.to_value())
+                        .ok()
+                        .map(|bytes| (doc.key.clone(), bytes))
+                })
+                .collect();
+
+            let count = mutations.len();
+            tracing::debug!("INSERT: Starting async replication logging for {} docs", count);
+
+            std::thread::spawn(move || {
+                let start = std::time::Instant::now();
+                for (key, doc_bytes) in mutations {
+                    repl.record_write(
+                        &db,
+                        &collection,
+                        operation.clone(),
+                        &key,
+                        Some(&doc_bytes),
+                        None,
+                    );
+                }
+                let elapsed = start.elapsed();
+                tracing::debug!("INSERT: Async replication logging of {} docs completed in {:?}", count, elapsed);
+            });
         }
     }
 
@@ -380,7 +446,7 @@ impl<'a> QueryExecutor<'a> {
                     let bulk_mode = rows.len() > 100;
                     let has_indexes = !collection.list_indexes().is_empty();
 
-                    tracing::info!(
+                    tracing::debug!(
                         "INSERT: {} documents, bulk_mode={}, has_indexes={}",
                         rows.len(), bulk_mode, has_indexes
                     );
@@ -394,24 +460,27 @@ impl<'a> QueryExecutor<'a> {
                             documents.push(doc_value);
                         }
                         let eval_time = eval_start.elapsed();
-                        tracing::info!("INSERT: Document evaluation took {:?}", eval_time);
+                        tracing::debug!("INSERT: Document evaluation took {:?}", eval_time);
 
                         // Batch insert all documents at once (uses RocksDB WriteBatch)
                         let insert_start = std::time::Instant::now();
                         let inserted_docs = collection.insert_batch(documents)?;
                         let insert_time = insert_start.elapsed();
-                        tracing::info!("INSERT: Batch insert of {} docs took {:?}", inserted_docs.len(), insert_time);
+                        tracing::debug!("INSERT: Batch insert of {} docs took {:?}", inserted_docs.len(), insert_time);
+
+                        // Log to replication asynchronously for bulk inserts
+                        self.log_mutations_async(&insert_clause.collection, Operation::Insert, &inserted_docs);
 
                         // Index ONLY the newly inserted documents asynchronously
                         if has_indexes {
-                            tracing::info!("INSERT: Starting async indexing of {} new docs", inserted_docs.len());
+                            tracing::debug!("INSERT: Starting async indexing of {} new docs", inserted_docs.len());
                             let coll = collection.clone();
                             std::thread::spawn(move || {
                                 let index_start = std::time::Instant::now();
                                 let result = coll.index_documents(&inserted_docs);
                                 let index_time = index_start.elapsed();
                                 match result {
-                                    Ok(count) => tracing::info!("INSERT: Indexed {} docs in {:?}", count, index_time),
+                                    Ok(count) => tracing::debug!("INSERT: Indexed {} docs in {:?}", count, index_time),
                                     Err(e) => tracing::error!("INSERT: Indexing failed: {}", e),
                                 }
                             });
@@ -421,10 +490,12 @@ impl<'a> QueryExecutor<'a> {
                         let insert_start = std::time::Instant::now();
                         for ctx in &rows {
                             let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
-                            collection.insert(doc_value)?;
+                            let doc = collection.insert(doc_value)?;
+                            // Log to replication
+                            self.log_mutation(&insert_clause.collection, Operation::Insert, &doc.key, Some(&doc.to_value()));
                         }
                         let insert_time = insert_start.elapsed();
-                        tracing::info!("INSERT: {} docs with indexes took {:?}", rows.len(), insert_time);
+                        tracing::debug!("INSERT: {} docs with indexes took {:?}", rows.len(), insert_time);
                     }
                 }
                 BodyClause::Update(update_clause) => {
@@ -463,7 +534,9 @@ impl<'a> QueryExecutor<'a> {
                         }
 
                         // Update the document (collection.update handles merging internally)
-                        collection.update(&key, changes_value)?;
+                        let doc = collection.update(&key, changes_value)?;
+                        // Log to replication
+                        self.log_mutation(&update_clause.collection, Operation::Update, &key, Some(&doc.to_value()));
                     }
                 }
                 BodyClause::Remove(remove_clause) => {
@@ -493,6 +566,8 @@ impl<'a> QueryExecutor<'a> {
 
                         // Delete the document
                         collection.delete(&key)?;
+                        // Log to replication
+                        self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
                     }
                 }
             }

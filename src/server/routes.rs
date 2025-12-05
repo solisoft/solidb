@@ -9,13 +9,15 @@ use tower_http::cors::{CorsLayer, Any};
 use axum::http::Method;
 
 use crate::storage::StorageEngine;
+use crate::cluster::ReplicationService;
 use crate::server::cursor_store::CursorStore;
 use super::handlers::*;
 
-pub fn create_router(storage: StorageEngine) -> Router {
+pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>) -> Router {
     let state = AppState {
         storage: Arc::new(storage),
         cursor_store: CursorStore::new(Duration::from_secs(300)),
+        replication,
     };
 
     Router::new()
@@ -56,6 +58,10 @@ pub fn create_router(storage: StorageEngine) -> Router {
         .route("/_api/database/:db/geo/:collection/:name", delete(delete_geo_index))
         .route("/_api/database/:db/geo/:collection/:field/near", post(geo_near))
         .route("/_api/database/:db/geo/:collection/:field/within", post(geo_within))
+
+        // Cluster routes
+        .route("/_api/cluster/status", get(cluster_status))
+        .route("/_api/cluster/info", get(cluster_info))
 
         .with_state(state)
         .layer(TraceLayer::new_for_http())

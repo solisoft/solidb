@@ -23,7 +23,7 @@
         <span class="w-2 h-8 bg-indigo-500 rounded-full"></span>
         Technology Stack
       </h2>
-      
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Core Runtime -->
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-indigo-500/30 transition-all group">
@@ -211,6 +211,124 @@
               <span class="text-sm text-gray-500">Defines <code>StorageEngine</code> and <code>Collection</code> structs. Manages direct interaction with the underlying RocksDB instance.</span>
             </div>
           </div>
+        </div>
+
+        <!-- src/cluster/ -->
+        <div class="relative pl-10">
+          <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-emerald-500 border-4 border-gray-900"></div>
+          <div class="bg-gray-800/30 border border-white/5 rounded-xl p-6">
+            <h3 class="text-xl font-bold text-emerald-300 mb-2 font-mono">src/cluster/</h3>
+            <p class="text-gray-400 mb-4">Multi-node replication and clustering.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">service.rs</code>
+                <span class="text-xs text-gray-500">Replication service for peer-to-peer communication.</span>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">replication.rs</code>
+                <span class="text-xs text-gray-500">Persistent replication log and entry management.</span>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">hlc.rs</code>
+                <span class="text-xs text-gray-500">Hybrid Logical Clock for distributed ordering.</span>
+              </div>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                <code class="text-sm font-bold text-white block mb-1">config.rs</code>
+                <span class="text-xs text-gray-500">Cluster configuration and peer management.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cluster Architecture -->
+    <div class="my-20">
+      <h2 id="cluster" class="text-3xl font-bold text-white mb-8 flex items-center gap-6">
+        <span class="w-2 h-8 bg-emerald-500 rounded-full"></span>
+        Cluster Architecture
+        <span class="px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-500/30">NEW</span>
+      </h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Replication -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-emerald-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-emerald-500/20 rounded-xl border border-emerald-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Replication</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-emerald-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-emerald-300 block mb-1">Peer-to-Peer</strong>
+                <span class="text-sm text-gray-400">All nodes are equal - no master/slave distinction.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-emerald-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-emerald-300 block mb-1">Push & Pull Sync</strong>
+                <span class="text-sm text-gray-400">Bidirectional replication with catch-up support.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Conflict Resolution -->
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:bg-gray-900/60 hover:border-teal-500/30 transition-all group">
+          <div class="flex items-center mb-6 gap-6">
+            <div class="p-3 bg-teal-500/20 rounded-xl border border-teal-500/30 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <h3 class="text-xl font-bold text-white">Conflict Resolution</h3>
+          </div>
+          <ul class="space-y-4">
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-teal-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-teal-300 block mb-1">Hybrid Logical Clocks</strong>
+                <span class="text-sm text-gray-400">Consistent event ordering across distributed nodes.</span>
+              </div>
+            </li>
+            <li class="flex items-start">
+              <svg class="w-5 h-5 text-teal-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+              <div>
+                <strong class="text-teal-300 block mb-1">Last-Write-Wins</strong>
+                <span class="text-sm text-gray-400">Automatic conflict resolution using HLC timestamps.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Cluster Diagram -->
+      <div class="mt-8 bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8">
+        <h3 class="text-lg font-bold text-white mb-4">Cluster Communication</h3>
+        <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto">
+          <pre class="text-gray-300">┌─────────────────────────────────────────────────────────────┐
+│                         Cluster                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐    Replication    ┌─────────────┐         │
+│  │   Node 1    │◄─────────────────►│   Node 2    │         │
+│  │ HTTP: 6745  │      (TCP)        │ HTTP: 6755  │         │
+│  │ Repl: 6746  │                   │ Repl: 6756  │         │
+│  └──────┬──────┘                   └──────┬──────┘         │
+│         │                                 │                │
+│         │         Replication             │                │
+│         └────────────┬────────────────────┘                │
+│                      │                                     │
+│                      ▼                                     │
+│               ┌─────────────┐                              │
+│               │   Node 3    │                              │
+│               │ HTTP: 6765  │                              │
+│               │ Repl: 6766  │                              │
+│               └─────────────┘                              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘</pre>
         </div>
       </div>
     </div>

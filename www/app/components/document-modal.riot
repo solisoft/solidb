@@ -53,6 +53,8 @@
   </div>
 
   <script>
+    import { getApiUrl } from '/api-config.js'
+
     export default {
       state: {
         visible: false,
@@ -170,7 +172,7 @@
         }
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           let response
 
           if (this.state.document) {

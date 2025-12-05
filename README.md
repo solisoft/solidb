@@ -14,6 +14,8 @@ A lightweight, high-performance database server written in Rust that implements 
 - 📦 **Collections**: Organize documents into collections
 - 📊 **Indexing**: Hash and persistent indexes for fast queries
 - 🌍 **Geo Queries**: Spatial indexes and distance functions
+- 🔄 **Multi-Node Replication**: Peer-to-peer replication with automatic sync
+- ⚡ **Hybrid Logical Clocks**: Consistent ordering across distributed nodes
 
 ## Quick Start
 
@@ -32,6 +34,39 @@ cargo run --release
 ```
 
 The server will start on `http://localhost:6745`.
+
+### Command Line Options
+
+```bash
+solidb [OPTIONS]
+
+Options:
+  -p, --port <PORT>              Port to listen on [default: 6745]
+      --node-id <NODE_ID>        Unique node identifier (auto-generated if not provided)
+      --peer <PEER>              Peer nodes to replicate with (can be repeated)
+      --replication-port <PORT>  Port for inter-node replication [default: 6746]
+      --data-dir <PATH>          Data directory path [default: ./data]
+```
+
+### Single Node Mode
+
+```bash
+# Run a single server (default)
+cargo run --release
+```
+
+### Cluster Mode
+
+```bash
+# Node 1 (initial node)
+cargo run --release -- --data-dir ./data1 --port 6745 --replication-port 6746
+
+# Node 2 (joins the cluster)
+cargo run --release -- --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746
+
+# Node 3 (joins via any existing node)
+cargo run --release -- --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
+```
 
 ### Basic Usage
 
@@ -494,6 +529,123 @@ cargo build --release
 ./target/release/solidb
 ```
 
+## Cluster & Replication
+
+SoliDB supports multi-node replication for high availability and horizontal scaling.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Cluster Architecture                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐    TCP/JSON    ┌─────────────┐            │
+│  │   Node 1    │◄──────────────►│   Node 2    │            │
+│  │  :6745/:6746│                │  :6755/:6756│            │
+│  └──────┬──────┘                └──────┬──────┘            │
+│         │                              │                   │
+│         │         TCP/JSON             │                   │
+│         └──────────────┬───────────────┘                   │
+│                        │                                   │
+│                        ▼                                   │
+│               ┌─────────────┐                              │
+│               │   Node 3    │                              │
+│               │  :6765/:6766│                              │
+│               └─────────────┘                              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Features
+
+- **Peer-to-Peer**: No single master - all nodes accept writes
+- **Automatic Sync**: New nodes receive full data sync automatically
+- **Peer Discovery**: Nodes share peer information for automatic mesh formation
+- **Last-Write-Wins**: Conflict resolution using Hybrid Logical Clocks
+- **Persistent Log**: Replication log survives restarts
+
+### Cluster Setup
+
+#### Step 1: Start the First Node
+
+```bash
+./solidb --data-dir ./data1 --port 6745 --replication-port 6746 --node-id node1
+```
+
+#### Step 2: Start Additional Nodes
+
+```bash
+# Join via the first node
+./solidb --data-dir ./data2 --port 6755 --replication-port 6756 \
+         --node-id node2 --peer 192.168.1.10:6746
+
+# Or join via any existing node
+./solidb --data-dir ./data3 --port 6765 --replication-port 6766 \
+         --node-id node3 --peer 192.168.1.11:6756
+```
+
+### Cluster Status API
+
+```bash
+curl http://localhost:6745/_api/cluster/status
+```
+
+**Response:**
+```json
+{
+  "node_id": "node1",
+  "is_cluster_mode": true,
+  "current_sequence": 1234,
+  "log_entries": 1234,
+  "peers": [
+    {
+      "address": "192.168.1.11:6756",
+      "is_connected": true,
+      "last_seen_secs_ago": 2,
+      "replication_lag": 0
+    },
+    {
+      "address": "192.168.1.12:6766",
+      "is_connected": true,
+      "last_seen_secs_ago": 5,
+      "replication_lag": 3
+    }
+  ]
+}
+```
+
+### How Replication Works
+
+1. **Write Operation**: When a document is inserted/updated/deleted, the operation is recorded in the local replication log with a Hybrid Logical Clock timestamp.
+
+2. **Push to Peers**: The node pushes new entries to all connected peers.
+
+3. **Conflict Resolution**: If two nodes modify the same document, Last-Write-Wins (LWW) based on HLC timestamps determines the winner.
+
+4. **Full Sync**: New nodes joining the cluster receive a full snapshot of all databases, collections, and documents.
+
+5. **Incremental Sync**: After initial sync, only new operations are replicated.
+
+### Replicated Operations
+
+All data mutations are replicated:
+- ✅ Insert document
+- ✅ Update document
+- ✅ Delete document
+- ✅ Create database
+- ✅ Delete database
+- ✅ Create collection
+- ✅ Delete collection
+- ✅ Truncate collection
+
+### Best Practices
+
+1. **Node IDs**: Use meaningful, unique node IDs for easier debugging
+2. **Network**: Ensure replication ports are accessible between nodes
+3. **Data Directories**: Each node must have its own data directory
+4. **Monitoring**: Check cluster status regularly via the API
+
 ## Limitations
 
 This is an initial implementation focusing on core functionality. Current limitations:
@@ -501,7 +653,6 @@ This is an initial implementation focusing on core functionality. Current limita
 - No graph queries
 - No complex aggregations (GROUP BY, etc.)
 - No authentication/authorization
-- Single-node only (no clustering)
 
 ## Future Enhancements
 
@@ -514,11 +665,11 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Bind Variables~~ ✅ Implemented! (@variable for AQL injection prevention)
 - [x] ~~Aggregation functions~~ ✅ (COUNT, SUM, AVG, etc.)
 - [x] ~~Multi-Database Architecture~~ ✅ Implemented! (isolated databases with collections)
+- [x] ~~Replication and clustering~~ ✅ Implemented! (peer-to-peer, LWW conflict resolution, HLC)
 - [ ] Graph traversal queries
 - [ ] Authentication and authorization
 - [ ] WebSocket support
 - [ ] Query optimization
-- [ ] Replication and clustering
 
 ## License
 

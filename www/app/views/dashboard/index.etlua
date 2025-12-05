@@ -28,7 +28,7 @@
       </div>
       <div class="bg-gray-900/50 px-5 py-3 border-t border-gray-700">
         <div class="text-sm">
-          <a href="/dashboard/collections" class="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+          <a href="/database/_system/collections" class="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
             View all
           </a>
         </div>
