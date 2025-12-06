@@ -1767,105 +1767,171 @@ impl Collection {
     /// Get documents sorted by indexed field with optional limit
     /// Returns documents in sorted order by the indexed field
     /// 
-    /// OPTIMIZATION: For ascending order with limit, we can stop early since
-    /// the index stores entries in sorted order. For descending, we need to
-    /// collect all entries and reverse.
+    /// OPTIMIZATION: Uses BinaryHeap-based top-N selection for small limits.
+    /// This gives O(n log k) complexity instead of O(n log n) for full sort.
     pub fn index_sorted(
         &self,
         field: &str,
         ascending: bool,
         limit: Option<usize>,
     ) -> Option<Vec<Document>> {
+        use std::collections::BinaryHeap;
+        use std::cmp::Ordering;
+        
         let index = self.get_index_for_field(field)?;
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
 
         let prefix = format!("{}{}:", IDX_PREFIX, index.name);
         
-        tracing::debug!(
-            "index_sorted: field={}, ascending={}, limit={:?}, prefix={}",
-            field, ascending, limit, prefix
-        );
-
-        // Collect (value, doc_key) pairs from the index
-        // Index entries are stored as: idx:<name>:<value_json>:<doc_key>
-        // The iteration order is by key bytes, which means values are sorted lexicographically
-        let mut entries: Vec<(Value, String)> = Vec::new();
-        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
-
-        for item in iter {
-            if let Ok((k, v)) = item {
-                if !k.starts_with(prefix.as_bytes()) {
-                    break;
+        // Wrapper for heap comparison
+        #[derive(Clone)]
+        struct HeapEntry {
+            value: Value,
+            doc_key: String,
+            ascending: bool,
+        }
+        
+        impl PartialEq for HeapEntry {
+            fn eq(&self, other: &Self) -> bool {
+                compare_json_values(&self.value, &other.value) == Ordering::Equal
+            }
+        }
+        impl Eq for HeapEntry {}
+        
+        impl PartialOrd for HeapEntry {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        
+        impl Ord for HeapEntry {
+            fn cmp(&self, other: &Self) -> Ordering {
+                let cmp = compare_json_values(&self.value, &other.value);
+                // For ascending: we want a max-heap to evict largest values
+                // For descending: we want a min-heap to evict smallest values
+                if self.ascending {
+                    cmp // max-heap behavior (largest at top)
+                } else {
+                    cmp.reverse() // min-heap behavior (smallest at top)
                 }
-                // Parse the index entry key to extract value and doc_key
-                let key_str = String::from_utf8_lossy(&k);
-                let suffix = &key_str[prefix.len()..];
-                // Format is: value_json:doc_key
-                // We need to find the last colon to split correctly
-                if let Some(last_colon) = suffix.rfind(':') {
-                    let value_str = &suffix[..last_colon];
-                    if let Ok(value) = serde_json::from_str::<Value>(value_str) {
-                        let doc_key = String::from_utf8_lossy(&v).to_string();
-                        entries.push((value, doc_key));
-                        
-                        // OPTIMIZATION: For ascending order with limit, we can apply
-                        // limit during collection IF values were stored in sorted order.
-                        // However, the index key includes JSON serialization which may not
-                        // preserve numeric ordering. So we still need to sort.
-                        // But we CAN limit the total entries we process for large datasets.
-                        if let Some(lim) = limit {
-                            // For very large limits, cap collection to avoid OOM
-                            // This is a heuristic - we collect extra to handle sorting
-                            if entries.len() >= lim * 10 && entries.len() >= 10000 {
-                                tracing::debug!(
-                                    "index_sorted: capping collection at {} entries for limit {}",
-                                    entries.len(), lim
-                                );
-                                break;
+            }
+        }
+
+        let iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+        let mut entry_count = 0;
+        
+        // Use heap for small limits, full collection for large/no limit
+        let use_heap = limit.map(|l| l <= 100).unwrap_or(false);
+        
+        if use_heap {
+            let limit = limit.unwrap();
+            let mut heap: BinaryHeap<HeapEntry> = BinaryHeap::with_capacity(limit + 1);
+            
+            for item in iter {
+                if let Ok((k, v)) = item {
+                    if !k.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    entry_count += 1;
+                    
+                    let key_str = String::from_utf8_lossy(&k);
+                    let suffix = &key_str[prefix.len()..];
+                    
+                    if let Some(last_colon) = suffix.rfind(':') {
+                        let value_str = &suffix[..last_colon];
+                        if let Ok(value) = serde_json::from_str::<Value>(value_str) {
+                            let doc_key = String::from_utf8_lossy(&v).to_string();
+                            
+                            heap.push(HeapEntry { value, doc_key, ascending });
+                            
+                            // Keep only top N entries
+                            if heap.len() > limit {
+                                heap.pop(); // Remove the "worst" entry
                             }
                         }
                     }
                 }
             }
-        }
-        drop(db);
-        
-        tracing::debug!("index_sorted: collected {} entries", entries.len());
-
-        // Sort entries by value
-        entries.sort_by(|(a, _), (b, _)| {
-            let cmp = compare_json_values(a, b);
-            if ascending {
-                cmp
-            } else {
-                cmp.reverse()
-            }
-        });
-
-        // Apply limit
-        let doc_keys: Vec<String> = if let Some(limit) = limit {
-            entries.into_iter().take(limit).map(|(_, k)| k).collect()
+            drop(db);
+            
+            tracing::debug!(
+                "index_sorted (heap): scanned {} entries, kept {} in heap",
+                entry_count, heap.len()
+            );
+            
+            // Extract entries from heap in sorted order
+            let mut entries: Vec<HeapEntry> = heap.into_vec();
+            entries.sort_by(|a, b| {
+                let cmp = compare_json_values(&a.value, &b.value);
+                if ascending { cmp } else { cmp.reverse() }
+            });
+            
+            let doc_keys: Vec<String> = entries.into_iter().map(|e| e.doc_key).collect();
+            
+            // Fetch documents in order
+            let docs = self.get_many(&doc_keys);
+            let doc_map: std::collections::HashMap<_, _> =
+                docs.into_iter().map(|d| (d.key.clone(), d)).collect();
+            
+            let result: Vec<Document> = doc_keys
+                .into_iter()
+                .filter_map(|key| doc_map.get(&key).cloned())
+                .collect();
+            
+            Some(result)
         } else {
-            entries.into_iter().map(|(_, k)| k).collect()
-        };
-
-        tracing::debug!("index_sorted: fetching {} documents", doc_keys.len());
-
-        // Fetch documents in order
-        let docs = self.get_many(&doc_keys);
-
-        // Preserve order from index
-        let mut result: Vec<Document> = Vec::with_capacity(doc_keys.len());
-        let doc_map: std::collections::HashMap<_, _> =
-            docs.into_iter().map(|d| (d.key.clone(), d)).collect();
-        for key in doc_keys {
-            if let Some(doc) = doc_map.get(&key) {
-                result.push(doc.clone());
+            // Full collection path for large limits or no limit
+            let mut entries: Vec<(Value, String)> = Vec::new();
+            
+            for item in iter {
+                if let Ok((k, v)) = item {
+                    if !k.starts_with(prefix.as_bytes()) {
+                        break;
+                    }
+                    entry_count += 1;
+                    
+                    let key_str = String::from_utf8_lossy(&k);
+                    let suffix = &key_str[prefix.len()..];
+                    
+                    if let Some(last_colon) = suffix.rfind(':') {
+                        let value_str = &suffix[..last_colon];
+                        if let Ok(value) = serde_json::from_str::<Value>(value_str) {
+                            let doc_key = String::from_utf8_lossy(&v).to_string();
+                            entries.push((value, doc_key));
+                        }
+                    }
+                }
             }
-        }
+            drop(db);
+            
+            tracing::debug!("index_sorted (full): collected {} entries", entries.len());
 
-        Some(result)
+            // Sort entries by value
+            entries.sort_by(|(a, _), (b, _)| {
+                let cmp = compare_json_values(a, b);
+                if ascending { cmp } else { cmp.reverse() }
+            });
+
+            // Apply limit
+            let doc_keys: Vec<String> = if let Some(limit) = limit {
+                entries.into_iter().take(limit).map(|(_, k)| k).collect()
+            } else {
+                entries.into_iter().map(|(_, k)| k).collect()
+            };
+
+            // Fetch documents in order
+            let docs = self.get_many(&doc_keys);
+            let doc_map: std::collections::HashMap<_, _> =
+                docs.into_iter().map(|d| (d.key.clone(), d)).collect();
+            
+            let result: Vec<Document> = doc_keys
+                .into_iter()
+                .filter_map(|key| doc_map.get(&key).cloned())
+                .collect();
+
+            Some(result)
+        }
     }
 
     // ==================== Geo Index Operations ====================
