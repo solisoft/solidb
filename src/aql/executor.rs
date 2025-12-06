@@ -187,6 +187,139 @@ impl<'a> QueryExecutor<'a> {
         self
     }
 
+    /// Try to execute a streaming bulk INSERT optimization
+    /// Returns Some(results) if the pattern matches, None otherwise
+    /// Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
+    fn try_streaming_bulk_insert(
+        &self,
+        query: &Query,
+        initial_bindings: &Context,
+    ) -> DbResult<Option<Vec<Value>>> {
+        // Check pattern: exactly 2 body clauses (FOR + INSERT), no sort/limit/filter
+        if query.body_clauses.len() != 2
+            || query.sort_clause.is_some()
+            || query.limit_clause.is_some()
+        {
+            return Ok(None);
+        }
+
+        // First clause must be FOR with range expression
+        let for_clause = match &query.body_clauses[0] {
+            BodyClause::For(fc) => fc,
+            _ => return Ok(None),
+        };
+
+        // Second clause must be INSERT
+        let insert_clause = match &query.body_clauses[1] {
+            BodyClause::Insert(ic) => ic,
+            _ => return Ok(None),
+        };
+
+        // FOR must have a range expression
+        let range_expr = match &for_clause.source_expression {
+            Some(Expression::Range(start, end)) => (start, end),
+            _ => return Ok(None),
+        };
+
+        // Evaluate range bounds
+        let start_val = self.evaluate_expr_with_context(range_expr.0, initial_bindings)?;
+        let end_val = self.evaluate_expr_with_context(range_expr.1, initial_bindings)?;
+
+        let start = match &start_val {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)),
+            _ => None,
+        };
+        let end = match &end_val {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)),
+            _ => None,
+        };
+
+        let (start, end) = match (start, end) {
+            (Some(s), Some(e)) => (s, e),
+            _ => return Ok(None),
+        };
+
+        // Only use streaming for large ranges (>10000 items)
+        const STREAMING_THRESHOLD: i64 = 10_000;
+        const BATCH_SIZE: i64 = 10_000;
+
+        let total_count = (end - start + 1).max(0);
+        if total_count < STREAMING_THRESHOLD {
+            return Ok(None); // Use normal path for small ranges
+        }
+
+        tracing::info!(
+            "STREAMING INSERT: Processing {} documents in batches of {}",
+            total_count,
+            BATCH_SIZE
+        );
+
+        // Get collection once
+        let collection = self.get_collection(&insert_clause.collection)?;
+        let has_indexes = !collection.list_indexes().is_empty();
+
+        let var_name = &for_clause.variable;
+        let mut all_results: Vec<Value> = Vec::new();
+        let mut current = start;
+        let total_start = std::time::Instant::now();
+
+        while current <= end {
+            let batch_end = (current + BATCH_SIZE - 1).min(end);
+            let batch_size = (batch_end - current + 1) as usize;
+
+            // Build documents for this batch
+            let mut documents = Vec::with_capacity(batch_size);
+            for i in current..=batch_end {
+                let mut ctx = initial_bindings.clone();
+                ctx.insert(
+                    var_name.clone(),
+                    Value::Number(serde_json::Number::from(i)),
+                );
+                let doc_value = self.evaluate_expr_with_context(&insert_clause.document, &ctx)?;
+                documents.push(doc_value);
+            }
+
+            // Batch insert
+            let inserted_docs = collection.insert_batch(documents)?;
+
+            // Handle RETURN clause if present
+            if query.return_clause.is_some() {
+                for i in current..=batch_end {
+                    all_results.push(Value::Number(serde_json::Number::from(i)));
+                }
+            }
+
+            // Log to replication asynchronously
+            self.log_mutations_async(&insert_clause.collection, Operation::Insert, &inserted_docs);
+
+            // Index documents if needed
+            if has_indexes && !inserted_docs.is_empty() {
+                let _ = collection.index_documents(&inserted_docs);
+            }
+
+            current = batch_end + 1;
+
+            // Log progress for very large inserts
+            if total_count > 100_000 && (current - start) % 100_000 == 0 {
+                tracing::info!(
+                    "STREAMING INSERT: Processed {}/{} documents",
+                    current - start,
+                    total_count
+                );
+            }
+        }
+
+        let elapsed = total_start.elapsed();
+        tracing::info!(
+            "STREAMING INSERT: Completed {} documents in {:?} ({:.0} docs/sec)",
+            total_count,
+            elapsed,
+            total_count as f64 / elapsed.as_secs_f64()
+        );
+
+        Ok(Some(all_results))
+    }
+
     /// Log a mutation to the replication service
     fn log_mutation(
         &self,
@@ -281,6 +414,13 @@ impl<'a> QueryExecutor<'a> {
             let value =
                 self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
             initial_bindings.insert(let_clause.variable.clone(), value);
+        }
+
+        // Optimization: Streaming bulk INSERT for range-based FOR loops
+        // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
+        // This avoids materializing millions of row contexts in memory
+        if let Some(result) = self.try_streaming_bulk_insert(query, &initial_bindings)? {
+            return Ok(result);
         }
 
         // Optimization: Use index for SORT + LIMIT if available
