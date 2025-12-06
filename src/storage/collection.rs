@@ -1780,33 +1780,47 @@ impl Collection {
         let index_name = index.name.clone();
         let prefix = format!("{}{}:", IDX_PREFIX, index_name);
 
-        // FAST PATH: For LIMIT 1, seek directly to first/last entry
-        if limit == Some(1) {
-            let doc_key: Option<String> = {
-                let db = self.db.read().unwrap();
-                let cf = db.cf_handle(&self.name)?;
-                let prefix_bytes = prefix.as_bytes();
+        // FAST PATH: For small limits, use direct seek without sorting
+        // This works for lexicographically sortable values (ISO 8601 dates, padded numbers)
+        if let Some(lim) = limit {
+            if lim <= 100 {
+                let doc_keys: Vec<String> = {
+                    let db = self.db.read().unwrap();
+                    let cf = db.cf_handle(&self.name)?;
+                    let prefix_bytes = prefix.as_bytes();
+                    
+                    if ascending {
+                        let iter = db.prefix_iterator_cf(cf, prefix_bytes);
+                        iter.into_iter()
+                            .filter_map(|r| r.ok())
+                            .take_while(|(k, _)| k.starts_with(prefix_bytes))
+                            .take(lim)
+                            .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
+                            .collect()
+                    } else {
+                        let mut seek_key = prefix.clone().into_bytes();
+                        seek_key.push(0xFF);
+                        let iter = db.iterator_cf(cf, IteratorMode::From(&seek_key, Direction::Reverse));
+                        iter.into_iter()
+                            .filter_map(|r| r.ok())
+                            .take_while(|(k, _)| k.starts_with(prefix_bytes))
+                            .take(lim)
+                            .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
+                            .collect()
+                    }
+                }; // db lock released here
                 
-                if ascending {
-                    let iter = db.prefix_iterator_cf(cf, prefix_bytes);
-                    iter.into_iter()
-                        .filter_map(|r| r.ok())
-                        .find(|(k, _)| k.starts_with(prefix_bytes))
-                        .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
-                } else {
-                    let mut seek_key = prefix.clone().into_bytes();
-                    seek_key.push(0xFF);
-                    let iter = db.iterator_cf(cf, IteratorMode::From(&seek_key, Direction::Reverse));
-                    iter.into_iter()
-                        .filter_map(|r| r.ok())
-                        .find(|(k, _)| k.starts_with(prefix_bytes))
-                        .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
-                }
-            }; // db lock released here
-            
-            if let Some(key) = doc_key {
-                if let Ok(doc) = self.get(&key) {
-                    return Some(vec![doc]);
+                if !doc_keys.is_empty() {
+                    let docs = self.get_many(&doc_keys);
+                    let doc_map: std::collections::HashMap<_, _> =
+                        docs.into_iter().map(|d| (d.key.clone(), d)).collect();
+                    
+                    let result: Vec<Document> = doc_keys
+                        .into_iter()
+                        .filter_map(|key| doc_map.get(&key).cloned())
+                        .collect();
+                    
+                    return Some(result);
                 }
             }
         }
