@@ -239,9 +239,9 @@ impl<'a> QueryExecutor<'a> {
             _ => return Ok(None),
         };
 
-        // Only use streaming for large ranges (>10000 items)
-        const STREAMING_THRESHOLD: i64 = 10_000;
-        const BATCH_SIZE: i64 = 10_000;
+        // Only use streaming for large ranges (>5000 items)
+        const STREAMING_THRESHOLD: i64 = 5_000;
+        const BATCH_SIZE: i64 = 5_000;
 
         let total_count = (end - start + 1).max(0);
         if total_count < STREAMING_THRESHOLD {
@@ -299,6 +299,9 @@ impl<'a> QueryExecutor<'a> {
 
             current = batch_end + 1;
 
+            // Throttled flush of stats (max 1 per second)
+            collection.flush_stats_throttled();
+
             // Log progress for very large inserts
             if total_count > 100_000 && (current - start) % 100_000 == 0 {
                 tracing::info!(
@@ -316,6 +319,9 @@ impl<'a> QueryExecutor<'a> {
             elapsed,
             total_count as f64 / elapsed.as_secs_f64()
         );
+
+        // Final flush to ensure count is persisted
+        collection.flush_stats();
 
         Ok(Some(all_results))
     }

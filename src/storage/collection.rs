@@ -83,6 +83,8 @@ pub struct Collection {
     doc_count: Arc<AtomicUsize>,
     /// Whether count needs to be persisted to disk
     count_dirty: Arc<AtomicBool>,
+    /// Last flush time in seconds since UNIX epoch (for throttling)
+    last_flush_time: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Clone for Collection {
@@ -92,6 +94,7 @@ impl Clone for Collection {
             db: self.db.clone(),
             doc_count: self.doc_count.clone(),
             count_dirty: self.count_dirty.clone(),
+            last_flush_time: self.last_flush_time.clone(),
         }
     }
 }
@@ -136,6 +139,7 @@ impl Collection {
             db,
             doc_count: Arc::new(AtomicUsize::new(count)),
             count_dirty: Arc::new(AtomicBool::new(false)),
+            last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -826,6 +830,31 @@ impl Collection {
             if let Some(cf) = db.cf_handle(&self.name) {
                 let _ = db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), count.to_string().as_bytes());
             }
+            // Update last flush time
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            self.last_flush_time.store(now, Ordering::Relaxed);
+        }
+    }
+
+    /// Flush count to disk if dirty AND at least 1 second has passed since last flush
+    /// Use this during bulk operations to avoid excessive disk writes
+    pub fn flush_stats_throttled(&self) {
+        if !self.count_dirty.load(Ordering::Relaxed) {
+            return; // Nothing to flush
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let last = self.last_flush_time.load(Ordering::Relaxed);
+
+        // Only flush if at least 1 second has passed
+        if now > last {
+            self.flush_stats();
         }
     }
 

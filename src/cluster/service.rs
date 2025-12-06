@@ -1537,6 +1537,7 @@ impl ReplicationService {
     }
 
     /// Record a write operation in the replication log
+    /// Only logs when in cluster mode (has peers) to avoid overhead in single-node mode
     pub fn record_write(
         &self,
         database: &str,
@@ -1546,6 +1547,11 @@ impl ReplicationService {
         document_data: Option<&[u8]>,
         prev_rev: Option<&str>,
     ) -> u64 {
+        // Skip replication logging in single-node mode
+        if !self.config.is_cluster_mode() {
+            return 0;
+        }
+
         let hlc = self.hlc_generator.now();
 
         let entry = ReplicationEntry::new(
