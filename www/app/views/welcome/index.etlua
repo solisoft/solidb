@@ -1,4 +1,4 @@
-<div class="min-h-screen flex items-center justify-center bg-gray-900 relative overflow-hidden">
+<div class="min-h-[calc(100vh-5rem)] flex items-center justify-center relative overflow-hidden">
   
   <!-- Server Unreachable Banner -->
   <div id="server-unreachable-banner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-500/10 border-b border-red-500/20 backdrop-blur-xl">
@@ -362,8 +362,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           dbSelect.appendChild(option);
         });
 
-        // Auto-select _system
-        if (data.databases.includes('_system')) {
+        // Auto-select logic
+        const lastUsedDb = localStorage.getItem('solidb_current_db');
+        if (lastUsedDb && data.databases.includes(lastUsedDb)) {
+          dbSelect.value = lastUsedDb;
+        } else if (data.databases.includes('_system')) {
           dbSelect.value = '_system';
         }
 

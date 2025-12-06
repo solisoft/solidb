@@ -254,6 +254,11 @@ Each node has two ports:
                     <td class="py-3 px-4 text-gray-500">./data</td>
                     <td class="py-3 px-4 text-gray-300">Directory for data and replication logs</td>
                   </tr>
+                  <tr>
+                    <td class="py-3 px-4"><code class="text-emerald-400 bg-gray-800 px-2 py-1 rounded">--keyfile</code></td>
+                    <td class="py-3 px-4 text-gray-500">none</td>
+                    <td class="py-3 px-4 text-gray-300">Path to keyfile for cluster authentication (optional)</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -466,6 +471,94 @@ Each node has two ports:
               <div>
                 <h4 class="text-yellow-300 font-bold mb-1">Eventual Consistency</h4>
                 <p class="text-sm text-yellow-200/70">SoliDB provides eventual consistency. During network partitions, nodes may temporarily have different data, but they will converge once connectivity is restored.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security -->
+      <section id="security" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              Security
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">SoliDB supports optional keyfile-based authentication for cluster nodes. When enabled, all nodes must present the same keyfile to join the cluster.</p>
+
+            <h3 class="text-lg font-bold text-white">Keyfile Authentication</h3>
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <p class="text-sm text-gray-400 mb-4">To enable authentication, create a keyfile and pass it to all nodes:</p>
+              <pre class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto mb-4"><code class="text-sm text-green-400"># Create a keyfile with a secret key
+echo "my-secret-cluster-key" > /path/to/cluster.key
+chmod 600 /path/to/cluster.key</code></pre>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mt-8">Complete Example: 3-Node Secured Cluster</h3>
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5 space-y-4">
+              <p class="text-sm text-gray-400">Start a fully authenticated 3-node cluster:</p>
+              
+              <div class="space-y-3">
+                <div>
+                  <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Terminal 1 - First Node</span>
+                  <pre class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto mt-1"><code class="text-sm text-green-400">./solidb --data-dir ./data1 \
+         --port 6745 \
+         --replication-port 6746 \
+         --node-id node1 \
+         --keyfile /path/to/cluster.key</code></pre>
+                </div>
+                
+                <div>
+                  <span class="text-xs font-bold text-teal-400 uppercase tracking-wider">Terminal 2 - Second Node</span>
+                  <pre class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto mt-1"><code class="text-sm text-green-400">./solidb --data-dir ./data2 \
+         --port 6755 \
+         --replication-port 6756 \
+         --node-id node2 \
+         --peer 127.0.0.1:6746 \
+         --keyfile /path/to/cluster.key</code></pre>
+                </div>
+                
+                <div>
+                  <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Terminal 3 - Third Node</span>
+                  <pre class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto mt-1"><code class="text-sm text-green-400">./solidb --data-dir ./data3 \
+         --port 6765 \
+         --replication-port 6766 \
+         --node-id node3 \
+         --peer 127.0.0.1:6746 \
+         --keyfile /path/to/cluster.key</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mt-8">What Happens Without the Correct Keyfile?</h3>
+            <div class="bg-red-900/10 border border-red-500/30 rounded-xl p-5">
+              <p class="text-sm text-red-200/70 mb-3">If a node tries to connect without a keyfile or with a wrong keyfile:</p>
+              <pre class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto"><code class="text-sm text-red-400"># This will be REJECTED - wrong keyfile
+./solidb --data-dir ./data4 \
+         --port 6775 \
+         --peer 127.0.0.1:6746 \
+         --keyfile /path/to/wrong.key
+
+# Log output:
+# [AUTH] Authentication failed with 127.0.0.1:6746: Authentication failed</code></pre>
+            </div>
+
+            <div class="bg-violet-900/10 border border-violet-500/30 rounded-xl p-5 flex items-start">
+              <svg class="w-6 h-6 text-violet-400 mt-0.5 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              <div>
+                <h4 class="text-violet-300 font-bold mb-1">How It Works</h4>
+                <p class="text-sm text-violet-200/70">When a node with a keyfile receives a connection, it sends a challenge. The connecting node must respond with a hash computed from the challenge and keyfile. Nodes with mismatched or missing keyfiles are rejected.</p>
+              </div>
+            </div>
+
+            <div class="bg-yellow-900/10 border border-yellow-500/30 rounded-xl p-5 flex items-start">
+              <svg class="w-6 h-6 text-yellow-400 mt-0.5 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              <div>
+                <h4 class="text-yellow-300 font-bold mb-1">Important</h4>
+                <p class="text-sm text-yellow-200/70">All nodes in a cluster must use the same keyfile. Keep the keyfile secure and never commit it to version control.</p>
               </div>
             </div>
           </div>

@@ -96,6 +96,23 @@ pub enum ReplicationMessage {
         current: usize,
         total: usize,
     },
+
+    // ==================== Authentication Messages ====================
+    /// Authentication challenge (sent by server when keyfile is configured)
+    AuthChallenge {
+        challenge: String,
+    },
+
+    /// Authentication response (client responds with HMAC of challenge)
+    AuthResponse {
+        response: String,
+    },
+
+    /// Authentication result
+    AuthResult {
+        success: bool,
+        message: String,
+    },
 }
 
 impl ReplicationMessage {
@@ -367,6 +384,72 @@ impl ReplicationService {
         let mut reader = BufReader::new(reader);
         let mut line = String::new();
 
+        // Authentication handshake if keyfile is configured
+        if let Some(ref keyfile) = self.config.keyfile {
+            // Generate a random challenge
+            let challenge = uuid::Uuid::new_v4().to_string();
+            tracing::debug!("[AUTH] Sending challenge to {}", addr);
+            
+            let challenge_msg = ReplicationMessage::AuthChallenge {
+                challenge: challenge.clone(),
+            };
+            writer.write_all(&challenge_msg.to_bytes()).await?;
+
+            // Wait for response
+            line.clear();
+            let bytes_read = tokio::time::timeout(
+                Duration::from_secs(10),
+                reader.read_line(&mut line)
+            ).await??;
+            
+            if bytes_read == 0 {
+                tracing::warn!("[AUTH] Connection closed during auth from {}", addr);
+                return Ok(());
+            }
+
+            let response: ReplicationMessage = match serde_json::from_str(&line) {
+                Ok(msg) => msg,
+                Err(e) => {
+                    tracing::warn!("[AUTH] Invalid auth response from {}: {}", addr, e);
+                    let result = ReplicationMessage::AuthResult {
+                        success: false,
+                        message: "Invalid message format".to_string(),
+                    };
+                    writer.write_all(&result.to_bytes()).await?;
+                    return Ok(());
+                }
+            };
+
+            // Verify the response
+            if let ReplicationMessage::AuthResponse { response: auth_response } = response {
+                let expected = Self::compute_auth_response(&challenge, keyfile);
+                if auth_response == expected {
+                    tracing::debug!("[AUTH] Authentication successful from {}", addr);
+                    let result = ReplicationMessage::AuthResult {
+                        success: true,
+                        message: "Authentication successful".to_string(),
+                    };
+                    writer.write_all(&result.to_bytes()).await?;
+                } else {
+                    tracing::warn!("[AUTH] Authentication failed from {} - invalid response", addr);
+                    let result = ReplicationMessage::AuthResult {
+                        success: false,
+                        message: "Authentication failed".to_string(),
+                    };
+                    writer.write_all(&result.to_bytes()).await?;
+                    return Ok(());
+                }
+            } else {
+                tracing::warn!("[AUTH] Expected AuthResponse from {}, got {:?}", addr, response);
+                let result = ReplicationMessage::AuthResult {
+                    success: false,
+                    message: "Expected AuthResponse message".to_string(),
+                };
+                writer.write_all(&result.to_bytes()).await?;
+                return Ok(());
+            }
+        }
+
         // Track the peer's replication address (learned from Ping messages)
         let mut peer_repl_addr: Option<String> = None;
 
@@ -419,6 +502,17 @@ impl ReplicationService {
         }
 
         Ok(())
+    }
+
+    /// Compute authentication response using SHA256(challenge + keyfile)
+    fn compute_auth_response(challenge: &str, keyfile: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        challenge.hash(&mut hasher);
+        keyfile.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
     }
 
     /// Send full database sync to a new node
@@ -883,6 +977,20 @@ impl ReplicationService {
 
             // FullSyncRequest is handled separately in handle_connection
             ReplicationMessage::FullSyncRequest { .. } => None,
+
+            // Auth messages are handled during connection handshake, not in main message loop
+            ReplicationMessage::AuthChallenge { .. } => {
+                tracing::debug!("[AUTH] Unexpected AuthChallenge in message loop");
+                None
+            }
+            ReplicationMessage::AuthResponse { .. } => {
+                tracing::debug!("[AUTH] Unexpected AuthResponse in message loop");
+                None
+            }
+            ReplicationMessage::AuthResult { .. } => {
+                tracing::debug!("[AUTH] Unexpected AuthResult in message loop");
+                None
+            }
         }
     }
 
@@ -980,6 +1088,60 @@ impl ReplicationService {
         let (reader, mut writer) = socket.into_split();
         let mut reader = BufReader::new(reader);
         let mut line = String::new();
+
+        // Handle authentication if the peer sends a challenge
+        // First, try to read with a short timeout to see if there's an auth challenge
+        let auth_result = tokio::time::timeout(
+            Duration::from_millis(500),
+            reader.read_line(&mut line)
+        ).await;
+
+        if let Ok(Ok(bytes_read)) = auth_result {
+            if bytes_read > 0 {
+                // Check if this is an auth challenge
+                if let Ok(ReplicationMessage::AuthChallenge { challenge }) = serde_json::from_str(&line) {
+                    tracing::debug!("[AUTH] Received challenge from {}", peer_addr);
+                    
+                    // We need a keyfile to respond
+                    if let Some(ref keyfile) = self.config.keyfile {
+                        let response = Self::compute_auth_response(&challenge, keyfile);
+                        let auth_response = ReplicationMessage::AuthResponse { response };
+                        writer.write_all(&auth_response.to_bytes()).await?;
+                        
+                        // Wait for auth result
+                        line.clear();
+                        let bytes_read = tokio::time::timeout(
+                            Duration::from_secs(10),
+                            reader.read_line(&mut line)
+                        ).await??;
+                        
+                        if bytes_read == 0 {
+                            anyhow::bail!("Connection closed during authentication");
+                        }
+                        
+                        if let Ok(ReplicationMessage::AuthResult { success, message }) = serde_json::from_str(&line) {
+                            if success {
+                                tracing::debug!("[AUTH] Authentication successful with {}", peer_addr);
+                            } else {
+                                tracing::error!("[AUTH] Authentication failed with {}: {}", peer_addr, message);
+                                anyhow::bail!("Authentication failed: {}", message);
+                            }
+                        } else {
+                            anyhow::bail!("Unexpected response during authentication");
+                        }
+                    } else {
+                        tracing::error!("[AUTH] Peer {} requires authentication but no keyfile configured", peer_addr);
+                        anyhow::bail!("Peer requires authentication but no keyfile configured");
+                    }
+                    line.clear();
+                } else {
+                    // Not an auth challenge, it's some other message - we'll need to handle it in the main loop
+                    // For now, just clear and continue - the peer doesn't require auth
+                    line.clear();
+                }
+            }
+        }
+        // Timeout means no auth challenge was sent - peer doesn't require auth
 
         // Check if we need a full sync (sequence is 0 and no databases except _system)
         let our_sequence = self.replication_log.current_sequence();

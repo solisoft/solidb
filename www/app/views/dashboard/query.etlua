@@ -20,6 +20,12 @@
         <span class="text-sm font-medium text-gray-300">Query Editor</span>
       </div>
       <div class="flex items-center space-x-2">
+        <button onclick="showHistory()" class="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+          <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          History
+        </button>
         <button onclick="explainQuery()" class="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
           <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -98,6 +104,58 @@
       <div id="resultsContent" class="space-y-4"></div>
     </div>
   </div>
+
+  <!-- History Modal -->
+  <div id="historyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0" role="dialog" aria-modal="true">
+    <!-- Backdrop -->
+    <div class="fixed inset-0 transition-opacity duration-300" onclick="closeHistory()"></div>
+    
+    <!-- Modal Content -->
+    <div id="historyModalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10">
+      <!-- Header -->
+      <div class="flex-none border-b border-gray-700 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 bg-indigo-500/10 rounded-lg">
+              <svg class="h-5 w-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white tracking-tight">Query History</h3>
+          </div>
+          <button onclick="closeHistory()" class="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-700/50 rounded-lg">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        
+        <!-- Search Bar -->
+        <div class="px-6 pb-4">
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </div>
+            <input type="text" id="historySearch" placeholder="Search queries..." onkeyup="filterHistory()"
+                   class="block w-full pl-10 pr-3 py-2 border border-gray-600 rounded-lg leading-5 bg-gray-900/50 text-gray-300 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm transition-colors">
+          </div>
+        </div>
+      </div>
+      
+      <!-- History List -->
+      <div id="historyList" class="flex-1 overflow-y-auto w-full p-6 space-y-3 bg-transparent scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+        <!-- Javascript will populate this -->
+      </div>
+      
+      <!-- Footer -->
+      <div class="px-6 py-3 bg-gray-800 border-t border-gray-700 text-xs text-gray-400 flex justify-between items-center">
+        <span>Click any query to load into editor</span>
+        <span class="opacity-50">Press ESC to close</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
@@ -110,6 +168,8 @@ function getUrl() {
 }
 let editor;
 let queryResults = []; // Store all query results
+const HISTORY_KEY = 'solidb_aql_history';
+const MAX_HISTORY = 100;
 
 // Initialize Monaco Editor
 require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
@@ -183,6 +243,9 @@ async function executeQuery() {
   const startTime = performance.now();
 
   try {
+    // Save to history immediately
+    saveQueryToHistory(query);
+
     const response = await fetch(getUrl() + '/cursor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -224,6 +287,9 @@ async function explainQuery() {
   const startTime = performance.now();
 
   try {
+    // Save to history immediately
+    saveQueryToHistory(query);
+
     const response = await fetch(getUrl() + '/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -418,9 +484,179 @@ function copyResults() {
   });
 }
 
+
+
+// --- History Logic ---
+
+function saveQueryToHistory(query) {
+  if (!query) return;
+  try {
+    console.log('Saving query to history:', query);
+    let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    // Remove existing if present to move it to the top (deduplication)
+    history = history.filter(q => q !== query);
+    // Add to top
+    history.unshift(query);
+    // Enforce limit
+    if (history.length > MAX_HISTORY) {
+      history = history.slice(0, MAX_HISTORY);
+    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    console.log('History saved. Total items:', history.length);
+  } catch (e) {
+    console.error('Failed to save history', e);
+  }
+}
+
+function showHistory() {
+  const modal = document.getElementById('historyModal');
+  const modalContent = document.getElementById('historyModalContent');
+  const searchInput = document.getElementById('historySearch');
+  
+  // Reset search
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  renderHistoryList();
+  modal.classList.remove('hidden');
+  
+  // Animate in
+  setTimeout(() => {
+    modal.classList.remove('opacity-0');
+    if (modalContent) {
+      modalContent.classList.remove('scale-95', 'opacity-0');
+      modalContent.classList.add('scale-100', 'opacity-100');
+    }
+  }, 10);
+  
+  // Focus search after transition
+  setTimeout(() => {
+    if (searchInput) searchInput.focus();
+  }, 50);
+}
+
+function closeHistory() {
+  const modal = document.getElementById('historyModal');
+  const modalContent = document.getElementById('historyModalContent');
+  
+  // Animate out
+  modal.classList.add('opacity-0');
+  if (modalContent) {
+    modalContent.classList.remove('scale-100', 'opacity-100');
+    modalContent.classList.add('scale-95', 'opacity-0');
+  }
+  
+  // Hide after transition
+  setTimeout(() => {
+    modal.classList.add('hidden');
+  }, 300);
+}
+
+function filterHistory() {
+  const searchInput = document.getElementById('historySearch');
+  const filterText = searchInput ? searchInput.value : '';
+  renderHistoryList(filterText);
+}
+
+function renderHistoryList(filterText = '') {
+  const container = document.getElementById('historyList');
+  if (!container) {
+    console.error('History list container not found');
+    return;
+  }
+  
+  try {
+    const rawHistory = localStorage.getItem(HISTORY_KEY);
+    console.log('Rendering history. Raw:', rawHistory);
+    let history = JSON.parse(rawHistory || '[]');
+    console.log('Parsed history:', history);
+    
+    if (!Array.isArray(history)) {
+      console.error('History is not an array:', history);
+      history = [];
+    }
+    
+    // Filter if needed
+    if (filterText) {
+      const lowerFilter = filterText.toLowerCase();
+      history = history.filter(q => q.toLowerCase().includes(lowerFilter));
+    }
+    
+    if (history.length === 0) {
+      const emptyMsg = filterText 
+        ? 'No queries found matching "' + escapeHtml(filterText) + '"'
+        : 'No history found';
+      container.innerHTML = '<div class="p-8 text-center text-gray-500 text-sm">' + emptyMsg + '</div>';
+      return;
+    }
+
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Helper to highlight SQL-like syntax
+    function highlightAql(query) {
+      if (window.hljs) {
+        try {
+          return window.hljs.highlight(query, { language: 'sql', ignoreIllegals: true }).value;
+        } catch (e) {
+          return escapeHtml(query);
+        }
+      }
+      return escapeHtml(query);
+    }
+
+    const html = history.map((query, index) => {
+      const highlighted = highlightAql(query);
+      return `
+        <div class="group relative rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 backdrop-blur-sm transition-all duration-200 cursor-pointer" onclick="loadQuery(this)" data-query="${encodeURIComponent(query)}">
+          <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span class="text-xs text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/20">Load Query</span>
+          </div>
+          <pre class="!my-0 !shadow-none p-3 text-sm font-mono text-gray-200 overflow-x-auto"><code class="hljs language-sql bg-transparent p-0 block" style="background: transparent !important">${highlighted}</code></pre>
+        </div>
+      `;
+    }).join('');
+    
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to render history', e);
+    container.innerHTML = '<div class="p-4 text-center text-red-400 text-sm">Failed to load history: ' + e.message + '</div>';
+  }
+}
+
+function loadQuery(btn) {
+  const query = decodeURIComponent(btn.getAttribute('data-query'));
+  if (editor && editor.setValue) {
+    editor.setValue(query);
+  } else {
+    // Fallback
+    const fallback = document.getElementById('fallbackEditor');
+    if (fallback) fallback.value = query;
+  }
+  closeHistory();
+}
+
+// Expose history functions
+window.showHistory = showHistory;
+window.closeHistory = closeHistory;
+window.filterHistory = filterHistory;
+window.loadQuery = loadQuery;
+
 // Expose all onclick functions to global scope
 window.removeResult = removeResult;
 window.clearLastResult = clearLastResult;
 window.clearAllResults = clearAllResults;
 window.copyResults = copyResults;
+
+// Close history on ESC key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeHistory();
+  }
+});
 </script>

@@ -25,6 +25,7 @@
 
   <main class="grow relative z-10">
     <%- Partial("header") %>
+    <%- Partial("secondary_nav") %>
     @yield
   </main>
 

@@ -41,6 +41,10 @@ struct Args {
     /// Log file path (used in daemon mode)
     #[arg(long, default_value = "./solidb.log")]
     log_file: String,
+
+    /// Optional keyfile for cluster node authentication
+    #[arg(long)]
+    keyfile: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -140,8 +144,11 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         .init();
 
     // Build cluster configuration
-    let cluster_config = ClusterConfig::new(args.node_id, args.peers, args.replication_port);
+    let cluster_config = ClusterConfig::new(args.node_id, args.peers, args.replication_port, args.keyfile);
     tracing::info!("Node ID: {}", cluster_config.node_id);
+    if cluster_config.keyfile.is_some() {
+        tracing::info!("Keyfile authentication enabled");
+    }
 
     // Initialize storage engine with cluster config
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
