@@ -152,7 +152,7 @@
         }
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           const endpoint = index.isGeo
             ? `${url}/geo/${this.props.collection}/${index.name}`
             : `${url}/index/${this.props.collection}/${index.name}`
