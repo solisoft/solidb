@@ -978,7 +978,7 @@ impl Collection {
         &self,
         config: &crate::sharding::coordinator::CollectionShardConfig,
     ) -> DbResult<()> {
-        let db = self.db.read().unwrap();
+        let db = self.db.write().unwrap(); // Need write lock for put_cf
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
@@ -986,6 +986,8 @@ impl Collection {
         let config_bytes = serde_json::to_vec(config)?;
         db.put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
+        
+        tracing::info!("[SHARD_CONFIG] Saved config for {}: {:?}", self.name, config);
 
         Ok(())
     }

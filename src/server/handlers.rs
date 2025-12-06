@@ -369,9 +369,9 @@ pub async fn update_collection_properties(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    // Check if sharded
+    // Get existing config or create new one if not sharded yet
     let mut config = collection.get_shard_config()
-        .ok_or_else(|| DbError::BadRequest("Collection is not sharded".to_string()))?;
+        .unwrap_or_else(|| crate::sharding::coordinator::CollectionShardConfig::default());
 
     tracing::info!("Current config before update: {:?}", config);
 
@@ -470,10 +470,12 @@ pub async fn insert_document(
     // Check for sharding
     // If sharded and we have a coordinator, use it
     if let Some(shard_config) = collection.get_shard_config() {
+        tracing::info!("[INSERT] shard_config found: num_shards={}", shard_config.num_shards);
         if shard_config.num_shards > 0 {
             if let Some(ref coordinator) = state.shard_coordinator {
                 // Check for direct shard access (prevention of infinite loops)
                 if !headers.contains_key("X-Shard-Direct") {
+                    tracing::info!("[INSERT] Using ShardCoordinator for {}/{}", db_name, coll_name);
                     let doc = coordinator.insert(
                         &db_name,
                         &coll_name,
@@ -481,24 +483,34 @@ pub async fn insert_document(
                         data
                     ).await?;
                     return Ok(Json(doc.to_value()));
+                } else {
+                    tracing::info!("[INSERT] X-Shard-Direct header present, skipping coordinator");
                 }
+            } else {
+                tracing::info!("[INSERT] No shard_coordinator available");
             }
         }
+    } else {
+        tracing::info!("[INSERT] No shard_config for {}/{}", db_name, coll_name);
     }
 
     let doc = collection.insert(data)?;
 
-    // Record to replication log
-    if let Some(ref repl) = state.replication {
-        let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
-        repl.record_write(
-            &db_name,
-            &coll_name,
-            Operation::Insert,
-            &doc.key,
-            doc_bytes.as_deref(),
-            None,
-        );
+    // Record to replication log ONLY if not a shard-directed insert
+    // Shard-directed inserts are already handled by the ShardCoordinator replication
+    let is_shard_direct = headers.contains_key("X-Shard-Direct");
+    if !is_shard_direct {
+        if let Some(ref repl) = state.replication {
+            let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+            repl.record_write(
+                &db_name,
+                &coll_name,
+                Operation::Insert,
+                &doc.key,
+                doc_bytes.as_deref(),
+                None,
+            );
+        }
     }
 
     Ok(Json(doc.to_value()))
@@ -669,11 +681,13 @@ pub async fn execute_query(
         
         if !has_mutations {
             // No mutations - just execute normally (read operations)
+            // No mutations - just execute normally (read operations)
             let executor = if req.bind_vars.is_empty() {
                 QueryExecutor::with_database(&state.storage, db_name)
             } else {
                 QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
             };
+            
             let results = executor.execute(&query)?;
             return Ok(Json(ExecuteQueryResponse {
                 result: results.clone(),
@@ -864,6 +878,8 @@ pub async fn execute_query(
         let storage = state.storage.clone();
         let bind_vars = req.bind_vars.clone();
         let replication = state.replication.clone();
+        let shard_coordinator = state.shard_coordinator.clone();
+        let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
 
         tokio::task::spawn_blocking(move || {
             let mut executor = if bind_vars.is_empty() {
@@ -875,6 +891,13 @@ pub async fn execute_query(
             // Add replication service for mutation logging
             if let Some(ref repl) = replication {
                 executor = executor.with_replication(repl);
+            }
+            
+            // Inject shard coordinator for scatter-gather (if not already a sub-query)
+            if !is_scatter_gather {
+                if let Some(coord) = shard_coordinator {
+                    executor = executor.with_shard_coordinator(coord);
+                }
             }
 
             let start = std::time::Instant::now();
@@ -894,6 +917,13 @@ pub async fn execute_query(
         // Add replication service for mutation logging
         if let Some(ref repl) = state.replication {
             executor = executor.with_replication(repl);
+        }
+        
+        // Inject shard coordinator for scatter-gather (if not already a sub-query)
+        if !headers.contains_key("X-Scatter-Gather") {
+            if let Some(coordinator) = state.shard_coordinator.clone() {
+                executor = executor.with_shard_coordinator(coordinator);
+            }
         }
 
         let start = std::time::Instant::now();
@@ -934,16 +964,26 @@ pub async fn execute_query(
 pub async fn explain_query(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::aql::QueryExplain>, DbError> {
     let query = parse(&req.query)?;
 
     // explain() is fast - no need for spawn_blocking
-    let executor = if req.bind_vars.is_empty() {
+    // explain() is fast - no need for spawn_blocking
+    let mut executor = if req.bind_vars.is_empty() {
         QueryExecutor::with_database(&state.storage, db_name)
     } else {
         QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
     };
+    
+    // Inject shard coordinator for explain (if not already a sub-query)
+    if !headers.contains_key("X-Scatter-Gather") {
+        if let Some(coordinator) = state.shard_coordinator.clone() {
+            executor = executor.with_shard_coordinator(coordinator);
+        }
+    }
+    
     let explain = executor.explain(&query)?;
 
     Ok(Json(explain))
@@ -1354,4 +1394,68 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
         is_cluster_mode,
         cluster_config,
     })
+}
+
+// ==================== Cluster Remove Node ====================
+
+#[derive(Debug, Deserialize)]
+pub struct RemoveNodeRequest {
+    /// The address of the node to remove (e.g., "localhost:6775")
+    pub node_address: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveNodeResponse {
+    pub success: bool,
+    pub message: String,
+    pub removed_node: String,
+    pub remaining_nodes: Vec<String>,
+}
+
+/// Remove a node from the cluster and trigger rebalancing
+pub async fn cluster_remove_node(
+    State(state): State<AppState>,
+    Json(req): Json<RemoveNodeRequest>,
+) -> Result<Json<RemoveNodeResponse>, DbError> {
+    let node_addr = req.node_address;
+    
+    // Get the shard coordinator
+    let coordinator = state.shard_coordinator.as_ref()
+        .ok_or_else(|| DbError::InternalError("Shard coordinator not available - not in cluster mode".to_string()))?;
+    
+    // Remove the node and trigger rebalancing
+    coordinator.remove_node(&node_addr).await?;
+    
+    // Get remaining nodes
+    let remaining = coordinator.get_node_addresses();
+    
+    Ok(Json(RemoveNodeResponse {
+        success: true,
+        message: format!("Node {} removed, rebalancing complete", node_addr),
+        removed_node: node_addr,
+        remaining_nodes: remaining,
+    }))
+}
+
+// ==================== Cluster Rebalance ====================
+
+#[derive(Debug, Serialize)]
+pub struct RebalanceResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Trigger cluster rebalancing
+pub async fn cluster_rebalance(
+    State(state): State<AppState>,
+) -> Result<Json<RebalanceResponse>, DbError> {
+    let coordinator = state.shard_coordinator.as_ref()
+        .ok_or_else(|| DbError::InternalError("Shard coordinator not available - not in cluster mode".to_string()))?;
+    
+    coordinator.rebalance().await?;
+    
+    Ok(Json(RebalanceResponse {
+        success: true,
+        message: "Rebalancing complete".to_string(),
+    }))
 }

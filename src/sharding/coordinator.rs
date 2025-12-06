@@ -152,6 +152,16 @@ impl ShardCoordinator {
         self.node_addresses.read().unwrap().len()
     }
 
+    /// Get the list of all node addresses in the cluster
+    pub fn get_node_addresses(&self) -> Vec<String> {
+        self.node_addresses.read().unwrap().clone()
+    }
+
+    /// Get this node's index in the cluster
+    pub fn get_node_index(&self) -> usize {
+        self.node_index
+    }
+
     /// Add a new node to the cluster and trigger rebalancing for auto-sharded collections
     pub async fn add_node(&self, node_addr: &str) -> DbResult<()> {
         let should_rebalance = {
@@ -209,6 +219,11 @@ impl ShardCoordinator {
                 &addresses,
             ).into_iter().map(|s| s.to_string()).collect::<Vec<String>>()
         };
+
+        tracing::info!(
+            "[SHARD] key={}, shard={}, replicas={:?}, my_index={}",
+            key, shard_id, replica_nodes, self.node_index
+        );
 
         // If RF=1 or single node, use original logic
         if replica_nodes.len() <= 1 {

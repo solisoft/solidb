@@ -96,6 +96,8 @@ pub struct QueryExecutor<'a> {
     replication: Option<&'a ReplicationService>,
     // Flag to indicate if we should defer mutations for transactional execution
     is_transactional: bool,
+    // Shard coordinator for scatter-gather queries on sharded collections
+    shard_coordinator: Option<crate::sharding::ShardCoordinator>,
 }
 
 /// Extracted filter condition for index optimization
@@ -141,6 +143,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             is_transactional: false,
+            shard_coordinator: None,
         }
     }
 
@@ -152,6 +155,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             is_transactional: false,
+            shard_coordinator: None,
         }
     }
 
@@ -163,6 +167,7 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             is_transactional: false,
+            shard_coordinator: None,
         }
     }
 
@@ -178,12 +183,19 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             is_transactional: false,
+            shard_coordinator: None,
         }
     }
 
     /// Set replication service for logging mutations
     pub fn with_replication(mut self, replication: &'a ReplicationService) -> Self {
         self.replication = Some(replication);
+        self
+    }
+
+    /// Set shard coordinator for scatter-gather queries on sharded collections
+    pub fn with_shard_coordinator(mut self, coordinator: crate::sharding::ShardCoordinator) -> Self {
+        self.shard_coordinator = Some(coordinator);
         self
     }
 
@@ -903,11 +915,105 @@ impl<'a> QueryExecutor<'a> {
 
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&for_clause.collection)?;
+        
+        // Check if collection is sharded and we have a coordinator
+        if let Some(shard_config) = collection.get_shard_config() {
+            if shard_config.num_shards > 0 {
+                if let Some(ref coordinator) = self.shard_coordinator {
+                    // Scatter-gather: query all cluster nodes
+                    return self.scatter_gather_docs(
+                        &for_clause.collection,
+                        coordinator,
+                        limit,
+                    );
+                }
+            }
+        }
+        
+        // Not sharded or no coordinator: local scan
         Ok(collection
             .scan(limit)
             .into_iter()
             .map(|d| d.to_value())
             .collect())
+    }
+    
+    /// Scatter-gather query: fetch documents from all cluster nodes for sharded collection
+    fn scatter_gather_docs(
+        &self,
+        collection_name: &str,
+        coordinator: &crate::sharding::ShardCoordinator,
+        limit: Option<usize>,
+    ) -> DbResult<Vec<Value>> {
+        let db_name = self.database.as_ref()
+            .ok_or_else(|| DbError::ExecutionError("No database context for scatter-gather".to_string()))?;
+        
+        // Get all node addresses from coordinator
+        let all_nodes = coordinator.get_node_addresses();
+        let my_node_index = coordinator.get_node_index();
+        
+        // Collect documents from all nodes
+        let mut all_docs: Vec<Value> = Vec::new();
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        
+        // Use a runtime for async HTTP calls
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|_| DbError::ExecutionError("No tokio runtime for scatter-gather".to_string()))?;
+        
+        for (idx, node_addr) in all_nodes.iter().enumerate() {
+            if idx == my_node_index {
+                // Query local node directly
+                let collection = self.get_collection(collection_name)?;
+                for doc in collection.scan(None) {
+                    let key = doc.key.clone();
+                    if seen_keys.insert(key) {
+                        all_docs.push(doc.to_value());
+                    }
+                }
+            } else {
+                // Query remote node via HTTP
+                let url = format!(
+                    "http://{}/_api/database/{}/cursor",
+                    node_addr, db_name
+                );
+                let query = format!(
+                    "FOR doc IN {} RETURN doc",
+                    collection_name
+                );
+                
+                let client = reqwest::blocking::Client::new();
+                if let Ok(response) = client
+                    .post(&url)
+                    .header("X-Scatter-Gather", "true") // Prevent infinite recursion
+                    .json(&serde_json::json!({ "query": query }))
+                    .send()
+                {
+                    if let Ok(body) = response.json::<serde_json::Value>() {
+                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                            for doc in results {
+                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                                    if seen_keys.insert(key.to_string()) {
+                                        all_docs.push(doc.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Apply limit if specified
+        if let Some(n) = limit {
+            all_docs.truncate(n);
+        }
+        
+        tracing::info!(
+            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes",
+            collection_name, all_docs.len(), all_nodes.len()
+        );
+        
+        Ok(all_docs)
     }
 
     /// Explain and profile a query execution

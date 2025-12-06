@@ -1425,31 +1425,11 @@ impl ReplicationService {
                 }
             };
 
-            // Apply with LWW conflict resolution
+            // Apply with replication (no LWW check needed - sequence-based sync ensures we only receive newer entries)
+            // The sender's replication log deduplicates by sequence number, so entries here are new to us
             match &entry.operation {
                 Operation::Insert | Operation::Update => {
                     if let Some(data) = &entry.document_data {
-                        // Check if we already have a newer version
-                        if let Ok(existing) = collection.get(&entry.document_key) {
-                            let existing_value = existing.to_value();
-                            if let Some(existing_updated) = existing_value.get("_updated_at") {
-                                let our_time = existing_updated.as_str().unwrap_or("");
-                                let their_time = chrono::DateTime::from_timestamp_millis(
-                                    entry.hlc.physical_time as i64,
-                                )
-                                .map(|t| t.to_rfc3339())
-                                .unwrap_or_default();
-
-                                if our_time > their_time.as_str() {
-                                    tracing::debug!(
-                                        "[APPLY] Skipping older update for {}/{}",
-                                        entry.collection,
-                                        entry.document_key
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
 
                         // Parse and apply the document
                         if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data)
@@ -1475,7 +1455,7 @@ impl ReplicationService {
 
                             match result {
                                 Ok(doc) => {
-                                    tracing::debug!(
+                                    tracing::info!(
                                         "[APPLY] {} {}/{}/{}",
                                         if entry.operation == Operation::Insert {
                                             "Inserted"

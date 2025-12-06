@@ -17,10 +17,40 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
     // Initialize ShardCoordinator if in cluster mode
     let shard_coordinator = if let Some(config) = storage.cluster_config() {
         if config.is_cluster_mode() {
-            // Use peers list as cluster definition
-            // TODO: Robustly determine own index and ensure peers are HTTP API addresses
-            let node_addresses = config.peers.clone();
-            let node_index = 0; // Default to 0 for now
+            // Get this node's API address (http port = replication port - 1)
+            let my_api_port = config.replication_port - 1;
+            let my_api_addr = format!("localhost:{}", my_api_port);
+            
+            // Convert replication addresses (port 6746) to HTTP API addresses (port 6745)
+            // The peers list contains replication addresses, but ShardCoordinator needs API addresses
+            let mut node_addresses: Vec<String> = config.peers.iter().map(|peer| {
+                // Parse the peer address and convert to API port
+                // Replication ports are typically API port + 1
+                if let Some(port_start) = peer.rfind(':') {
+                    let host = &peer[..port_start];
+                    if let Ok(repl_port) = peer[port_start+1..].parse::<u16>() {
+                        let api_port = repl_port - 1; // API port is typically one less
+                        return format!("{}:{}", host, api_port);
+                    }
+                }
+                peer.clone() // Fallback: use as-is
+            }).collect();
+            
+            // Add self to node_addresses if not already present
+            if !node_addresses.contains(&my_api_addr) {
+                node_addresses.insert(0, my_api_addr.clone()); // Self is always first
+            }
+            
+            // Sort addresses for consistent ordering across all nodes
+            node_addresses.sort();
+            
+            // Find my index in the sorted list
+            let node_index = node_addresses.iter()
+                .position(|addr| addr == &my_api_addr)
+                .unwrap_or(0);
+            
+            tracing::info!("ShardCoordinator initialized: my_addr={}, node_index={}, nodes: {:?}", 
+                my_api_addr, node_index, node_addresses);
             
             let coordinator = crate::sharding::ShardCoordinator::with_health_tracking(
                 Arc::new(storage.clone()),
@@ -130,6 +160,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         // Cluster routes
         .route("/_api/cluster/status", get(cluster_status))
         .route("/_api/cluster/info", get(cluster_info))
+        .route("/_api/cluster/remove-node", post(cluster_remove_node))
+        .route("/_api/cluster/rebalance", post(cluster_rebalance))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(
