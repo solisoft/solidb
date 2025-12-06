@@ -1,0 +1,332 @@
+<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("sharding_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <div class="flex items-center gap-3 mb-4">
+            <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 tracking-tight">Sharding & Replication</h1>
+            <span class="px-3 py-1 bg-cyan-500/20 text-cyan-300 text-sm font-bold rounded-full border border-cyan-500/30">NEW</span>
+          </div>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Distribute data horizontally across multiple nodes with automatic master-master replication, transparent failover, and self-healing auto-rebalancing capabilities.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB implements a <strong>shared-nothing sharding architecture</strong>. This means that data is partitioned into "shards" (subsets of data) which are distributed across the available nodes in the cluster. Each shard is replicated to multiple nodes for redundancy.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                 <h3 class="text-white font-bold mb-2">High Availability</h3>
+                 <p class="text-sm text-gray-400">Master-master replication ensures that data remains available for both reads and writes even if a node fails.</p>
+               </div>
+               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-cyan-500/30 transition-colors">
+                 <h3 class="text-white font-bold mb-2">Linear Scalability</h3>
+                 <p class="text-sm text-gray-400">Add more nodes to increase storage capacity and throughput. Data is automatically rebalanced.</p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Architecture -->
+      <section id="architecture" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Architecture
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h3 class="text-lg font-bold text-white mb-4">Core Components</h3>
+              <ul class="space-y-4">
+                <li class="flex items-start">
+                  <div class="p-1.5 bg-blue-500/10 rounded mr-3 mt-0.5">
+                    <span class="text-blue-400 font-bold text-xs">01</span>
+                  </div>
+                  <div>
+                    <strong class="text-white block mb-1">ShardRouter</strong>
+                    <p class="text-sm text-gray-400">Deterministic routing logic using consistent hashing. Maps document keys to Shard IDs and then to physical nodes.</p>
+                  </div>
+                </li>
+                 <li class="flex items-start">
+                  <div class="p-1.5 bg-blue-500/10 rounded mr-3 mt-0.5">
+                    <span class="text-blue-400 font-bold text-xs">02</span>
+                  </div>
+                  <div>
+                    <strong class="text-white block mb-1">ShardCoordinator</strong>
+                    <p class="text-sm text-gray-400">Manages distributed operations. Determines where to read/write data, handles failover logic, and orchestrates data migration.</p>
+                  </div>
+                </li>
+                 <li class="flex items-start">
+                  <div class="p-1.5 bg-blue-500/10 rounded mr-3 mt-0.5">
+                    <span class="text-blue-400 font-bold text-xs">03</span>
+                  </div>
+                  <div>
+                    <strong class="text-white block mb-1">NodeHealth</strong>
+                    <p class="text-sm text-gray-400">Background monitor that tracks the health status of all peers. Detecting failures is critical for failover and rebalancing.</p>
+                  </div>
+                </li>
+                 <li class="flex items-start">
+                  <div class="p-1.5 bg-blue-500/10 rounded mr-3 mt-0.5">
+                    <span class="text-blue-400 font-bold text-xs">04</span>
+                  </div>
+                  <div>
+                    <strong class="text-white block mb-1">ReplicationQueue</strong>
+                    <p class="text-sm text-gray-400">Durable buffer for writes destined for temporarily offline nodes. Ensures no data loss during short outages.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 class="text-lg font-bold text-white mb-4">Data Distribution Logic</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto text-gray-300">
+                1. ShardID = hash(Key) % NumShards<br>
+                2. Node = (ShardID + ReplicaIndex) % NumNodes
+              </div>
+              <p class="mt-2 text-sm text-gray-400">
+                This simple modulo-based distribution ensures deterministic placement but requires rebalancing when the number of nodes changes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Replication -->
+      <section id="replication" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+              Replication Strategy
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <!-- Write Path -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-3">Write Path</h3>
+              <p class="text-sm text-gray-400 mb-4">When you <code>insert</code>, <code>update</code>, or <code>delete</code> a document:</p>
+              <ol class="space-y-4 relative border-l border-indigo-500/20 ml-3 pl-8">
+                <li class="relative">
+                  <span class="absolute -left-11 w-6 h-6 bg-indigo-500/20 rounded-full flex items-center justify-center text-xs font-bold text-indigo-400 border border-indigo-500/50">1</span>
+                  <strong class="text-indigo-300">Routing</strong>
+                  <p class="text-sm text-gray-400">The Coordinator calculates the target Shard and identifies all replica nodes responsible for that shard.</p>
+                </li>
+                <li class="relative">
+                  <span class="absolute -left-11 w-6 h-6 bg-indigo-500/20 rounded-full flex items-center justify-center text-xs font-bold text-indigo-400 border border-indigo-500/50">2</span>
+                  <strong class="text-indigo-300">Parallel Replication</strong>
+                  <p class="text-sm text-gray-400">The write operation is sent to <strong>ALL</strong> replica nodes simultaneously.</p>
+                </li>
+                <li class="relative">
+                  <span class="absolute -left-11 w-6 h-6 bg-indigo-500/20 rounded-full flex items-center justify-center text-xs font-bold text-indigo-400 border border-indigo-500/50">3</span>
+                  <strong class="text-indigo-300">Acknowledgment</strong>
+                  <p class="text-sm text-gray-400">Success is returned if <strong>at least one</strong> replica acknowledges the write (Eventual Consistency). If a node is down, the operation is queued.</p>
+                </li>
+              </ol>
+            </div>
+
+            <!-- Read Path -->
+             <div>
+              <h3 class="text-lg font-bold text-white mb-3">Read Path</h3>
+              <p class="text-sm text-gray-400 mb-4">When you <code>get</code> a document:</p>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <p class="text-sm text-gray-300">
+                  The system attempts to read from the <strong>Primary</strong> replica first. If the Coordinator detects the primary is unhealthy, it explicitly fails over to the <strong>Secondary</strong> (or Tertiary) replica transparently. The client receives the response without knowing a failover occurred.
+                </p>
+              </div>
+             </div>
+          </div>
+         </div>
+      </section>
+
+      <!-- Availability -->
+      <section id="availability" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Availability & Recovery
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              <!-- Temporary Failure -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <div class="flex items-center mb-4">
+                   <div class="p-2 bg-yellow-500/20 rounded-lg mr-3">
+                    <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  </div>
+                  <h3 class="text-white font-bold">Temporary Outage</h3>
+                </div>
+                <p class="text-sm text-gray-400 mb-4">
+                  E.g., Node restart or network blip.
+                </p>
+                <ul class="text-sm text-gray-400 space-y-2">
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Writes are queued in memory on healthy nodes.</li>
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>When node recovers, queue is replayed automatically.</li>
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Cluster topology remains unchanged.</li>
+                </ul>
+              </div>
+
+              <!-- Permanent Failure -->
+              <div id="auto-rebalancing" class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <div class="flex items-center mb-4">
+                   <div class="p-2 bg-red-500/20 rounded-lg mr-3">
+                    <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  </div>
+                  <h3 class="text-white font-bold">Permanent Failure</h3>
+                </div>
+                <p class="text-sm text-gray-400 mb-4">
+                  Node unresponsive for > 30s.
+                </p>
+                 <ul class="text-sm text-gray-400 space-y-2">
+                  <li class="flex items-start"><span class="text-red-400 mr-2">!</span><strong>Auto-Rebalancing</strong> Triggered.</li>
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">➝</span>Dead node removed from cluster ring.</li>
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">➝</span>Remaining nodes scan data & migrate to new replicas.</li>
+                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Replication factor is restored.</li>
+                </ul>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- API Extensions -->
+      <section id="api" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              API Extensions
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">
+              When sharding is enabled, document API responses include additional metadata to help you track data placement.
+            </p>
+            
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto text-gray-300">
+              <div class="flex justify-between items-center text-xs text-gray-500 border-b border-white/10 pb-2 mb-3">
+                <span>GET /_api/database/mydb/document/users/123</span>
+              </div>
+<pre>
+{
+  "_id": "users/123",
+  "_key": "123",
+  "_rev": "1733470000000",
+  <span class="text-pink-400">"_replicas": [
+    "127.0.0.1:8001",
+    "127.0.0.1:8002"
+  ]</span>,
+  "username": "alice"
+}
+</pre>
+            </div>
+            <p class="text-sm text-gray-400">
+              The <code class="text-pink-400">_replicas</code> field lists the addresses of all nodes currently holding a copy of this document. This is useful for debugging and verification.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration -->
+      <section id="configuration" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              Configuration
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Sharding is primarily configured per-collection at creation time. You can dynamically update both the <strong class="text-white">number of shards</strong> and <strong class="text-white">replication factor</strong> via the API or UI. <span class="text-yellow-400">⚠️ Changing the shard count triggers an automatic data rebalance.</span>
+            </p>
+            <div class="overflow-x-auto">
+               <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-white/10">
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Field</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Type</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Editable</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                   <tr>
+                    <td class="py-3 px-4"><code class="text-yellow-400 bg-gray-800 px-2 py-1 rounded">num_shards</code></td>
+                    <td class="py-3 px-4 text-gray-500">Integer</td>
+                    <td class="py-3 px-4"><span class="text-green-400">✓ Yes</span></td>
+                    <td class="py-3 px-4 text-gray-300">Total number of shards. Changing triggers rebalance. Default: 16.</td>
+                  </tr>
+                   <tr>
+                    <td class="py-3 px-4"><code class="text-yellow-400 bg-gray-800 px-2 py-1 rounded">replication_factor</code></td>
+                    <td class="py-3 px-4 text-gray-500">Integer</td>
+                    <td class="py-3 px-4"><span class="text-green-400">✓ Yes</span></td>
+                    <td class="py-3 px-4 text-gray-300">Number of copies for each document. Min: 1. Recommended: 2-3.</td>
+                  </tr>
+                   <tr>
+                    <td class="py-3 px-4"><code class="text-yellow-400 bg-gray-800 px-2 py-1 rounded">shard_key</code></td>
+                    <td class="py-3 px-4 text-gray-500">String</td>
+                    <td class="py-3 px-4"><span class="text-gray-500">✗ No</span></td>
+                    <td class="py-3 px-4 text-gray-300">Attribute used for partitioning. Default: <code class="text-xs">_key</code>. Cannot be changed after creation.</td>
+                  </tr>
+                </tbody>
+               </table>
+            </div>
+            
+            <!-- Update API Example -->
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Update Shard Configuration</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto text-gray-300">
+                <div class="flex justify-between items-center text-xs text-gray-500 border-b border-white/10 pb-2 mb-3">
+                  <span>PUT /_api/database/{db}/collection/{collection}/properties</span>
+                </div>
+<pre>
+{
+  "numShards": 8,
+  "replicationFactor": 2
+}
+</pre>
+              </div>
+              <p class="mt-2 text-sm text-gray-400">
+                Response includes status <code class="text-yellow-400">"updated_rebalancing"</code> when shard count changes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

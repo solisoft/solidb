@@ -56,5 +56,13 @@ rayon = "1.8"
 name = "solidb"
 path = "src/main.rs"
 
+[[bin]]
+name = "solidb-dump"
+path = "src/bin/solidb-dump.rs"
+
+[[bin]]
+name = "solidb-restore"
+path = "src/bin/solidb-restore.rs"
+
 [dev-dependencies]
 tokio-test = "0.4"

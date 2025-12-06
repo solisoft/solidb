@@ -8,6 +8,12 @@
           <div><span class="text-gray-500">_id:</span> <span class="text-gray-300">{ state.document._id }</span></div>
           <div><span class="text-gray-500">_key:</span> <span class="text-gray-300">{ state.document._key }</span></div>
           <div><span class="text-gray-500">_rev:</span> <span class="text-gray-300">{ state.document._rev }</span></div>
+          <div><span class="text-gray-500">_created_at:</span> <span class="text-gray-300">{ state.document._created_at
+              || '-' }</span></div>
+          <div><span class="text-gray-500">_updated_at:</span> <span class="text-gray-300">{ state.document._updated_at
+              || '-' }</span></div>
+          <div><span class="text-gray-500">_replicas:</span> <span class="text-gray-300">{ state.document._replicas ?
+              state.document._replicas.join(', ') : '-' }</span></div>
         </div>
       </div>
 
@@ -111,6 +117,7 @@
               delete copy._rev
               delete copy._created_at
               delete copy._updated_at
+              delete copy._replicas
               this.editor.setValue(JSON.stringify(copy, null, 2), -1)
             } else {
               this.editor.setValue('{\n  \n}', -1)
@@ -134,6 +141,7 @@
           delete copy._rev
           delete copy._created_at
           delete copy._updated_at
+          delete copy._replicas
           this.editor.setValue(JSON.stringify(copy, null, 2), -1)
         }
       },

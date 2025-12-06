@@ -102,6 +102,19 @@ impl NodeHealth {
             .collect()
     }
 
+    /// Add a new node to the health tracker
+    pub fn add_node(&self, node_addr: &str) {
+        let mut nodes = self.nodes.write().unwrap();
+        if !nodes.contains_key(node_addr) {
+            nodes.insert(node_addr.to_string(), NodeStatus::default());
+        }
+    }
+
+    /// Remove a node from the health tracker
+    pub fn remove_node(&self, node_addr: &str) {
+        self.nodes.write().unwrap().remove(node_addr);
+    }
+
     /// Start background health check task
     pub fn start_health_checker(
         self,

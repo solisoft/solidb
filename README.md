@@ -20,6 +20,9 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 🌍 **Geo Queries**: Spatial indexes and distance functions
 - 🔄 **Multi-Node Replication**: Peer-to-peer replication with automatic sync
 - ⚡ **Hybrid Logical Clocks**: Consistent ordering across distributed nodes
+- 🧩 **Sharding**: Horizontal data partitioning with configurable shard count
+- ⚖️ **Auto-Rebalancing**: Automatic data redistribution when nodes change
+- 💳 **Transactions**: ACID transactions via X-Transaction-ID header
 
 ## Quick Start
 
@@ -923,6 +926,8 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Aggregation functions~~ ✅ (COUNT, SUM, AVG, etc.)
 - [x] ~~Multi-Database Architecture~~ ✅ Implemented! (isolated databases with collections)
 - [x] ~~Replication and clustering~~ ✅ Implemented! (peer-to-peer, LWW conflict resolution, HLC)
+- [x] ~~Sharding~~ ✅ Implemented! (horizontal partitioning, auto-rebalancing, auto mode)
+- [x] ~~Transactions~~ ✅ Implemented! (ACID via X-Transaction-ID header)
 - [ ] Graph traversal queries
 - [ ] Authentication and authorization
 - [ ] WebSocket support

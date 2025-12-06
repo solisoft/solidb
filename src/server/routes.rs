@@ -71,6 +71,10 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
             "/_api/database/:db/collection/:name/stats",
             get(get_collection_stats),
         )
+        .route(
+            "/_api/database/:db/collection/:name/properties",
+            put(update_collection_properties),
+        )
         // Document routes
         .route(
             "/_api/database/:db/document/:collection",

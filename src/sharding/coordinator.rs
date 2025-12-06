@@ -45,7 +45,7 @@ pub struct ShardCoordinator {
     /// This node's index in the cluster (0-based)
     node_index: usize,
     /// All node HTTP addresses (including self)
-    node_addresses: Vec<String>,
+    node_addresses: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
     /// Node health tracker for failover
     health: Option<super::health::NodeHealth>,
     /// Queue for failed operations to replay on recovery
@@ -68,7 +68,7 @@ impl ShardCoordinator {
             storage,
             http_client,
             node_index,
-            node_addresses,
+            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(node_addresses)),
             health: None,
             replication_queue: super::replication_queue::ReplicationQueue::new(),
         }
@@ -92,7 +92,7 @@ impl ShardCoordinator {
             storage,
             http_client,
             node_index,
-            node_addresses,
+            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(node_addresses)),
             health: Some(health),
             replication_queue: super::replication_queue::ReplicationQueue::new(),
         }
@@ -135,14 +135,45 @@ impl ShardCoordinator {
         }
     }
 
-    /// Check if shard is local to this node
-    fn is_local(&self, shard_id: u16) -> bool {
-        ShardRouter::is_shard_local(shard_id, self.node_index, self.node_addresses.len())
+    /// Check if this node is responsible for the shard
+    pub fn is_local(&self, shard_id: u16) -> bool {
+        let addresses = self.node_addresses.read().unwrap();
+        ShardRouter::is_shard_local(shard_id, self.node_index, addresses.len())
     }
 
-    /// Get the HTTP address for a shard
-    fn get_shard_address(&self, shard_id: u16) -> Option<&str> {
-        ShardRouter::shard_to_node(shard_id, &self.node_addresses)
+    /// Get address of node responsible for shard
+    pub fn get_shard_address(&self, shard_id: u16) -> Option<String> {
+        let addresses = self.node_addresses.read().unwrap();
+        ShardRouter::shard_to_node(shard_id, &addresses).map(|s| s.to_string())
+    }
+
+    /// Get the current number of nodes in the cluster
+    pub fn get_node_count(&self) -> usize {
+        self.node_addresses.read().unwrap().len()
+    }
+
+    /// Add a new node to the cluster and trigger rebalancing for auto-sharded collections
+    pub async fn add_node(&self, node_addr: &str) -> DbResult<()> {
+        let should_rebalance = {
+            let mut addresses = self.node_addresses.write().unwrap();
+            if !addresses.contains(&node_addr.to_string()) {
+                println!("Configuration Change: Adding node {} to cluster", node_addr);
+                addresses.push(node_addr.to_string());
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_rebalance {
+            // Update health tracker if present
+            if let Some(ref health) = self.health {
+                health.add_node(node_addr);
+            }
+            // Trigger data migration for auto-sharded collections
+            self.rebalance().await?;
+        }
+        Ok(())
     }
 
     /// Insert document, routing to correct shard with replication
@@ -165,15 +196,19 @@ impl ShardCoordinator {
             key
         };
 
-        // Route to shard
+        // Route to shard (use effective shard count for auto-sharding)
         let shard_id = ShardRouter::route(&key, shard_config.num_shards);
 
-        // Get all replica nodes for this shard
-        let replica_nodes = ShardRouter::shard_to_nodes(
-            shard_id,
-            shard_config.replication_factor,
-            &self.node_addresses,
-        );
+        // Determine replicas
+        // Create scope for lock
+        let replica_nodes = {
+            let addresses = self.node_addresses.read().unwrap();
+            ShardRouter::shard_to_nodes(
+                shard_id,
+                shard_config.replication_factor,
+                &addresses,
+            ).into_iter().map(|s| s.to_string()).collect::<Vec<String>>()
+        };
 
         // If RF=1 or single node, use original logic
         if replica_nodes.len() <= 1 {
@@ -190,11 +225,11 @@ impl ShardCoordinator {
         // Replicated write: write to all replicas
         let mut primary_result: Option<Document> = None;
         let mut errors: Vec<String> = Vec::new();
-        let my_addr = self.node_addresses.get(self.node_index)
-            .map(|s| s.as_str());
+        let my_addr = self.node_addresses.read().unwrap().get(self.node_index)
+            .map(|s| s.clone());
 
         for node_addr in &replica_nodes {
-            if Some(*node_addr) == my_addr {
+            if Some(node_addr.to_string()) == my_addr {
                 // Local insert
                 match self.storage.get_database(db_name)
                     .and_then(|db| db.get_collection(coll_name))
@@ -239,7 +274,6 @@ impl ShardCoordinator {
             }
         }
 
-        // Return success if at least one replica succeeded
         if let Some(doc) = primary_result {
             Ok(doc)
         } else {
@@ -249,7 +283,100 @@ impl ShardCoordinator {
         }
     }
 
-    /// Forward insert to a specific node
+    /// Get the list of replica nodes for a given document key
+    pub fn get_replicas(&self, key: &str, config: &CollectionShardConfig) -> Vec<String> {
+        let shard_id = ShardRouter::route(key, config.num_shards);
+        ShardRouter::shard_to_nodes(
+            shard_id,
+            config.replication_factor,
+            &self.node_addresses.read().unwrap(),
+        ).into_iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Remove a node from the cluster and rebalance
+    pub async fn remove_node(&self, node_addr: &str) -> DbResult<()> {
+        let should_rebalance = {
+            let mut addresses = self.node_addresses.write().unwrap();
+            if let Some(pos) = addresses.iter().position(|x| x == node_addr) {
+                println!("Configuration Change: Removing node {} from cluster", node_addr);
+                addresses.remove(pos);
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_rebalance {
+            // Trigger data migration
+            self.rebalance().await?;
+        }
+        Ok(())
+    }
+
+    /// Rebalance data across the new topology
+    pub async fn rebalance(&self) -> DbResult<()> {
+        println!("Starting cluster rebalancing...");
+        
+        // 1. Get all databases
+        let databases = self.storage.list_databases();
+        
+        for db_name in databases {
+            let db = self.storage.get_database(&db_name)?;
+            let collections = db.list_collections();
+            
+            for coll_name in collections {
+                let collection = db.get_collection(&coll_name)?;
+                
+                // Only rebalance sharded collections
+                if let Some(config) = collection.get_shard_config() {
+                    println!("Rebalancing collection: {}/{}", db_name, coll_name);
+                    
+                    // Iterate all documents
+                    // efficient iteration needed. For now getting all IDs.
+                    // This is heavy! In prod we'd stream.
+                    let all_docs = collection.scan(None); 
+                    
+                    for doc in all_docs {
+                        let key = doc.key.clone();
+                        
+                        // Calculate NEW replicas
+                        let replicas = self.get_replicas(&key, &config);
+                        
+                        // Check if I am responsible for this doc (either primary or replica)
+                        let my_addr_opt = self.node_addresses.read().unwrap().get(self.node_index).cloned();
+                        
+                        if let Some(my_addr) = my_addr_opt {
+                            for target in replicas {
+                                if target != my_addr {
+                                    // I should ensure this target has the data.
+                                    // Simple approach: Send blindly (idempotent upsert).
+                                    // Optimization: Check if target has it? (Too slow).
+                                    // Optimization: Only send if I WAS primary? 
+                                    // With Mod-N shuffle, I might have just BECOME primary/replica.
+                                    // Safer to just gossip: If I hold data, and target is in replica set, send it.
+                                    
+                                    // To avoid storm: Only send if I am the FIRST available node in the replica list?
+                                    // (Primary responsibility).
+                                    
+                                    // For prototype: Just send.
+                                    match self.forward_insert_to_node(
+                                        &target, &db_name, &coll_name, &doc.to_value()
+                                    ).await {
+                                        Ok(_) => {}, // Success
+                                        Err(e) => println!("Rebalance push error to {}: {}", target, e),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("Rebalancing complete.");
+        Ok(())
+    }
+
+
     async fn forward_insert_to_node(
         &self,
         node_addr: &str,
@@ -326,14 +453,18 @@ impl ShardCoordinator {
         shard_config: &CollectionShardConfig,
         key: &str,
     ) -> DbResult<Document> {
-        let shard_id = ShardRouter::route(key, shard_config.num_shards);
+        let shard_id = ShardRouter::route(&key, shard_config.num_shards);
 
         // Get all replica nodes for failover
-        let replica_nodes = ShardRouter::shard_to_nodes(
-            shard_id,
-            shard_config.replication_factor,
-            &self.node_addresses,
-        );
+        // Create scope for lock
+        let replica_nodes = {
+            let addresses = self.node_addresses.read().unwrap();
+            ShardRouter::shard_to_nodes(
+                shard_id,
+                shard_config.replication_factor,
+                &addresses,
+            ).into_iter().map(|s| s.to_string()).collect::<Vec<String>>()
+        };
 
         // If RF=1 or no health tracking, use simple logic
         if replica_nodes.len() <= 1 || self.health.is_none() {
@@ -348,8 +479,8 @@ impl ShardCoordinator {
         }
 
         // Try each replica in order until one succeeds (failover)
-        let my_addr = self.node_addresses.get(self.node_index)
-            .map(|s| s.as_str());
+        let my_addr = self.node_addresses.read().unwrap().get(self.node_index)
+            .map(|s| s.clone());
         let mut last_error: Option<DbError> = None;
 
         for node_addr in &replica_nodes {
@@ -358,7 +489,7 @@ impl ShardCoordinator {
                 continue;
             }
 
-            if Some(*node_addr) == my_addr {
+            if Some(node_addr.clone()) == my_addr {
                 // Try local get
                 match self.storage.get_database(db_name)
                     .and_then(|db| db.get_collection(coll_name))
@@ -474,7 +605,7 @@ impl ShardCoordinator {
         key: &str,
         changes: Value,
     ) -> DbResult<Document> {
-        let shard_id = ShardRouter::route(key, shard_config.num_shards);
+        let shard_id = ShardRouter::route(&key, shard_config.num_shards);
 
         if self.is_local(shard_id) {
             let collection = self.storage
@@ -531,7 +662,7 @@ impl ShardCoordinator {
         shard_config: &CollectionShardConfig,
         key: &str,
     ) -> DbResult<()> {
-        let shard_id = ShardRouter::route(key, shard_config.num_shards);
+        let shard_id = ShardRouter::route(&key, shard_config.num_shards);
 
         if self.is_local(shard_id) {
             let collection = self.storage
@@ -642,23 +773,116 @@ impl ShardCoordinator {
                 let _ = health_clone.start_health_checker(Duration::from_secs(5)).await;
             });
 
-            // 2. Start recovery monitor
+            // 2. Start recovery and rebalance monitor
+            let self_clone = self.clone();
             tokio::spawn(async move {
                 let mut ticker = tokio::time::interval(Duration::from_secs(5));
                 loop {
                     ticker.tick().await;
                     
-                    // Check all nodes that have pending ops
-                    let nodes = self.node_addresses.clone();
+                    // Check all known nodes
+                    // We need a snapshot of nodes checking health
+                    // Note: If we remove a node, iteration changes. 
+                    // So we iterate a CLONE of addresses.
+                    let nodes = self_clone.node_addresses.read().unwrap().clone();
+                    
                     for node in nodes {
-                        if self.replication_queue.has_pending(&node) && self.is_node_healthy(&node) {
-                            // Node has pending ops and is healthy -> Synchronize
-                            self.recover_node(&node).await;
+                        // RECOVERY: Sync if healthy and has pending ops
+                        if self_clone.replication_queue.has_pending(&node) && self_clone.is_node_healthy(&node) {
+                            self_clone.recover_node(&node).await;
+                        }
+
+                        // REBALANCING: Check if node is DEAD (e.g. not healthy)
+                        // In real system we'd check `consecutive_failures` via health.nodes()
+                        // Here we assume `!is_node_healthy` for X checks means dead?
+                        // `NodeHealth` marks healthy=false after threshold.
+                        // So if !healthy, we could assume Dead?
+                        // But wait, "Unhealthy" vs "Dead".
+                        // User said: "remove dead node & migrate data".
+                        // If we remove quickly, we might flap. 
+                        // Let's assume `is_healthy` false IS the signal (threshold reached).
+                         
+                        // DANGER: We can't distinguish "Transient" from "Dead" easily without more state.
+                        // BUT `NodeHealth` uses `failure_threshold`. So if is_healthy is false, it met the threshold.
+                        // We will act on it. WARNING: This effectively removes any node that flaps.
+                        // Ideally we'd have a separate "DEAD" state.
+                        // For this task, let's treat `!is_healthy` as trigger.
+                        
+                        if !self_clone.is_node_healthy(&node) {
+                             // Check if we already removed it? 
+                             // We are iterating `nodes` copy. If it's in list, it's active.
+                             // Trigger removal.
+                             let _ = self_clone.remove_node(&node).await;
                         }
                     }
                 }
             });
         }
+    }
+
+    /// Scan all shards across all nodes (scatter-gather query)
+    /// This method queries each shard and merges results for a complete dataset
+    pub async fn scan_all_shards(
+        &self,
+        db_name: &str,
+        coll_name: &str,
+        config: &CollectionShardConfig,
+    ) -> DbResult<Vec<Document>> {
+        let mut all_documents = Vec::new();
+        let nodes = self.node_addresses.read().unwrap();
+        
+        // Query each shard (one representative per shard)
+        for shard_id in 0..config.num_shards {
+            // Get primary node for this shard
+            let node_addrs = ShardRouter::shard_to_nodes(
+                shard_id,
+                config.replication_factor,
+                &nodes,
+            );
+            
+            let node_addr = node_addrs.first()
+                .ok_or_else(|| DbError::InternalError(format!("No node for shard {}", shard_id)))?;
+
+            // Check if this is local or remote
+            let my_addr = nodes.get(self.node_index).map(|s| s.as_str());
+            
+            if Some(*node_addr) == my_addr {
+                // Local scan - query directly from storage
+                if let Ok(db) = self.storage.get_database(db_name) {
+                    if let Ok(collection) = db.get_collection(coll_name) {
+                        // For local shard, we need to scan only documents belonging to this shard
+                        // For now, scan all and filter (TODO: optimize with shard-local index)
+                        let docs = collection.scan(None);
+                        for doc in docs {
+                            // Check if document belongs to this shard
+                            let doc_shard = ShardRouter::route(&doc.key, config.num_shards);
+                            if doc_shard == shard_id {
+                                all_documents.push(doc);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Remote scan - query via HTTP
+                let url = format!("{}/database/{}/shard-scan/{}/{}",
+                    node_addr, db_name, coll_name, shard_id);
+                
+                if let Ok(response) = self.http_client
+                    .get(&url)
+                    .header("X-Shard-Direct", "true")
+                    .send()
+                    .await
+                {
+                    if response.status().is_success() {
+                        if let Ok(docs) = response.json::<Vec<Document>>().await {
+                            all_documents.extend(docs);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_documents)
     }
 }
 

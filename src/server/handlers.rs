@@ -95,6 +95,24 @@ pub struct ListCollectionsResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateCollectionPropertiesRequest {
+    /// Number of shards (updating this triggers rebalance)
+    #[serde(rename = "numShards")]
+    pub num_shards: Option<u16>,
+    /// Replication factor (optional, default: 1 = no replicas)
+    #[serde(rename = "replicationFactor")]
+    pub replication_factor: Option<u16>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CollectionPropertiesResponse {
+    pub name: String,
+    pub status: String,
+    #[serde(rename = "shardConfig")]
+    pub shard_config: crate::sharding::coordinator::CollectionShardConfig,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ExecuteQueryRequest {
     pub query: String,
     #[serde(rename = "bindVars", default)]
@@ -133,6 +151,7 @@ impl IntoResponse for DbError {
             DbError::DocumentNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             DbError::CollectionAlreadyExists(_) => (StatusCode::CONFLICT, self.to_string()),
             DbError::ParseError(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            DbError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             DbError::InvalidDocument(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
@@ -340,6 +359,76 @@ pub async fn get_collection_stats(
     })))
 }
 
+pub async fn update_collection_properties(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(payload): Json<UpdateCollectionPropertiesRequest>,
+) -> Result<Json<CollectionPropertiesResponse>, DbError> {
+    tracing::info!("update_collection_properties called: db={}, coll={}, payload={:?}", db_name, coll_name, payload);
+    
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    // Check if sharded
+    let mut config = collection.get_shard_config()
+        .ok_or_else(|| DbError::BadRequest("Collection is not sharded".to_string()))?;
+
+    tracing::info!("Current config before update: {:?}", config);
+
+    let old_num_shards = config.num_shards;
+    let mut shard_count_changed = false;
+
+    // Update num_shards if specified
+    if let Some(ns) = payload.num_shards {
+        if ns < 1 {
+            return Err(DbError::BadRequest("Number of shards must be >= 1".to_string()));
+        }
+        if ns != old_num_shards {
+            tracing::info!("Updating num_shards from {} to {}", old_num_shards, ns);
+            config.num_shards = ns;
+            shard_count_changed = true;
+        }
+    }
+
+    // Update replication_factor if specified
+    if let Some(rf) = payload.replication_factor {
+        if rf < 1 {
+            return Err(DbError::BadRequest("Replication factor must be >= 1".to_string()));
+        }
+        config.replication_factor = rf;
+    }
+
+    tracing::info!("Saving config: {:?}", config);
+    
+    // Save updated config
+    collection.set_shard_config(&config)?;
+    
+    tracing::info!("Config saved successfully");
+
+    // Trigger rebalance if shard count changed
+    if shard_count_changed {
+        if let Some(ref coordinator) = state.shard_coordinator {
+            tracing::info!(
+                "Shard count changed from {} to {} for {}/{}, triggering rebalance",
+                old_num_shards, config.num_shards, db_name, coll_name
+            );
+            // Spawn rebalance as background task to avoid blocking the response
+            let coordinator_clone = coordinator.clone();
+            tokio::spawn(async move {
+                if let Err(e) = coordinator_clone.rebalance().await {
+                    tracing::error!("Rebalance failed: {}", e);
+                }
+            });
+        }
+    }
+
+    Ok(Json(CollectionPropertiesResponse {
+        name: coll_name,
+        status: if shard_count_changed { "updated_rebalancing".to_string() } else { "updated".to_string() },
+        shard_config: config,
+    }))
+}
+
 // ==================== Document Handlers ====================
 
 
@@ -432,7 +521,14 @@ pub async fn get_document(
                     &shard_config,
                     &key
                 ).await?;
-                return Ok(Json(doc.to_value()));
+                
+                let mut doc_value = doc.to_value();
+                let replicas = coordinator.get_replicas(&key, &shard_config);
+                if let Value::Object(ref mut map) = doc_value {
+                    map.insert("_replicas".to_string(), serde_json::json!(replicas));
+                }
+                
+                return Ok(Json(doc_value));
             }
         }
     }
@@ -633,9 +729,34 @@ pub async fn execute_query(
                                     other => vec![other.clone()],
                                 }
                             } else {
+                                // Scan collection - check if sharded
                                 let full_coll_name = format!("{}:{}", db_name, for_clause.collection);
                                 let collection = state.storage.get_collection(&full_coll_name)?;
-                                collection.scan(None).into_iter().map(|d| d.to_value()).collect()
+                                let shard_config = collection.get_shard_config();
+                                
+                                if let (Some(config), Some(coordinator)) = (shard_config, &state.shard_coordinator) {
+                                    // Sharded collection - use scatter-gather
+                                    // Execute async operation in blocking context
+                                    let coordinator_clone = coordinator.clone();
+                                    let db_name_owned = db_name.to_string();
+                                    let coll_name_owned = for_clause.collection.clone();
+                                    let config_clone = config.clone();
+                                    
+                                    match tokio::task::block_in_place(|| {
+                                        tokio::runtime::Handle::current().block_on(async {
+                                            coordinator_clone.scan_all_shards(&db_name_owned, &coll_name_owned, &config_clone).await
+                                        })
+                                    }) {
+                                        Ok(docs) => docs.into_iter().map(|d| d.to_value()).collect(),
+                                        Err(e) => {
+                                            eprintln!("Scatter-gather failed: {:?}, using local shards only", e);
+                                            collection.scan(None).into_iter().map(|d| d.to_value()).collect()
+                                        }
+                                    }
+                                } else {
+                                    // Non-sharded or no coordinator - local scan
+                                    collection.scan(None).into_iter().map(|d| d.to_value()).collect()
+                                }
                             }
                         };
                         

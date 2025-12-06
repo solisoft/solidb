@@ -23,6 +23,9 @@ pub enum DbError {
     #[error("Query execution error: {0}")]
     ExecutionError(String),
 
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 

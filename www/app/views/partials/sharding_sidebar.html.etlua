@@ -1,0 +1,67 @@
+<div class="hidden lg:block lg:col-span-3">
+  <div class="sticky top-24 space-y-8">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Contents</h3>
+      
+      <nav class="space-y-1">
+        <!-- Overview -->
+        <a href="#overview" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Overview
+        </a>
+
+        <!-- Architecture -->
+        <a href="#architecture" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Architecture
+        </a>
+
+        <!-- Replication -->
+        <a href="#replication" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Replication Strategy
+        </a>
+
+        <!-- Availability -->
+        <a href="#availability" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Availability & Recovery
+        </a>
+
+        <!-- Auto-Rebalancing -->
+        <a href="#auto-rebalancing" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Auto-Rebalancing
+        </a>
+
+        <!-- API Extensions -->
+        <a href="#api" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          API Extensions
+        </a>
+
+        <!-- Configuration -->
+        <a href="#configuration" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Configuration
+        </a>
+      </nav>
+    </div>
+
+    <!-- Scalability Card -->
+    <div class="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <div class="flex items-center mb-3 relative z-10">
+        <div class="p-2 bg-cyan-500/20 rounded-lg mr-3">
+            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+        </div>
+        <h4 class="text-white font-semibold">Horizontally Scalable</h4>
+      </div>
+      <p class="text-sm text-gray-300 mb-4 relative z-10 leading-relaxed">
+        Shard your data across unlimited nodes to handle massive workloads.
+      </p>
+    </div>
+  </div>
+</div>
