@@ -66,6 +66,9 @@ csv = "1.4.0"
 indicatif = "0.17"
 colored = "2.0"
 
+# System info for stats
+sysinfo = "0.30"
+
 # Default binary
 [[bin]]
 name = "solidb"

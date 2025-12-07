@@ -84,6 +84,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         cursor_store: CursorStore::new(Duration::from_secs(300)),
         replication,
         shard_coordinator,
+        startup_time: std::time::Instant::now(),
+        request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     // Protected API routes

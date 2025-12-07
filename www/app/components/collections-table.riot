@@ -144,7 +144,14 @@
           const url = `${getApiUrl()}/database/${this.props.db}`
           const response = await authenticatedFetch(`${url}/collection`)
           const data = await response.json()
-          this.update({ collections: data.collections || [], loading: false })
+
+          // Filter out protected system collections in _system database
+          let collections = data.collections || [];
+          if (this.props.db === '_system') {
+            collections = collections.filter(c => !c.name.startsWith('_'));
+          }
+
+          this.update({ collections, loading: false })
         } catch (error) {
           this.update({ error: error.message, loading: false })
         }

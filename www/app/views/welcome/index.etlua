@@ -370,8 +370,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Ignore if clicking the delete button
         if (e.target.closest('.delete-btn')) return;
         
-        // Direct switch
-        loadDatabases(server);
+        // Fill form and trigger connect
+        serverHost.value = server.host;
+        serverPort.value = server.port;
+        loginAndConnect(server);
       };
 
       // Click handler for delete button

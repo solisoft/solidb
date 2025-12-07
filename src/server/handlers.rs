@@ -42,6 +42,8 @@ pub struct AppState {
     pub cursor_store: CursorStore,
     pub replication: Option<ReplicationService>,
     pub shard_coordinator: Option<crate::sharding::ShardCoordinator>,
+    pub startup_time: std::time::Instant,
+    pub request_counter: Arc<std::sync::atomic::AtomicU64>,
 }
 
 // ==================== Auth Types ====================
@@ -1724,6 +1726,19 @@ pub struct PeerStatusResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct NodeStats {
+    pub database_count: usize,
+    pub collection_count: usize,
+    pub document_count: u64,
+    pub storage_bytes: u64,
+    pub uptime_secs: u64,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub cpu_usage_percent: f32,
+    pub request_count: u64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ClusterStatusResponse {
     pub node_id: String,
     pub status: String,
@@ -1732,9 +1747,13 @@ pub struct ClusterStatusResponse {
     pub log_entries: usize,
     pub peers: Vec<PeerStatusResponse>,
     pub data_dir: String,
+    pub stats: NodeStats,
 }
 
 pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
+    use sysinfo::System;
+    use std::sync::atomic::Ordering;
+
     let node_id = state.storage.node_id().to_string();
     let data_dir = state.storage.data_dir().to_string();
 
@@ -1743,6 +1762,57 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
         .cluster_config()
         .map(|c| c.replication_port)
         .unwrap_or(6746);
+
+    // Calculate stats
+    let databases = state.storage.list_databases();
+    let database_count = databases.len();
+    
+    let mut collection_count = 0;
+    let mut document_count: u64 = 0;
+    
+    for db_name in &databases {
+        if let Ok(db) = state.storage.get_database(db_name) {
+            let coll_names = db.list_collections();
+            collection_count += coll_names.len();
+            for coll_name in coll_names {
+                if let Ok(coll) = db.get_collection(&coll_name) {
+                    document_count += coll.count() as u64;
+                }
+            }
+        }
+    }
+
+    // Storage size (approximate from data directory)
+    let storage_bytes = get_dir_size(&data_dir).unwrap_or(0);
+
+    // Uptime
+    let uptime_secs = state.startup_time.elapsed().as_secs();
+
+    // Memory and CPU usage
+    let mut sys = System::new_all();
+    let pid = sysinfo::get_current_pid().ok();
+    
+    let (memory_used_mb, cpu_usage_percent) = pid
+        .and_then(|p| sys.process(p))
+        .map(|p| (p.memory() / (1024 * 1024), p.cpu_usage()))
+        .unwrap_or((0, 0.0));
+    
+    let memory_total_mb = sys.total_memory() / (1024 * 1024);
+
+    // Request count
+    let request_count = state.request_counter.load(Ordering::Relaxed);
+
+    let stats = NodeStats {
+        database_count,
+        collection_count,
+        document_count,
+        storage_bytes,
+        uptime_secs,
+        memory_used_mb,
+        memory_total_mb,
+        cpu_usage_percent,
+        request_count,
+    };
 
     // Get live status from replication service if available
     if let Some(ref replication) = state.replication {
@@ -1775,6 +1845,7 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
             log_entries: cluster_status.log_entries,
             peers,
             data_dir,
+            stats,
         })
     } else {
         Json(ClusterStatusResponse {
@@ -1785,8 +1856,24 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
             log_entries: 0,
             peers: vec![],
             data_dir,
+            stats,
         })
     }
+}
+
+/// Get the size of a directory in bytes (recursive)
+fn get_dir_size(path: &str) -> std::io::Result<u64> {
+    let mut size = 0u64;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        if metadata.is_dir() {
+            size += get_dir_size(entry.path().to_str().unwrap_or(""))?;
+        } else {
+            size += metadata.len();
+        }
+    }
+    Ok(size)
 }
 
 // ==================== Cluster Info ====================
