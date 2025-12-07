@@ -314,10 +314,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Ignore if clicking the delete button
         if (e.target.closest('.delete-btn')) return;
         
-        serverHost.value = server.host;
-        serverPort.value = server.port;
-        // Auto-connect on click
-        connectBtn.click();
+        // Direct switch
+        loadDatabases(server);
       };
 
       // Click handler for delete button
@@ -339,21 +337,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     setUIDisconnectedState();
   });
 
-  connectBtn.addEventListener('click', loadDatabases);
+  connectBtn.addEventListener('click', () => loadDatabases());
 
-  async function loadDatabases() {
-    const host = serverHost.value.trim();
-    const port = serverPort.value.trim();
+  async function loadDatabases(overrideConfig = null) {
+    let host, port;
+
+    if (overrideConfig) {
+      host = overrideConfig.host;
+      port = overrideConfig.port;
+      // Update inputs to match
+      serverHost.value = host;
+      serverPort.value = port;
+    } else {
+      host = serverHost.value.trim();
+      port = serverPort.value.trim();
+    }
 
     if (!host || !port) {
       showStatus('error', 'Please enter both host and port.');
       return;
     }
 
-    // UI Loading State
-    showStatus('testing', 'Connecting to server...');
-    connectBtn.disabled = true;
-    connectBtn.innerHTML = '<span class="flex items-center">Connecting...</span>';
+    // Determine current state based on form visibility
+    const isAlreadyConnected = serverFormContainer.classList.contains('hidden');
+
+    if (isAlreadyConnected) {
+      // Switching while connected: Show feedback in overlay
+      connectedServerText.innerHTML = `<span class="animate-pulse">Connecting to ${host}:${port}...</span>`;
+      dbSelect.disabled = true;
+      dbSelect.innerHTML = '<option value="" disabled selected>Connecting...</option>';
+      loadingIndicator.classList.remove('hidden');
+      errorMsg.textContent = '';
+      errorMsg.classList.add('hidden');
+    } else {
+      // Standard flow from disconnected state
+      showStatus('testing', 'Connecting to server...');
+      connectBtn.disabled = true;
+      connectBtn.innerHTML = '<span class="flex items-center">Connecting...</span>';
+    }
 
     try {
       // 1. Test Connection
@@ -392,13 +413,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         dbSelect.disabled = false;
         enterBtn.disabled = false;
+        loadingIndicator.classList.add('hidden'); // Ensure hidden success
       } else {
         dbSelect.innerHTML = '<option disabled>No databases found</option>';
       }
 
     } catch (error) {
       console.error(error);
+      
+      // If we were switching, fallback to disconnected state so user sees error
+      if (isAlreadyConnected) {
+        setUIDisconnectedState();
+      }
+
       showStatus('error', 'Failed to connect. Check server details.');
+      loadingIndicator.classList.add('hidden');
       
       // Show unreachable banner
       const serverUrl = `${host}:${port}`;

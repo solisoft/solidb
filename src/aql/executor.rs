@@ -638,8 +638,8 @@ impl<'a> QueryExecutor<'a> {
                                         if let Some(docs) =
                                             self.use_index_for_condition(&collection, &condition)
                                         {
+                                            used_index = true;
                                             if !docs.is_empty() {
-                                                used_index = true;
                                                 // Apply scan_limit to index results
                                                 let docs: Vec<_> = if let Some(n) = scan_limit {
                                                     docs.into_iter().take(n).collect()

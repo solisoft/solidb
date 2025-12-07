@@ -155,6 +155,7 @@ impl Collection {
 
     /// Build an index entry key
     fn idx_entry_key(index_name: &str, value: &Value, doc_key: &str) -> Vec<u8> {
+        // tracing::info!("IDX KEY GEN: name={}, value={:?}, doc_key={}", index_name, value, doc_key);
         let value_str = serde_json::to_string(value).unwrap_or_default();
         format!("{}{}:{}:{}", IDX_PREFIX, index_name, value_str, doc_key).into_bytes()
     }
