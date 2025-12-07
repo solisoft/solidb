@@ -4,6 +4,8 @@
     <div>
       <h1 class="text-3xl font-extrabold text-white flex items-center gap-3">
         <span class="text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">Live View</span>
+        <span class="text-gray-600 text-2xl font-light">/</span>
+        <a href="/database/<%= db %>/collections" class="text-gray-400 hover:text-white transition-colors duration-200"><%= Params.collection %></a>
       </h1>
       <p class="mt-2 text-lg text-gray-400">Real-time changefeed stream monitoring</p>
     </div>
