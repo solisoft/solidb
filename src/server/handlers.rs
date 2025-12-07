@@ -2095,34 +2095,108 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                 "collection": req.collection
                             }).to_string())).await;
 
-                            // Subscribe to broadcast channel
-                            let mut rx = collection.change_sender.subscribe();
+                            // Subscribe to local broadcast channel
+                            let mut local_rx = collection.change_sender.subscribe();
 
-                            // Forward events
-                            loop {
-                                tokio::select! {
-                                    // Send changes to client
-                                    res = rx.recv() => {
-                                        match res {
-                                            Ok(event) => {
-                                                // Filter by key if requested
-                                                if let Some(ref target_key) = req.key {
-                                                    if &event.key != target_key {
-                                                        continue;
-                                                    }
-                                                }
-                                                
-                                                if let Ok(json) = serde_json::to_string(&event) {
-                                                    if socket.send(Message::Text(json)).await.is_err() {
-                                                        break;
-                                                    }
+                            // Set up streams vector for aggregation
+                            // We use a channel to merge streams because SelectAll requires Unpin which can be tricky with async streams
+                            let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
+
+                            // Spawn local listener
+                            let tx_local = tx.clone();
+                            let req_key = req.key.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    match local_rx.recv().await {
+                                        Ok(event) => {
+                                            // Filter by key if requested
+                                            if let Some(ref target_key) = req_key {
+                                                if &event.key != target_key {
+                                                    continue;
                                                 }
                                             }
-                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                                                // Skip lagged messages
+                                            if tx_local.send(event).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                        Err(_) => break,
+                                    }
+                                }
+                            });
+
+                            // Connect to remote nodes if sharded
+                            if let Some(shard_config) = collection.get_shard_config() {
+                                if let Some(coordinator) = &state.shard_coordinator {
+                                    let nodes = coordinator.get_collection_nodes(&shard_config);
+                                    let my_index = coordinator.get_node_index();
+                                    let addresses = coordinator.get_node_addresses();
+                                    
+                                    if let Some(my_addr) = addresses.get(my_index) {
+                                        for node_addr in nodes {
+                                            // Skip self
+                                            if &node_addr == my_addr {
                                                 continue;
                                             }
-                                            Err(_) => break,
+
+                                            // Spawn remote listener
+                                            let tx_remote = tx.clone();
+                                            let db_name = req.database.clone().unwrap_or("_system".to_string());
+                                            let coll_name = req.collection.clone();
+                                            let node_addr_clone = node_addr.clone();
+                                            
+                                            tokio::spawn(async move {
+                                                use crate::cluster::ClusterWebsocketClient;
+                                                
+                                                tracing::debug!("[CHANGEFEED] connecting to remote {}", node_addr_clone);
+                                                match ClusterWebsocketClient::connect(&node_addr_clone, &db_name, &coll_name).await {
+                                                    Ok(stream) => {
+                                                        tokio::pin!(stream);
+                                                        while let Some(result) = stream.next().await {
+                                                            match result {
+                                                                Ok(event) => {
+                                                                    if tx_remote.send(event).await.is_err() {
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    tracing::warn!("[CHANGEFEED] Remote stream error from {}: {}", node_addr_clone, e);
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!("[CHANGEFEED] Failed to connect to remote {}: {}", node_addr_clone, e);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Forward aggregated events to client
+                            loop {
+                                tokio::select! {
+                                    // Received event from aggregator
+                                    Some(event) = rx.recv() => {
+                                        // Note: Local events were already filtered by key in the spawned task.
+                                        // Remote events should eventually be filtered too, but for now we filter here again just in case
+                                        // to be safe (though remote subscription should filter ideally, current impl connects to stream).
+                                        // Actually ClusterWebsocketClient subscription sends a filter? 
+                                        // The current ClusterWebsocketClient connect() sends "subscribe" without key filter.
+                                        // So we MUST filter here.
+                                        if let Some(ref target_key) = req.key {
+                                            if &event.key != target_key {
+                                                continue;
+                                            }
+                                        }
+                                        
+                                        if let Ok(json) = serde_json::to_string(&event) {
+                                            if socket.send(Message::Text(json)).await.is_err() {
+                                                break;
+                                            }
                                         }
                                     }
                                     // Handle incoming messages (e.g. close)

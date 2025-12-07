@@ -308,6 +308,25 @@ impl ShardCoordinator {
         ).into_iter().map(|s| s.to_string()).collect()
     }
 
+    /// Get all unique nodes that hold shards for a collection (including replicas)
+    pub fn get_collection_nodes(&self, config: &CollectionShardConfig) -> Vec<String> {
+        let mut nodes = std::collections::HashSet::new();
+        let addresses = self.node_addresses.read().unwrap();
+        
+        for shard_id in 0..config.num_shards {
+            let replica_nodes = ShardRouter::shard_to_nodes(
+                shard_id,
+                config.replication_factor,
+                &addresses,
+            );
+            for node in replica_nodes {
+                nodes.insert(node.to_string());
+            }
+        }
+        
+        nodes.into_iter().collect()
+    }
+
     /// Remove a node from the cluster and rebalance
     pub async fn remove_node(&self, node_addr: &str) -> DbResult<()> {
         let should_rebalance = {
