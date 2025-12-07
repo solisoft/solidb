@@ -116,8 +116,8 @@
 
           // Fetch both regular indexes and geo indexes
           const [regularResponse, geoResponse] = await Promise.all([
-            fetch(`${url}/index/${this.props.collection}`),
-            fetch(`${url}/geo/${this.props.collection}`)
+            authenticatedFetch(`${url}/index/${this.props.collection}`),
+            authenticatedFetch(`${url}/geo/${this.props.collection}`)
           ])
 
           const regularData = await regularResponse.json()

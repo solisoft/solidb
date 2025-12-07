@@ -1790,13 +1790,25 @@ fn generate_cluster_status(state: &AppState) -> ClusterStatusResponse {
     let uptime_secs = state.startup_time.elapsed().as_secs();
 
     // Memory and CPU usage
-    let mut sys = System::new_all();
+    // Note: sysinfo requires refresh_process() for accurate CPU readings
+    let mut sys = System::new();
+    sys.refresh_memory();
+    
     let pid = sysinfo::get_current_pid().ok();
     
-    let (memory_used_mb, cpu_usage_percent) = pid
-        .and_then(|p| sys.process(p))
-        .map(|p| (p.memory() / (1024 * 1024), p.cpu_usage()))
-        .unwrap_or((0, 0.0));
+    let (memory_used_mb, cpu_usage_percent) = if let Some(p) = pid {
+        // Refresh this specific process to get CPU usage
+        sys.refresh_process(p);
+        // Small delay to allow CPU measurement 
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        sys.refresh_process(p);
+        
+        sys.process(p)
+            .map(|proc| (proc.memory() / (1024 * 1024), proc.cpu_usage()))
+            .unwrap_or((0, 0.0))
+    } else {
+        (0, 0.0)
+    };
     
     let memory_total_mb = sys.total_memory() / (1024 * 1024);
 
