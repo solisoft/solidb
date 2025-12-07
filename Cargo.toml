@@ -9,7 +9,7 @@ default-run = "solidb"
 tokio = { version = "1.35", features = ["full"] }
 
 # HTTP server
-axum = { version = "0.7", features = ["multipart"] }
+axum = { version = "0.7", features = ["multipart", "ws"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 async-stream = "0.3"

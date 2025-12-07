@@ -11,21 +11,77 @@ export default {
       error: null
     },
 
-    refreshInterval: null,
+    ws: null,
+    reconnectTimeout: null,
 
     onMounted() {
+      // Initial HTTP load (for info which doesn't need real-time updates)
       this.loadClusterInfo()
-      // Refresh every 5 seconds
-      this.refreshInterval = setInterval(() => {
-        this.loadClusterInfo(true) // silent refresh (no loading spinner)
-      }, 2000)
+      // Then connect WebSocket for real-time status
+      this.connectWebSocket()
     },
 
     onUnmounted() {
-      // Clean up interval when component is destroyed
-      if (this.refreshInterval) {
-        clearInterval(this.refreshInterval)
-        this.refreshInterval = null
+      // Clean up WebSocket connection
+      if (this.ws) {
+        this.ws.close()
+        this.ws = null
+      }
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout)
+        this.reconnectTimeout = null
+      }
+    },
+
+    connectWebSocket() {
+      const apiUrl = getApiUrl()
+      const token = localStorage.getItem('solidb_auth_token')
+
+      // Convert HTTP URL to WebSocket URL
+      // getApiUrl() returns e.g. "http://localhost:6745/_api"
+      const wsProtocol = apiUrl.startsWith('https') ? 'wss:' : 'ws:'
+      const wsHost = apiUrl.replace(/^https?:\/\//, '')
+      // wsHost is now "localhost:6745/_api"
+      const wsUrl = `${wsProtocol}//${wsHost}/cluster/status/ws`
+
+      try {
+        // Note: WebSocket doesn't support custom headers in browsers
+        // We need to pass the token as a query parameter or handle auth differently
+        // For now, the WebSocket endpoint needs to be accessible (we'll add token later)
+        this.ws = new WebSocket(wsUrl)
+
+        this.ws.onopen = () => {
+          console.log('WebSocket connected to cluster status')
+        }
+
+        this.ws.onmessage = (event) => {
+          try {
+            const status = JSON.parse(event.data)
+            this.update({
+              status,
+              loading: false,
+              error: null
+            })
+          } catch (e) {
+            console.error('Failed to parse cluster status:', e)
+          }
+        }
+
+        this.ws.onclose = () => {
+          console.log('WebSocket closed, reconnecting in 2s...')
+          // Reconnect after 2 seconds
+          this.reconnectTimeout = setTimeout(() => {
+            this.connectWebSocket()
+          }, 2000)
+        }
+
+        this.ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+        }
+      } catch (e) {
+        console.error('Failed to create WebSocket:', e)
+        // Fall back to polling if WebSocket fails
+        this.update({ error: 'WebSocket connection failed' })
       }
     },
 
@@ -103,7 +159,7 @@ export default {
     },
 
     async loadClusterInfo(silent = false) {
-      // Only show loading spinner on initial load, not on periodic refreshes
+      // Only show loading spinner on initial load, not on manual refresh
       if (!silent) {
         this.update({ loading: true, error: null })
       }
@@ -111,21 +167,16 @@ export default {
       try {
         const url = getApiUrl()
 
-        // Fetch both status and info in parallel
-        const [statusResponse, infoResponse] = await Promise.all([
-          authenticatedFetch(`${url}/cluster/status`),
-          authenticatedFetch(`${url}/cluster/info`)
-        ])
+        // Fetch cluster info (WebSocket handles status)
+        const infoResponse = await authenticatedFetch(`${url}/cluster/info`)
 
-        if (!statusResponse.ok || !infoResponse.ok) {
+        if (!infoResponse.ok) {
           throw new Error('Failed to fetch cluster information')
         }
 
-        const status = await statusResponse.json()
         const info = await infoResponse.json()
 
         this.update({
-          status,
           info,
           loading: false,
           error: null
@@ -133,7 +184,6 @@ export default {
       } catch (error) {
         // On silent refresh, don't show error if we already have data
         if (silent && this.state.status.node_id) {
-          // Keep existing data, just log the error
           console.warn('Cluster refresh failed:', error.message)
         } else {
           this.update({ error: error.message, loading: false })
@@ -148,13 +198,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="space-y-6"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Cluster Status</h3></div><div expr174="expr174" class="flex justify-center items-center py-12"></div><div expr175="expr175" class="text-center py-12"></div><div expr178="expr178" class="p-6"></div></div><div expr184="expr184" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div><div expr187="expr187" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div><div expr200="expr200" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div></div>',
+    '<div class="space-y-6"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Cluster Status</h3></div><div expr248="expr248" class="flex justify-center items-center py-12"></div><div expr249="expr249" class="text-center py-12"></div><div expr252="expr252" class="p-6"></div></div><div expr258="expr258" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div><div expr261="expr261" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div><div expr274="expr274" class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr174',
-        selector: '[expr174]',
+        redundantAttribute: 'expr248',
+        selector: '[expr248]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading cluster info...</span>',
@@ -164,15 +214,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr175',
-        selector: '[expr175]',
+        redundantAttribute: 'expr249',
+        selector: '[expr249]',
 
         template: template(
-          '<p expr176="expr176" class="text-red-400"> </p><button expr177="expr177" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr250="expr250" class="text-red-400"> </p><button expr251="expr251" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr176',
-              selector: '[expr176]',
+              redundantAttribute: 'expr250',
+              selector: '[expr250]',
 
               expressions: [
                 {
@@ -189,8 +239,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr177',
-              selector: '[expr177]',
+              redundantAttribute: 'expr251',
+              selector: '[expr251]',
 
               expressions: [
                 {
@@ -206,15 +256,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error,
-        redundantAttribute: 'expr178',
-        selector: '[expr178]',
+        redundantAttribute: 'expr252',
+        selector: '[expr252]',
 
         template: template(
-          '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg></div><div class="ml-4 min-w-0 flex-1"><p class="text-sm font-medium text-gray-400">Node ID</p><p expr179="expr179" class="text-lg font-semibold text-gray-100 truncate"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg expr180="expr180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Status</p><p expr181="expr181"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Replication Port</p><p expr182="expr182" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></div><div class="ml-4 min-w-0 flex-1"><p class="text-sm font-medium text-gray-400">Data Directory</p><p expr183="expr183" class="text-sm font-semibold text-gray-100 truncate"> </p></div></div></div></div>',
+          '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg></div><div class="ml-4 min-w-0 flex-1"><p class="text-sm font-medium text-gray-400">Node ID</p><p expr253="expr253" class="text-lg font-semibold text-gray-100 truncate"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg expr254="expr254" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Status</p><p expr255="expr255"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Replication Port</p><p expr256="expr256" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></div><div class="ml-4 min-w-0 flex-1"><p class="text-sm font-medium text-gray-400">Data Directory</p><p expr257="expr257" class="text-sm font-semibold text-gray-100 truncate"> </p></div></div></div></div>',
           [
             {
-              redundantAttribute: 'expr179',
-              selector: '[expr179]',
+              redundantAttribute: 'expr253',
+              selector: '[expr253]',
 
               expressions: [
                 {
@@ -231,8 +281,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr180',
-              selector: '[expr180]',
+              redundantAttribute: 'expr254',
+              selector: '[expr254]',
 
               expressions: [
                 {
@@ -250,8 +300,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr181',
-              selector: '[expr181]',
+              redundantAttribute: 'expr255',
+              selector: '[expr255]',
 
               expressions: [
                 {
@@ -279,8 +329,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr182',
-              selector: '[expr182]',
+              redundantAttribute: 'expr256',
+              selector: '[expr256]',
 
               expressions: [
                 {
@@ -291,8 +341,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr183',
-              selector: '[expr183]',
+              redundantAttribute: 'expr257',
+              selector: '[expr257]',
 
               expressions: [
                 {
@@ -314,15 +364,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error,
-        redundantAttribute: 'expr184',
-        selector: '[expr184]',
+        redundantAttribute: 'expr258',
+        selector: '[expr258]',
 
         template: template(
-          '<div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Replication Stats</h3></div><div class="p-6"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Current Sequence</p><p expr185="expr185" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Log Entries</p><p expr186="expr186" class="text-lg font-semibold text-gray-100"> </p></div></div></div></div></div>',
+          '<div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Replication Stats</h3></div><div class="p-6"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Current Sequence</p><p expr259="expr259" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Log Entries</p><p expr260="expr260" class="text-lg font-semibold text-gray-100"> </p></div></div></div></div></div>',
           [
             {
-              redundantAttribute: 'expr185',
-              selector: '[expr185]',
+              redundantAttribute: 'expr259',
+              selector: '[expr259]',
 
               expressions: [
                 {
@@ -333,8 +383,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr186',
-              selector: '[expr186]',
+              redundantAttribute: 'expr260',
+              selector: '[expr260]',
 
               expressions: [
                 {
@@ -350,15 +400,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.status.stats,
-        redundantAttribute: 'expr187',
-        selector: '[expr187]',
+        redundantAttribute: 'expr261',
+        selector: '[expr261]',
 
         template: template(
-          '<div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Node Statistics</h3></div><div class="p-6"><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Databases</p><p expr188="expr188" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Collections</p><p expr189="expr189" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Documents</p><p expr190="expr190" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3 3h10c1.5 0 3-1 3-3V7c0-2-1.5-3-3-3H7C5.5 4 4 5 4 7z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Storage</p><p expr191="expr191" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Uptime</p><p expr192="expr192" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center justify-between mb-2"><div class="flex items-center"><svg class="h-5 w-5 text-pink-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg><p class="text-sm font-medium text-gray-400">Memory</p></div><p expr193="expr193" class="text-sm font-semibold text-gray-100"> </p></div><div class="w-full bg-gray-700 rounded-full h-2.5 mb-1"><div expr194="expr194" class="bg-gradient-to-r from-pink-500 to-pink-400 h-2.5 rounded-full transition-all duration-500"></div></div><p expr195="expr195" class="text-xs text-gray-500"> </p></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center justify-between mb-2"><div class="flex items-center"><svg class="h-5 w-5 text-orange-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><p class="text-sm font-medium text-gray-400">CPU</p></div><p expr196="expr196" class="text-sm font-semibold text-gray-100"> </p></div><div class="w-full bg-gray-700 rounded-full h-2.5 mb-1"><div expr197="expr197" class="h-2.5 rounded-full transition-all duration-500"></div></div><p expr198="expr198" class="text-xs text-gray-500"> </p></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Requests</p><p expr199="expr199" class="text-lg font-semibold text-gray-100"> </p></div></div></div></div></div>',
+          '<div class="px-6 py-4 border-b border-gray-700"><h3 class="text-lg font-semibold text-gray-100">Node Statistics</h3></div><div class="p-6"><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Databases</p><p expr262="expr262" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Collections</p><p expr263="expr263" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Documents</p><p expr264="expr264" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1.5 3 3 3h10c1.5 0 3-1 3-3V7c0-2-1.5-3-3-3H7C5.5 4 4 5 4 7z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Storage</p><p expr265="expr265" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Uptime</p><p expr266="expr266" class="text-lg font-semibold text-gray-100"> </p></div></div></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center justify-between mb-2"><div class="flex items-center"><svg class="h-5 w-5 text-pink-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg><p class="text-sm font-medium text-gray-400">Memory</p></div><p expr267="expr267" class="text-sm font-semibold text-gray-100"> </p></div><div class="w-full bg-gray-700 rounded-full h-2.5 mb-1"><div expr268="expr268" class="bg-gradient-to-r from-pink-500 to-pink-400 h-2.5 rounded-full transition-all duration-500"></div></div><p expr269="expr269" class="text-xs text-gray-500"> </p></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center justify-between mb-2"><div class="flex items-center"><svg class="h-5 w-5 text-orange-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><p class="text-sm font-medium text-gray-400">CPU</p></div><p expr270="expr270" class="text-sm font-semibold text-gray-100"> </p></div><div class="w-full bg-gray-700 rounded-full h-2.5 mb-1"><div expr271="expr271" class="h-2.5 rounded-full transition-all duration-500"></div></div><p expr272="expr272" class="text-xs text-gray-500"> </p></div><div class="bg-gray-750 rounded-lg p-4 border border-gray-600"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div><div class="ml-4"><p class="text-sm font-medium text-gray-400">Requests</p><p expr273="expr273" class="text-lg font-semibold text-gray-100"> </p></div></div></div></div></div>',
           [
             {
-              redundantAttribute: 'expr188',
-              selector: '[expr188]',
+              redundantAttribute: 'expr262',
+              selector: '[expr262]',
 
               expressions: [
                 {
@@ -369,8 +419,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr189',
-              selector: '[expr189]',
+              redundantAttribute: 'expr263',
+              selector: '[expr263]',
 
               expressions: [
                 {
@@ -381,8 +431,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr190',
-              selector: '[expr190]',
+              redundantAttribute: 'expr264',
+              selector: '[expr264]',
 
               expressions: [
                 {
@@ -396,8 +446,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr191',
-              selector: '[expr191]',
+              redundantAttribute: 'expr265',
+              selector: '[expr265]',
 
               expressions: [
                 {
@@ -411,8 +461,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr192',
-              selector: '[expr192]',
+              redundantAttribute: 'expr266',
+              selector: '[expr266]',
 
               expressions: [
                 {
@@ -426,8 +476,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr193',
-              selector: '[expr193]',
+              redundantAttribute: 'expr267',
+              selector: '[expr267]',
 
               expressions: [
                 {
@@ -444,8 +494,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr194',
-              selector: '[expr194]',
+              redundantAttribute: 'expr268',
+              selector: '[expr268]',
 
               expressions: [
                 {
@@ -464,8 +514,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr195',
-              selector: '[expr195]',
+              redundantAttribute: 'expr269',
+              selector: '[expr269]',
 
               expressions: [
                 {
@@ -486,8 +536,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr196',
-              selector: '[expr196]',
+              redundantAttribute: 'expr270',
+              selector: '[expr270]',
 
               expressions: [
                 {
@@ -506,8 +556,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr197',
-              selector: '[expr197]',
+              redundantAttribute: 'expr271',
+              selector: '[expr271]',
 
               expressions: [
                 {
@@ -531,8 +581,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr198',
-              selector: '[expr198]',
+              redundantAttribute: 'expr272',
+              selector: '[expr272]',
 
               expressions: [
                 {
@@ -543,8 +593,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr199',
-              selector: '[expr199]',
+              redundantAttribute: 'expr273',
+              selector: '[expr273]',
 
               expressions: [
                 {
@@ -563,15 +613,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error,
-        redundantAttribute: 'expr200',
-        selector: '[expr200]',
+        redundantAttribute: 'expr274',
+        selector: '[expr274]',
 
         template: template(
-          '<div class="px-6 py-4 border-b border-gray-700"><h3 expr201="expr201" class="text-lg font-semibold text-gray-100"> </h3></div><div class="p-6"><div expr202="expr202"></div><div expr210="expr210"></div></div>',
+          '<div class="px-6 py-4 border-b border-gray-700"><h3 expr275="expr275" class="text-lg font-semibold text-gray-100"> </h3></div><div class="p-6"><div expr276="expr276"></div><div expr284="expr284"></div></div>',
           [
             {
-              redundantAttribute: 'expr201',
-              selector: '[expr201]',
+              redundantAttribute: 'expr275',
+              selector: '[expr275]',
 
               expressions: [
                 {
@@ -593,11 +643,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.status.peers && _scope.state.status.peers.length> 0,
-              redundantAttribute: 'expr202',
-              selector: '[expr202]',
+              redundantAttribute: 'expr276',
+              selector: '[expr276]',
 
               template: template(
-                '<div class="bg-gray-750 rounded-lg border border-gray-600 overflow-hidden"><table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">#</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Peer Address\n                  </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Last Seen\n                  </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Replication\n                    Lag</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr203="expr203" class="hover:bg-gray-700 transition-colors"></tr></tbody></table></div>',
+                '<div class="bg-gray-750 rounded-lg border border-gray-600 overflow-hidden"><table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">#</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Peer Address\n                  </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Last Seen\n                  </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Replication\n                    Lag</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr277="expr277" class="hover:bg-gray-700 transition-colors"></tr></tbody></table></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -605,11 +655,11 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<td expr204="expr204" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg expr205="expr205" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg><span expr206="expr206" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr207="expr207"> </span></td><td expr208="expr208" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr209="expr209"> </span></td>',
+                      '<td expr278="expr278" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg expr279="expr279" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg><span expr280="expr280" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr281="expr281"> </span></td><td expr282="expr282" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr283="expr283"> </span></td>',
                       [
                         {
-                          redundantAttribute: 'expr204',
-                          selector: '[expr204]',
+                          redundantAttribute: 'expr278',
+                          selector: '[expr278]',
 
                           expressions: [
                             {
@@ -620,8 +670,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr205',
-                          selector: '[expr205]',
+                          redundantAttribute: 'expr279',
+                          selector: '[expr279]',
 
                           expressions: [
                             {
@@ -640,8 +690,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr206',
-                          selector: '[expr206]',
+                          redundantAttribute: 'expr280',
+                          selector: '[expr280]',
 
                           expressions: [
                             {
@@ -652,8 +702,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr207',
-                          selector: '[expr207]',
+                          redundantAttribute: 'expr281',
+                          selector: '[expr281]',
 
                           expressions: [
                             {
@@ -681,8 +731,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr208',
-                          selector: '[expr208]',
+                          redundantAttribute: 'expr282',
+                          selector: '[expr282]',
 
                           expressions: [
                             {
@@ -700,8 +750,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr209',
-                          selector: '[expr209]',
+                          redundantAttribute: 'expr283',
+                          selector: '[expr283]',
 
                           expressions: [
                             {
@@ -732,8 +782,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr203',
-                    selector: '[expr203]',
+                    redundantAttribute: 'expr277',
+                    selector: '[expr277]',
                     itemName: 'peer',
                     indexName: 'idx',
                     evaluate: _scope => _scope.state.status.peers
@@ -744,8 +794,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => !_scope.state.status.peers || _scope.state.status.peers.length===0,
-              redundantAttribute: 'expr210',
-              selector: '[expr210]',
+              redundantAttribute: 'expr284',
+              selector: '[expr284]',
 
               template: template(
                 '<div class="bg-gray-750 rounded-lg p-6 border border-gray-600 text-center"><svg class="mx-auto h-12 w-12 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg><h3 class="mt-4 text-lg font-medium text-gray-100">No Peer Nodes Configured</h3><p class="mt-2 text-sm text-gray-400">\n              This node is running in cluster-ready mode. It\'s ready to accept connections from other nodes.\n            </p></div>',

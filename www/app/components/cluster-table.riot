@@ -373,21 +373,77 @@
         error: null
       },
 
-      refreshInterval: null,
+      ws: null,
+      reconnectTimeout: null,
 
       onMounted() {
+        // Initial HTTP load (for info which doesn't need real-time updates)
         this.loadClusterInfo()
-        // Refresh every 5 seconds
-        this.refreshInterval = setInterval(() => {
-          this.loadClusterInfo(true) // silent refresh (no loading spinner)
-        }, 2000)
+        // Then connect WebSocket for real-time status
+        this.connectWebSocket()
       },
 
       onUnmounted() {
-        // Clean up interval when component is destroyed
-        if (this.refreshInterval) {
-          clearInterval(this.refreshInterval)
-          this.refreshInterval = null
+        // Clean up WebSocket connection
+        if (this.ws) {
+          this.ws.close()
+          this.ws = null
+        }
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout)
+          this.reconnectTimeout = null
+        }
+      },
+
+      connectWebSocket() {
+        const apiUrl = getApiUrl()
+        const token = localStorage.getItem('solidb_auth_token')
+
+        // Convert HTTP URL to WebSocket URL
+        // getApiUrl() returns e.g. "http://localhost:6745/_api"
+        const wsProtocol = apiUrl.startsWith('https') ? 'wss:' : 'ws:'
+        const wsHost = apiUrl.replace(/^https?:\/\//, '')
+        // wsHost is now "localhost:6745/_api"
+        const wsUrl = `${wsProtocol}//${wsHost}/cluster/status/ws`
+
+        try {
+          // Note: WebSocket doesn't support custom headers in browsers
+          // We need to pass the token as a query parameter or handle auth differently
+          // For now, the WebSocket endpoint needs to be accessible (we'll add token later)
+          this.ws = new WebSocket(wsUrl)
+
+          this.ws.onopen = () => {
+            console.log('WebSocket connected to cluster status')
+          }
+
+          this.ws.onmessage = (event) => {
+            try {
+              const status = JSON.parse(event.data)
+              this.update({
+                status,
+                loading: false,
+                error: null
+              })
+            } catch (e) {
+              console.error('Failed to parse cluster status:', e)
+            }
+          }
+
+          this.ws.onclose = () => {
+            console.log('WebSocket closed, reconnecting in 2s...')
+            // Reconnect after 2 seconds
+            this.reconnectTimeout = setTimeout(() => {
+              this.connectWebSocket()
+            }, 2000)
+          }
+
+          this.ws.onerror = (error) => {
+            console.error('WebSocket error:', error)
+          }
+        } catch (e) {
+          console.error('Failed to create WebSocket:', e)
+          // Fall back to polling if WebSocket fails
+          this.update({ error: 'WebSocket connection failed' })
         }
       },
 
@@ -465,7 +521,7 @@
       },
 
       async loadClusterInfo(silent = false) {
-        // Only show loading spinner on initial load, not on periodic refreshes
+        // Only show loading spinner on initial load, not on manual refresh
         if (!silent) {
           this.update({ loading: true, error: null })
         }
@@ -473,21 +529,16 @@
         try {
           const url = getApiUrl()
 
-          // Fetch both status and info in parallel
-          const [statusResponse, infoResponse] = await Promise.all([
-            authenticatedFetch(`${url}/cluster/status`),
-            authenticatedFetch(`${url}/cluster/info`)
-          ])
+          // Fetch cluster info (WebSocket handles status)
+          const infoResponse = await authenticatedFetch(`${url}/cluster/info`)
 
-          if (!statusResponse.ok || !infoResponse.ok) {
+          if (!infoResponse.ok) {
             throw new Error('Failed to fetch cluster information')
           }
 
-          const status = await statusResponse.json()
           const info = await infoResponse.json()
 
           this.update({
-            status,
             info,
             loading: false,
             error: null
@@ -495,7 +546,6 @@
         } catch (error) {
           // On silent refresh, don't show error if we already have data
           if (silent && this.state.status.node_id) {
-            // Keep existing data, just log the error
             console.warn('Cluster refresh failed:', error.message)
           } else {
             this.update({ error: error.message, loading: false })

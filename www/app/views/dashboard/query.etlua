@@ -160,7 +160,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 <script type="module">
-import { getApiUrl } from '<%= PublicPath("/api-config.js") %>';
+import { getApiUrl, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
 
 let db = "<%= Params['db'] %>";
 function getUrl() {
@@ -246,7 +246,7 @@ async function executeQuery() {
     // Save to history immediately
     saveQueryToHistory(query);
 
-    const response = await fetch(getUrl() + '/cursor', {
+    const response = await authenticatedFetch(getUrl() + '/cursor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })
@@ -290,7 +290,7 @@ async function explainQuery() {
     // Save to history immediately
     saveQueryToHistory(query);
 
-    const response = await fetch(getUrl() + '/explain', {
+    const response = await authenticatedFetch(getUrl() + '/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })

@@ -193,6 +193,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
     // Combine with public routes
     Router::new()
         .route("/auth/login", post(login_handler))
+        // WebSocket route (outside auth middleware - uses token in query param)
+        .route("/_api/cluster/status/ws", get(cluster_status_ws))
         .merge(api_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())

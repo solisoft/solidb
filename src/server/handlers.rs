@@ -1750,7 +1750,8 @@ pub struct ClusterStatusResponse {
     pub stats: NodeStats,
 }
 
-pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
+/// Generate cluster status data (shared between HTTP and WebSocket handlers)
+fn generate_cluster_status(state: &AppState) -> ClusterStatusResponse {
     use sysinfo::System;
     use std::sync::atomic::Ordering;
 
@@ -1837,7 +1838,7 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
             })
             .collect();
 
-        Json(ClusterStatusResponse {
+        ClusterStatusResponse {
             node_id: cluster_status.node_id,
             status,
             replication_port,
@@ -1846,9 +1847,9 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
             peers,
             data_dir,
             stats,
-        })
+        }
     } else {
-        Json(ClusterStatusResponse {
+        ClusterStatusResponse {
             node_id,
             status: "standalone".to_string(),
             replication_port,
@@ -1857,7 +1858,56 @@ pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatus
             peers: vec![],
             data_dir,
             stats,
-        })
+        }
+    }
+}
+
+pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
+    Json(generate_cluster_status(&state))
+}
+
+/// WebSocket handler for real-time cluster status updates
+pub async fn cluster_status_ws(
+    ws: axum::extract::ws::WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_cluster_ws(socket, state))
+}
+
+/// Handle the WebSocket connection for cluster status
+async fn handle_cluster_ws(mut socket: axum::extract::ws::WebSocket, state: AppState) {
+    use axum::extract::ws::Message;
+    use tokio::time::{interval, Duration};
+    
+    let mut ticker = interval(Duration::from_secs(1));
+    
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                // Generate status using shared logic
+                let status = generate_cluster_status(&state);
+                let json = match serde_json::to_string(&status) {
+                    Ok(j) => j,
+                    Err(_) => continue,
+                };
+                
+                if socket.send(Message::Text(json)).await.is_err() {
+                    break; // Client disconnected
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Ping(data))) => {
+                        // Respond to ping with pong
+                        if socket.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ => {} // Ignore other messages
+                }
+            }
+        }
     }
 }
 
