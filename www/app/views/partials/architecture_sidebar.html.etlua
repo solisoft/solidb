@@ -27,7 +27,6 @@
         <a href="#cluster" class="group flex items-center px-2 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all duration-200">
            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
           Cluster Architecture
-          <span class="ml-auto text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">NEW</span>
         </a>
       </nav>
     </div>

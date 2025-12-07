@@ -16,9 +16,11 @@
       <div class="relative">
         <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
         <div class="relative">
-          <div class="flex items-center gap-3 mb-4">
+          <div class="flex items-center mb-6">
+            <div class="p-3 bg-emerald-500/10 rounded-lg mr-4 border border-emerald-500/20">
+               <i class="fas fa-network-wired text-emerald-400 text-xl"></i>
+            </div>
             <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 tracking-tight">Clustering</h1>
-            <span class="px-3 py-1 bg-emerald-500/20 text-emerald-300 text-sm font-bold rounded-full border border-emerald-500/30">NEW</span>
           </div>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
             Deploy highly available, multi-node SoliDB clusters with automatic peer-to-peer replication, peer discovery, and Last-Write-Wins conflict resolution.

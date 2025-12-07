@@ -366,6 +366,40 @@ FOR x IN items
   RETURN x * 2
 ```
 
+### Graph Queries
+
+SoliDB supports native graph traversals and shortest path algorithms.
+
+**Keywords**: `OUTBOUND`, `INBOUND`, `ANY`, `SHORTEST_PATH`, `GRAPH` (reserved)
+
+```aql
+-- Basic Traversal
+-- FOR vertex[, edge] IN [min..max] DIRECTION startVertex edgeCollection
+
+-- Find who Alice follows (1 hop OUTBOUND)
+FOR v IN OUTBOUND "users/alice" follows
+  RETURN v.name
+
+-- Find followers of Alice (1 hop INBOUND)
+FOR v IN INBOUND "users/alice" follows
+  RETURN v.name
+
+-- Find friends of friends (2 hops)
+FOR v IN 2..2 OUTBOUND "users/alice" follows
+  RETURN v.name
+
+-- Variable depth traversal (1 to 2 hops) with edge access
+FOR v, e IN 1..2 OUTBOUND "users/alice" follows
+  RETURN { user: v.name, relation: e.type }
+
+-- Shortest Path
+-- FOR vertex[, edge] IN SHORTEST_PATH startVertex TO endVertex DIRECTION edgeCollection
+
+-- Find shortest path between two users
+FOR v IN SHORTEST_PATH "users/alice" TO "users/charlie" OUTBOUND follows
+  RETURN v.name
+```
+
 ### Supported Operators
 
 **Comparison**: `==`, `!=`, `<`, `<=`, `>`, `>=`

@@ -272,35 +272,27 @@ function switchTab(tab) {
           </h2>
 
           <div class="space-y-6">
-            <!-- Outbound -->
+            <!-- Outbound Traversal -->
             <div class="bg-gray-800/20 border border-white/5 rounded-2xl overflow-hidden">
                <div class="p-4 border-b border-white/5 flex items-center bg-white/5">
                  <span class="text-fuchsia-400 font-bold mr-2">OUTBOUND</span>
-                 <span class="text-gray-400 text-sm">Find who Alice follows</span>
+                 <span class="text-gray-400 text-sm">Find who Alice follows (Direct)</span>
                </div>
-               <div class="p-6 bg-gray-950 font-mono text-sm">
-                  <span class="text-purple-400">FOR</span> edge <span class="text-purple-400">IN</span> follows<br>
-                  &nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge._from == <span class="text-yellow-300">"users/alice"</span><br>
-                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> edge
+               <div class="p-6 bg-gray-950 font-mono text-sm leading-relaxed">
+                  <span class="text-purple-400">FOR</span> v <span class="text-purple-400">IN OUTBOUND</span> <span class="text-yellow-300">"users/alice"</span> follows<br>
+                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> v.name
                </div>
             </div>
 
-            <!-- Traversal -->
+            <!-- Variable Depth Traversal -->
             <div class="bg-gray-800/20 border border-white/5 rounded-2xl overflow-hidden">
                <div class="p-4 border-b border-white/5 flex items-center bg-white/5">
-                 <span class="text-blue-400 font-bold mr-2">TRAVERSAL</span>
-                 <span class="text-gray-400 text-sm">Find friends of friends (2-hop)</span>
+                 <span class="text-blue-400 font-bold mr-2">DEPTH RANGE</span>
+                 <span class="text-gray-400 text-sm">Find friends of friends (1 to 2 hops)</span>
                </div>
-               <div class="p-6 bg-gray-950 font-mono text-sm">
-                  <span class="text-purple-400">FOR</span> user <span class="text-purple-400">IN</span> users<br>
-                  &nbsp;&nbsp;<span class="text-purple-400">FILTER</span> user._key == <span class="text-yellow-300">"alice"</span><br>
-                  &nbsp;&nbsp;<span class="text-purple-400">FOR</span> edge1 <span class="text-purple-400">IN</span> follows<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge1._from == user._id<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FOR</span> friend <span class="text-purple-400">IN</span> users<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> friend._id == edge1._to<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FOR</span> edge2 <span class="text-purple-400">IN</span> follows<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge2._from == friend._id<br>
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">RETURN</span> edge2._to
+               <div class="p-6 bg-gray-950 font-mono text-sm leading-relaxed">
+                  <span class="text-purple-400">FOR</span> v, e <span class="text-purple-400">IN</span> 1..2 <span class="text-purple-400">OUTBOUND</span> <span class="text-yellow-300">"users/alice"</span> follows<br>
+                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> { vertex: v.name, edge: e }
                </div>
             </div>
 
@@ -310,11 +302,9 @@ function switchTab(tab) {
                  <span class="text-green-400 font-bold mr-2">SHORTEST_PATH</span>
                  <span class="text-gray-400 text-sm">Find connection between Alice and Charlie</span>
                </div>
-               <div class="p-6 bg-gray-950 font-mono text-sm">
-                  <span class="text-purple-400">FOR</span> v, e <span class="text-purple-400">IN OUTBOUND SHORTEST_PATH</span><br>
-                  &nbsp;&nbsp;<span class="text-yellow-300">"users/alice"</span> <span class="text-purple-400">TO</span> <span class="text-yellow-300">"users/charlie"</span><br>
-                  &nbsp;&nbsp;<span class="text-purple-400">GRAPH</span> <span class="text-yellow-300">"social"</span><br>
-                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> { vertex: v, edge: e }
+               <div class="p-6 bg-gray-950 font-mono text-sm leading-relaxed">
+                  <span class="text-purple-400">FOR</span> v <span class="text-purple-400">IN SHORTEST_PATH</span> <span class="text-yellow-300">"users/alice"</span> <span class="text-purple-400">TO</span> <span class="text-yellow-300">"users/charlie"</span> <span class="text-purple-400">OUTBOUND</span> follows<br>
+                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> v.name
                </div>
             </div>
           </div>
