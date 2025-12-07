@@ -182,6 +182,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/_api/cluster/info", get(cluster_info))
         .route("/_api/cluster/remove-node", post(cluster_remove_node))
         .route("/_api/cluster/rebalance", post(cluster_rebalance))
+// WebSocket routes (moved to public router)
+        // .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         // Auth management
         .route("/_api/auth/password", put(change_password_handler))
         .route("/_api/auth/api-keys", post(create_api_key_handler))
@@ -195,6 +197,7 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/auth/login", post(login_handler))
         // WebSocket route (outside auth middleware - uses token in query param)
         .route("/_api/cluster/status/ws", get(cluster_status_ws))
+        .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         .merge(api_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())

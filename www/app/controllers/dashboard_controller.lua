@@ -17,12 +17,12 @@ local app = {
     Page("dashboard/databases", "app")
   end,
 
-  indexes = function()
-    Page("dashboard/indexes", "app")
+  documents = function(self)
+    Page("dashboard/documents", "app")
   end,
 
-  documents = function()
-    Page("dashboard/documents", "app")
+  live = function(self)
+    Page("dashboard/live", "app")
   end,
 
   cluster = function()

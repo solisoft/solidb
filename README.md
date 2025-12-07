@@ -1013,8 +1013,39 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Authentication~~ ✅ Implemented! (JWT-based authentication with password management)
 - [ ] Graph traversal queries
 - [ ] Role-based authorization
-- [ ] WebSocket support
+- [x] ~~WebSocket support~~ ✅ Implemented! (Real-time Changefeeds)
 - [ ] Query optimization
+
+## Real-time Changefeeds
+
+SoliDB supports real-time changefeeds via WebSockets, allowing applications to react instantly to data changes.
+
+### Usage
+
+Connect to the WebSocket endpoint:
+`ws://localhost:6745/_api/ws/changefeed?token=<your-jwt-token>`
+
+Send a subscription message:
+```json
+{
+  "type": "subscribe",
+  "collection": "users",
+  "database": "_system", // Optional, defaults to finding collection globally
+  "key": "user_123"      // Optional, filter by specific document key
+}
+```
+
+Receive events:
+```json
+{
+  "type": "insert", // or "update", "delete"
+  "key": "user_123",
+  "data": { ... },
+  "old_data": { ... } // for update/delete
+}
+```
+
+See [Changefeeds Documentation](http://localhost:8080/docs/changefeeds) for full details.
 
 ## License
 

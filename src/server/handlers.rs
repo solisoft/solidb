@@ -1,10 +1,15 @@
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query as AxumQuery, State, ws::{Message, WebSocket, WebSocketUpgrade}},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Json, Response},
     body::Body,
-    Json,
 };
+
+#[derive(Debug, Deserialize)]
+pub struct AuthParams {
+    pub token: String,
+}
+use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -2038,4 +2043,112 @@ pub async fn cluster_rebalance(
         success: true,
         message: "Rebalancing complete".to_string(),
     }))
+}
+
+// ==================== Real-time Changefeeds ====================
+
+#[derive(Debug, Deserialize)]
+pub struct ChangefeedRequest {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub collection: String,
+    pub database: Option<String>,
+    pub key: Option<String>,
+}
+
+/// WebSocket handler for real-time changefeeds
+pub async fn ws_changefeed_handler(
+    ws: WebSocketUpgrade,
+    AxumQuery(params): AxumQuery<AuthParams>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    // Validate token
+    if let Err(_) = crate::server::auth::AuthService::validate_token(&params.token) {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::empty())
+            .unwrap()
+            .into_response();
+    }
+
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: AppState) {
+    // Wait for subscription message
+    if let Some(Ok(msg)) = socket.recv().await {
+        if let Message::Text(text) = msg {
+            match serde_json::from_str::<ChangefeedRequest>(&text) {
+                Ok(req) if req.type_ == "subscribe" => {
+                    // Try to get collection from specific database or fallback
+                    let collection_result = if let Some(db_name) = &req.database {
+                        state.storage.get_database(db_name).and_then(|db| db.get_collection(&req.collection))
+                    } else {
+                        state.storage.get_collection(&req.collection)
+                    };
+                    
+                    match collection_result {
+                        Ok(collection) => {
+                            // Send confirmation
+                            let _ = socket.send(Message::Text(serde_json::json!({
+                                "type": "subscribed",
+                                "collection": req.collection
+                            }).to_string())).await;
+
+                            // Subscribe to broadcast channel
+                            let mut rx = collection.change_sender.subscribe();
+
+                            // Forward events
+                            loop {
+                                tokio::select! {
+                                    // Send changes to client
+                                    res = rx.recv() => {
+                                        match res {
+                                            Ok(event) => {
+                                                // Filter by key if requested
+                                                if let Some(ref target_key) = req.key {
+                                                    if &event.key != target_key {
+                                                        continue;
+                                                    }
+                                                }
+                                                
+                                                if let Ok(json) = serde_json::to_string(&event) {
+                                                    if socket.send(Message::Text(json)).await.is_err() {
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                                // Skip lagged messages
+                                                continue;
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                    // Handle incoming messages (e.g. close)
+                                    Some(msg) = socket.recv() => {
+                                        match msg {
+                                            Ok(Message::Close(_)) | Err(_) => break,
+                                            _ => {} // Ignore other messages
+                                        }
+                                    }
+                                    else => break,
+                                }
+                            }
+                        },
+                        Err(_) => {
+                             let _ = socket.send(Message::Text(serde_json::json!({
+                                 "error": "Collection not found"
+                             }).to_string())).await;
+                        }
+                    }
+                }
+                _ => {
+                    let _ = socket.send(Message::Text(serde_json::json!({
+                        "error": "Invalid subscription request"
+                    }).to_string())).await;
+                }
+            }
+        }
+    }
 }

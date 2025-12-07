@@ -24,7 +24,26 @@ const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
 
+/// Type of change event
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeType {
+    Insert,
+    Update,
+    Delete,
+}
 
+/// Real-time change event
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChangeEvent {
+    #[serde(rename = "type")]
+    pub type_: ChangeType,
+    pub key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_data: Option<Value>,
+}
 /// Fulltext index metadata
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct FulltextIndex {
@@ -66,6 +85,8 @@ pub struct Collection {
     count_dirty: Arc<AtomicBool>,
     /// Last flush time in seconds since UNIX epoch (for throttling)
     last_flush_time: Arc<std::sync::atomic::AtomicU64>,
+    /// Broadcast channel for real-time change events
+    pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
 }
 
 impl Clone for Collection {
@@ -76,6 +97,7 @@ impl Clone for Collection {
             doc_count: self.doc_count.clone(),
             count_dirty: self.count_dirty.clone(),
             last_flush_time: self.last_flush_time.clone(),
+            change_sender: self.change_sender.clone(),
         }
     }
 }
@@ -115,12 +137,15 @@ impl Collection {
             }
         };
 
+        let (change_sender, _) = tokio::sync::broadcast::channel(100);
+
         Self {
             name,
             db,
             doc_count: Arc::new(AtomicUsize::new(count)),
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            change_sender: Arc::new(change_sender),
         }
     }
 
@@ -400,6 +425,14 @@ impl Collection {
         // Update document count
         self.increment_count();
 
+        // Broadcast change event
+        let _ = self.change_sender.send(ChangeEvent {
+            type_: ChangeType::Insert,
+            key: key.clone(),
+            data: Some(doc_value),
+            old_data: None,
+        });
+
         Ok(doc)
     }
 
@@ -453,6 +486,14 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Broadcast change event
+        let _ = self.change_sender.send(ChangeEvent {
+            type_: ChangeType::Update,
+            key: key.to_string(),
+            data: Some(new_value),
+            old_data: Some(old_value),
+        });
+
         Ok(doc)
     }
 
@@ -502,6 +543,14 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Broadcast change event
+        let _ = self.change_sender.send(ChangeEvent {
+            type_: ChangeType::Update,
+            key: key.to_string(),
+            data: Some(new_value),
+            old_data: Some(old_value),
+        });
+
         Ok(doc)
     }
 
@@ -529,6 +578,14 @@ impl Collection {
 
         // Update document count
         self.decrement_count();
+
+        // Broadcast change event
+        let _ = self.change_sender.send(ChangeEvent {
+            type_: ChangeType::Delete,
+            key: key.to_string(),
+            data: None,
+            old_data: Some(doc_value),
+        });
 
         Ok(())
     }
@@ -704,24 +761,37 @@ impl Collection {
                     let doc_value = doc.to_value();
                     self.update_indexes_on_insert(key, &doc_value)?;
                     self.update_fulltext_on_insert(key, &doc_value)?;
+
+                    // Broadcast change event
+                    let _ = self.change_sender.send(ChangeEvent {
+                        type_: ChangeType::Insert,
+                        key: key.clone(),
+                        data: Some(doc_value),
+                        old_data: None,
+                    });
                 }
                 crate::transaction::Operation::Update {
                     key,
+                    old_data,
                     new_data,
                     ..
                 } => {
-                    // new_data already contains the complete post-update document with metadata
-                    // Just deserialize it directly instead of merging
-                    let doc: Document = serde_json::from_value(new_data.clone())?;
+                    let doc = Document::with_key(&self.name, key.clone(), new_data.clone());
                     let doc_bytes = serde_json::to_vec(&doc)?;
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
 
-                    // Update indexes (need both old and new for proper index maintenance)
-                    // For now, we'll get old_data from new_data's metadata
-                    // In a real implementation, we'd use the old_data field
-                    self.update_indexes_on_update(key, &doc.to_value(), new_data)?;
-                    self.update_fulltext_on_delete(key, &doc.to_value())?;
+                    // Update indexes for update
+                    self.update_indexes_on_update(key, old_data, new_data)?;
+                    self.update_fulltext_on_delete(key, old_data)?;
                     self.update_fulltext_on_insert(key, new_data)?;
+
+                    // Broadcast change event
+                    let _ = self.change_sender.send(ChangeEvent {
+                        type_: ChangeType::Update,
+                        key: key.clone(),
+                        data: Some(new_data.clone()),
+                        old_data: Some(old_data.clone()),
+                    });
                 }
                 crate::transaction::Operation::Delete { key, old_data, .. } => {
                     batch.delete_cf(cf, Self::doc_key(key));
@@ -730,6 +800,14 @@ impl Collection {
                     // Update indexes for delete
                     self.update_indexes_on_delete(key, old_data)?;
                     self.update_fulltext_on_delete(key, old_data)?;
+
+                    // Broadcast change event
+                    let _ = self.change_sender.send(ChangeEvent {
+                        type_: ChangeType::Delete,
+                        key: key.clone(),
+                        data: None,
+                        old_data: Some(old_data.clone()),
+                    });
                 }
             }
         }

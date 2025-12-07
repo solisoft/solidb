@@ -68,6 +68,7 @@ colored = "2.0"
 
 # System info for stats
 sysinfo = "0.30"
+futures = { version = "0.3.31", features = ["std"] }
 
 # Default binary
 [[bin]]
