@@ -31,6 +31,14 @@ struct Args {
     /// Pretty-print JSON
     #[arg(long)]
     pretty: bool,
+
+    /// Username for authentication
+    #[arg(short = 'u', long)]
+    user: Option<String>,
+
+    /// Password for authentication
+    #[arg(short = 'p', long)]
+    password: Option<String>,
 }
 
 #[tokio::main]
@@ -38,7 +46,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let base_url = format!("http://{}:{}", args.host, args.port);
 
-    let client = reqwest::Client::new();
+    // Authentication
+    let token = if let (Some(user), Some(password)) = (&args.user, &args.password) {
+        let login_url = format!("{}/auth/login", base_url);
+        let client = reqwest::Client::new();
+        eprintln!("Authenticating as user: {}", user);
+        
+        let response = client
+            .post(&login_url)
+            .json(&serde_json::json!({
+                "username": user,
+                "password": password
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            return Err(format!("Authentication failed: {}", response.status()).into());
+        }
+        
+        let login_data: Value = response.json().await?;
+        if let Some(token) = login_data["token"].as_str() {
+            Some(token.to_string())
+        } else {
+            return Err("Authentication response missing token".into());
+        }
+    } else {
+        None
+    };
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(t) = token {
+        let mut auth_val = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", t))?;
+        auth_val.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, auth_val);
+    }
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()?;
 
     // Write output
     let mut output: Box<dyn Write> = if let Some(output_file) = &args.output {

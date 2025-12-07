@@ -10,6 +10,7 @@ export default {
         name: '',
         loading: false,
         isSharded: false,
+        customShardingEnabled: false,
         numShards: 1,
         replicationFactor: 1,
         shardKey: '_key'
@@ -25,6 +26,7 @@ export default {
             name: collection.name,
             loading: false,
             isSharded: !!collection.shardConfig,
+            customShardingEnabled: !!collection.shardConfig,
             numShards: config.num_shards || 1,
             replicationFactor: config.replication_factor || 1,
             shardKey: config.shard_key || '_key'
@@ -49,6 +51,15 @@ export default {
         this.update({ replicationFactor: parseInt(e.target.value) || 1 })
     },
 
+    enableCustomSharding() {
+        this.update({
+            customShardingEnabled: true,
+            // Set defaults if currently 1 (which effectively means not sharded)
+            numShards: this.state.numShards === 1 ? 3 : this.state.numShards,
+            replicationFactor: this.state.replicationFactor === 1 ? 2 : this.state.replicationFactor
+        })
+    },
+
     handleClose(e) {
         if (e) e.preventDefault()
         this.hide()
@@ -60,10 +71,6 @@ export default {
     async handleSubmit(e) {
         e.preventDefault()
 
-        if (!this.state.isSharded) {
-            this.update({ error: 'Cannot update non-sharded collection settings' })
-            return
-        }
 
         this.update({ error: null, loading: true })
 
@@ -100,16 +107,16 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr126="expr126" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
+    '<div expr222="expr222" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr126',
-        selector: '[expr126]',
+        redundantAttribute: 'expr222',
+        selector: '[expr222]',
 
         template: template(
-          '<div expr127="expr127" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Collection Settings</h3><div expr128="expr128" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr130="expr130"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr131="expr131" type="text" disabled class="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-md text-gray-400 cursor-not-allowed"/></div><div expr132="expr132" class="mb-6 border-t border-gray-700 pt-4"></div><div expr136="expr136" class="mb-6 border-t border-gray-700 pt-4"></div><div class="flex justify-end space-x-3"><button expr137="expr137" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n                        Cancel\n                    </button><button expr138="expr138" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"></button></div></form></div>',
+          '<div expr223="expr223" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Collection Settings</h3><div expr224="expr224" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr226="expr226"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr227="expr227" type="text" disabled class="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-md text-gray-400 cursor-not-allowed"/></div><div class="mb-6 border-t border-gray-700 pt-4"><h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div expr228="expr228" class="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50"></div><div expr230="expr230" class="space-y-4 animate-fade-in"></div></div><div class="flex justify-end space-x-3"><button expr234="expr234" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n                        Cancel\n                    </button><button expr235="expr235" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"> </button></div></form></div>',
           [
             {
               expressions: [
@@ -121,8 +128,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr127',
-              selector: '[expr127]',
+              redundantAttribute: 'expr223',
+              selector: '[expr223]',
 
               expressions: [
                 {
@@ -135,15 +142,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.error,
-              redundantAttribute: 'expr128',
-              selector: '[expr128]',
+              redundantAttribute: 'expr224',
+              selector: '[expr224]',
 
               template: template(
-                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr129="expr129" class="text-sm text-red-300"> </p></div>',
+                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr225="expr225" class="text-sm text-red-300"> </p></div>',
                 [
                   {
-                    redundantAttribute: 'expr129',
-                    selector: '[expr129]',
+                    redundantAttribute: 'expr225',
+                    selector: '[expr225]',
 
                     expressions: [
                       {
@@ -157,8 +164,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr130',
-              selector: '[expr130]',
+              redundantAttribute: 'expr226',
+              selector: '[expr226]',
 
               expressions: [
                 {
@@ -169,8 +176,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr131',
-              selector: '[expr131]',
+              redundantAttribute: 'expr227',
+              selector: '[expr227]',
 
               expressions: [
                 {
@@ -181,16 +188,40 @@ export default {
             },
             {
               type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.isSharded,
-              redundantAttribute: 'expr132',
-              selector: '[expr132]',
+              evaluate: _scope => !_scope.state.customShardingEnabled,
+              redundantAttribute: 'expr228',
+              selector: '[expr228]',
 
               template: template(
-                '<h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div class="space-y-4"><div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr133="expr133" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/><p class="mt-1 text-xs text-yellow-400">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr134="expr134" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/><p class="mt-1 text-xs text-green-400">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr135="expr135" type="text" disabled class="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-md text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div></div>',
+                '<div class="flex items-start mb-3"><div class="flex-shrink-0"><svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-3"><h3 class="text-sm font-medium text-blue-300">Global Replication</h3><div class="mt-1 text-xs text-gray-400">\n                                    This collection is currently replicated to <strong>all nodes</strong> in the\n                                    cluster.\n                                </div></div></div><button expr229="expr229" type="button" class="w-full flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-xs font-medium rounded-md text-white bg-gray-600 hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 transition-colors">\n                            Enable Custom Sharding\n                        </button>',
                 [
                   {
-                    redundantAttribute: 'expr133',
-                    selector: '[expr133]',
+                    redundantAttribute: 'expr229',
+                    selector: '[expr229]',
+
+                    expressions: [
+                      {
+                        type: expressionTypes.EVENT,
+                        name: 'onclick',
+                        evaluate: _scope => _scope.enableCustomSharding
+                      }
+                    ]
+                  }
+                ]
+              )
+            },
+            {
+              type: bindingTypes.IF,
+              evaluate: _scope => _scope.state.customShardingEnabled,
+              redundantAttribute: 'expr230',
+              selector: '[expr230]',
+
+              template: template(
+                '<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr231="expr231" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/><p class="mt-1 text-xs text-yellow-400">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr232="expr232" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/><p class="mt-1 text-xs text-green-400">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr233="expr233" type="text" disabled class="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-md text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div>',
+                [
+                  {
+                    redundantAttribute: 'expr231',
+                    selector: '[expr231]',
 
                     expressions: [
                       {
@@ -205,8 +236,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr134',
-                    selector: '[expr134]',
+                    redundantAttribute: 'expr232',
+                    selector: '[expr232]',
 
                     expressions: [
                       {
@@ -221,8 +252,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr135',
-                    selector: '[expr135]',
+                    redundantAttribute: 'expr233',
+                    selector: '[expr233]',
 
                     expressions: [
                       {
@@ -235,19 +266,8 @@ export default {
               )
             },
             {
-              type: bindingTypes.IF,
-              evaluate: _scope => !_scope.state.isSharded,
-              redundantAttribute: 'expr136',
-              selector: '[expr136]',
-
-              template: template(
-                '<p class="text-sm text-gray-400">\n                        This collection is not sharded. Sharding cannot be enabled after collection creation.\n                    </p>',
-                []
-              )
-            },
-            {
-              redundantAttribute: 'expr137',
-              selector: '[expr137]',
+              redundantAttribute: 'expr234',
+              selector: '[expr234]',
 
               expressions: [
                 {
@@ -258,36 +278,27 @@ export default {
               ]
             },
             {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.isSharded,
-              redundantAttribute: 'expr138',
-              selector: '[expr138]',
+              redundantAttribute: 'expr235',
+              selector: '[expr235]',
 
-              template: template(
-                ' ',
-                [
-                  {
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
 
-                        evaluate: _scope => [
-                          _scope.state.loading ? 'Saving...' : 'Save Changes'
-                        ].join(
-                          ''
-                        )
-                      },
-                      {
-                        type: expressionTypes.ATTRIBUTE,
-                        isBoolean: true,
-                        name: 'disabled',
-                        evaluate: _scope => _scope.state.loading
-                      }
-                    ]
-                  }
-                ]
-              )
+                  evaluate: _scope => [
+                    _scope.state.loading ? 'Saving...' : 'Save Changes'
+                  ].join(
+                    ''
+                  )
+                },
+                {
+                  type: expressionTypes.ATTRIBUTE,
+                  isBoolean: true,
+                  name: 'disabled',
+                  evaluate: _scope => _scope.state.loading
+                }
+              ]
             }
           ]
         )

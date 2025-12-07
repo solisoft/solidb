@@ -106,6 +106,16 @@
                   <td class="py-3 px-4">Database port</td>
                   <td class="py-3 px-4">6745</td>
                 </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-3 px-4 font-mono text-indigo-300">-u, --user</td>
+                  <td class="py-3 px-4">Username (for authentication)</td>
+                  <td class="py-3 px-4">-</td>
+                </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-3 px-4 font-mono text-indigo-300">-p, --password</td>
+                  <td class="py-3 px-4">Password (for authentication)</td>
+                  <td class="py-3 px-4">-</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -200,6 +210,16 @@
                   <td class="py-3 px-4">Target database port</td>
                   <td class="py-3 px-4">6745</td>
                 </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-3 px-4 font-mono text-purple-300">-u, --user</td>
+                  <td class="py-3 px-4">Username (for authentication)</td>
+                  <td class="py-3 px-4">-</td>
+                </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-3 px-4 font-mono text-purple-300">-p, --password</td>
+                  <td class="py-3 px-4">Password (for authentication)</td>
+                  <td class="py-3 px-4">-</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -283,9 +303,10 @@ Bob,25,false</code></pre>
             <!-- SQL -->
             <div>
                <h3 class="text-xl font-semibold text-pink-300 mb-2">SQL</h3>
-               <p class="text-gray-400 mb-3">
-                 Standard SQL dumps with `INSERT INTO` statements.
-               </p>
+                <p class="text-gray-400 mb-3">
+                  Standard SQL dumps with `INSERT INTO` statements.
+                  <span class="text-pink-300 text-xs ml-2">(Auto-detected via .sql extension)</span>
+                </p>
                <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-pink-500/20">
             <pre class="text-gray-300"><code>INSERT INTO users (id, name) VALUES (1, 'Alice');
 INSERT INTO users (id, name) VALUES (2, 'Bob'), (3, 'Charlie');</code></pre>
