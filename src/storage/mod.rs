@@ -4,6 +4,7 @@ pub mod document;
 pub mod engine;
 pub mod geo;
 pub mod index;
+pub mod codec;
 
 pub use collection::{Collection, CollectionStats, DiskUsage};
 pub use database::Database;

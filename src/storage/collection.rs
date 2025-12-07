@@ -21,28 +21,9 @@ const GEO_META_PREFIX: &str = "geo_meta:";
 const FT_PREFIX: &str = "ft:"; // Fulltext n-gram entries
 const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
-const STATS_PREFIX: &str = "_stats:"; // Collection statistics
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
 
-/// Compare two JSON values for sorting
-#[inline]
-fn compare_json_values(a: &Value, b: &Value) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    match (a, b) {
-        (Value::Null, Value::Null) => Ordering::Equal,
-        (Value::Null, _) => Ordering::Less,
-        (_, Value::Null) => Ordering::Greater,
-        (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
-        (Value::Number(a), Value::Number(b)) => {
-            let a_f64 = a.as_f64().unwrap_or(0.0);
-            let b_f64 = b.as_f64().unwrap_or(0.0);
-            a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
-        }
-        (Value::String(a), Value::String(b)) => a.cmp(b),
-        _ => Ordering::Equal,
-    }
-}
 
 /// Fulltext index metadata
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -154,10 +135,11 @@ impl Collection {
     }
 
     /// Build an index entry key
+    /// Build an index entry key
     fn idx_entry_key(index_name: &str, value: &Value, doc_key: &str) -> Vec<u8> {
-        // tracing::info!("IDX KEY GEN: name={}, value={:?}, doc_key={}", index_name, value, doc_key);
-        let value_str = serde_json::to_string(value).unwrap_or_default();
-        format!("{}{}:{}:{}", IDX_PREFIX, index_name, value_str, doc_key).into_bytes()
+        let encoded = crate::storage::codec::encode_key(value);
+        let hex_value = hex::encode(encoded);
+        format!("{}{}:{}:{}", IDX_PREFIX, index_name, hex_value, doc_key).into_bytes()
     }
 
     /// Build a geo index metadata key
@@ -1710,7 +1692,7 @@ impl Collection {
     /// Lookup documents using index (equality) - optimized version
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
-        let value_str = serde_json::to_string(value).ok()?;
+        let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
@@ -1754,7 +1736,7 @@ impl Collection {
         limit: usize,
     ) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
-        let value_str = serde_json::to_string(value).ok()?;
+        let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
@@ -1826,89 +1808,45 @@ impl Collection {
         let index_name = index.name.clone();
         let prefix = format!("{}{}:", IDX_PREFIX, index_name);
 
-        // FAST PATH: For small limits, use direct seek without sorting
-        // This works for lexicographically sortable values (ISO 8601 dates, padded numbers)
-        if let Some(lim) = limit {
-            if lim <= 100 {
-                let doc_keys: Vec<String> = {
-                    let db = self.db.read().unwrap();
-                    let cf = db.cf_handle(&self.name)?;
-                    let prefix_bytes = prefix.as_bytes();
-                    
-                    if ascending {
-                        let iter = db.prefix_iterator_cf(cf, prefix_bytes);
-                        iter.into_iter()
-                            .filter_map(|r| r.ok())
-                            .take_while(|(k, _)| k.starts_with(prefix_bytes))
-                            .take(lim)
-                            .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
-                            .collect()
-                    } else {
-                        let mut seek_key = prefix.clone().into_bytes();
-                        seek_key.push(0xFF);
-                        let iter = db.iterator_cf(cf, IteratorMode::From(&seek_key, Direction::Reverse));
-                        iter.into_iter()
-                            .filter_map(|r| r.ok())
-                            .take_while(|(k, _)| k.starts_with(prefix_bytes))
-                            .take(lim)
-                            .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
-                            .collect()
-                    }
-                }; // db lock released here
-                
-                if !doc_keys.is_empty() {
-                    let docs = self.get_many(&doc_keys);
-                    let doc_map: std::collections::HashMap<_, _> =
-                        docs.into_iter().map(|d| (d.key.clone(), d)).collect();
-                    
-                    let result: Vec<Document> = doc_keys
-                        .into_iter()
-                        .filter_map(|key| doc_map.get(&key).cloned())
-                        .collect();
-                    
-                    return Some(result);
-                }
-            }
-        }
-
-        // SLOW PATH: Full scan for larger limits
-        let entries: Vec<(Value, String)> = {
-            let db = self.db.read().unwrap();
-            let cf = db.cf_handle(&self.name)?;
-            let prefix_bytes = prefix.as_bytes();
-            let iter = db.prefix_iterator_cf(cf, prefix_bytes);
-            
-            iter.filter_map(|r| r.ok())
-                .take_while(|(k, _)| k.starts_with(prefix_bytes))
-                .filter_map(|(k, v)| {
-                    let key_str = String::from_utf8_lossy(&k);
-                    let suffix = &key_str[prefix.len()..];
-                    suffix.rfind(':').and_then(|last_colon| {
-                        let value_str = &suffix[..last_colon];
-                        serde_json::from_str::<Value>(value_str).ok().map(|value| {
-                            (value, String::from_utf8_lossy(&v).to_string())
-                        })
-                    })
-                })
-                .collect()
-        }; // db lock released here
-
-        // Sort entries by value
-        let mut entries = entries;
-        entries.sort_by(|(a, _), (b, _)| {
-            let cmp = compare_json_values(a, b);
-            if ascending { cmp } else { cmp.reverse() }
-        });
-
-        // Apply limit
-        let doc_keys: Vec<String> = if let Some(limit) = limit {
-            entries.into_iter().take(limit).map(|(_, k)| k).collect()
+        // Optimized path for all limits using binary-comparable keys
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+        let prefix_bytes = prefix.as_bytes();
+        
+        // Iterator over index entries
+        // Since we use binary-comparable encoding (wrapped in hex), 
+        // the lexicographical order of keys matches the logical order of values.
+        let iter = if ascending {
+            let mode = IteratorMode::From(prefix_bytes, Direction::Forward);
+            db.iterator_cf(cf, mode)
         } else {
-            entries.into_iter().map(|(_, k)| k).collect()
+            // For descending, we seek past the end of the prefix
+            // Prefix + 0xFF is theoretically after any key starting with prefix
+            let mut seek_key = prefix.as_bytes().to_vec();
+            seek_key.push(0xFF);
+            let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+            db.iterator_cf(cf, mode)
         };
 
-        // Fetch documents in order
+        // Collect document keys directly from iterator order
+        // No sorting needed!
+        let doc_keys: Vec<String> = iter
+            .filter_map(|r| r.ok())
+            .take_while(|(k, _)| k.starts_with(prefix_bytes))
+            .map(|(_, v)| String::from_utf8_lossy(&v).to_string())
+            .take(limit.unwrap_or(usize::MAX))
+            .collect();
+
+        drop(db); 
+
+        // Fetch documents
+        if doc_keys.is_empty() {
+             return Some(Vec::new());
+        }
+
         let docs = self.get_many(&doc_keys);
+        
+        // Re-order docs based on doc_keys order (get_many might return disordered)
         let doc_map: std::collections::HashMap<_, _> =
             docs.into_iter().map(|d| (d.key.clone(), d)).collect();
         
@@ -1916,7 +1854,7 @@ impl Collection {
             .into_iter()
             .filter_map(|key| doc_map.get(&key).cloned())
             .collect();
-
+        
         Some(result)
     }
 
