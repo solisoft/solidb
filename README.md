@@ -1026,7 +1026,7 @@ All data mutations are replicated:
 
 This is an initial implementation focusing on core functionality. Current limitations:
 
-- No graph queries
+
 - No complex aggregations (GROUP BY, etc.)
 
 ## Future Enhancements
@@ -1045,7 +1045,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Transactions~~ ✅ Implemented! (ACID via X-Transaction-ID header)
 - [x] ~~CLI Tooling~~ ✅ Implemented! (dump/restore with JSONL, JSON Array, and CSV support)
 - [x] ~~Authentication~~ ✅ Implemented! (JWT-based authentication with password management)
-- [ ] Graph traversal queries
+- [x] ~~Graph traversal queries~~ ✅ Implemented! (OUTBOUND, INBOUND, ANY, SHORTEST_PATH)
 - [ ] Role-based authorization
 - [x] ~~WebSocket support~~ ✅ Implemented! (Real-time Changefeeds)
 - [ ] Query optimization
