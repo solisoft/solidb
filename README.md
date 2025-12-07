@@ -928,6 +928,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Replication and clustering~~ ✅ Implemented! (peer-to-peer, LWW conflict resolution, HLC)
 - [x] ~~Sharding~~ ✅ Implemented! (horizontal partitioning, auto-rebalancing, auto mode)
 - [x] ~~Transactions~~ ✅ Implemented! (ACID via X-Transaction-ID header)
+- [x] ~~CLI Tooling~~ ✅ Implemented! (dump/restore with JSONL, JSON Array, and CSV support)
 - [ ] Graph traversal queries
 - [ ] Authentication and authorization
 - [ ] WebSocket support

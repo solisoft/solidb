@@ -38,10 +38,19 @@ impl Document {
     }
 
     /// Create a new document with auto-generated key
-    pub fn new(collection_name: &str, data: Value) -> Self {
+    pub fn new(collection_name: &str, mut data: Value) -> Self {
         let key = Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
         let id = format!("{}/{}", collection_name, key);
         let now = Utc::now();
+
+        // Remove system fields to prevent duplication
+        if let Some(obj) = data.as_object_mut() {
+            obj.remove("_key");
+            obj.remove("_id");
+            obj.remove("_rev");
+            obj.remove("_created_at");
+            obj.remove("_updated_at");
+        }
 
         Self {
             key,
@@ -54,9 +63,18 @@ impl Document {
     }
 
     /// Create a document with a specific key
-    pub fn with_key(collection_name: &str, key: String, data: Value) -> Self {
+    pub fn with_key(collection_name: &str, key: String, mut data: Value) -> Self {
         let id = format!("{}/{}", collection_name, key);
         let now = Utc::now();
+
+        // Remove system fields to prevent duplication
+        if let Some(obj) = data.as_object_mut() {
+            obj.remove("_key");
+            obj.remove("_id");
+            obj.remove("_rev");
+            obj.remove("_created_at");
+            obj.remove("_updated_at");
+        }
 
         Self {
             key,
@@ -74,11 +92,21 @@ impl Document {
         // Merge new data with existing data
         if let (Some(existing), Some(new)) = (self.data.as_object_mut(), data.as_object()) {
             for (key, value) in new {
-                existing.insert(key.clone(), value.clone());
+                if !key.starts_with('_') {
+                    existing.insert(key.clone(), value.clone());
+                }
             }
         } else {
-            // If not objects, replace entirely
-            self.data = data;
+            // If not objects, replace entirely but ensure no system fields if it becomes an object
+            let mut new_data = data;
+            if let Some(obj) = new_data.as_object_mut() {
+                obj.remove("_key");
+                obj.remove("_id");
+                obj.remove("_rev");
+                obj.remove("_created_at");
+                obj.remove("_updated_at");
+            }
+            self.data = new_data;
         }
         self.rev = Self::generate_rev();
         self.updated_at = Utc::now();

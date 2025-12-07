@@ -9,9 +9,10 @@ default-run = "solidb"
 tokio = { version = "1.35", features = ["full"] }
 
 # HTTP server
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
+async-stream = "0.3"
 
 # JSON serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -42,7 +43,7 @@ rocksdb = "0.22"
 tempfile = "3.10"
 
 # HTTP client (for benchmarks)
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest = { version = "0.11", features = ["json", "blocking", "multipart"] }
 
 # Daemon mode (Unix only)
 daemonize = "0.5"
@@ -50,6 +51,11 @@ libc = "0.2"
 
 # Parallel processing (for concurrent benchmarks)
 rayon = "1.8"
+csv = "1.4.0"
+
+# CLI UX
+indicatif = "0.17"
+colored = "2.0"
 
 # Default binary
 [[bin]]

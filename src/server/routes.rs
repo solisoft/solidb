@@ -1,5 +1,6 @@
 use axum::http::Method;
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, post, put},
     Router,
 };
@@ -104,6 +105,14 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route(
             "/_api/database/:db/collection/:name/properties",
             put(update_collection_properties),
+        )
+        .route(
+            "/_api/database/:db/collection/:name/export",
+            get(export_collection),
+        )
+        .route(
+            "/_api/database/:db/collection/:name/import",
+            post(import_collection).layer(DefaultBodyLimit::max(500 * 1024 * 1024)),
         )
         // Document routes
         .route(

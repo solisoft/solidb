@@ -1,7 +1,8 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Multipart, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
+    body::Body,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -427,6 +428,166 @@ pub async fn update_collection_properties(
         status: if shard_count_changed { "updated_rebalancing".to_string() } else { "updated".to_string() },
         shard_config: config,
     }))
+}
+
+pub async fn export_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Response, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    let docs = collection.scan(None);
+    let db_name_clone = db_name.clone();
+    let coll_name_clone = coll_name.clone();
+    let shard_config = collection.get_shard_config();
+
+    let stream = async_stream::stream! {
+        for doc in docs {
+            let mut val = doc.to_value();
+            if let Some(obj) = val.as_object_mut() {
+                if let Some(ref config) = shard_config {
+                     obj.insert("_shardConfig".to_string(), serde_json::to_value(config).unwrap_or_default());
+                }
+            }
+            if let Ok(json) = serde_json::to_string(&val) {
+                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", json)));
+            }
+        }
+    };
+
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/x-ndjson")
+        .header("Content-Disposition", format!("attachment; filename=\"{}-{}.jsonl\"", db_name, coll_name))
+        .body(body)
+        .unwrap())
+}
+
+pub async fn import_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    mut multipart: Multipart,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = match database.get_collection(&coll_name) {
+        Ok(c) => c,
+        Err(DbError::CollectionNotFound(_)) => {
+            tracing::info!("Auto-creating collection '{}' during import", coll_name);
+            match database.create_collection(coll_name.clone()) {
+                Ok(_) => database.get_collection(&coll_name)?,
+                Err(e) => return Err(e),
+            }
+        },
+        Err(e) => return Err(e),
+    };
+
+    let mut success_count = 0;
+    let mut error_count = 0;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| DbError::BadRequest(e.to_string()))? {
+        if field.name() == Some("file") {
+            let text = field.text().await.map_err(|e| DbError::BadRequest(e.to_string()))?;
+            
+            // Detect format
+            let first_char = text.trim().chars().next();
+            
+            let docs: Vec<Value> = if first_char == Some('[') {
+                // JSON Array
+                serde_json::from_str(&text).map_err(|e| DbError::BadRequest(format!("Invalid JSON Array: {}", e)))?
+            } else if first_char == Some('{') {
+                // JSONL
+                text.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(|l| serde_json::from_str(l))
+                    .collect::<Result<Vec<Value>, _>>()
+                    .map_err(|e| DbError::BadRequest(format!("Invalid JSONL: {}", e)))?
+            } else {
+                 // CSV (Basic inference)
+                 let mut reader = csv::Reader::from_reader(text.as_bytes());
+                 let headers = reader.headers().map_err(|e| DbError::BadRequest(e.to_string()))?.clone();
+                 let mut csv_docs = Vec::new();
+                 
+                 for result in reader.records() {
+                     let record = result.map_err(|e| DbError::BadRequest(e.to_string()))?;
+                     let mut map = serde_json::Map::new();
+                     for (i, field) in record.iter().enumerate() {
+                         if i < headers.len() {
+                             // Try to infer numbers/bools
+                             let val = if let Ok(n) = field.parse::<i64>() {
+                                 Value::Number(n.into())
+                             } else if let Ok(f) = field.parse::<f64>() {
+                                 if let Some(n) = serde_json::Number::from_f64(f) {
+                                     Value::Number(n)
+                                 } else {
+                                     Value::String(field.to_string())
+                                 }
+                             } else if let Ok(b) = field.parse::<bool>() {
+                                 Value::Bool(b)
+                             } else {
+                                 Value::String(field.to_string())
+                             };
+                             map.insert(headers[i].to_string(), val);
+                         }
+                     }
+                     csv_docs.push(Value::Object(map));
+                 }
+                 csv_docs
+            };
+
+            let mut batch_docs = Vec::with_capacity(10000);
+            
+            for mut doc in docs {
+                // Remove metadata if present
+                if let Some(obj) = doc.as_object_mut() {
+                    obj.remove("_database");
+                    obj.remove("_collection");
+                    obj.remove("_shardConfig");
+                }
+                
+                batch_docs.push(doc);
+                
+                if batch_docs.len() >= 10000 {
+                    match collection.insert_batch(batch_docs.clone()) {
+                        Ok(inserted) => {
+                            if let Err(e) = collection.index_documents(&inserted) {
+                                tracing::error!("Failed to index batch: {}", e);
+                            }
+                            success_count += inserted.len();
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to insert batch: {}", e);
+                            error_count += batch_docs.len();
+                        }
+                    }
+                    batch_docs.clear();
+                }
+            }
+            
+            // Insert remaining docs
+            if !batch_docs.is_empty() {
+                match collection.insert_batch(batch_docs.clone()) {
+                    Ok(inserted) => {
+                        if let Err(e) = collection.index_documents(&inserted) {
+                            tracing::error!("Failed to index batch: {}", e);
+                        }
+                        success_count += inserted.len();
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to insert batch: {}", e);
+                        error_count += batch_docs.len();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "imported": success_count,
+        "failed": error_count,
+        "status": "completed"
+    })))
 }
 
 // ==================== Document Handlers ====================

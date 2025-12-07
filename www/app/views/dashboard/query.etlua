@@ -614,8 +614,13 @@ function renderHistoryList(filterText = '') {
       const highlighted = highlightAql(query);
       return `
         <div class="group relative rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 backdrop-blur-sm transition-all duration-200 cursor-pointer" onclick="loadQuery(this)" data-query="${encodeURIComponent(query)}">
-          <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <span class="text-xs text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/20">Load Query</span>
+          <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+            <span class="text-xs text-indigo-300 bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/20">Load</span>
+            <button onclick="removeQueryFromHistory(event, '${index}')" class="text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/30 transition-colors" title="Remove from history">
+              <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
           </div>
           <pre class="!my-0 !shadow-none p-3 text-sm font-mono text-gray-200 overflow-x-auto"><code class="hljs language-sql bg-transparent p-0 block" style="background: transparent !important">${highlighted}</code></pre>
         </div>
@@ -641,11 +646,31 @@ function loadQuery(btn) {
   closeHistory();
 }
 
+function removeQueryFromHistory(event, index) {
+  event.stopPropagation();
+  try {
+    let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    if (index >= 0 && index < history.length) {
+      const removed = history.splice(index, 1);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      console.log('Removed query from history:', removed[0]);
+      
+      // Re-render
+      const searchInput = document.getElementById('historySearch');
+      const filterText = searchInput ? searchInput.value : '';
+      renderHistoryList(filterText);
+    }
+  } catch (e) {
+    console.error('Failed to remove query from history', e);
+  }
+}
+
 // Expose history functions
 window.showHistory = showHistory;
 window.closeHistory = closeHistory;
 window.filterHistory = filterHistory;
 window.loadQuery = loadQuery;
+window.removeQueryFromHistory = removeQueryFromHistory;
 
 // Expose all onclick functions to global scope
 window.removeResult = removeResult;

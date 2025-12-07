@@ -119,21 +119,16 @@
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
 
-          // First, get the total count using COLLECT WITH COUNT
-          const countQuery = `RETURN COLLECTION_COUNT("${this.props.collection}")`
-          const countResponse = await fetch(`${url}/cursor`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: countQuery })
-          })
+          // First, get the total count using the stats endpoint (faster than AQL for large collections)
+          const statsResponse = await fetch(`${url}/collection/${this.props.collection}/stats`)
 
-          if (!countResponse.ok) {
-            const errorData = await countResponse.json()
-            throw new Error(errorData.error || 'Failed to get document count')
+          if (!statsResponse.ok) {
+            const errorData = await statsResponse.json()
+            throw new Error(errorData.error || 'Failed to get collection stats')
           }
 
-          const countData = await countResponse.json()
-          const totalCount = countData.result && countData.result[0] ? countData.result[0] : 0
+          const statsData = await statsResponse.json()
+          const totalCount = statsData.document_count || 0
 
           // Then get the paginated documents
           const queryStr = `FOR doc IN ${this.props.collection} LIMIT ${this.state.offset}, ${this.state.limit} RETURN doc`
@@ -175,10 +170,12 @@
       },
 
       getDocPreview(doc) {
-        const copy = { ...doc }
-        delete copy._key
-        delete copy._id
-        delete copy._rev
+        const copy = {}
+        Object.keys(doc).forEach(key => {
+          if (!key.startsWith('_')) {
+            copy[key] = doc[key]
+          }
+        })
         const json = JSON.stringify(copy)
         return json.length > 200 ? json.substring(0, 200) + '...' : json
       },

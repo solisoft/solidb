@@ -1114,10 +1114,24 @@ impl Collection {
         db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), "0".as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
-        // Compact the column family to remove tombstones
-        // This is important for performance - without compaction, iterators
-        // still have to scan through all deleted keys (tombstones)
-        db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+        // Trigger asynchronous compaction to reclaim space
+        // We clone self to move it into the background thread.
+        // Note: The background thread will acquire a read lock on the DB,
+        // so it will wait until this function returns and drops the write lock.
+        let collection = self.clone();
+        std::thread::spawn(move || {
+            tracing::info!(
+                "[COMPACTION] Starting background compaction for collection '{}' after truncate",
+                collection.name
+            );
+            let start = std::time::Instant::now();
+            collection.compact();
+            tracing::info!(
+                "[COMPACTION] Background compaction for '{}' completed in {:?}",
+                collection.name,
+                start.elapsed()
+            );
+        });
 
         Ok(count)
     }
