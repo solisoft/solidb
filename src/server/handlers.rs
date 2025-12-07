@@ -1751,8 +1751,7 @@ pub struct ClusterStatusResponse {
 }
 
 /// Generate cluster status data (shared between HTTP and WebSocket handlers)
-fn generate_cluster_status(state: &AppState) -> ClusterStatusResponse {
-    use sysinfo::System;
+fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> ClusterStatusResponse {
     use std::sync::atomic::Ordering;
 
     let node_id = state.storage.node_id().to_string();
@@ -1790,19 +1789,11 @@ fn generate_cluster_status(state: &AppState) -> ClusterStatusResponse {
     let uptime_secs = state.startup_time.elapsed().as_secs();
 
     // Memory and CPU usage
-    // Note: sysinfo requires refresh_process() for accurate CPU readings
-    let mut sys = System::new();
     sys.refresh_memory();
-    
     let pid = sysinfo::get_current_pid().ok();
     
     let (memory_used_mb, cpu_usage_percent) = if let Some(p) = pid {
-        // Refresh this specific process to get CPU usage
         sys.refresh_process(p);
-        // Small delay to allow CPU measurement 
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        sys.refresh_process(p);
-        
         sys.process(p)
             .map(|proc| (proc.memory() / (1024 * 1024), proc.cpu_usage()))
             .unwrap_or((0, 0.0))
@@ -1875,7 +1866,12 @@ fn generate_cluster_status(state: &AppState) -> ClusterStatusResponse {
 }
 
 pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {
-    Json(generate_cluster_status(&state))
+    use sysinfo::System;
+    // For single HTTP request, we create a new system. 
+    // Note: CPU usage might be inaccurate (0.0) for single requests without a previous refresh.
+    // If accurate CPU is needed on HTTP, we'd need to sleep/refresh, but avoiding blocking is better.
+    let mut sys = System::new();
+    Json(generate_cluster_status(&state, &mut sys))
 }
 
 /// WebSocket handler for real-time cluster status updates
@@ -1890,14 +1886,23 @@ pub async fn cluster_status_ws(
 async fn handle_cluster_ws(mut socket: axum::extract::ws::WebSocket, state: AppState) {
     use axum::extract::ws::Message;
     use tokio::time::{interval, Duration};
+    use sysinfo::System;
     
     let mut ticker = interval(Duration::from_secs(1));
+    // Persist System instance across loop iterations for accurate CPU usage
+    let mut sys = System::new();
     
+    // Initial refresh to set baseline
+    sys.refresh_memory();
+    if let Some(pid) = sysinfo::get_current_pid().ok() {
+        sys.refresh_process(pid);
+    }
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                // Generate status using shared logic
-                let status = generate_cluster_status(&state);
+                // Generate status using shared logic and persistent sys
+                let status = generate_cluster_status(&state, &mut sys);
                 let json = match serde_json::to_string(&status) {
                     Ok(j) => j,
                     Err(_) => continue,
