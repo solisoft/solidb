@@ -77,7 +77,7 @@
     </div>
 
     <script>
-        import { getApiUrl } from '/api-config.js'
+        import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
         export default {
             state: {
@@ -163,7 +163,7 @@
                 formData.append('file', this.state.selectedFile)
 
                 try {
-                    const response = await fetch(`${getApiUrl()}/database/${this.props.db}/collection/${this.props.collection}/import`, {
+                    const response = await authenticatedFetch(`${getApiUrl()}/database/${this.props.db}/collection/${this.props.collection}/import`, {
                         method: 'POST',
                         body: formData
                     })

@@ -123,7 +123,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -142,7 +142,7 @@
 
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
-          const response = await fetch(`${url}/collection`)
+          const response = await authenticatedFetch(`${url}/collection`)
           const data = await response.json()
           this.update({ collections: data.collections || [], loading: false })
         } catch (error) {
@@ -159,7 +159,7 @@
 
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
-          const response = await fetch(`${url}/collection/${name}/truncate`, {
+          const response = await authenticatedFetch(`${url}/collection/${name}/truncate`, {
             method: 'PUT'
           })
 
@@ -185,7 +185,7 @@
 
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
-          const response = await fetch(`${url}/collection/${name}`, {
+          const response = await authenticatedFetch(`${url}/collection/${name}`, {
             method: 'DELETE'
           })
 

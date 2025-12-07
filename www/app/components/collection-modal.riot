@@ -74,7 +74,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -161,7 +161,7 @@
         }
 
         try {
-          const response = await fetch(`${getApiUrl()}/database/${this.props.db}/collection`, {
+          const response = await authenticatedFetch(`${getApiUrl()}/database/${this.props.db}/collection`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

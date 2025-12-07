@@ -74,7 +74,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -152,14 +152,14 @@
 
           if (type === 'geo') {
             // Use geo index endpoint
-            response = await fetch(`${url}/geo/${this.props.collection}`, {
+            response = await authenticatedFetch(`${url}/geo/${this.props.collection}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name, field })
             })
           } else {
             // Use regular index endpoint
-            response = await fetch(`${url}/index/${this.props.collection}`, {
+            response = await authenticatedFetch(`${url}/index/${this.props.collection}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name, field, type, unique })

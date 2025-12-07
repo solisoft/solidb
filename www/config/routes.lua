@@ -18,6 +18,7 @@ CustomRoute("GET", "/database/:db/collection/:collection/documents", "dashboard#
 Logger(Routes)
 CustomRoute("GET", "/database/:db/databases", "dashboard#databases")
 CustomRoute("GET", "/database/:db/cluster", "dashboard#cluster")
+CustomRoute("GET", "/database/:db/apikeys", "dashboard#apikeys")
 
 -- docs pages
 CustomRoute("GET", "/docs/:page", "docs#show")

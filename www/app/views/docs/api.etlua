@@ -37,6 +37,134 @@
     <div class="col-span-12 lg:col-span-9">
       <div class="space-y-16">
         
+        <!-- Authentication Section -->
+        <section id="authentication" class="scroll-mt-24">
+          <div class="bg-gradient-to-br from-amber-900/10 to-orange-900/10 backdrop-blur-md border border-amber-500/30 rounded-2xl p-8 hover:border-amber-500/50 transition-colors relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
+            
+            <div class="flex items-center mb-6 relative z-10">
+              <div class="p-3 bg-amber-500/10 rounded-lg mr-4 border border-amber-500/30">
+                <i class="fas fa-lock text-amber-400 text-xl"></i>
+              </div>
+              <div>
+                <h2 class="text-2xl font-bold text-white flex items-center">
+                  Authentication 
+                  <span class="ml-3 text-xs bg-amber-500/20 text-amber-300 px-2 py-1 rounded border border-amber-500/30 uppercase tracking-widest font-bold">New</span>
+                </h2>
+              </div>
+            </div>
+            
+            <div class="mb-8 p-4 bg-amber-900/20 rounded-xl border border-amber-500/20">
+              <p class="text-amber-200/80 text-sm leading-relaxed">
+                <strong>JWT & API Keys:</strong> All <code class="text-white bg-white/10 px-1 rounded">/_api/*</code> endpoints require authentication. Use JWT tokens for interactive sessions (24h expiry) or API keys for server-to-server automation (no expiry).
+              </p>
+            </div>
+
+            <div class="space-y-8 relative z-10">
+              <!-- Login -->
+              <div class="group">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-amber-400 transition-colors">Login</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded uppercase tracking-wide">POST</span>
+                </div>
+                <div class="bg-gray-900/80 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-amber-500/30 transition-colors">
+                  <span class="text-green-400">/auth/login</span>
+                  <span class="ml-2 text-xs text-gray-500">(Public endpoint)</span>
+                </div>
+                <p class="mt-2 text-gray-400">Authenticate with username and password to receive a JWT token.</p>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+                    <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request</span>
+                    <pre><code class="language-json">{
+  "username": "admin",
+  "password": "admin"
+}</code></pre>
+                  </div>
+                  <div class="bg-gray-950/80 rounded-lg p-4 border border-white/5">
+                    <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Response</span>
+                    <pre><code class="language-json">{
+  "token": "eyJhbGciOiJIUzI1NiJ9..."
+}</code></pre>
+                  </div>
+                </div>
+                
+                <div class="mt-4 p-3 bg-gray-900/50 rounded-lg border border-white/5">
+                  <p class="text-xs text-gray-400"><strong class="text-white">Usage:</strong> Include the token in subsequent requests:</p>
+                  <code class="block mt-2 text-xs text-amber-300">Authorization: Bearer &lt;token&gt;</code>
+                </div>
+              </div>
+
+              <!-- Change Password -->
+              <div class="group border-t border-amber-500/20 pt-8">
+                <div class="flex items-start justify-between mb-2">
+                  <h3 class="text-lg font-semibold text-gray-200 group-hover:text-amber-400 transition-colors">Change Password</h3>
+                  <span class="px-2 py-1 text-xs font-bold bg-yellow-500/20 text-yellow-400 rounded uppercase tracking-wide">PUT</span>
+                </div>
+                <div class="bg-gray-900/80 rounded-lg p-4 font-mono text-sm border border-white/5 group-hover:border-amber-500/30 transition-colors">
+                  <span class="text-yellow-400">/_api/auth/password</span>
+                </div>
+                <div class="mt-4 bg-gray-950/80 rounded-lg p-4 border border-white/5">
+                  <span class="text-xs text-gray-500 uppercase tracking-wider block mb-2">Request</span>
+                  <pre><code class="language-json">{
+  "current_password": "admin",
+  "new_password": "newpassword"
+}</code></pre>
+                </div>
+              </div>
+
+              <!-- API Keys -->
+              <div class="group border-t border-amber-500/20 pt-8">
+                <h3 class="text-lg font-bold text-amber-200 mb-4">API Keys (Server-to-Server)</h3>
+                <p class="text-gray-400 text-sm mb-4">Non-expiring tokens ideal for backend services and automation. Manage via the UI at <code class="text-white bg-white/10 px-1 rounded">/database/_system/apikeys</code>.</p>
+                
+                <div class="space-y-4">
+                  <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+                    <span class="text-green-400 font-bold mr-2 w-14">POST</span>
+                    <span class="text-gray-300">/_api/auth/api-keys</span>
+                    <span class="ml-auto text-amber-400 text-xs">Create key</span>
+                  </div>
+                  <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+                    <span class="text-blue-400 font-bold mr-2 w-14">GET</span>
+                    <span class="text-gray-300">/_api/auth/api-keys</span>
+                    <span class="ml-auto text-amber-400 text-xs">List keys</span>
+                  </div>
+                  <div class="bg-gray-900/50 rounded-lg p-3 font-mono text-xs border border-white/5 flex items-center">
+                    <span class="text-red-400 font-bold mr-2 w-14">DELETE</span>
+                    <span class="text-gray-300">/_api/auth/api-keys/:id</span>
+                    <span class="ml-auto text-amber-400 text-xs">Revoke key</span>
+                  </div>
+                </div>
+
+                <div class="mt-4 p-3 bg-gray-900/50 rounded-lg border border-white/5">
+                  <p class="text-xs text-gray-400 mb-2"><strong class="text-white">Usage:</strong> Use either header:</p>
+                  <code class="block text-xs text-amber-300">X-API-Key: sk_abc123...</code>
+                  <code class="block text-xs text-amber-300 mt-1">Authorization: ApiKey sk_abc123...</code>
+                </div>
+                
+                <div class="mt-4 p-4 bg-red-900/10 rounded-lg border border-red-500/20">
+                  <h4 class="text-sm font-semibold text-red-300 mb-2 flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    Important
+                  </h4>
+                  <p class="text-xs text-gray-400">The API key is shown <strong class="text-white">only once</strong> when created. Store it securely!</p>
+                </div>
+              </div>
+
+              <!-- Notes -->
+              <div class="group border-t border-amber-500/20 pt-8">
+                <h3 class="text-lg font-semibold text-gray-200 mb-4">Notes</h3>
+                <ul class="text-sm text-gray-400 space-y-2 list-disc list-inside">
+                  <li>Default admin: <code class="text-white bg-white/10 px-1 rounded">admin</code> / <code class="text-white bg-white/10 px-1 rounded">admin</code> (created on first startup)</li>
+                  <li>JWT tokens expire after <strong class="text-white">24 hours</strong></li>
+                  <li>API keys <strong class="text-white">never expire</strong> (until revoked)</li>
+                  <li>Protected collections: <code class="text-white bg-white/10 px-1 rounded">_admins</code> and <code class="text-white bg-white/10 px-1 rounded">_api_keys</code> cannot be deleted</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Databases Section -->
         <section id="databases" class="scroll-mt-24">
           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">

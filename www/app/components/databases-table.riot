@@ -76,7 +76,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -94,7 +94,7 @@
 
         try {
           const url = getApiUrl()
-          const response = await fetch(`${url}/databases`)
+          const response = await authenticatedFetch(`${url}/databases`)
           const data = await response.json()
           const databases = data.databases || []
 
@@ -102,7 +102,7 @@
           const databasesWithCounts = await Promise.all(
             databases.map(async (name) => {
               try {
-                const collectionsResponse = await fetch(`${url}/database/${name}/collection`)
+                const collectionsResponse = await authenticatedFetch(`${url}/database/${name}/collection`)
                 const collectionsData = await collectionsResponse.json()
                 const count = collectionsData.collections?.length || 0
                 return { name, collections: count }
@@ -125,7 +125,7 @@
 
         try {
           const url = getApiUrl()
-          const response = await fetch(`${url}/database/${name}`, {
+          const response = await authenticatedFetch(`${url}/database/${name}`, {
             method: 'DELETE'
           })
 

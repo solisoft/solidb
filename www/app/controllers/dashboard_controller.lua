@@ -27,6 +27,10 @@ local app = {
 
   cluster = function()
     Page("dashboard/cluster", "app")
+  end,
+
+  apikeys = function()
+    Page("dashboard/apikeys", "app")
   end
 }
 

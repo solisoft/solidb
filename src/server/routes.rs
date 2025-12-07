@@ -15,6 +15,14 @@ use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 
 pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>) -> Router {
+    // Initialize Auth (create default admin if needed)
+    tracing::info!("Initializing authentication...");
+    if let Err(e) = crate::server::auth::AuthService::init(&storage) {
+        tracing::error!("Failed to initialize authentication: {}", e);
+    } else {
+        tracing::info!("Authentication initialized successfully");
+    }
+
     // Initialize ShardCoordinator if in cluster mode
     let shard_coordinator = if let Some(config) = storage.cluster_config() {
         if config.is_cluster_mode() {
@@ -78,7 +86,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         shard_coordinator,
     };
 
-    Router::new()
+    // Protected API routes
+    let api_routes = Router::new()
         // Database routes
         .route("/_api/database", post(create_database))
         .route("/_api/databases", get(list_databases))
@@ -171,6 +180,18 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/_api/cluster/info", get(cluster_info))
         .route("/_api/cluster/remove-node", post(cluster_remove_node))
         .route("/_api/cluster/rebalance", post(cluster_rebalance))
+        // Auth management
+        .route("/_api/auth/password", put(change_password_handler))
+        .route("/_api/auth/api-keys", post(create_api_key_handler))
+        .route("/_api/auth/api-keys", get(list_api_keys_handler))
+        .route("/_api/auth/api-keys/:key_id", delete(delete_api_key_handler))
+        // Apply authentication middleware
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
+
+    // Combine with public routes
+    Router::new()
+        .route("/auth/login", post(login_handler))
+        .merge(api_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(

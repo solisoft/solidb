@@ -167,59 +167,94 @@
          </div>
       </section>
 
-      <!-- Availability -->
-      <section id="availability" class="scroll-mt-24">
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-           <div class="p-8 border-b border-white/5 bg-white/5">
-            <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              Availability & Recovery
-            </h2>
-          </div>
-          <div class="p-8 space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              <!-- Temporary Failure -->
-              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
-                <div class="flex items-center mb-4">
-                   <div class="p-2 bg-yellow-500/20 rounded-lg mr-3">
-                    <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                  </div>
-                  <h3 class="text-white font-bold">Temporary Outage</h3>
-                </div>
-                <p class="text-sm text-gray-400 mb-4">
-                  E.g., Node restart or network blip.
-                </p>
-                <ul class="text-sm text-gray-400 space-y-2">
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Writes are queued in memory on healthy nodes.</li>
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>When node recovers, queue is replayed automatically.</li>
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Cluster topology remains unchanged.</li>
-                </ul>
-              </div>
+       <!-- Auto-Healing & Rebalancing -->
+       <section id="availability" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+            <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               Auto-Healing & Rebalancing
+             </h2>
+           </div>
+           <div class="p-8 space-y-8">
+             <p class="text-gray-300 leading-relaxed">
+               SoliDB automatically handles node failures using a two-tiered recovery strategy. The system intelligently distinguishes between temporary network glitches and permanent hardware failures to maximize availability while minimizing unnecessary data movement.
+             </p>
 
-              <!-- Permanent Failure -->
-              <div id="auto-rebalancing" class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
-                <div class="flex items-center mb-4">
-                   <div class="p-2 bg-red-500/20 rounded-lg mr-3">
-                    <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                  </div>
-                  <h3 class="text-white font-bold">Permanent Failure</h3>
-                </div>
-                <p class="text-sm text-gray-400 mb-4">
-                  Node unresponsive for > 30s.
-                </p>
-                 <ul class="text-sm text-gray-400 space-y-2">
-                  <li class="flex items-start"><span class="text-red-400 mr-2">!</span><strong>Auto-Rebalancing</strong> Triggered.</li>
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">➝</span>Dead node removed from cluster ring.</li>
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">➝</span>Remaining nodes scan data & migrate to new replicas.</li>
-                  <li class="flex items-start"><span class="text-emerald-400 mr-2">✓</span>Replication factor is restored.</li>
-                </ul>
-              </div>
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+               
+               <!-- 1. Auto-Healing -->
+               <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                 <div class="flex items-center mb-4">
+                    <div class="p-2 bg-yellow-500/20 rounded-lg mr-3">
+                     <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                   </div>
+                   <h3 class="text-white font-bold">1. Self-Healing</h3>
+                 </div>
+                 <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Scenario: Temporary Outage (< 30s)</h4>
+                 <p class="text-sm text-gray-400 mb-4">
+                   Occurs during network blips or short restarts.
+                 </p>
+                 <ul class="text-sm text-gray-400 space-y-3">
+                   <li class="flex items-start">
+                     <span class="text-emerald-400 mr-2">✓</span>
+                     <div>
+                       <strong class="text-gray-300">Queueing:</strong> Writes destined for the offline node are safely buffered in the <code>ReplicationQueue</code> of healthy peers.
+                     </div>
+                   </li>
+                   <li class="flex items-start">
+                     <span class="text-emerald-400 mr-2">✓</span>
+                     <div>
+                       <strong class="text-gray-300">Replay:</strong> When the node sends a heartbeat, peers automatically push dependent queued operations.
+                     </div>
+                   </li>
+                   <li class="flex items-start">
+                     <span class="text-emerald-400 mr-2">✓</span>
+                     <div>
+                       <strong class="text-gray-300">Zero Movement:</strong> Data topology remains unchanged; no expensive rebalancing occurs.
+                     </div>
+                   </li>
+                 </ul>
+               </div>
 
-            </div>
-          </div>
-        </div>
-      </section>
+               <!-- 2. Rebalancing -->
+               <div id="auto-rebalancing" class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                 <div class="flex items-center mb-4">
+                    <div class="p-2 bg-red-500/20 rounded-lg mr-3">
+                     <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                   </div>
+                   <h3 class="text-white font-bold">2. Auto-Rebalancing</h3>
+                 </div>
+                 <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Scenario: Permanent Failure (> 30s)</h4>
+                 <p class="text-sm text-gray-400 mb-4">
+                   Occurs when a node is unresponsive for an extended period.
+                 </p>
+                  <ul class="text-sm text-gray-400 space-y-3">
+                   <li class="flex items-start">
+                     <span class="text-red-400 mr-2">!</span>
+                     <div>
+                       <strong class="text-gray-300">Detection:</strong> The <code>NodeHealth</code> monitor marks the node as DEAD.
+                     </div>
+                   </li>
+                   <li class="flex items-start">
+                     <span class="text-emerald-400 mr-2">➝</span>
+                     <div>
+                        <strong class="text-gray-300">Topology Change:</strong> The node is removed from the consistent hash ring.
+                     </div>
+                   </li>
+                   <li class="flex items-start">
+                     <span class="text-emerald-400 mr-2">➝</span>
+                     <div>
+                       <strong class="text-gray-300">Migration:</strong> Healthy nodes scan their local shards and push data to new owners to satisfy the replication factor.
+                     </div>
+                   </li>
+                 </ul>
+               </div>
+
+             </div>
+           </div>
+         </div>
+       </section>
 
       <!-- API Extensions -->
       <section id="api" class="scroll-mt-24">

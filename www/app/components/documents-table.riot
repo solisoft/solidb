@@ -97,7 +97,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -120,7 +120,7 @@
           const url = `${getApiUrl()}/database/${this.props.db}`
 
           // First, get the total count using the stats endpoint (faster than AQL for large collections)
-          const statsResponse = await fetch(`${url}/collection/${this.props.collection}/stats`)
+          const statsResponse = await authenticatedFetch(`${url}/collection/${this.props.collection}/stats`)
 
           if (!statsResponse.ok) {
             const errorData = await statsResponse.json()
@@ -133,7 +133,7 @@
           // Then get the paginated documents
           const queryStr = `FOR doc IN ${this.props.collection} LIMIT ${this.state.offset}, ${this.state.limit} RETURN doc`
 
-          const response = await fetch(`${url}/cursor`, {
+          const response = await authenticatedFetch(`${url}/cursor`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: queryStr })
@@ -195,7 +195,7 @@
 
         try {
           const url = `http://localhost:6745/_api/database/${this.props.db}`
-          const response = await fetch(`${url}/document/${this.props.collection}/${key}`, {
+          const response = await authenticatedFetch(`${url}/document/${this.props.collection}/${key}`, {
             method: 'DELETE'
           })
 

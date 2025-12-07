@@ -1,4 +1,4 @@
-<div class="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+<div>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
     
     <!-- Header -->
@@ -28,7 +28,7 @@
             <a href="#overview" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Overview</a>
             <a href="#solidb-dump" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">solidb-dump</a>
             <a href="#solidb-restore" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">solidb-restore</a>
-            <a href="#jsonl-format" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">JSONL Format</a>
+            <a href="#supported-formats" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Supported Formats</a>
             <a href="#workflows" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Common Workflows</a>
           </nav>
         </div>
@@ -277,6 +277,21 @@ Bob,25,false</code></pre>
                </div>
                <div class="mt-2 text-sm text-gray-500">
                  Note: Types (Numbers, Booleans) are automatically inferred from CSV strings.
+               </div>
+            </div>
+
+            <!-- SQL -->
+            <div>
+               <h3 class="text-xl font-semibold text-pink-300 mb-2">SQL</h3>
+               <p class="text-gray-400 mb-3">
+                 Standard SQL dumps with `INSERT INTO` statements.
+               </p>
+               <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-pink-500/20">
+            <pre class="text-gray-300"><code>INSERT INTO users (id, name) VALUES (1, 'Alice');
+INSERT INTO users (id, name) VALUES (2, 'Bob'), (3, 'Charlie');</code></pre>
+               </div>
+               <div class="mt-2 text-sm text-gray-500">
+                 Note: Table name is used as collection name (e.g., `INSERT INTO users` -> collection `users`).
                </div>
             </div>
           </div>

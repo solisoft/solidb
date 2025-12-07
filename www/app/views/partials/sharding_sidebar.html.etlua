@@ -23,16 +23,10 @@
           Replication Strategy
         </a>
 
-        <!-- Availability -->
+        <!-- Auto-Healing & Rebalancing -->
         <a href="#availability" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Availability & Recovery
-        </a>
-
-        <!-- Auto-Rebalancing -->
-        <a href="#auto-rebalancing" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Auto-Rebalancing
+          Auto-Healing & Rebalancing
         </a>
 
         <!-- API Extensions -->

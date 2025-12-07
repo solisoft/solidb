@@ -1,4 +1,4 @@
-import { getApiUrl } from '/api-config.js'
+import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
 export default {
   css: null,
@@ -73,7 +73,7 @@ export default {
           ? `${url}/geo/${this.props.collection}/${index.name}`
           : `${url}/index/${this.props.collection}/${index.name}`
 
-        const response = await fetch(endpoint, {
+        const response = await authenticatedFetch(endpoint, {
           method: 'DELETE'
         })
 
@@ -96,13 +96,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr0="expr0" class="flex justify-center items-center py-12"></div><div expr1="expr1" class="text-center py-12"></div><div expr4="expr4" class="text-center py-12"></div><table expr6="expr6" class="min-w-full divide-y divide-gray-700"></table></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr50="expr50" class="flex justify-center items-center py-12"></div><div expr51="expr51" class="text-center py-12"></div><div expr54="expr54" class="text-center py-12"></div><table expr56="expr56" class="min-w-full divide-y divide-gray-700"></table></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr0',
-        selector: '[expr0]',
+        redundantAttribute: 'expr50',
+        selector: '[expr50]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading indexes...</span>',
@@ -112,15 +112,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr1',
-        selector: '[expr1]',
+        redundantAttribute: 'expr51',
+        selector: '[expr51]',
 
         template: template(
-          '<p expr2="expr2" class="text-red-400"> </p><button expr3="expr3" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr52="expr52" class="text-red-400"> </p><button expr53="expr53" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr2',
-              selector: '[expr2]',
+              redundantAttribute: 'expr52',
+              selector: '[expr52]',
 
               expressions: [
                 {
@@ -137,8 +137,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr3',
-              selector: '[expr3]',
+              redundantAttribute: 'expr53',
+              selector: '[expr53]',
 
               expressions: [
                 {
@@ -154,15 +154,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.indexes.length===0,
-        redundantAttribute: 'expr4',
-        selector: '[expr4]',
+        redundantAttribute: 'expr54',
+        selector: '[expr54]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No indexes</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new index.</p><div class="mt-6"><button expr5="expr5" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Index\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No indexes</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new index.</p><div class="mt-6"><button expr55="expr55" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Index\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr5',
-              selector: '[expr5]',
+              redundantAttribute: 'expr55',
+              selector: '[expr55]',
 
               expressions: [
                 {
@@ -178,11 +178,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.indexes.length> 0,
-        redundantAttribute: 'expr6',
-        selector: '[expr6]',
+        redundantAttribute: 'expr56',
+        selector: '[expr56]',
 
         template: template(
-          '<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Field\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Unique\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Stats\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr7="expr7" class="hover:bg-gray-750 transition-colors"></tr></tbody>',
+          '<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Field\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Unique\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Stats\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr57="expr57" class="hover:bg-gray-750 transition-colors"></tr></tbody>',
           [
             {
               type: bindingTypes.EACH,
@@ -190,11 +190,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><span expr8="expr8" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr9="expr9" class="text-sm text-gray-400 font-mono"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr10="expr10"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr11="expr11" class="text-gray-500"></span><span expr12="expr12" class="text-green-400"></span><span expr13="expr13" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><div expr14="expr14"> </div><div expr15="expr15" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr16="expr16" class="text-red-400 hover:text-red-300 transition-colors" title="Delete index"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>',
+                '<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><span expr58="expr58" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr59="expr59" class="text-sm text-gray-400 font-mono"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr60="expr60"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr61="expr61" class="text-gray-500"></span><span expr62="expr62" class="text-green-400"></span><span expr63="expr63" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><div expr64="expr64"> </div><div expr65="expr65" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr66="expr66" class="text-red-400 hover:text-red-300 transition-colors" title="Delete index"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr8',
-                    selector: '[expr8]',
+                    redundantAttribute: 'expr58',
+                    selector: '[expr58]',
 
                     expressions: [
                       {
@@ -205,8 +205,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr9',
-                    selector: '[expr9]',
+                    redundantAttribute: 'expr59',
+                    selector: '[expr59]',
 
                     expressions: [
                       {
@@ -217,8 +217,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr10',
-                    selector: '[expr10]',
+                    redundantAttribute: 'expr60',
+                    selector: '[expr60]',
 
                     expressions: [
                       {
@@ -250,8 +250,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.index.index_type === 'Geo',
-                    redundantAttribute: 'expr11',
-                    selector: '[expr11]',
+                    redundantAttribute: 'expr61',
+                    selector: '[expr61]',
 
                     template: template(
                       'N/A',
@@ -261,8 +261,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.index.index_type !=='Geo' && _scope.index.unique,
-                    redundantAttribute: 'expr12',
-                    selector: '[expr12]',
+                    redundantAttribute: 'expr62',
+                    selector: '[expr62]',
 
                     template: template(
                       '✓ Yes',
@@ -272,8 +272,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.index.index_type !=='Geo' && !_scope.index.unique,
-                    redundantAttribute: 'expr13',
-                    selector: '[expr13]',
+                    redundantAttribute: 'expr63',
+                    selector: '[expr63]',
 
                     template: template(
                       'No',
@@ -281,8 +281,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr14',
-                    selector: '[expr14]',
+                    redundantAttribute: 'expr64',
+                    selector: '[expr64]',
 
                     expressions: [
                       {
@@ -299,8 +299,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr15',
-                    selector: '[expr15]',
+                    redundantAttribute: 'expr65',
+                    selector: '[expr65]',
 
                     expressions: [
                       {
@@ -317,8 +317,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr16',
-                    selector: '[expr16]',
+                    redundantAttribute: 'expr66',
+                    selector: '[expr66]',
 
                     expressions: [
                       {
@@ -331,8 +331,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr7',
-              selector: '[expr7]',
+              redundantAttribute: 'expr57',
+              selector: '[expr57]',
               itemName: 'index',
               indexName: null,
               evaluate: _scope => _scope.state.indexes

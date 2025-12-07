@@ -5,6 +5,7 @@
 
 const STORAGE_KEY = 'solidb_server_config';
 const RECENT_SERVERS_KEY = 'solidb_recent_servers';
+const AUTH_TOKEN_KEY = 'solidb_auth_token';
 const DEFAULT_CONFIG = {
     host: 'http://localhost',
     port: '6745'
@@ -47,6 +48,101 @@ export function setServerConfig(config) {
 export function getApiUrl() {
     const config = getServerConfig();
     return `${config.host}:${config.port}/_api`;
+}
+
+/**
+ * Get the login URL for authentication
+ * @returns {string} Login URL (e.g., "http://localhost:6745/auth/login")
+ */
+export function getLoginUrl() {
+    const config = getServerConfig();
+    return `${config.host}:${config.port}/auth/login`;
+}
+
+/**
+ * Get the stored authentication token
+ * @returns {string|null} JWT token or null if not authenticated
+ */
+export function getAuthToken() {
+    try {
+        return localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch (e) {
+        console.warn('Failed to get auth token:', e);
+        return null;
+    }
+}
+
+/**
+ * Set the authentication token
+ * @param {string} token - JWT token
+ */
+export function setAuthToken(token) {
+    try {
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } catch (e) {
+        console.error('Failed to save auth token:', e);
+    }
+}
+
+/**
+ * Clear the authentication token (logout)
+ */
+export function clearAuthToken() {
+    try {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+    } catch (e) {
+        console.error('Failed to clear auth token:', e);
+    }
+}
+
+/**
+ * Check if user is authenticated
+ * @returns {boolean} True if token exists
+ */
+export function isAuthenticated() {
+    return !!getAuthToken();
+}
+
+/**
+ * Redirect to login page
+ */
+export function redirectToLogin() {
+    window.location.href = '/login';
+}
+
+/**
+ * Authenticated fetch wrapper
+ * Automatically includes Bearer token and handles 401 responses
+ * @param {string} url - URL to fetch
+ * @param {Object} options - Fetch options
+ * @returns {Promise<Response>} Fetch response
+ */
+export async function authenticatedFetch(url, options = {}) {
+    const token = getAuthToken();
+
+    if (!token) {
+        redirectToLogin();
+        return Promise.reject(new Error('Not authenticated'));
+    }
+
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`
+    };
+
+    try {
+        const response = await fetch(url, { ...options, headers });
+
+        if (response.status === 401) {
+            clearAuthToken();
+            redirectToLogin();
+            return Promise.reject(new Error('Session expired'));
+        }
+
+        return response;
+    } catch (e) {
+        throw e;
+    }
 }
 
 /**
@@ -119,9 +215,12 @@ export function removeRecentServer(config) {
  */
 export async function testConnection(config) {
     try {
+        const token = getAuthToken();
         const url = `${config.host}:${config.port}/_api/databases`;
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         const response = await fetch(url, {
             method: 'GET',
+            headers,
             signal: AbortSignal.timeout(5000) // 5 second timeout
         });
         return response.ok;

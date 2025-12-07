@@ -85,7 +85,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -157,7 +157,7 @@
             ? `${url}/geo/${this.props.collection}/${index.name}`
             : `${url}/index/${this.props.collection}/${index.name}`
 
-          const response = await fetch(endpoint, {
+          const response = await authenticatedFetch(endpoint, {
             method: 'DELETE'
           })
 

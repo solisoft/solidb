@@ -27,12 +27,209 @@ fn is_long_running_query(query: &Query) -> bool {
     })
 }
 
+/// Protected system collections that cannot be deleted or modified via standard API
+const PROTECTED_COLLECTIONS: [&str; 2] = ["_admins", "_api_keys"];
+
+/// Check if a collection is a protected system collection
+#[inline]
+fn is_protected_collection(db_name: &str, coll_name: &str) -> bool {
+    db_name == "_system" && PROTECTED_COLLECTIONS.contains(&coll_name)
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<StorageEngine>,
     pub cursor_store: CursorStore,
     pub replication: Option<ReplicationService>,
     pub shard_coordinator: Option<crate::sharding::ShardCoordinator>,
+}
+
+// ==================== Auth Types ====================
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangePasswordResponse {
+    pub status: String,
+}
+
+/// Handler for changing the current user's password
+pub async fn change_password_handler(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<Json<ChangePasswordResponse>, DbError> {
+    // 1. Get _system database
+    let db = state.storage.get_database("_system")?;
+    
+    // 2. Get _admins collection
+    let collection = db.get_collection("_admins")?;
+    
+    // 3. Get current user document
+    let doc = match collection.get(&claims.sub) {
+        Ok(d) => d,
+        Err(DbError::DocumentNotFound(_)) => {
+            return Err(DbError::BadRequest("User not found".to_string()));
+        }
+        Err(e) => return Err(e),
+    };
+
+    // 4. Deserialize user
+    let user: crate::server::auth::User = serde_json::from_value(doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted user data".to_string()))?;
+
+    // 5. Verify current password
+    if !crate::server::auth::AuthService::verify_password(&req.current_password, &user.password_hash) {
+        return Err(DbError::BadRequest("Current password is incorrect".to_string()));
+    }
+
+    // 6. Hash new password
+    let new_hash = crate::server::auth::AuthService::hash_password(&req.new_password)?;
+
+    // 7. Update user document
+    let updated_user = crate::server::auth::User {
+        username: user.username.clone(),
+        password_hash: new_hash,
+    };
+    
+    let updated_value = serde_json::to_value(&updated_user)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+    
+    collection.update(&claims.sub, updated_value)?;
+
+    Ok(Json(ChangePasswordResponse {
+        status: "password_updated".to_string(),
+    }))
+}
+
+// ==================== API Key Types ====================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateApiKeyRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateApiKeyResponse {
+    pub id: String,
+    pub name: String,
+    pub key: String,  // Raw key - only returned on creation!
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListApiKeysResponse {
+    pub keys: Vec<crate::server::auth::ApiKeyListItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteApiKeyResponse {
+    pub deleted: bool,
+}
+
+/// Handler for creating a new API key
+pub async fn create_api_key_handler(
+    State(state): State<AppState>,
+    Json(req): Json<CreateApiKeyRequest>,
+) -> Result<Json<CreateApiKeyResponse>, DbError> {
+    // Generate key
+    let (raw_key, key_hash) = crate::server::auth::AuthService::generate_api_key();
+    
+    // Create unique ID
+    let id = uuid::Uuid::new_v4().to_string();
+    let created_at = chrono::Utc::now().to_rfc3339();
+    
+    // Store in _system/_api_keys
+    let db = state.storage.get_database("_system")?;
+    
+    // Ensure collection exists
+    if let Err(DbError::CollectionNotFound(_)) = db.get_collection(crate::server::auth::API_KEYS_COLL) {
+        db.create_collection(crate::server::auth::API_KEYS_COLL.to_string())?;
+    }
+    
+    let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
+    
+    let api_key = crate::server::auth::ApiKey {
+        id: id.clone(),
+        name: req.name.clone(),
+        key_hash,
+        created_at: created_at.clone(),
+    };
+    
+    let doc_value = serde_json::to_value(&api_key)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+    
+    collection.insert(doc_value)?;
+    
+    tracing::info!("API key '{}' created", req.name);
+    
+    // Return response with the raw key (only time it's shown!)
+    Ok(Json(CreateApiKeyResponse {
+        id,
+        name: req.name,
+        key: raw_key,
+        created_at,
+    }))
+}
+
+/// Handler for listing API keys (without the actual keys)
+pub async fn list_api_keys_handler(
+    State(state): State<AppState>,
+) -> Result<Json<ListApiKeysResponse>, DbError> {
+    let db = state.storage.get_database("_system")?;
+    
+    // Return empty if collection doesn't exist
+    let collection = match db.get_collection(crate::server::auth::API_KEYS_COLL) {
+        Ok(c) => c,
+        Err(DbError::CollectionNotFound(_)) => {
+            return Ok(Json(ListApiKeysResponse { keys: vec![] }));
+        }
+        Err(e) => return Err(e),
+    };
+    
+    let mut keys = Vec::new();
+    for doc in collection.scan(None) {
+        let api_key: crate::server::auth::ApiKey = serde_json::from_value(doc.to_value())
+            .map_err(|_| DbError::InternalError("Corrupted API key data".to_string()))?;
+        
+        keys.push(crate::server::auth::ApiKeyListItem {
+            id: api_key.id,
+            name: api_key.name,
+            created_at: api_key.created_at,
+        });
+    }
+    
+    Ok(Json(ListApiKeysResponse { keys }))
+}
+
+/// Handler for deleting an API key
+pub async fn delete_api_key_handler(
+    State(state): State<AppState>,
+    Path(key_id): Path<String>,
+) -> Result<Json<DeleteApiKeyResponse>, DbError> {
+    let db = state.storage.get_database("_system")?;
+    let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
+    
+    collection.delete(&key_id)?;
+    
+    tracing::info!("API key '{}' deleted", key_id);
+    
+    Ok(Json(DeleteApiKeyResponse { deleted: true }))
 }
 
 // ==================== Request/Response Types ====================
@@ -161,6 +358,59 @@ impl IntoResponse for DbError {
     }
 }
 
+// ==================== Auth Handlers ====================
+
+pub async fn login_handler(
+    State(state): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, DbError> {
+    // 1. Get _system database
+    let db = state.storage.get_database("_system")?;
+    
+    // 2. Get _admins collection (create with default admin if missing)
+    let collection = match db.get_collection("_admins") {
+        Ok(c) => c,
+        Err(DbError::CollectionNotFound(_)) => {
+            // Collection doesn't exist - initialize auth (creates collection and default admin)
+            tracing::warn!("_admins collection not found, initializing...");
+            crate::server::auth::AuthService::init(&state.storage)?;
+            db.get_collection("_admins")?
+        }
+        Err(e) => return Err(e),
+    };
+    
+    // 3. Check if collection is empty (also create default admin)
+    if collection.count() == 0 {
+        tracing::warn!("_admins collection empty, creating default admin...");
+        crate::server::auth::AuthService::init(&state.storage)?;
+    }
+    
+    // 4. Get user document
+    // We expect the username to be the _key
+    let doc = match collection.get(&req.username) {
+        Ok(d) => d,
+        Err(DbError::DocumentNotFound(_)) => {
+            // Return generic error for security
+            return Err(DbError::BadRequest("Invalid credentials".to_string()));
+        }
+        Err(e) => return Err(e),
+    };
+
+    // 5. Deserialize user
+    let user: crate::server::auth::User = serde_json::from_value(doc.to_value())
+        .map_err(|_| DbError::InternalError("Corrupted user data".to_string()))?;
+
+    // 6. Verify password
+    if !crate::server::auth::AuthService::verify_password(&req.password, &user.password_hash) {
+        return Err(DbError::BadRequest("Invalid credentials".to_string()));
+    }
+
+    // 7. Generate Token
+    let token = crate::server::auth::AuthService::create_jwt(&user.username)?;
+
+    Ok(Json(LoginResponse { token }))
+}
+
 // ==================== Database Handlers ====================
 
 pub async fn create_database(
@@ -272,6 +522,11 @@ pub async fn delete_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
 ) -> Result<StatusCode, DbError> {
+    // Protect system collections
+    if is_protected_collection(&db_name, &coll_name) {
+        return Err(DbError::BadRequest(format!("Cannot delete protected system collection: {}", coll_name)));
+    }
+
     let database = state.storage.get_database(&db_name)?;
     database.delete_collection(&coll_name)?;
 
@@ -294,6 +549,11 @@ pub async fn truncate_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
 ) -> Result<Json<Value>, DbError> {
+    // Protect system collections
+    if is_protected_collection(&db_name, &coll_name) {
+        return Err(DbError::BadRequest(format!("Cannot truncate protected system collection: {}", coll_name)));
+    }
+
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
@@ -773,6 +1033,11 @@ pub async fn delete_document(
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
     headers: HeaderMap,
 ) -> Result<StatusCode, DbError> {
+    // Protect system collections from direct document deletion
+    if is_protected_collection(&db_name, &coll_name) {
+        return Err(DbError::BadRequest(format!("Cannot delete documents from protected collection: {}", coll_name)));
+    }
+
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 

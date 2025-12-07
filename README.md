@@ -14,6 +14,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 🌐 **HTTP REST API**: Simple and intuitive API endpoints
 - 💾 **RocksDB Storage**: Production-grade persistence with automatic crash recovery
 - 🔒 **Thread-Safe**: Concurrent request handling with Tokio
+- 🔐 **JWT Authentication**: Secure API access with Bearer tokens
 - 🗄️ **Multi-Database**: Multiple isolated databases with collections
 - 📦 **Collections**: Organize documents into collections
 - 📊 **Indexing**: Hash and persistent indexes for fast queries
@@ -177,33 +178,50 @@ solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6
 
 ### Basic Usage
 
-> **Note**: The server automatically creates a `_system` database on startup. All examples use this default database.
+> **Note**: The server automatically creates a `_system` database on startup. A default admin user (`admin`/`admin`) is also created. All API endpoints under `/_api/` require authentication.
 
-#### 1. Create a Collection
+#### 1. Login (Get JWT Token)
+
+```bash
+# Get authentication token
+curl -X POST http://localhost:6745/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+# Response: {"token": "eyJ..."}
+
+# Store token for subsequent requests
+export TOKEN="your-jwt-token-here"
+```
+
+#### 2. Create a Collection
 
 ```bash
 curl -X POST http://localhost:6745/_api/database/_system/collection \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "users"}'
 ```
 
-#### 2. Insert Documents
+#### 3. Insert Documents
 
 ```bash
 curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "Alice", "age": 30, "active": true}'
 
 curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "Bob", "age": 25, "active": true}'
 
 curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "Charlie", "age": 35, "active": false}'
 ```
 
-#### 3. Query with AQL
+#### 4. Query with AQL
 
 ```bash
 # Get all users
@@ -419,6 +437,70 @@ RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
 ```
 
 ## REST API Reference
+
+> **Note**: All `/_api/*` endpoints require authentication. Include the header `Authorization: Bearer <token>` in your requests.
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/login` | Login and get JWT token |
+| PUT | `/_api/auth/password` | Change password (requires auth) |
+| POST | `/_api/auth/api-keys` | Create API key (for server-to-server) |
+| GET | `/_api/auth/api-keys` | List API keys |
+| DELETE | `/_api/auth/api-keys/:id` | Revoke an API key |
+
+#### Login
+
+```bash
+curl -X POST http://localhost:6745/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+```
+
+**Response:**
+```json
+{"token": "eyJhbGciOiJIUzI1NiJ9..."}
+```
+
+#### Change Password
+
+```bash
+curl -X PUT http://localhost:6745/_api/auth/password \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"current_password": "admin", "new_password": "newpassword"}'
+```
+
+#### API Keys (Server-to-Server)
+
+API keys are non-expiring tokens ideal for backend services and automation.
+
+```bash
+# Create an API key
+curl -X POST http://localhost:6745/_api/auth/api-keys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-backend-service"}'
+# Response: {"id": "...", "name": "my-backend-service", "key": "sk_abc123..."}
+
+# Use the API key (either header works)
+curl -H "X-API-Key: sk_abc123..." http://localhost:6745/_api/databases
+# OR
+curl -H "Authorization: ApiKey sk_abc123..." http://localhost:6745/_api/databases
+
+# List keys (shows names only, not the actual keys)
+curl http://localhost:6745/_api/auth/api-keys -H "Authorization: Bearer $TOKEN"
+
+# Revoke a key
+curl -X DELETE http://localhost:6745/_api/auth/api-keys/<key-id> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Notes:**
+- The default admin user (`admin`/`admin`) is created automatically on first startup
+- JWT tokens expire after 24 hours; API keys never expire (unless revoked)
+- If the `_admins` collection is deleted, a default admin is recreated on next login attempt
 
 ### Databases
 
@@ -912,7 +994,6 @@ This is an initial implementation focusing on core functionality. Current limita
 
 - No graph queries
 - No complex aggregations (GROUP BY, etc.)
-- No authentication/authorization
 
 ## Future Enhancements
 
@@ -929,8 +1010,9 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Sharding~~ ✅ Implemented! (horizontal partitioning, auto-rebalancing, auto mode)
 - [x] ~~Transactions~~ ✅ Implemented! (ACID via X-Transaction-ID header)
 - [x] ~~CLI Tooling~~ ✅ Implemented! (dump/restore with JSONL, JSON Array, and CSV support)
+- [x] ~~Authentication~~ ✅ Implemented! (JWT-based authentication with password management)
 - [ ] Graph traversal queries
-- [ ] Authentication and authorization
+- [ ] Role-based authorization
 - [ ] WebSocket support
 - [ ] Query optimization
 

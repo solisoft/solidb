@@ -59,7 +59,7 @@
   </div>
 
   <script>
-    import { getApiUrl } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
     export default {
       state: {
@@ -185,7 +185,7 @@
 
           if (this.state.document) {
             // Update existing document
-            response = await fetch(`${url}/document/${this.props.collection}/${this.state.document._key}`, {
+            response = await authenticatedFetch(`${url}/document/${this.props.collection}/${this.state.document._key}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(data)
@@ -196,7 +196,7 @@
             if (key) {
               data._key = key
             }
-            response = await fetch(`${url}/document/${this.props.collection}`, {
+            response = await authenticatedFetch(`${url}/document/${this.props.collection}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(data)
