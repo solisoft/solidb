@@ -43,11 +43,21 @@
         <tr each={ collection in state.collections } class="hover:bg-gray-750 transition-colors">
           <td class="px-6 py-4 whitespace-nowrap">
             <div class="flex items-center">
-              <svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <!-- Edge collection icon (link) -->
+              <svg if={ collection.type==='edge' } class="h-5 w-5 text-fuchsia-400 mr-2" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <!-- Document collection icon (folder) -->
+              <svg if={ collection.type !=='edge' } class="h-5 w-5 text-indigo-400 mr-2" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
               <span class="text-sm font-medium text-gray-100">{ collection.name }</span>
+              <span if={ collection.type==='edge' }
+                class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">Edge</span>
             </div>
           </td>
           <td class="px-6 py-4 whitespace-nowrap">

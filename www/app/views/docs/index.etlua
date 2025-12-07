@@ -93,6 +93,32 @@
       </div>
     </a>
 
+    <!-- Graphs & Edge Collections -->
+    <a href="/docs/graphs" class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-fuchsia-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(217,70,239,0.15)] hover:-translate-y-1">
+      <div class="absolute inset-0 bg-gradient-to-br from-fuchsia-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      
+      <div class="relative z-10 flex flex-col h-full">
+        <div class="flex items-center justify-between mb-6">
+          <div class="p-4 bg-fuchsia-500/10 rounded-2xl border border-fuchsia-500/20 group-hover:bg-fuchsia-500/20 transition-colors">
+            <i class="fas fa-project-diagram text-2xl text-fuchsia-400"></i>
+          </div>
+          <span class="px-3 py-1 bg-fuchsia-500/20 text-fuchsia-300 text-xs font-bold rounded-full border border-fuchsia-500/30 uppercase tracking-widest shadow-[0_0_10px_rgba(217,70,239,0.2)]">New</span>
+        </div>
+        
+        <h3 class="text-2xl font-bold text-white mb-3 group-hover:text-fuchsia-300 transition-colors">Graphs & Edges</h3>
+        <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
+          Model relationships with edge collections. Build social networks, hierarchies, and knowledge graphs.
+        </p>
+        
+        <div class="flex items-center text-sm font-bold text-fuchsia-400 uppercase tracking-wider group-hover:text-fuchsia-300">
+          Explore Graphs
+          <svg class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
      <!-- Clustering -->
     <a href="/docs/cluster" class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-emerald-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] hover:-translate-y-1">
       <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -220,8 +246,7 @@
           </svg>
         </div>
       </div>
-    </a>
-
+    
     <!-- Support / Discord -->
     <a href="#" class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-yellow-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(234,179,8,0.15)] hover:-translate-y-1">
       <div class="absolute inset-0 bg-gradient-to-br from-yellow-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>

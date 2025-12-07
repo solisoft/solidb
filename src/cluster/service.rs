@@ -249,7 +249,7 @@ impl ReplicationService {
             // Create _config collection if it doesn't exist
             if db.get_collection("_config").is_err() {
                 tracing::debug!("[PEER] Creating _config collection in _system database");
-                if let Err(e) = db.create_collection("_config".to_string()) {
+                if let Err(e) = db.create_collection("_config".to_string(), None) {
                     tracing::warn!("[PEER] Failed to create _config collection: {}", e);
                     return;
                 }
@@ -909,7 +909,7 @@ impl ReplicationService {
             ReplicationMessage::FullSyncCollection { database, name } => {
                 tracing::debug!("[FULL-SYNC] Creating collection: {}/{}", database, name);
                 if let Ok(db) = self.storage.get_database(&database) {
-                    if let Err(e) = db.create_collection(name.clone()) {
+                    if let Err(e) = db.create_collection(name.clone(), None) {
                         tracing::debug!("[FULL-SYNC] Collection creation: {:?}", e);
                     }
                 }
@@ -1356,7 +1356,7 @@ impl ReplicationService {
             // Handle collection-level operations (don't need the collection to exist for delete)
             match &entry.operation {
                 Operation::CreateCollection => {
-                    if let Err(e) = db.create_collection(entry.collection.clone()) {
+                    if let Err(e) = db.create_collection(entry.collection.clone(), None) {
                         tracing::debug!(
                             "[APPLY] Create collection {}/{} (may already exist): {}",
                             entry.database,
@@ -1401,7 +1401,7 @@ impl ReplicationService {
                         entry.database,
                         entry.collection
                     );
-                    if let Err(e) = db.create_collection(entry.collection.clone()) {
+                    if let Err(e) = db.create_collection(entry.collection.clone(), None) {
                         tracing::error!(
                             "[APPLY] Failed to create collection {}/{}: {}",
                             entry.database,

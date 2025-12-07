@@ -35,8 +35,12 @@ impl Database {
     }
 
     /// Create a new collection in this database
-    pub fn create_collection(&self, collection_name: String) -> DbResult<()> {
+    pub fn create_collection(&self, collection_name: String, collection_type: Option<String>) -> DbResult<()> {
         let cf_name = self.collection_cf_name(&collection_name);
+        
+        // Default to "document" if not specified
+        let type_ = collection_type.unwrap_or_else(|| "document".to_string());
+        
         let mut db = self.db.write().unwrap();
 
         // Check if collection already exists
@@ -47,6 +51,12 @@ impl Database {
         // Create column family
         db.create_cf(&cf_name, &rocksdb::Options::default())
             .map_err(|e| DbError::InternalError(format!("Failed to create collection: {}", e)))?;
+            
+        // Persist collection type
+        if let Some(cf) = db.cf_handle(&cf_name) {
+            db.put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+                .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
+        }
 
         Ok(())
     }
@@ -143,7 +153,7 @@ mod tests {
         let (db, _dir) = create_test_db();
         let database = Database::new("testdb".to_string(), db);
 
-        assert!(database.create_collection("users".to_string()).is_ok());
+        assert!(database.create_collection("users".to_string(), None).is_ok());
         assert!(database.list_collections().contains(&"users".to_string()));
     }
 
@@ -152,8 +162,8 @@ mod tests {
         let (db, _dir) = create_test_db();
         let database = Database::new("testdb".to_string(), db);
 
-        database.create_collection("users".to_string()).unwrap();
-        assert!(database.create_collection("users".to_string()).is_err());
+        database.create_collection("users".to_string(), None).unwrap();
+        assert!(database.create_collection("users".to_string(), None).is_err());
     }
 
     #[test]
@@ -161,7 +171,9 @@ mod tests {
         let (db, _dir) = create_test_db();
         let database = Database::new("testdb".to_string(), db);
 
-        database.create_collection("users".to_string()).unwrap();
+        let database = Database::new("testdb".to_string(), db);
+
+        database.create_collection("users".to_string(), None).unwrap();
         assert!(database.delete_collection("users").is_ok());
         assert!(!database.list_collections().contains(&"users".to_string()));
     }
@@ -171,8 +183,10 @@ mod tests {
         let (db, _dir) = create_test_db();
         let database = Database::new("testdb".to_string(), db);
 
-        database.create_collection("users".to_string()).unwrap();
-        database.create_collection("products".to_string()).unwrap();
+        let database = Database::new("testdb".to_string(), db);
+
+        database.create_collection("users".to_string(), None).unwrap();
+        database.create_collection("products".to_string(), None).unwrap();
 
         let collections = database.list_collections();
         assert_eq!(collections.len(), 2);

@@ -76,7 +76,7 @@ fn bench_insert(storage: &StorageEngine) {
 
     // Small dataset
     storage
-        .create_collection("bench_insert_small".to_string())
+        .create_collection("bench_insert_small".to_string(), None)
         .unwrap();
     let collection = storage.get_collection("bench_insert_small").unwrap();
 
@@ -96,7 +96,7 @@ fn bench_insert(storage: &StorageEngine) {
 
     // Medium dataset
     storage
-        .create_collection("bench_insert_medium".to_string())
+        .create_collection("bench_insert_medium".to_string(), None)
         .unwrap();
     let collection = storage.get_collection("bench_insert_medium").unwrap();
 
@@ -116,7 +116,7 @@ fn bench_insert(storage: &StorageEngine) {
 
     // Large dataset with custom keys
     storage
-        .create_collection("bench_users".to_string())
+        .create_collection("bench_users".to_string(), None)
         .unwrap();
     let collection = storage.get_collection("bench_users").unwrap();
 
@@ -200,7 +200,7 @@ fn bench_delete(storage: &StorageEngine) {
 
     // Create a collection for delete tests
     storage
-        .create_collection("bench_delete".to_string())
+        .create_collection("bench_delete".to_string(), None)
         .unwrap();
     let collection = storage.get_collection("bench_delete").unwrap();
 

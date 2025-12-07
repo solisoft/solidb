@@ -79,13 +79,13 @@ impl AuthService {
         // Ensure _admins collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ADMIN_COLL) {
             tracing::info!("Creating {} collection", ADMIN_COLL);
-            db.create_collection(ADMIN_COLL.to_string())?;
+            db.create_collection(ADMIN_COLL.to_string(), None)?;
         }
         
         // Ensure _api_keys collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(API_KEYS_COLL) {
             tracing::info!("Creating {} collection", API_KEYS_COLL);
-            db.create_collection(API_KEYS_COLL.to_string())?;
+            db.create_collection(API_KEYS_COLL.to_string(), None)?;
         }
         
         // Check if any admin exists

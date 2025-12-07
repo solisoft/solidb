@@ -166,7 +166,7 @@ pub async fn create_api_key_handler(
     
     // Ensure collection exists
     if let Err(DbError::CollectionNotFound(_)) = db.get_collection(crate::server::auth::API_KEYS_COLL) {
-        db.create_collection(crate::server::auth::API_KEYS_COLL.to_string())?;
+        db.create_collection(crate::server::auth::API_KEYS_COLL.to_string(), None)?;
     }
     
     let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
@@ -260,6 +260,9 @@ pub struct ListDatabasesResponse {
 #[derive(Debug, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
+    /// Collection type: "document" (default) or "edge"
+    #[serde(rename = "type")]
+    pub collection_type: Option<String>,
     /// Number of shards (optional - if not set, collection is not sharded)
     #[serde(rename = "numShards")]
     pub num_shards: Option<u16>,
@@ -290,6 +293,8 @@ pub struct CreateCollectionResponse {
 pub struct CollectionSummary {
     pub name: String,
     pub count: usize,
+    #[serde(rename = "type")]
+    pub collection_type: String,
     #[serde(rename = "shardConfig", skip_serializing_if = "Option::is_none")]
     pub shard_config: Option<crate::sharding::coordinator::CollectionShardConfig>,
 }
@@ -464,7 +469,7 @@ pub async fn create_collection(
     Json(req): Json<CreateCollectionRequest>,
 ) -> Result<Json<CreateCollectionResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    database.create_collection(req.name.clone())?;
+    database.create_collection(req.name.clone(), req.collection_type.clone())?;
 
     // Store sharding configuration if specified
     if let Some(num_shards) = req.num_shards {
@@ -511,9 +516,11 @@ pub async fn list_collections(
         if let Ok(coll) = database.get_collection(&name) {
             let count = coll.count();
             let shard_config = coll.get_shard_config();
+            let collection_type = coll.get_type().to_string();
             collections.push(CollectionSummary {
                 name,
                 count,
+                collection_type,
                 shard_config,
             });
         }
@@ -742,7 +749,7 @@ pub async fn import_collection(
         Ok(c) => c,
         Err(DbError::CollectionNotFound(_)) => {
             tracing::info!("Auto-creating collection '{}' during import", coll_name);
-            match database.create_collection(coll_name.clone()) {
+            match database.create_collection(coll_name.clone(), None) {
                 Ok(_) => database.get_collection(&coll_name)?,
                 Err(e) => return Err(e),
             }

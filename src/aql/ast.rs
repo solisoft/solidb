@@ -27,6 +27,55 @@ pub enum BodyClause {
     Insert(InsertClause),
     Update(UpdateClause),
     Remove(RemoveClause),
+    GraphTraversal(GraphTraversalClause),
+    ShortestPath(ShortestPathClause),
+}
+
+/// Edge direction for graph traversals
+#[derive(Debug, Clone, PartialEq)]
+pub enum EdgeDirection {
+    /// Follow edges where start_vertex == _from
+    Outbound,
+    /// Follow edges where start_vertex == _to
+    Inbound,
+    /// Follow edges in both directions
+    Any,
+}
+
+/// FOR vertex[, edge] IN [depth..depth] OUTBOUND|INBOUND|ANY start_vertex edge_collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphTraversalClause {
+    /// Variable for the visited vertices
+    pub vertex_var: String,
+    /// Optional variable for the edges (can be omitted)
+    pub edge_var: Option<String>,
+    /// Direction of traversal
+    pub direction: EdgeDirection,
+    /// Starting vertex (expression like "users/alice" or @start)
+    pub start_vertex: Expression,
+    /// Edge collection to traverse
+    pub edge_collection: String,
+    /// Minimum traversal depth (default 1)
+    pub min_depth: usize,
+    /// Maximum traversal depth (default 1)
+    pub max_depth: usize,
+}
+
+/// FOR vertex[, edge] IN SHORTEST_PATH start_vertex TO end_vertex OUTBOUND|INBOUND|ANY edge_collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShortestPathClause {
+    /// Variable for the vertices in the path
+    pub vertex_var: String,
+    /// Optional variable for the edges in the path
+    pub edge_var: Option<String>,
+    /// Starting vertex
+    pub start_vertex: Expression,
+    /// Target vertex
+    pub end_vertex: Expression,
+    /// Direction of traversal
+    pub direction: EdgeDirection,
+    /// Edge collection to traverse
+    pub edge_collection: String,
 }
 
 /// LET variable = expression (can be a subquery)

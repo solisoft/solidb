@@ -63,9 +63,19 @@ impl Parser {
         // Parse FOR, FILTER, INSERT, and additional LET clauses (they can be interleaved in AQL)
         loop {
             if matches!(self.current_token(), Token::For) {
-                let for_clause = self.parse_for_clause()?;
-                for_clauses.push(for_clause.clone());
-                body_clauses.push(BodyClause::For(for_clause));
+                // Try to parse as graph traversal first, fallback to regular FOR
+                match self.try_parse_for_or_graph()? {
+                    ForOrGraph::For(for_clause) => {
+                        for_clauses.push(for_clause.clone());
+                        body_clauses.push(BodyClause::For(for_clause));
+                    }
+                    ForOrGraph::GraphTraversal(gt_clause) => {
+                        body_clauses.push(BodyClause::GraphTraversal(gt_clause));
+                    }
+                    ForOrGraph::ShortestPath(sp_clause) => {
+                        body_clauses.push(BodyClause::ShortestPath(sp_clause));
+                    }
+                }
             } else if matches!(self.current_token(), Token::Filter) {
                 let filter_clause = self.parse_filter_clause()?;
                 filter_clauses.push(filter_clause.clone());
@@ -157,7 +167,102 @@ impl Parser {
             body_clauses,
         })
     }
+}
 
+/// Result of parsing a FOR clause - could be regular FOR or graph traversal
+enum ForOrGraph {
+    For(ForClause),
+    GraphTraversal(GraphTraversalClause),
+    ShortestPath(ShortestPathClause),
+}
+
+impl Parser {
+    /// Try to parse FOR as either regular FOR or graph traversal
+    /// Syntax detection:
+    /// - Regular FOR: FOR v IN collection
+    /// - Graph: FOR v[, e] IN [depth..depth] OUTBOUND|INBOUND|ANY start edge_coll
+    /// - Shortest Path: FOR v[, e] IN SHORTEST_PATH start TO end OUTBOUND|... edge_coll
+    fn try_parse_for_or_graph(&mut self) -> DbResult<ForOrGraph> {
+        self.expect(Token::For)?;
+
+        // Parse first variable
+        let first_var = if let Token::Identifier(name) = self.current_token() {
+            let var = name.clone();
+            self.advance();
+            var
+        } else {
+            return Err(DbError::ParseError(
+                "Expected variable name after FOR".to_string(),
+            ));
+        };
+
+        // Check for optional second variable (edge variable for graph traversals)
+        let second_var = if matches!(self.current_token(), Token::Comma) {
+            self.advance(); // consume comma
+            if let Token::Identifier(name) = self.current_token() {
+                let var = name.clone();
+                self.advance();
+                Some(var)
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected variable name after comma".to_string(),
+                ));
+            }
+        } else {
+            None
+        };
+
+        self.expect(Token::In)?;
+
+        // Now detect what type of FOR this is
+        // If we see SHORTEST_PATH, it's a shortest path query
+        if matches!(self.current_token(), Token::ShortestPath) {
+            let sp_clause = self.parse_shortest_path_clause(first_var, second_var)?;
+            return Ok(ForOrGraph::ShortestPath(sp_clause));
+        }
+
+        // If we see a number (depth) or OUTBOUND/INBOUND/ANY, it's a graph traversal
+        if matches!(
+            self.current_token(),
+            Token::Number(_) | Token::Outbound | Token::Inbound | Token::Any
+        ) {
+            let gt_clause = self.parse_graph_traversal_clause(first_var, second_var)?;
+            return Ok(ForOrGraph::GraphTraversal(gt_clause));
+        }
+
+        // Otherwise it's a regular FOR clause
+        // If we had a second variable, that's an error for regular FOR
+        if second_var.is_some() {
+            return Err(DbError::ParseError(
+                "Second variable only allowed in graph traversals".to_string(),
+            ));
+        }
+
+        // Check if the source is an identifier (collection/variable) or an expression
+        if let Token::Identifier(name) = self.current_token() {
+            let n = name.clone();
+            self.advance();
+
+            Ok(ForOrGraph::For(ForClause {
+                variable: first_var,
+                collection: n.clone(),
+                source_variable: Some(n),
+                source_expression: None,
+            }))
+        } else {
+            // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
+            let expr = self.parse_expression()?;
+            Ok(ForOrGraph::For(ForClause {
+                variable: first_var,
+                collection: String::new(),
+                source_variable: None,
+                source_expression: Some(expr),
+            }))
+        }
+    }
+}
+
+impl Parser {
     fn parse_let_clause(&mut self) -> DbResult<LetClause> {
         self.expect(Token::Let)?;
 
@@ -303,6 +408,144 @@ impl Parser {
         Ok(RemoveClause {
             selector,
             collection,
+        })
+    }
+
+    /// Parse graph traversal: FOR v[, e] IN [min..max] OUTBOUND|INBOUND|ANY start_vertex edge_collection
+    fn parse_graph_traversal_clause(
+        &mut self,
+        vertex_var: String,
+        edge_var: Option<String>,
+    ) -> DbResult<GraphTraversalClause> {
+        // Already consumed FOR v[, e] IN
+
+        // Parse optional depth range (e.g., 1..3)
+        let (min_depth, max_depth) = if let Token::Number(n) = self.current_token() {
+            let min = *n as usize;
+            self.advance();
+            if matches!(self.current_token(), Token::DotDot) {
+                self.advance();
+                if let Token::Number(m) = self.current_token() {
+                    let max = *m as usize;
+                    self.advance();
+                    (min, max)
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected number after '..' in depth range".to_string(),
+                    ));
+                }
+            } else {
+                // Single depth value means min and max are the same
+                (min, min)
+            }
+        } else {
+            // Default depth is 1..1
+            (1, 1)
+        };
+
+        // Parse direction (OUTBOUND, INBOUND, ANY)
+        let direction = match self.current_token() {
+            Token::Outbound => {
+                self.advance();
+                EdgeDirection::Outbound
+            }
+            Token::Inbound => {
+                self.advance();
+                EdgeDirection::Inbound
+            }
+            Token::Any => {
+                self.advance();
+                EdgeDirection::Any
+            }
+            _ => {
+                return Err(DbError::ParseError(
+                    "Expected OUTBOUND, INBOUND, or ANY after depth range".to_string(),
+                ));
+            }
+        };
+
+        // Parse start vertex (string literal or bind variable)
+        let start_vertex = self.parse_expression()?;
+
+        // Parse edge collection
+        let edge_collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError(
+                "Expected edge collection name".to_string(),
+            ));
+        };
+
+        Ok(GraphTraversalClause {
+            vertex_var,
+            edge_var,
+            direction,
+            start_vertex,
+            edge_collection,
+            min_depth,
+            max_depth,
+        })
+    }
+
+    /// Parse shortest path: FOR v[, e] IN SHORTEST_PATH start_vertex TO end_vertex OUTBOUND|INBOUND|ANY edge_collection
+    fn parse_shortest_path_clause(
+        &mut self,
+        vertex_var: String,
+        edge_var: Option<String>,
+    ) -> DbResult<ShortestPathClause> {
+        // Consume SHORTEST_PATH
+        self.expect(Token::ShortestPath)?;
+
+        // Parse start vertex
+        let start_vertex = self.parse_expression()?;
+
+        // Expect TO
+        self.expect(Token::To)?;
+
+        // Parse end vertex
+        let end_vertex = self.parse_expression()?;
+
+        // Parse direction (OUTBOUND, INBOUND, ANY)
+        let direction = match self.current_token() {
+            Token::Outbound => {
+                self.advance();
+                EdgeDirection::Outbound
+            }
+            Token::Inbound => {
+                self.advance();
+                EdgeDirection::Inbound
+            }
+            Token::Any => {
+                self.advance();
+                EdgeDirection::Any
+            }
+            _ => {
+                return Err(DbError::ParseError(
+                    "Expected OUTBOUND, INBOUND, or ANY after target vertex".to_string(),
+                ));
+            }
+        };
+
+        // Parse edge collection
+        let edge_collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError(
+                "Expected edge collection name".to_string(),
+            ));
+        };
+
+        Ok(ShortestPathClause {
+            vertex_var,
+            edge_var,
+            start_vertex,
+            end_vertex,
+            direction,
+            edge_collection,
         })
     }
 

@@ -1,0 +1,371 @@
+<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  
+  <!-- Header Section -->
+  <div class="mb-12 relative">
+    <div class="absolute inset-0 bg-gradient-to-r from-fuchsia-500/10 to-purple-500/10 blur-3xl -z-10 rounded-full"></div>
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div>
+        <a href="/docs" class="inline-flex items-center text-sm text-fuchsia-400 hover:text-fuchsia-300 font-medium transition-colors mb-4 group">
+          <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Documentation
+        </a>
+        <h1 class="text-5xl font-black text-white tracking-tight mb-4">
+          Graphs & <span class="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-purple-400">Edge Collections</span>
+        </h1>
+        <p class="text-xl text-gray-400 max-w-2xl">
+          Model complex relationships, build social networks, and query graph patterns with high performance.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    
+    <!-- Quick Nav Sidebar (Optional, sticking to full width if no partial exists, but using 12 cols allows expansion) -->
+    <div class="hidden lg:block lg:col-span-3">
+      <div class="sticky top-24 space-y-8">
+        <div>
+          <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">On this page</h3>
+          <ul class="space-y-3 border-l-2 border-white/5 pl-4">
+            <li><a href="#overview" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Overview</a></li>
+            <li><a href="#collection-types" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Collection Types</a></li>
+            <li><a href="#creating-edges" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Creating Edge Collections</a></li>
+             <li><a href="#edge-documents" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Edge Documents</a></li>
+            <li><a href="#graph-queries" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Graph Queries</a></li>
+            <li><a href="#patterns" class="block text-sm text-gray-300 hover:text-fuchsia-400 transition-colors">Patterns</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="col-span-12 lg:col-span-9">
+      <div class="space-y-16">
+        
+        <!-- Overview Section -->
+        <section id="overview" class="scroll-mt-24">
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="p-3 bg-fuchsia-500/10 rounded-lg mr-4 border border-fuchsia-500/20">
+                <i class="fas fa-project-diagram text-fuchsia-400 text-xl"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Overview</h2>
+            </div>
+            
+            <p class="text-gray-300 leading-relaxed text-lg">
+              SoliDB supports <strong class="text-white">graph data models</strong> through edge collections. Unlike standard relational databases where joins are expensive, SoliDB stores relationships as first-class citizens, allowing for blazing fast traversals and complex connectivity queries.
+            </p>
+          </div>
+        </section>
+
+        <!-- Collection Types Section -->
+        <section id="collection-types" class="scroll-mt-24">
+          <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+            <span class="w-8 h-8 rounded-full bg-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center text-sm mr-3">1</span>
+            Collection Types
+          </h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Document Collection Card -->
+            <div class="bg-gray-900/50 rounded-2xl p-6 border border-white/5">
+              <div class="flex items-center justify-between mb-4">
+                 <h3 class="text-lg font-bold text-white">Document Collections</h3>
+                 <span class="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300">Vertices</span>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Standard collections storing JSON documents. These represent the <strong>nodes</strong> (vertices) in your graph.</p>
+              
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs text-gray-300 border border-white/5">
+                <span class="text-gray-500">// users/alice</span><br>
+                {<br>
+                &nbsp;&nbsp;"_key": "alice",<br>
+                &nbsp;&nbsp;"_id": "users/alice",<br>
+                &nbsp;&nbsp;"name": "Alice"<br>
+                }
+              </div>
+            </div>
+
+            <!-- Edge Collection Card -->
+             <div class="bg-gray-900/50 rounded-2xl p-6 border border-fuchsia-500/30 shadow-[0_0_20px_rgba(217,70,239,0.05)]">
+              <div class="flex items-center justify-between mb-4">
+                 <h3 class="text-lg font-bold text-white">Edge Collections</h3>
+                 <span class="px-2 py-1 bg-fuchsia-500/20 text-fuchsia-300 rounded text-xs">Edges</span>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Special collections storing <strong>relationships</strong>. Must contain <code>_from</code> and <code>_to</code> fields pointing to valid document IDs.</p>
+              
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs text-gray-300 border border-white/5">
+                <span class="text-gray-500">// follows/123</span><br>
+                {<br>
+                &nbsp;&nbsp;"_key": "123",<br>
+                &nbsp;&nbsp;<span class="text-fuchsia-400">"_from"</span>: "users/alice",<br>
+                &nbsp;&nbsp;<span class="text-fuchsia-400">"_to"</span>: "users/bob",<br>
+                &nbsp;&nbsp;"since": "2024"<br>
+                }
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Creating Edges Section -->
+        <section id="creating-edges" class="scroll-mt-24">
+          <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+            <span class="w-8 h-8 rounded-full bg-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center text-sm mr-3">2</span>
+            Creating Edge Collections
+          </h2>
+
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl overflow-hidden">
+             <!-- Tabs -->
+             <div class="flex border-b border-white/5 bg-white/5">
+               <button id="tab-btn-web" class="px-6 py-3 text-sm font-medium text-white border-b-2 border-fuchsia-500 bg-white/5 transition-colors" onclick="switchTab('web')">Via Web UI</button>
+               <button id="tab-btn-api" class="px-6 py-3 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent transition-colors" onclick="switchTab('api')">Via API</button>
+             </div>
+             
+             <div class="p-8">
+               <!-- Web UI Content -->
+               <div id="tab-content-web" class="block animate-fade-in">
+                 <div class="flex flex-col md:flex-row gap-8 items-start">
+                    <div class="flex-1 space-y-4">
+                      <div class="flex items-start">
+                        <div class="w-6 h-6 rounded-full bg-gray-700 text-gray-300 flex items-center justify-center text-xs font-bold mt-0.5 mr-3">1</div>
+                        <p class="text-gray-300 text-sm">Navigate to <strong class="text-white">Collections</strong> page</p>
+                      </div>
+                      <div class="flex items-start">
+                        <div class="w-6 h-6 rounded-full bg-gray-700 text-gray-300 flex items-center justify-center text-xs font-bold mt-0.5 mr-3">2</div>
+                        <p class="text-gray-300 text-sm">Click <strong class="text-white">Create Collection</strong></p>
+                      </div>
+                      <div class="flex items-start">
+                        <div class="w-6 h-6 rounded-full bg-gray-700 text-gray-300 flex items-center justify-center text-xs font-bold mt-0.5 mr-3">3</div>
+                        <div class="text-gray-300 text-sm">
+                          Select <strong class="text-fuchsia-400">Edge</strong> as Type.
+                          <p class="text-gray-500 text-xs mt-1">This enables automatic validation of _from/_to fields.</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex-1 bg-gray-900 rounded-xl p-4 border border-white/10 flex items-center justify-center min-h-[160px]">
+                      <div class="text-center">
+                        <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-fuchsia-500/20 text-fuchsia-400 mb-2">
+                          <i class="fas fa-link text-xl"></i>
+                        </div>
+                        <p class="text-gray-400 text-sm">Look for the purple link icon<br>in your collections list.</p>
+                      </div>
+                    </div>
+                 </div>
+               </div>
+
+               <!-- API Content -->
+               <div id="tab-content-api" class="hidden animate-fade-in">
+                  <div class="space-y-4">
+                    <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-2xl">
+                      <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5">
+                         <div class="text-xs text-gray-500 font-mono">Create Edge Collection</div>
+                      </div>
+                      <div class="p-6 font-mono text-sm overflow-x-auto">
+                        <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/_system/collection \<br>
+                        &nbsp;&nbsp;-H <span class="text-green-300">"Content-Type: application/json"</span> \<br>
+                        &nbsp;&nbsp;-d <span class="text-yellow-300">'{"name": "follows", "type": "edge"}'</span>
+                      </div>
+                    </div>
+                    <p class="text-gray-400 text-sm flex items-center">
+                      <i class="fas fa-info-circle text-blue-400 mr-2"></i>
+                      Setting <code class="bg-gray-800 px-1 py-0.5 rounded text-gray-300 mx-1">type: "edge"</code> is crucial for enabling edge-specific features.
+                    </p>
+                  </div>
+               </div>
+
+             </div>
+          </div>
+        </section>
+
+<script>
+function switchTab(tab) {
+  // Reset buttons
+  document.getElementById('tab-btn-web').className = "px-6 py-3 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent transition-colors";
+  document.getElementById('tab-btn-api').className = "px-6 py-3 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent transition-colors";
+  
+  // Reset content
+  document.getElementById('tab-content-web').classList.add('hidden');
+  document.getElementById('tab-content-api').classList.add('hidden');
+  
+  // Activate selected
+  document.getElementById('tab-btn-' + tab).className = "px-6 py-3 text-sm font-medium text-white border-b-2 border-fuchsia-500 bg-white/5 transition-colors";
+  document.getElementById('tab-content-' + tab).classList.remove('hidden');
+}
+</script>
+
+        <!-- Edge Documents Section -->
+        <section id="edge-documents" class="scroll-mt-24">
+           <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+            <span class="w-8 h-8 rounded-full bg-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center text-sm mr-3">3</span>
+            Edge Documents
+          </h2>
+
+          <div class="space-y-6">
+            <div class="bg-gray-800/20 border border-white/5 rounded-2xl p-6">
+              <h3 class="text-lg font-bold text-white mb-4">Validation Rules</h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex items-center p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <i class="fas fa-check text-green-400 mr-3"></i>
+                  <span class="text-gray-300 text-sm"><strong>_from</strong> non-empty string</span>
+                </div>
+                 <div class="flex items-center p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <i class="fas fa-check text-green-400 mr-3"></i>
+                  <span class="text-gray-300 text-sm"><strong>_to</strong> non-empty string</span>
+                </div>
+                 <div class="flex items-center p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <i class="fas fa-check text-green-400 mr-3"></i>
+                  <span class="text-gray-300 text-sm">Format: <code>collection/key</code></span>
+                </div>
+                 <div class="flex items-center p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                  <i class="fas fa-info-circle text-blue-400 mr-3"></i>
+                  <span class="text-gray-300 text-sm">Edges are directed</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-2xl">
+              <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5">
+                <div class="text-xs text-gray-500 font-mono">Create Edge via API</div>
+              </div>
+              <div class="p-6 font-mono text-sm overflow-x-auto">
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/mydb/document/follows \<br>
+                 &nbsp;&nbsp;-H <span class="text-green-300">"Content-Type: application/json"</span> \<br>
+                 &nbsp;&nbsp;-d <span class="text-yellow-300">'{
+                  <br>&nbsp;&nbsp;&nbsp;&nbsp;"_from": "users/alice",
+                  <br>&nbsp;&nbsp;&nbsp;&nbsp;"_to": "users/bob",
+                  <br>&nbsp;&nbsp;&nbsp;&nbsp;"type": "friend"
+                  <br>&nbsp;&nbsp;}'</span>
+              </div>
+            </div>
+
+            <!-- Validation Errors -->
+            <div class="bg-red-900/10 border border-red-500/20 rounded-2xl p-6 mt-6">
+              <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                <i class="fas fa-exclamation-triangle text-red-400 mr-3"></i>
+                Validation Errors
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">When inserting or updating edge documents, the following validation errors may occur:</p>
+              <div class="space-y-3 font-mono text-xs">
+                <div class="bg-gray-950 p-3 rounded-lg border border-white/5">
+                  <span class="text-red-400">"error":</span> <span class="text-gray-300">"Edge document requires _from field"</span>
+                </div>
+                <div class="bg-gray-950 p-3 rounded-lg border border-white/5">
+                  <span class="text-red-400">"error":</span> <span class="text-gray-300">"Edge document requires _to field"</span>
+                </div>
+                <div class="bg-gray-950 p-3 rounded-lg border border-white/5">
+                  <span class="text-red-400">"error":</span> <span class="text-gray-300">"Edge document _from field must be a non-empty string"</span>
+                </div>
+                <div class="bg-gray-950 p-3 rounded-lg border border-white/5">
+                  <span class="text-red-400">"error":</span> <span class="text-gray-300">"Edge document _to field must be a string"</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Graph Queries Section -->
+        <section id="graph-queries" class="scroll-mt-24">
+          <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+            <span class="w-8 h-8 rounded-full bg-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center text-sm mr-3">4</span>
+            AQL Graph Queries
+          </h2>
+
+          <div class="space-y-6">
+            <!-- Outbound -->
+            <div class="bg-gray-800/20 border border-white/5 rounded-2xl overflow-hidden">
+               <div class="p-4 border-b border-white/5 flex items-center bg-white/5">
+                 <span class="text-fuchsia-400 font-bold mr-2">OUTBOUND</span>
+                 <span class="text-gray-400 text-sm">Find who Alice follows</span>
+               </div>
+               <div class="p-6 bg-gray-950 font-mono text-sm">
+                  <span class="text-purple-400">FOR</span> edge <span class="text-purple-400">IN</span> follows<br>
+                  &nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge._from == <span class="text-yellow-300">"users/alice"</span><br>
+                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> edge
+               </div>
+            </div>
+
+            <!-- Traversal -->
+            <div class="bg-gray-800/20 border border-white/5 rounded-2xl overflow-hidden">
+               <div class="p-4 border-b border-white/5 flex items-center bg-white/5">
+                 <span class="text-blue-400 font-bold mr-2">TRAVERSAL</span>
+                 <span class="text-gray-400 text-sm">Find friends of friends (2-hop)</span>
+               </div>
+               <div class="p-6 bg-gray-950 font-mono text-sm">
+                  <span class="text-purple-400">FOR</span> user <span class="text-purple-400">IN</span> users<br>
+                  &nbsp;&nbsp;<span class="text-purple-400">FILTER</span> user._key == <span class="text-yellow-300">"alice"</span><br>
+                  &nbsp;&nbsp;<span class="text-purple-400">FOR</span> edge1 <span class="text-purple-400">IN</span> follows<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge1._from == user._id<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FOR</span> friend <span class="text-purple-400">IN</span> users<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> friend._id == edge1._to<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FOR</span> edge2 <span class="text-purple-400">IN</span> follows<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">FILTER</span> edge2._from == friend._id<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">RETURN</span> edge2._to
+               </div>
+            </div>
+
+             <!-- Shortest Path -->
+            <div class="bg-gray-800/20 border border-white/5 rounded-2xl overflow-hidden">
+               <div class="p-4 border-b border-white/5 flex items-center bg-white/5">
+                 <span class="text-green-400 font-bold mr-2">SHORTEST_PATH</span>
+                 <span class="text-gray-400 text-sm">Find connection between Alice and Charlie</span>
+               </div>
+               <div class="p-6 bg-gray-950 font-mono text-sm">
+                  <span class="text-purple-400">FOR</span> v, e <span class="text-purple-400">IN OUTBOUND SHORTEST_PATH</span><br>
+                  &nbsp;&nbsp;<span class="text-yellow-300">"users/alice"</span> <span class="text-purple-400">TO</span> <span class="text-yellow-300">"users/charlie"</span><br>
+                  &nbsp;&nbsp;<span class="text-purple-400">GRAPH</span> <span class="text-yellow-300">"social"</span><br>
+                  &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> { vertex: v, edge: e }
+               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Patterns Section -->
+        <section id="patterns" class="scroll-mt-24">
+            <div class="bg-gradient-to-br from-fuchsia-900/10 to-purple-900/10 backdrop-blur-md border border-fuchsia-500/30 rounded-2xl p-8">
+              <h2 class="text-2xl font-bold text-white mb-6">Common Patterns</h2>
+              
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-gray-950/50 p-6 rounded-xl border border-white/10 hover:border-fuchsia-500/30 transition-colors">
+                  <div class="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 mb-4">
+                    <i class="fas fa-user-friends"></i>
+                  </div>
+                  <h3 class="text-white font-bold mb-2">Social Network</h3>
+                  <ul class="text-sm text-gray-400 space-y-1">
+                    <li>• Vertices: Users</li>
+                    <li>• Edges: Follows</li>
+                    <li>• Edges: Blocks</li>
+                  </ul>
+                </div>
+
+                 <div class="bg-gray-950/50 p-6 rounded-xl border border-white/10 hover:border-fuchsia-500/30 transition-colors">
+                  <div class="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 mb-4">
+                    <i class="fas fa-sitemap"></i>
+                  </div>
+                  <h3 class="text-white font-bold mb-2">Hierarchy</h3>
+                  <ul class="text-sm text-gray-400 space-y-1">
+                    <li>• Vertices: Employees</li>
+                    <li>• Edges: ReportsTo</li>
+                    <li>• Edges: Manages</li>
+                  </ul>
+                </div>
+
+                 <div class="bg-gray-950/50 p-6 rounded-xl border border-white/10 hover:border-fuchsia-500/30 transition-colors">
+                  <div class="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-400 mb-4">
+                    <i class="fas fa-brain"></i>
+                  </div>
+                  <h3 class="text-white font-bold mb-2">Knowledge Graph</h3>
+                  <ul class="text-sm text-gray-400 space-y-1">
+                    <li>• Vertices: Concepts</li>
+                    <li>• Edges: RelatedTo</li>
+                    <li>• Edges: Defines</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</div>

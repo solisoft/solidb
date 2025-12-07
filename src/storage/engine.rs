@@ -306,18 +306,27 @@ impl StorageEngine {
     // ==================== Legacy Collection Operations (for backward compatibility) ====================
 
     /// Create a new collection (column family)
-    pub fn create_collection(&self, name: String) -> DbResult<()> {
+    pub fn create_collection(&self, name: String, collection_type: Option<String>) -> DbResult<()> {
         let mut db = self.db.write().unwrap();
 
         // Check if collection already exists
         if db.cf_handle(&name).is_some() {
             return Err(DbError::CollectionAlreadyExists(name));
         }
+        
+        // Default to "document" if not specified
+        let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
         // Create the column family
         let opts = Options::default();
         db.create_cf(&name, &opts)
             .map_err(|e| DbError::InternalError(format!("Failed to create collection: {}", e)))?;
+            
+        // Persist collection type
+        if let Some(cf) = db.cf_handle(&name) {
+            db.put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
+                .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
+        }
 
         Ok(())
     }

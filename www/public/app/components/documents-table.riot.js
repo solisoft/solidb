@@ -121,13 +121,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr34="expr34" class="flex justify-center items-center py-12"></div><div expr35="expr35" class="text-center py-12"></div><div expr38="expr38" class="text-center py-12"></div><div expr40="expr40" class="max-h-[60vh] overflow-y-auto"></div><div expr46="expr46" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr0="expr0" class="flex justify-center items-center py-12"></div><div expr1="expr1" class="text-center py-12"></div><div expr4="expr4" class="text-center py-12"></div><div expr6="expr6" class="max-h-[60vh] overflow-y-auto"></div><div expr12="expr12" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr34',
-        selector: '[expr34]',
+        redundantAttribute: 'expr0',
+        selector: '[expr0]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>',
@@ -137,15 +137,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr35',
-        selector: '[expr35]',
+        redundantAttribute: 'expr1',
+        selector: '[expr1]',
 
         template: template(
-          '<p expr36="expr36" class="text-red-400"> </p><button expr37="expr37" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr2="expr2" class="text-red-400"> </p><button expr3="expr3" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr36',
-              selector: '[expr36]',
+              redundantAttribute: 'expr2',
+              selector: '[expr2]',
 
               expressions: [
                 {
@@ -162,8 +162,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr37',
-              selector: '[expr37]',
+              redundantAttribute: 'expr3',
+              selector: '[expr3]',
 
               expressions: [
                 {
@@ -179,15 +179,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length===0,
-        redundantAttribute: 'expr38',
-        selector: '[expr38]',
+        redundantAttribute: 'expr4',
+        selector: '[expr4]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr39="expr39" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr5="expr5" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr39',
-              selector: '[expr39]',
+              redundantAttribute: 'expr5',
+              selector: '[expr5]',
 
               expressions: [
                 {
@@ -203,11 +203,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
-        redundantAttribute: 'expr40',
-        selector: '[expr40]',
+        redundantAttribute: 'expr6',
+        selector: '[expr6]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr41="expr41" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr7="expr7" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -215,11 +215,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr42="expr42" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr43="expr43" class="text-blue-400 hover:text-blue-300 transition-colors" title="View document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button><button expr44="expr44" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Edit document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr45="expr45" class="text-red-400 hover:text-red-300\n                transition-colors" title="Delete document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
+                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr8="expr8" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr9="expr9" class="text-blue-400 hover:text-blue-300 transition-colors" title="View document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button><button expr10="expr10" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Edit document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr11="expr11" class="text-red-400 hover:text-red-300\n                transition-colors" title="Delete document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr42',
-                    selector: '[expr42]',
+                    redundantAttribute: 'expr8',
+                    selector: '[expr8]',
 
                     expressions: [
                       {
@@ -233,8 +233,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr43',
-                    selector: '[expr43]',
+                    redundantAttribute: 'expr9',
+                    selector: '[expr9]',
 
                     expressions: [
                       {
@@ -245,8 +245,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr44',
-                    selector: '[expr44]',
+                    redundantAttribute: 'expr10',
+                    selector: '[expr10]',
 
                     expressions: [
                       {
@@ -257,8 +257,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr45',
-                    selector: '[expr45]',
+                    redundantAttribute: 'expr11',
+                    selector: '[expr11]',
 
                     expressions: [
                       {
@@ -271,8 +271,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr41',
-              selector: '[expr41]',
+              redundantAttribute: 'expr7',
+              selector: '[expr7]',
               itemName: 'doc',
               indexName: 'idx',
               evaluate: _scope => _scope.state.documents
@@ -283,15 +283,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount> 0,
-        redundantAttribute: 'expr46',
-        selector: '[expr46]',
+        redundantAttribute: 'expr12',
+        selector: '[expr12]',
 
         template: template(
-          '<div expr47="expr47" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr48="expr48" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr49="expr49" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
+          '<div expr13="expr13" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr14="expr14" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr15="expr15" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr47',
-              selector: '[expr47]',
+              redundantAttribute: 'expr13',
+              selector: '[expr13]',
 
               expressions: [
                 {
@@ -316,8 +316,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr48',
-              selector: '[expr48]',
+              redundantAttribute: 'expr14',
+              selector: '[expr14]',
 
               expressions: [
                 {
@@ -334,8 +334,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr49',
-              selector: '[expr49]',
+              redundantAttribute: 'expr15',
+              selector: '[expr15]',
 
               expressions: [
                 {

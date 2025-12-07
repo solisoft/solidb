@@ -23,6 +23,7 @@ const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
+const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 
 /// Type of change event
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -87,6 +88,8 @@ pub struct Collection {
     last_flush_time: Arc<std::sync::atomic::AtomicU64>,
     /// Broadcast channel for real-time change events
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
+    /// Collection type (document, edge)
+    pub collection_type: String,
 }
 
 impl Clone for Collection {
@@ -98,6 +101,7 @@ impl Clone for Collection {
             count_dirty: self.count_dirty.clone(),
             last_flush_time: self.last_flush_time.clone(),
             change_sender: self.change_sender.clone(),
+            collection_type: self.collection_type.clone(),
         }
     }
 }
@@ -139,6 +143,19 @@ impl Collection {
 
         let (change_sender, _) = tokio::sync::broadcast::channel(100);
 
+        // Load collection type
+        let collection_type = {
+            let db_guard = db.read().unwrap();
+            if let Some(cf) = db_guard.cf_handle(&name) {
+                match db_guard.get_cf(cf, COLLECTION_TYPE_KEY.as_bytes()) {
+                    Ok(Some(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
+                    _ => "document".to_string(),
+                }
+            } else {
+                "document".to_string()
+            }
+        };
+
         Self {
             name,
             db,
@@ -146,7 +163,75 @@ impl Collection {
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
+            collection_type,
         }
+    }
+
+    /// Get collection type
+    pub fn get_type(&self) -> &str {
+        &self.collection_type
+    }
+
+    /// Set collection type (persists to disk)
+    pub fn set_type(&self, type_: &str) -> DbResult<()> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        
+        db.put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
+            .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
+            
+        Ok(())
+    }
+
+    /// Validate edge document has required _from and _to fields
+    fn validate_edge_document(&self, data: &Value) -> DbResult<()> {
+        let obj = data.as_object().ok_or_else(|| {
+            DbError::InvalidDocument("Edge document must be a JSON object".to_string())
+        })?;
+
+        // Check _from field
+        match obj.get("_from") {
+            Some(Value::String(s)) if !s.is_empty() => {},
+            Some(Value::String(_)) => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document _from field must be a non-empty string".to_string()
+                ));
+            }
+            Some(_) => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document _from field must be a string".to_string()
+                ));
+            }
+            None => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document requires _from field".to_string()
+                ));
+            }
+        }
+
+        // Check _to field
+        match obj.get("_to") {
+            Some(Value::String(s)) if !s.is_empty() => {},
+            Some(Value::String(_)) => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document _to field must be a non-empty string".to_string()
+                ));
+            }
+            Some(_) => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document _to field must be a string".to_string()
+                ));
+            }
+            None => {
+                return Err(DbError::InvalidDocument(
+                    "Edge document requires _to field".to_string()
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Build a document key
@@ -380,6 +465,11 @@ impl Collection {
 
     /// Internal insert implementation
     fn insert_internal(&self, mut data: Value, update_indexes: bool) -> DbResult<Document> {
+        // Validate edge documents
+        if self.collection_type == "edge" {
+            self.validate_edge_document(&data)?;
+        }
+
         // Extract or generate key
         let key = if let Some(obj) = data.as_object_mut() {
             if let Some(key_value) = obj.remove("_key") {
@@ -467,6 +557,12 @@ impl Collection {
         let mut doc = old_doc;
         doc.update(data);
         let new_value = doc.to_value();
+
+        // Validate edge documents after update
+        if self.collection_type == "edge" {
+            self.validate_edge_document(&new_value)?;
+        }
+
         let doc_bytes = serde_json::to_vec(&doc)?;
 
         // Store updated document

@@ -24,6 +24,14 @@ pub enum Token {
     With,
     Remove,
 
+    // Graph traversal keywords
+    Outbound,
+    Inbound,
+    Any,
+    ShortestPath,
+    Graph,
+    To,
+
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters
@@ -193,6 +201,13 @@ impl Lexer {
             "UPDATE" => Token::Update,
             "WITH" => Token::With,
             "REMOVE" => Token::Remove,
+            // Graph traversal keywords
+            "OUTBOUND" => Token::Outbound,
+            "INBOUND" => Token::Inbound,
+            "ANY" => Token::Any,
+            "SHORTEST_PATH" => Token::ShortestPath,
+            "GRAPH" => Token::Graph,
+            "TO" => Token::To,
             _ => Token::Identifier(ident),
         }
     }

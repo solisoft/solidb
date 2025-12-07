@@ -411,6 +411,12 @@ pub async fn execute_aql_transactional(
                     mutation_count += 1;
                 }
             }
+            // Graph traversal clauses - not yet supported in transactions
+            BodyClause::GraphTraversal(_) | BodyClause::ShortestPath(_) => {
+                return Err(DbError::ExecutionError(
+                    "Graph traversals not yet supported in transactions".to_string()
+                ));
+            }
         }
     }
     

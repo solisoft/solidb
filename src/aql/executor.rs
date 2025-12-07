@@ -865,6 +865,178 @@ impl<'a> QueryExecutor<'a> {
                         self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
                     }
                 }
+                BodyClause::GraphTraversal(gt) => {
+                    // Execute graph traversal using BFS
+                    let mut new_rows = Vec::new();
+                    
+                    for ctx in &rows {
+                        // Evaluate start vertex
+                        let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
+                        let start_id = match &start_value {
+                            Value::String(s) => s.clone(),
+                            _ => return Err(DbError::ExecutionError(
+                                "Start vertex must be a string (e.g., 'users/alice')".to_string()
+                            )),
+                        };
+                        
+                        // Get edge collection
+                        let edge_collection = self.get_collection(&gt.edge_collection)?;
+                        
+                        // BFS traversal
+                        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+                        let mut queue: std::collections::VecDeque<(String, usize, Option<Value>)> = std::collections::VecDeque::new();
+                        visited.insert(start_id.clone());
+                        queue.push_back((start_id.clone(), 0, None));
+                        
+                        while let Some((current_id, depth, edge)) = queue.pop_front() {
+                            // Add result if within depth range
+                            if depth >= gt.min_depth && depth <= gt.max_depth {
+                                // Get vertex document
+                                if let Some((coll_name, key)) = current_id.split_once('/') {
+                                    if let Ok(vertex_coll) = self.get_collection(coll_name) {
+                                        if let Ok(vertex_doc) = vertex_coll.get(key) {
+                                            let mut new_ctx = ctx.clone();
+                                            new_ctx.insert(gt.vertex_var.clone(), vertex_doc.to_value());
+                                            if let Some(ref edge_var) = gt.edge_var {
+                                                new_ctx.insert(edge_var.clone(), edge.clone().unwrap_or(Value::Null));
+                                            }
+                                            new_rows.push(new_ctx);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Continue traversal if not at max depth
+                            if depth >= gt.max_depth {
+                                continue;
+                            }
+                            
+                            // Find connected vertices
+                            let edges = edge_collection.scan(None);
+                            for edge_doc in edges {
+                                let edge_val = edge_doc.to_value();
+                                let from = edge_val.get("_from").and_then(|v| v.as_str());
+                                let to = edge_val.get("_to").and_then(|v| v.as_str());
+                                
+                                let next_id = match gt.direction {
+                                    EdgeDirection::Outbound => {
+                                        if from == Some(current_id.as_str()) {
+                                            to.map(|s| s.to_string())
+                                        } else { None }
+                                    }
+                                    EdgeDirection::Inbound => {
+                                        if to == Some(current_id.as_str()) {
+                                            from.map(|s| s.to_string())
+                                        } else { None }
+                                    }
+                                    EdgeDirection::Any => {
+                                        if from == Some(current_id.as_str()) {
+                                            to.map(|s| s.to_string())
+                                        } else if to == Some(current_id.as_str()) {
+                                            from.map(|s| s.to_string())
+                                        } else { None }
+                                    }
+                                };
+                                
+                                if let Some(next) = next_id {
+                                    if !visited.contains(&next) {
+                                        visited.insert(next.clone());
+                                        queue.push_back((next, depth + 1, Some(edge_val.clone())));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    rows = new_rows;
+                }
+                BodyClause::ShortestPath(sp) => {
+                    // Execute shortest path using BFS
+                    let mut new_rows = Vec::new();
+                    
+                    for ctx in &rows {
+                        let start_value = self.evaluate_expr_with_context(&sp.start_vertex, ctx)?;
+                        let start_id = match &start_value {
+                            Value::String(s) => s.clone(),
+                            _ => return Err(DbError::ExecutionError("Start vertex must be a string".to_string())),
+                        };
+                        
+                        let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
+                        let end_id = match &end_value {
+                            Value::String(s) => s.clone(),
+                            _ => return Err(DbError::ExecutionError("End vertex must be a string".to_string())),
+                        };
+                        
+                        let edge_collection = self.get_collection(&sp.edge_collection)?;
+                        
+                        // BFS with parent tracking
+                        let mut visited: std::collections::HashMap<String, (Option<String>, Option<Value>)> = std::collections::HashMap::new();
+                        let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+                        
+                        visited.insert(start_id.clone(), (None, None));
+                        queue.push_back(start_id.clone());
+                        let mut found = false;
+                        
+                        while let Some(current_id) = queue.pop_front() {
+                            if current_id == end_id { found = true; break; }
+                            
+                            let edges = edge_collection.scan(None);
+                            for edge_doc in edges {
+                                let edge_val = edge_doc.to_value();
+                                let from = edge_val.get("_from").and_then(|v| v.as_str());
+                                let to = edge_val.get("_to").and_then(|v| v.as_str());
+                                
+                                let next_id = match sp.direction {
+                                    EdgeDirection::Outbound => {
+                                        if from == Some(current_id.as_str()) { to.map(|s| s.to_string()) } else { None }
+                                    }
+                                    EdgeDirection::Inbound => {
+                                        if to == Some(current_id.as_str()) { from.map(|s| s.to_string()) } else { None }
+                                    }
+                                    EdgeDirection::Any => {
+                                        if from == Some(current_id.as_str()) { to.map(|s| s.to_string()) }
+                                        else if to == Some(current_id.as_str()) { from.map(|s| s.to_string()) }
+                                        else { None }
+                                    }
+                                };
+                                
+                                if let Some(next) = next_id {
+                                    if !visited.contains_key(&next) {
+                                        visited.insert(next.clone(), (Some(current_id.clone()), Some(edge_val.clone())));
+                                        queue.push_back(next);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Reconstruct path
+                        if found {
+                            let mut path: Vec<(String, Option<Value>)> = Vec::new();
+                            let mut current = end_id.clone();
+                            
+                            while let Some((parent, edge)) = visited.get(&current) {
+                                path.push((current.clone(), edge.clone()));
+                                if let Some(p) = parent { current = p.clone(); } else { break; }
+                            }
+                            path.reverse();
+                            
+                            for (vertex_id, edge) in path {
+                                if let Some((coll_name, key)) = vertex_id.split_once('/') {
+                                    if let Ok(vertex_coll) = self.get_collection(coll_name) {
+                                        if let Ok(vertex_doc) = vertex_coll.get(key) {
+                                            let mut new_ctx = ctx.clone();
+                                            new_ctx.insert(sp.vertex_var.clone(), vertex_doc.to_value());
+                                            if let Some(ref edge_var) = sp.edge_var {
+                                                new_ctx.insert(edge_var.clone(), edge.unwrap_or(Value::Null));
+                                            }
+                                            new_rows.push(new_ctx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    rows = new_rows;
+                }
             }
             i += 1;
         }
