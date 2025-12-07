@@ -115,11 +115,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     format = "json_array";
                 } else if byte == b'{' {
                     format = "jsonl";
-                } else if byte == b'I' || byte == b'i' {
-                     // Simple check for INSERT... 
-                     // Or maybe check filename extension if we had it?
-                     // args.input is available.
-                     format = "sql";
+                } else {
+                     // Check for SQL INSERT
+                     // precise check to avoid confusing CSV header "Id" with SQL
+                     let start_idx = buf.iter().position(|&b| !b.is_ascii_whitespace()).unwrap_or(0);
+                     if buf.len() >= start_idx + 6 {
+                         let potential_insert = &buf[start_idx..start_idx+6];
+                         if potential_insert.eq_ignore_ascii_case(b"INSERT") {
+                             format = "sql";
+                         }
+                     }
                 }
                 break;
             }
@@ -147,21 +152,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Detected SQL format");
             let mut docs = Vec::new();
             // Regex to parse INSERT INTO table (col1, col2) VALUES (val1, val2);
-            // Handling simple cases.
+            // Matches multi-line with (?s)
             let re = std::sync::OnceLock::new();
             let insert_re = re.get_or_init(|| {
-                regex::Regex::new(r#"(?i)INSERT\s+INTO\s+[`"']?(\w+)[`"']?\s*(?:\(([^)]+)\))?\s*VALUES\s*(.*);"#).unwrap()
+                regex::Regex::new(r#"(?is)INSERT\s+INTO\s+[`"']?(\w+)[`"']?\s*(?:\(([^)]+)\))?\s*VALUES\s*(.*);"#).unwrap()
             });
+
+            let mut statement_buffer = String::new();
 
             for line in reader.lines() {
                 let line = line?;
-                let line = line.trim();
-                if line.is_empty() || line.starts_with("--") {
+                let trimmed = line.trim();
+                
+                if trimmed.is_empty() || trimmed.starts_with("--") {
                     continue;
                 }
+                
+                statement_buffer.push_str(&line);
+                statement_buffer.push('\n');
 
-                if let Some(caps) = insert_re.captures(line) {
-                    let table_name = caps.get(1).map_or("", |m| m.as_str());
+                if trimmed.ends_with(';') {
+                    // Process complete statement
+                    if let Some(caps) = insert_re.captures(&statement_buffer) {
+                        let table_name = caps.get(1).map_or("", |m| m.as_str());
                     let columns_str = caps.get(2).map_or("", |m| m.as_str());
                     let values_part = caps.get(3).map_or("", |m| m.as_str());
 
@@ -243,7 +256,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         docs.push(Value::Object(map));
                     }
                 }
+                statement_buffer.clear();
             }
+        }
             docs
         },
         _ => { // CSV
@@ -374,6 +389,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     eprintln!("Restoring to database: {}", target_database);
     eprintln!("Found {} collections", collections.len());
+    let total_docs: usize = collections.values().map(|v| v.len()).sum();
+    eprintln!("Parsed total {} documents to restore", total_docs);
 
     // Create database if requested
     if args.create_database {
