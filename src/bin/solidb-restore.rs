@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb-restore")]
-#[command(about = "Import SoliDB database or collection from JSONL dump", long_about = None)]
+#[command(about = "Import SoliDB database or collection from dump. Supports JSONL, JSON Array, and CSV formats.", long_about = None)]
 struct Args {
     /// Database host
     #[arg(short = 'H', long, default_value = "localhost")]
@@ -17,7 +17,7 @@ struct Args {
     #[arg(short = 'P', long, default_value = "6745")]
     port: u16,
 
-    /// Input file (JSONL dump)
+    /// Input file (JSONL, JSON Array, or CSV)
     #[arg(short, long)]
     input: String,
 
