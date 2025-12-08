@@ -33,7 +33,7 @@ mkdir -p /tmp/mnt
 # Mount the filesystem
 ./target/debug/solidb-fuse \
   --host localhost \
-  --port 6755 \
+  --port 6745 \
   --username admin \
   --password admin \
   --mount /tmp/mnt \
