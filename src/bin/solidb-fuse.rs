@@ -27,7 +27,7 @@ struct Args {
     #[arg(long, default_value = "localhost")]
     host: String,
 
-    #[arg(long, default_value_t = 6755)]
+    #[arg(long, default_value_t = 6745)]
     port: u16,
 
     #[arg(long, default_value = "admin")]
@@ -120,7 +120,8 @@ impl SolidBClient {
 
     fn authenticate(&mut self) -> Result<(), anyhow::Error> {
         if let Some(pass) = &self.password {
-            let url = format!("{}/_api/auth/login", self.base_url);
+            // Correct auth endpoint is /auth/login (not /_api/auth/login)
+            let url = format!("{}/auth/login", self.base_url);
             let body = LoginRequest {
                 username: &self.username,
                 password: pass,
@@ -379,7 +380,7 @@ impl Filesystem for SolidBFS {
         let client_arc = self.client.clone();
         let mut client = client_arc.lock().unwrap();
 
-        println!("FUSE: lookup called for {} in parent {}", name_str, parent);
+        // debug!("FUSE: lookup called for {} in parent {}", name_str, parent);
         
         match parent_kind {
             InodeType::Root => {
@@ -539,14 +540,13 @@ impl Filesystem for SolidBFS {
         // We accumulate entries then skip based on offset (simplification)
         // Offset logic in FUSE is tricky. We'll use index + 2 as offset.
 
-        // Plain println for debugging visibility
-        println!("FUSE: readdir called on inode {}", ino); 
+        // debug!("FUSE: readdir called on inode {}", ino); 
 
         match parent_kind {
              InodeType::Root => {
                 match client.list_databases() {
                     Ok(dbs) => {
-                        println!("FUSE: Found databases: {:?}", dbs);
+                        // debug!("FUSE: Found databases: {:?}", dbs);
                         info!("Listing databases: {:?}", dbs);
                         for db in dbs {
                              let child_ino = self.allocate_inode(InodeType::Database(db.clone()));
@@ -719,11 +719,11 @@ fn main() -> anyhow::Result<()> {
     
     // Check mountpoint
     if !std::path::Path::new(&mountpoint).exists() {
-        error!("Mount point '{}' does not exist. Attempting to create it...", mountpoint);
+        // error!("Mount point '{}' does not exist. Attempting to create it...", mountpoint);
         std::fs::create_dir_all(&mountpoint)?;
     }
 
-    // Simplified options for debugging
+    // Options
     let options = vec![MountOption::RO, MountOption::FSName("solidb".to_string())];
     #[cfg(target_os = "macos")]
     let mut options = options;
@@ -734,23 +734,38 @@ fn main() -> anyhow::Result<()> {
     let client = SolidBClient::new(&args.host, args.port, &args.username, args.password.as_deref());
     let fs = SolidBFS::new(client);
 
-    let res = if args.foreground {
-        fuser::mount2(fs, &mountpoint, &options)
-    } else {
-        match fuser::spawn_mount2(fs, &mountpoint, &options) {
-            Ok(handle) => {
-                 // Keep main thread alive
-                 loop { std::thread::sleep(Duration::from_secs(3600)); }
-                 #[allow(unreachable_code)]
-                 Ok(())
-            },
-            Err(e) => Err(e)
+    if args.foreground {
+        let res = fuser::mount2(fs, &mountpoint, &options);
+        match res {
+            Ok(_) => println!("Mount session finished successfully."),
+            Err(e) => error!("Mount failed or session errored: {:?}", e),
         }
-    };
-    
-    match res {
-        Ok(_) => println!("Mount session finished successfully."),
-        Err(e) => error!("Mount failed or session errored: {:?}", e),
+    } else {
+        // Use a Tokio runtime for signal handling, even if FS is sync.
+        // We use spawn_mount2 to run FUSE in a background thread,
+        // and use the main thread (via tokio) to wait for Ctrl+C.
+        // When Ctrl+C hits, we drop the session, which unmounts the FS.
+        
+        let runtime = tokio::runtime::Runtime::new()?;
+        runtime.block_on(async {
+            // Spawn the filesystem in a background thread
+            // spawn_mount2 moves the Filesystem object into the thread
+            let session = fuser::spawn_mount2(fs, &mountpoint, &options)?;
+            
+            println!("Mount session started. Press Ctrl+C to unmount.");
+            
+            // Wait for Ctrl+C
+            tokio::signal::ctrl_c().await?;
+            
+            println!("\nReceived Ctrl+C, unmounting...");
+            // session is dropped here when we exit the block or function
+            // dropping session triggers unmount
+            drop(session);
+            
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        println!("Filesystem unmounted successfully.");
     }
 
     Ok(())

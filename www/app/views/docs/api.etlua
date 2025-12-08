@@ -68,6 +68,20 @@
                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                  {"name": "my_db"}
                </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "my_db",
+                     "status": "created"
+                   }
+                 </div>
+               </div>
              </div>
 
             <!-- GET /_api/databases -->
@@ -77,6 +91,19 @@
                 <code class="text-gray-300">/_api/databases</code>
               </div>
               <p class="text-sm text-gray-400">List all existing databases.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "databases": ["_system", "my_db"]
+                   }
+                 </div>
+               </div>
             </div>
 
             <!-- DELETE /_api/database/:name -->
@@ -86,6 +113,15 @@
                 <code class="text-gray-300">/_api/database/:name</code>
               </div>
               <p class="text-sm text-gray-400">Drop a database and all its collections.</p>
+
+              <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -160,6 +196,23 @@
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                 {"name": "users", "type": "document", "numShards": 3}
               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "users",
+                     "status": "created",
+                     "numShards": 3,
+                     "shardKey": "_key",
+                     "replicationFactor": 1
+                   }
+                 </div>
+               </div>
             </div>
 
              <!-- GET /_api/database/:db/collection -->
@@ -169,6 +222,27 @@
                 <code class="text-gray-300">/_api/database/:db/collection</code>
               </div>
               <p class="text-sm text-gray-400">List all collections in a database.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "collections": [
+                       {
+                         "name": "users",
+                         "count": 0,
+                         "type": "document",
+                         "shardConfig": { "num_shards": 3, ... },
+                         "stats": { ... }
+                       }
+                     ]
+                   }
+                 </div>
+               </div>
             </div>
 
             <!-- GET /_api/database/:db/collection/:name/stats -->
@@ -178,6 +252,25 @@
                 <code class="text-gray-300">/_api/database/:db/collection/:name/stats</code>
               </div>
               <p class="text-sm text-gray-400">Get collection statistics (count, size).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "document_count": 1250,
+                     "disk_usage": {
+                       "total_size": 40960,
+                       ...
+                     }
+                   }
+                 </div>
+               </div>
             </div>
 
              <!-- PUT /_api/database/:db/collection/:name/properties -->
@@ -225,6 +318,22 @@
                 <code class="text-gray-300">/_api/database/:db/collection/:name/truncate</code>
               </div>
               <p class="text-sm text-gray-400">Remove all documents from a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "deleted": 1250,
+                     "status": "truncated"
+                   }
+                 </div>
+               </div>
             </div>
 
              <!-- PUT /_api/database/:db/collection/:name/compact -->
@@ -234,6 +343,21 @@
                 <code class="text-gray-300">/_api/database/:db/collection/:name/compact</code>
               </div>
               <p class="text-sm text-gray-400">Trigger compaction for a collection to reclaim space.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "status": "compacted"
+                   }
+                 </div>
+               </div>
             </div>
             
             <!-- DELETE /_api/database/:db/collection/:name -->
@@ -243,6 +367,15 @@
                 <code class="text-gray-300">/_api/database/:db/collection/:name</code>
               </div>
               <p class="text-sm text-gray-400">Drop a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
             </div>
              <!-- Export/Import -->
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -251,6 +384,20 @@
                 <code class="text-gray-300">/_api/database/:db/collection/:name/export</code>
               </div>
               <p class="text-sm text-gray-400">Export collection data.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/x-ndjson</span>
+                   </div>
+                   <span class="italic text-gray-500">// Stream of JSON objects (new-line delimited)</span>
+                   {"_key": "123", "name": "Alice"}
+                   {"_key": "456", "name": "Bob"}
+                   ...
+                 </div>
+               </div>
             </div>
               <div class="p-6 hover:bg-white/5 transition-colors">
                 <div class="flex items-center gap-3 mb-4">
