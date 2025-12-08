@@ -735,39 +735,61 @@ fn main() -> anyhow::Result<()> {
     let client = SolidBClient::new(&args.host, args.port, &args.username, args.password.as_deref());
     let fs = SolidBFS::new(client);
 
-    if args.foreground {
-        let res = fuser::mount2(fs, &mountpoint, &options);
-        match res {
-            Ok(_) => println!("Mount session finished successfully."),
-            Err(e) => error!("Mount failed or session errored: {:?}", e),
-        }
-    } else {
-        // Use a Tokio runtime for signal handling, even if FS is sync.
-        // We use spawn_mount2 to run FUSE in a background thread,
-        // and use the main thread (via tokio) to wait for Ctrl+C.
-        // When Ctrl+C hits, we drop the session, which unmounts the FS.
+    // We always use spawn_mount2 (background thread) and keep the main thread
+    // alive with Tokio to handle signals and explicit unmounting.
+    
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        // Spawn the filesystem in a background thread
+        let session = fuser::spawn_mount2(fs, &mountpoint, &options)?;
         
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(async {
-            // Spawn the filesystem in a background thread
-            // spawn_mount2 moves the Filesystem object into the thread
-            let session = fuser::spawn_mount2(fs, &mountpoint, &options)?;
-            
-            println!("Mount session started. Press Ctrl+C to unmount.");
-            
-            // Wait for Ctrl+C
-            tokio::signal::ctrl_c().await?;
-            
-            println!("\nReceived Ctrl+C, unmounting...");
-            // session is dropped here when we exit the block or function
-            // dropping session triggers unmount
-            drop(session);
-            
-            Ok::<(), anyhow::Error>(())
-        })?;
+        info!("Mount session started successfully.");
+        println!("Filesystem mounted at {}.", mountpoint);
+        println!("Press Ctrl+C to unmount.");
+        
+        // Wait for Ctrl+C
+        tokio::signal::ctrl_c().await?;
+        
+        println!("\nReceived Ctrl+C, unmounting...");
+        info!("Unmounting {}...", mountpoint);
 
-        println!("Filesystem unmounted successfully.");
-    }
+        // Explicitly run system unmount command to be sure
+        #[cfg(target_os = "linux")]
+        {
+            let status = std::process::Command::new("fusermount")
+                .arg("-u")
+                .arg(&mountpoint)
+                .status();
+            
+            match status {
+                 Ok(s) if s.success() => info!("'fusermount -u' executed successfully."),
+                 Ok(s) => error!("'fusermount -u' failed with exit code: {:?}", s.code()),
+                 Err(e) => error!("Failed to execute 'fusermount -u': {}", e),
+            }
+        }
 
+        #[cfg(target_os = "macos")]
+        {
+             let status = std::process::Command::new("umount")
+                .arg(&mountpoint)
+                .status();
+             
+             match status {
+                 Ok(s) if s.success() => info!("'umount' executed successfully."),
+                 Ok(s) => error!("'umount' failed with exit code: {:?}", s.code()),
+                 Err(e) => error!("Failed to execute 'umount': {}", e),
+            }
+        }
+        
+        // Dropping the session also triggers unmount (if not already done)
+        drop(session);
+        
+        // Give it a moment to clean up
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        
+        Ok::<(), anyhow::Error>(())
+    })?;
+
+    println!("Exiting.");
     Ok(())
 }
