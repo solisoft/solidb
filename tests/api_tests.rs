@@ -26,7 +26,7 @@ async fn post_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, 
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(path)
+                .uri(path).header(header::AUTHORIZATION, "Basic YWRtaW46YWRtaW4=")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -49,7 +49,7 @@ async fn get(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(path)
+                .uri(path).header(header::AUTHORIZATION, "Basic YWRtaW46YWRtaW4=")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -71,7 +71,7 @@ async fn delete(app: &axum::Router, path: &str) -> StatusCode {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(path)
+                .uri(path).header(header::AUTHORIZATION, "Basic YWRtaW46YWRtaW4=")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -88,7 +88,7 @@ async fn put_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, V
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(path)
+                .uri(path).header(header::AUTHORIZATION, "Basic YWRtaW46YWRtaW4=")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -164,7 +164,9 @@ async fn test_list_collections() {
 
     assert_eq!(status, StatusCode::OK);
     let collections = body["collections"].as_array().unwrap();
-    assert_eq!(collections.len(), 2);
+    // Filter out system collections (_admins, _api_keys)
+    let user_collections: Vec<_> = collections.iter().filter(|c| !c["name"].as_str().unwrap_or("").starts_with("_")).collect();
+    assert_eq!(user_collections.len(), 2);
 }
 
 #[tokio::test]
@@ -184,7 +186,9 @@ async fn test_delete_collection() {
     // Verify deleted
     let (_, body) = get(&app, "/_api/database/_system/collection").await;
     let collections = body["collections"].as_array().unwrap();
-    assert!(collections.is_empty());
+    // Filter out system collections
+    let user_collections: Vec<_> = collections.iter().filter(|c| !c["name"].as_str().unwrap_or("").starts_with("_")).collect();
+    assert!(user_collections.is_empty());
 }
 
 // ==================== Document API Tests ====================
@@ -743,6 +747,7 @@ async fn test_invalid_json_body() {
             Request::builder()
                 .method("POST")
                 .uri("/_api/database/_system/collection")
+                .header(header::AUTHORIZATION, "Basic YWRtaW46YWRtaW4=")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from("invalid json"))
                 .unwrap(),

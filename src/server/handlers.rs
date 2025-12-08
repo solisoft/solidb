@@ -9,7 +9,7 @@ use axum::{
 pub struct AuthParams {
     pub token: String,
 }
-use futures::{sink::SinkExt, stream::StreamExt};
+use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -882,8 +882,7 @@ pub async fn export_collection(
     let collection = database.get_collection(&coll_name)?;
 
     let docs = collection.scan(None);
-    let db_name_clone = db_name.clone();
-    let coll_name_clone = coll_name.clone();
+
     let shard_config = collection.get_shard_config();
     let is_blob = collection.get_type() == "blob";
 

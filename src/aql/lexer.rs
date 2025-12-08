@@ -35,7 +35,8 @@ pub enum Token {
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters
-    Number(f64),
+    Integer(i64),
+    Float(f64),
     String(String),
 
     // Operators
@@ -90,9 +91,7 @@ impl Lexer {
         self.current_char = self.input.get(self.position).copied();
     }
 
-    fn peek(&self, offset: usize) -> Option<char> {
-        self.input.get(self.position + offset).copied()
-    }
+
 
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.current_char {
@@ -128,10 +127,17 @@ impl Lexer {
             }
         }
 
-        num_str
-            .parse::<f64>()
-            .map(Token::Number)
-            .map_err(|_| DbError::ParseError(format!("Invalid number: {}", num_str)))
+        if has_dot {
+            num_str
+                .parse::<f64>()
+                .map(Token::Float)
+                .map_err(|_| DbError::ParseError(format!("Invalid float number: {}", num_str)))
+        } else {
+            num_str
+                .parse::<i64>()
+                .map(Token::Integer)
+                .map_err(|_| DbError::ParseError(format!("Invalid integer number: {}", num_str)))
+        }
     }
 
     fn read_string(&mut self) -> DbResult<Token> {

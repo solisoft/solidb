@@ -11,7 +11,7 @@ async fn test_numeric_sort_order() {
     let storage = StorageEngine::new(temp_dir.path().to_str().unwrap()).unwrap();
     
     // Create collection
-    storage.create_collection("dates".to_string()).unwrap();
+    storage.create_collection("dates".to_string(), None).unwrap();
     let collection = storage.get_collection("dates").unwrap();
     
     // Create index

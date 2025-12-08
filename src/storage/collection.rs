@@ -996,7 +996,6 @@ impl Collection {
                          }
                     }
                 }
-                _ => {} // Ignore other ops like CreateCollection inside a collection apply
             }
         }
 
@@ -1259,7 +1258,7 @@ impl Collection {
 
     /// Truncate collection - remove all documents but keep indexes
     pub fn truncate(&self) -> DbResult<usize> {
-        let mut db = self.db.write().unwrap();
+        let db = self.db.write().unwrap();
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");

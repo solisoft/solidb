@@ -1,4 +1,4 @@
-use super::{Operation, Transaction, TransactionId, TransactionState};
+use super::{Operation, Transaction, TransactionId};
 use crate::error::{DbError, DbResult};
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
@@ -262,6 +262,7 @@ pub fn truncate_wal<P: AsRef<Path>>(path: P) -> DbResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::TransactionState;
     use tempfile::tempdir;
 
     #[test]

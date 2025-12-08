@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
     println!("✓ Storage engine initialized");
 
     // Create a collection
-    storage.create_collection("users".to_string())?;
+    storage.create_collection("users".to_string(), None)?;
     println!("✓ Created 'users' collection");
 
     // Insert some documents

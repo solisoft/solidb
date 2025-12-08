@@ -2,7 +2,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::ast::*;
 use crate::cluster::{Operation, ReplicationService};
@@ -95,7 +95,7 @@ pub struct QueryExecutor<'a> {
    database: Option<String>,
     replication: Option<&'a ReplicationService>,
     // Flag to indicate if we should defer mutations for transactional execution
-    is_transactional: bool,
+
     // Shard coordinator for scatter-gather queries on sharded collections
     shard_coordinator: Option<crate::sharding::ShardCoordinator>,
 }
@@ -142,7 +142,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars: HashMap::new(),
             database: None,
             replication: None,
-            is_transactional: false,
+
             shard_coordinator: None,
         }
     }
@@ -154,7 +154,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars,
             database: None,
             replication: None,
-            is_transactional: false,
+
             shard_coordinator: None,
         }
     }
@@ -166,7 +166,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars: HashMap::new(),
             database: Some(database),
             replication: None,
-            is_transactional: false,
+
             shard_coordinator: None,
         }
     }
@@ -182,7 +182,7 @@ impl<'a> QueryExecutor<'a> {
             bind_vars,
             database: Some(database),
             replication: None,
-            is_transactional: false,
+
             shard_coordinator: None,
         }
     }
@@ -868,7 +868,7 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::GraphTraversal(gt) => {
                     // Execute graph traversal using BFS
                     let mut new_rows = Vec::new();
-                    
+
                     for ctx in &rows {
                         // Evaluate start vertex
                         let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
@@ -878,16 +878,16 @@ impl<'a> QueryExecutor<'a> {
                                 "Start vertex must be a string (e.g., 'users/alice')".to_string()
                             )),
                         };
-                        
+
                         // Get edge collection
                         let edge_collection = self.get_collection(&gt.edge_collection)?;
-                        
+
                         // BFS traversal
                         let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
                         let mut queue: std::collections::VecDeque<(String, usize, Option<Value>)> = std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
                         queue.push_back((start_id.clone(), 0, None));
-                        
+
                         while let Some((current_id, depth, edge)) = queue.pop_front() {
                             // Add result if within depth range
                             if depth >= gt.min_depth && depth <= gt.max_depth {
@@ -905,19 +905,19 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                 }
                             }
-                            
+
                             // Continue traversal if not at max depth
                             if depth >= gt.max_depth {
                                 continue;
                             }
-                            
+
                             // Find connected vertices
                             let edges = edge_collection.scan(None);
                             for edge_doc in edges {
                                 let edge_val = edge_doc.to_value();
                                 let from = edge_val.get("_from").and_then(|v| v.as_str());
                                 let to = edge_val.get("_to").and_then(|v| v.as_str());
-                                
+
                                 let next_id = match gt.direction {
                                     EdgeDirection::Outbound => {
                                         if from == Some(current_id.as_str()) {
@@ -937,7 +937,7 @@ impl<'a> QueryExecutor<'a> {
                                         } else { None }
                                     }
                                 };
-                                
+
                                 if let Some(next) = next_id {
                                     if !visited.contains(&next) {
                                         visited.insert(next.clone());
@@ -952,39 +952,39 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::ShortestPath(sp) => {
                     // Execute shortest path using BFS
                     let mut new_rows = Vec::new();
-                    
+
                     for ctx in &rows {
                         let start_value = self.evaluate_expr_with_context(&sp.start_vertex, ctx)?;
                         let start_id = match &start_value {
                             Value::String(s) => s.clone(),
                             _ => return Err(DbError::ExecutionError("Start vertex must be a string".to_string())),
                         };
-                        
+
                         let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
                         let end_id = match &end_value {
                             Value::String(s) => s.clone(),
                             _ => return Err(DbError::ExecutionError("End vertex must be a string".to_string())),
                         };
-                        
+
                         let edge_collection = self.get_collection(&sp.edge_collection)?;
-                        
+
                         // BFS with parent tracking
                         let mut visited: std::collections::HashMap<String, (Option<String>, Option<Value>)> = std::collections::HashMap::new();
                         let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
-                        
+
                         visited.insert(start_id.clone(), (None, None));
                         queue.push_back(start_id.clone());
                         let mut found = false;
-                        
+
                         while let Some(current_id) = queue.pop_front() {
                             if current_id == end_id { found = true; break; }
-                            
+
                             let edges = edge_collection.scan(None);
                             for edge_doc in edges {
                                 let edge_val = edge_doc.to_value();
                                 let from = edge_val.get("_from").and_then(|v| v.as_str());
                                 let to = edge_val.get("_to").and_then(|v| v.as_str());
-                                
+
                                 let next_id = match sp.direction {
                                     EdgeDirection::Outbound => {
                                         if from == Some(current_id.as_str()) { to.map(|s| s.to_string()) } else { None }
@@ -998,7 +998,7 @@ impl<'a> QueryExecutor<'a> {
                                         else { None }
                                     }
                                 };
-                                
+
                                 if let Some(next) = next_id {
                                     if !visited.contains_key(&next) {
                                         visited.insert(next.clone(), (Some(current_id.clone()), Some(edge_val.clone())));
@@ -1007,18 +1007,18 @@ impl<'a> QueryExecutor<'a> {
                                 }
                             }
                         }
-                        
+
                         // Reconstruct path
                         if found {
                             let mut path: Vec<(String, Option<Value>)> = Vec::new();
                             let mut current = end_id.clone();
-                            
+
                             while let Some((parent, edge)) = visited.get(&current) {
                                 path.push((current.clone(), edge.clone()));
                                 if let Some(p) = parent { current = p.clone(); } else { break; }
                             }
                             path.reverse();
-                            
+
                             for (vertex_id, edge) in path {
                                 if let Some((coll_name, key)) = vertex_id.split_once('/') {
                                     if let Ok(vertex_coll) = self.get_collection(coll_name) {
@@ -1087,7 +1087,7 @@ impl<'a> QueryExecutor<'a> {
 
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&for_clause.collection)?;
-        
+
         // Check if collection is sharded and we have a coordinator
         if let Some(shard_config) = collection.get_shard_config() {
             if shard_config.num_shards > 0 {
@@ -1101,7 +1101,7 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
         }
-        
+
         // Not sharded or no coordinator: local scan
         Ok(collection
             .scan(limit)
@@ -1109,7 +1109,7 @@ impl<'a> QueryExecutor<'a> {
             .map(|d| d.to_value())
             .collect())
     }
-    
+
     /// Scatter-gather query: fetch documents from all cluster nodes for sharded collection
     fn scatter_gather_docs(
         &self,
@@ -1119,19 +1119,18 @@ impl<'a> QueryExecutor<'a> {
     ) -> DbResult<Vec<Value>> {
         let db_name = self.database.as_ref()
             .ok_or_else(|| DbError::ExecutionError("No database context for scatter-gather".to_string()))?;
-        
+
         // Get all node addresses from coordinator
         let all_nodes = coordinator.get_node_addresses();
         let my_node_index = coordinator.get_node_index();
-        
+
         // Collect documents from all nodes
         let mut all_docs: Vec<Value> = Vec::new();
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-        
+
         // Use a runtime for async HTTP calls
-        let rt = tokio::runtime::Handle::try_current()
-            .map_err(|_| DbError::ExecutionError("No tokio runtime for scatter-gather".to_string()))?;
-        
+
+
         for (idx, node_addr) in all_nodes.iter().enumerate() {
             if idx == my_node_index {
                 // Query local node directly
@@ -1152,7 +1151,7 @@ impl<'a> QueryExecutor<'a> {
                     "FOR doc IN {} RETURN doc",
                     collection_name
                 );
-                
+
                 let client = reqwest::blocking::Client::new();
                 if let Ok(response) = client
                     .post(&url)
@@ -1174,17 +1173,17 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
         }
-        
+
         // Apply limit if specified
         if let Some(n) = limit {
             all_docs.truncate(n);
         }
-        
+
         tracing::info!(
             "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes",
             collection_name, all_docs.len(), all_nodes.len()
         );
-        
+
         Ok(all_docs)
     }
 
@@ -1197,12 +1196,7 @@ impl<'a> QueryExecutor<'a> {
         let mut filters_info: Vec<FilterInfo> = Vec::new();
 
         // Timing accumulators
-        let mut let_clauses_time = Duration::ZERO;
-        let mut collection_scan_time = Duration::ZERO;
-        let mut filter_time = Duration::ZERO;
-        let mut sort_time = Duration::ZERO;
-        let mut limit_time = Duration::ZERO;
-        let mut return_time = Duration::ZERO;
+        // Timing accumulators
 
         // First, evaluate all LET clauses
         let let_start = Instant::now();
@@ -1225,10 +1219,10 @@ impl<'a> QueryExecutor<'a> {
                 time_us: clause_time.as_micros() as u64,
             });
         }
-        let_clauses_time = let_start.elapsed();
+        let let_clauses_time = let_start.elapsed();
 
         // Analyze FOR clauses and build row combinations
-        let scan_start = Instant::now();
+
         let mut total_docs_scanned = 0usize;
 
         for for_clause in &query.for_clauses {
@@ -1309,7 +1303,7 @@ impl<'a> QueryExecutor<'a> {
             // Legacy path for old queries
             self.build_row_combinations_with_context(&query.for_clauses, &let_bindings)?
         };
-        collection_scan_time = scan_start.elapsed();
+        let collection_scan_time = scan_start.elapsed();
         let rows_after_scan = rows.len();
 
         // Note: Filters are already applied in execute_body_clauses, but we need to analyze them
@@ -1403,7 +1397,7 @@ impl<'a> QueryExecutor<'a> {
                 });
             }
         }
-        filter_time = filter_start.elapsed();
+        let filter_time = filter_start.elapsed();
 
         // Apply SORT
         let sort_start = Instant::now();
@@ -1438,7 +1432,7 @@ impl<'a> QueryExecutor<'a> {
         } else {
             None
         };
-        sort_time = sort_start.elapsed();
+        let sort_time = sort_start.elapsed();
 
         let sort_info = sort_info.map(|mut s| {
             s.time_us = sort_time.as_micros() as u64;
@@ -1459,7 +1453,7 @@ impl<'a> QueryExecutor<'a> {
         } else {
             None
         };
-        limit_time = limit_start.elapsed();
+        let limit_time = limit_start.elapsed();
 
         // Apply RETURN projection (if present)
         let return_start = Instant::now();
@@ -1472,7 +1466,7 @@ impl<'a> QueryExecutor<'a> {
         } else {
             vec![]
         };
-        return_time = return_start.elapsed();
+        let return_time = return_start.elapsed();
 
         let total_time = total_start.elapsed();
 
@@ -1514,9 +1508,7 @@ impl<'a> QueryExecutor<'a> {
 
     /// Build all row combinations from multiple FOR clauses
     /// This creates the Cartesian product for JOINs
-    fn build_row_combinations(&self, for_clauses: &[ForClause]) -> DbResult<Vec<Context>> {
-        self.build_row_combinations_with_context(for_clauses, &HashMap::new())
-    }
+
 
     /// Build all row combinations from multiple FOR clauses with initial context (LET bindings)
     /// This creates the Cartesian product for JOINs
@@ -1889,7 +1881,74 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(serde_json::Number::from_f64(dist).unwrap()))
             }
 
-            // LENGTH(array_or_string) - get length
+            // HAS(doc, attribute) - check if document has attribute
+            "HAS" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "HAS requires 2 arguments: document, attribute".to_string(),
+                    ));
+                }
+
+                let doc = evaluated_args[0].as_object().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "HAS: first argument must be a document/object".to_string(),
+                    )
+                })?;
+
+                let attr_name = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("HAS: second argument must be a string".to_string())
+                })?;
+
+                Ok(Value::Bool(doc.contains_key(attr_name)))
+            }
+
+            // KEEP(doc, attr1, attr2, ...) OR KEEP(doc, [attr1, attr2, ...])
+            "KEEP" => {
+                if evaluated_args.len() < 2 {
+                    return Err(DbError::ExecutionError(
+                        "KEEP requires at least 2 arguments: document, attributes...".to_string(),
+                    ));
+                }
+
+                let doc = evaluated_args[0].as_object().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "KEEP: first argument must be a document/object".to_string(),
+                    )
+                })?;
+
+                let mut keys_to_keep = Vec::new();
+
+                // Handle second argument as array or varargs
+                if evaluated_args.len() == 2 && evaluated_args[1].is_array() {
+                    let arr = evaluated_args[1].as_array().unwrap();
+                    for val in arr {
+                        if let Some(s) = val.as_str() {
+                            keys_to_keep.push(s);
+                        }
+                    }
+                } else {
+                    for arg in &evaluated_args[1..] {
+                        if let Some(s) = arg.as_str() {
+                            keys_to_keep.push(s);
+                        } else {
+                            return Err(DbError::ExecutionError(
+                                "KEEP: attribute names must be strings".to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                let mut new_doc = serde_json::Map::new();
+                for key in keys_to_keep {
+                    if let Some(val) = doc.get(key) {
+                        new_doc.insert(key.to_string(), val.clone());
+                    }
+                }
+
+                Ok(Value::Object(new_doc))
+            }
+
+            // LENGTH(array_or_string_or_collection) - get length of array/string or count of collection
             "LENGTH" => {
                 if evaluated_args.len() != 1 {
                     return Err(DbError::ExecutionError(
@@ -1898,11 +1957,18 @@ impl<'a> QueryExecutor<'a> {
                 }
                 let len = match &evaluated_args[0] {
                     Value::Array(arr) => arr.len(),
-                    Value::String(s) => s.len(),
+                    Value::String(s) => {
+                        // First try to treat it as a collection name
+                        match self.get_collection(s) {
+                            Ok(collection) => collection.count(),
+                            Err(_) => s.len(), // Fallback to string length if not a valid collection
+                        }
+                    }
                     Value::Object(obj) => obj.len(),
                     _ => {
                         return Err(DbError::ExecutionError(
-                            "LENGTH: argument must be array, string, or object".to_string(),
+                            "LENGTH: argument must be array, string, object, or collection name"
+                                .to_string(),
                         ))
                     }
                 };
@@ -2304,9 +2370,13 @@ impl<'a> QueryExecutor<'a> {
                 let arr = evaluated_args[0].as_array().ok_or_else(|| {
                     DbError::ExecutionError("NTH: first argument must be an array".to_string())
                 })?;
-                let index = evaluated_args[1].as_i64().ok_or_else(|| {
-                    DbError::ExecutionError("NTH: second argument must be an integer".to_string())
-                })? as usize;
+                let index = if let Some(i) = evaluated_args[1].as_i64() {
+                    i
+                } else if let Some(f) = evaluated_args[1].as_f64() {
+                    f as i64
+                } else {
+                    return Err(DbError::ExecutionError("NTH: second argument must be a number".to_string()));
+                } as usize;
                 Ok(arr.get(index).cloned().unwrap_or(Value::Null))
             }
 
@@ -2428,6 +2498,583 @@ impl<'a> QueryExecutor<'a> {
                     result.extend(arr2.iter().cloned());
                 }
                 Ok(Value::Array(result))
+            }
+
+            // ATTRIBUTES(doc, removeInternal?, sort?) - return top-level attribute keys
+            "ATTRIBUTES" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "ATTRIBUTES requires at least 1 argument: document".to_string(),
+                    ));
+                }
+
+                let doc = evaluated_args[0].as_object().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "ATTRIBUTES: first argument must be a document/object".to_string(),
+                    )
+                })?;
+
+                let remove_internal = if evaluated_args.len() > 1 {
+                    evaluated_args[1].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                let sort_keys = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                let mut keys: Vec<String> = doc
+                    .keys()
+                    .filter(|k| !remove_internal || !k.starts_with('_'))
+                    .cloned()
+                    .collect();
+
+                if sort_keys {
+                   keys.sort();
+                }
+
+                Ok(Value::Array(
+                    keys.into_iter().map(Value::String).collect(),
+                ))
+            }
+
+            // VALUES(doc, removeInternal?) - return top-level attribute values
+            "VALUES" => {
+                if evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "VALUES requires at least 1 argument: document".to_string(),
+                    ));
+                }
+
+                let doc = evaluated_args[0].as_object().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VALUES: first argument must be a document/object".to_string(),
+                    )
+                })?;
+
+                let remove_internal = if evaluated_args.len() > 1 {
+                    evaluated_args[1].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                let values: Vec<Value> = doc
+                    .iter()
+                    .filter(|(k, _)| !remove_internal || !k.starts_with('_'))
+                    .map(|(_, v)| v.clone())
+                    .collect();
+
+                Ok(Value::Array(values))
+            }
+
+            // UNSET(doc, attr1, attr2, ...) OR UNSET(doc, [attr1, attr2, ...])
+            "UNSET" => {
+                if evaluated_args.len() < 2 {
+                    return Err(DbError::ExecutionError(
+                        "UNSET requires at least 2 arguments: document, attributes...".to_string(),
+                    ));
+                }
+
+                let doc = evaluated_args[0].as_object().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "UNSET: first argument must be a document/object".to_string(),
+                    )
+                })?;
+
+                let mut keys_to_unset = std::collections::HashSet::new();
+
+                // Handle second argument as array or varargs
+                if evaluated_args.len() == 2 && evaluated_args[1].is_array() {
+                    let arr = evaluated_args[1].as_array().unwrap();
+                    for val in arr {
+                        if let Some(s) = val.as_str() {
+                            keys_to_unset.insert(s);
+                        }
+                    }
+                } else {
+                    for arg in &evaluated_args[1..] {
+                        if let Some(s) = arg.as_str() {
+                            keys_to_unset.insert(s);
+                        } else {
+                            // ArangoDB UNSET ignores non-string arguments for keys, so we just skip them
+                            // but existing KEEP implementation errors. Let's error to be safe/consistent with KEEP for now or be lenient.
+                            // Docs say: "All other arguments... are attribute names". If not string?
+                            // Usually AQL functions are permissive. But KEEP errors.
+                            // Let's mirror KEEP behavior but maybe loosen it if needed.
+                            // However, strictly following KEEP pattern:
+                             return Err(DbError::ExecutionError(
+                                "UNSET: attribute names must be strings".to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                let mut new_doc = serde_json::Map::new();
+                for (key, val) in doc {
+                    if !keys_to_unset.contains(key.as_str()) {
+                        new_doc.insert(key.clone(), val.clone());
+                    }
+                }
+
+                Ok(Value::Object(new_doc))
+            }
+
+            // REGEX_REPLACE(text, search, replacement, caseInsensitive?)
+            "REGEX_REPLACE" => {
+                if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
+                    return Err(DbError::ExecutionError(
+                        "REGEX_REPLACE requires 3-4 arguments: text, search, replacement, [caseInsensitive]"
+                            .to_string(),
+                    ));
+                }
+
+                let text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "REGEX_REPLACE: first argument must be a string".to_string(),
+                    )
+                })?;
+
+                let search_pattern = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "REGEX_REPLACE: second argument must be a string (regex)".to_string(),
+                    )
+                })?;
+
+                let replacement = evaluated_args[2].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "REGEX_REPLACE: third argument must be a string".to_string(),
+                    )
+                })?;
+
+                let case_insensitive = if evaluated_args.len() > 3 {
+                    evaluated_args[3].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                let pattern = if case_insensitive {
+                    format!("(?i){}", search_pattern)
+                } else {
+                    search_pattern.to_string()
+                };
+
+                let re = regex::Regex::new(&pattern).map_err(|e| {
+                    DbError::ExecutionError(format!("REGEX_REPLACE: invalid regex: {}", e))
+                })?;
+
+                let result = re.replace_all(text, replacement).to_string();
+                Ok(Value::String(result))
+            }
+
+            // CONTAINS(text, search, returnIndex?)
+            "CONTAINS" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "CONTAINS requires 2-3 arguments: text, search, [returnIndex]".to_string(),
+                    ));
+                }
+
+                let text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("CONTAINS: first argument must be a string".to_string())
+                })?;
+
+                let search = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("CONTAINS: second argument must be a string".to_string())
+                })?;
+
+                let return_index = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_bool().unwrap_or(false)
+                } else {
+                    false
+                };
+
+                if return_index {
+                    match text.find(search) {
+                        Some(index) => Ok(Value::Number(serde_json::Number::from(index))),
+                        None => Ok(Value::Number(serde_json::Number::from(-1))),
+                    }
+                } else {
+                    Ok(Value::Bool(text.contains(search)))
+                }
+            }
+
+            // SUBSTITUTE(value, search, replace, limit?) OR SUBSTITUTE(value, mapping, limit?)
+            "SUBSTITUTE" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 4 {
+                    return Err(DbError::ExecutionError(
+                        "SUBSTITUTE requires 2-4 arguments".to_string(),
+                    ));
+                }
+
+                let text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "SUBSTITUTE: first argument must be a string".to_string(),
+                    )
+                })?;
+
+                let limit = if evaluated_args[1].is_object() {
+                    // Mapping mode: SUBSTITUTE(value, mapping, limit?)
+                    if evaluated_args.len() > 3 {
+                        return Err(DbError::ExecutionError(
+                            "SUBSTITUTE with mapping requires 2-3 arguments".to_string(),
+                        ));
+                    }
+                    if evaluated_args.len() == 3 {
+                         evaluated_args[2].as_i64().or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
+                    } else {
+                        None
+                    }
+                } else {
+                     // Replace mode: SUBSTITUTE(value, search, replace, limit?)
+                     if evaluated_args.len() < 3 {
+                        return Err(DbError::ExecutionError(
+                            "SUBSTITUTE requires search and replace strings".to_string(),
+                        ));
+                     }
+                      if evaluated_args.len() == 4 {
+                        evaluated_args[3].as_i64().or_else(|| evaluated_args[3].as_f64().map(|f| f as i64))
+                     } else {
+                        None
+                     }
+                };
+
+                let count_limit = match limit {
+                    Some(n) if n > 0 => Some(n as usize),
+                    Some(_) => Some(0), // 0 or negative limit means 0 replacements? Actually ArangoDB might handle 0 as replace nothing? Or all? Docs say "optional limit to restrict the number of replacements". Usually 0 means 0.
+                    None => None, // None means replace all
+                };
+
+                // Perform substitution
+                if evaluated_args[1].is_object() {
+                    let mapping = evaluated_args[1].as_object().unwrap();
+                    // For mapping, we need to be careful about overlapping replacements.
+                    // Simple approach: multiple passes? No, usually single pass.
+                    // But standard approach for simple implementation: iterate over mapping keys.
+                    // Note: order is not guaranteed in JSON object. ArangoDB docs say "If mapping is used, the order of the attributes is undefined."
+                    // So iterative replacement is acceptable even if order varies.
+
+                    let mut result = text.to_string();
+                    let replacements_left = count_limit;
+
+                     for (search, replace_val) in mapping {
+                        let replace = replace_val.as_str().unwrap_or(""); // Treat non-string values as empty string or stringify? Docs say "mapping values are converted to strings".
+                        let replace_str = if replace_val.is_string() {
+                            replace.to_string()
+                        } else {
+                            replace_val.to_string()
+                        };
+
+                        if let Some(limit_val) = replacements_left {
+                             if limit_val == 0 { break; }
+                             // Rust's replacen doesn't return how many replaced.
+                             // We might need to handle this manually if we want global limit across all keys.
+                             // But wait, "limit" in mapping mode usually means "limit per search term" or "total replacements"?
+                             // Arango docs: "limit argument can be used to restrict the number of replacements". It usually applies *per* operation or total?
+                             // "length of the search and replace list must be equal".
+                             // Let's assume global limit for now? Or per key?
+                             // Actually, if using `replacen`, it's per key.
+                             // Let's stick to simple iterative replacement.
+                             result = result.replacen(search, &replace_str, limit_val);
+                             // To correctly track total replacements we'd need a different approach.
+                             // Given ArangoDB's undefined order for keys, maybe it doesn't matter much for complex cases.
+                             // Let's assume the limit is applied per key for now as it's the simplest interpretation of iterative application.
+                        } else {
+                             result = result.replace(search, &replace_str);
+                        }
+                    }
+                    Ok(Value::String(result))
+                } else {
+                    let search = evaluated_args[1].as_str().ok_or_else(|| {
+                         DbError::ExecutionError("SUBSTITUTE: search argument must be a string".to_string())
+                    })?;
+                    let replace = evaluated_args[2].as_str().ok_or_else(|| {
+                         DbError::ExecutionError("SUBSTITUTE: replace argument must be a string".to_string())
+                    })?;
+
+                    if let Some(n) = count_limit {
+                        Ok(Value::String(text.replacen(search, replace, n)))
+                    } else {
+                        Ok(Value::String(text.replace(search, replace)))
+                    }
+                }
+            }
+
+            // SPLIT(value, separator, limit?)
+            "SPLIT" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "SPLIT requires 2-3 arguments: value, separator, [limit]".to_string(),
+                    ));
+                }
+
+                let value = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SPLIT: first argument must be a string".to_string())
+                })?;
+
+                let separator = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SPLIT: second argument must be a string".to_string())
+                })?;
+
+                let limit = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_i64().or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
+                } else {
+                    None
+                };
+
+                let parts: Vec<Value> = match limit {
+                    Some(n) if n > 0 => {
+                        // Split into at most n parts from left
+                        value.splitn(n as usize, separator)
+                             .map(|s| Value::String(s.to_string()))
+                             .collect()
+                    },
+                    Some(n) if n < 0 => {
+                         // Split into at most abs(n) parts from right
+                         // rsplitn returns parts in reverse order, so we need to reverse them back
+                         let mut p: Vec<Value> = value.rsplitn(n.abs() as usize, separator)
+                             .map(|s| Value::String(s.to_string()))
+                             .collect();
+                         p.reverse();
+                         p
+                    },
+                    _ => {
+                        // Split all (limit 0 or None)
+                        if separator.is_empty() {
+                            value.chars().map(|c| Value::String(c.to_string())).collect()
+                        } else {
+                            value.split(separator)
+                                 .map(|s| Value::String(s.to_string()))
+                                 .collect()
+                        }
+                    }
+                };
+
+                Ok(Value::Array(parts))
+            }
+
+            // TRIM(value, type_or_chars?)
+            "TRIM" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                     return Err(DbError::ExecutionError(
+                        "TRIM requires 1-2 arguments: value, [type/chars]".to_string(),
+                    ));
+                }
+                let value = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("TRIM: first argument must be a string".to_string())
+                })?;
+
+                let (trim_mode, chars) = if evaluated_args.len() == 2 {
+                    if evaluated_args[1].is_number() {
+                        // Type: 0=both, 1=left, 2=right
+                        let t = evaluated_args[1].as_i64().unwrap_or(0);
+                        (Some(t), None)
+                    } else if evaluated_args[1].is_string() {
+                         // Chars
+                         (None, evaluated_args[1].as_str())
+                    } else {
+                        // Invalid type
+                        (Some(0), None) // Fallback or strict error? Arango ignores invalid? Let's assume strict or default.
+                    }
+                } else {
+                    (Some(0), None)
+                };
+
+                let result = match (trim_mode, chars) {
+                    (Some(0), None) => value.trim(),
+                    (Some(1), None) => value.trim_start(),
+                    (Some(2), None) => value.trim_end(),
+                    (None, Some(c)) => value.trim_matches(|ch| c.contains(ch)),
+                    _ => value.trim(), // Default
+                };
+                Ok(Value::String(result.to_string()))
+            }
+
+            // LTRIM(value, chars?)
+            "LTRIM" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                     return Err(DbError::ExecutionError(
+                        "LTRIM requires 1-2 arguments: value, [chars]".to_string(),
+                    ));
+                }
+                let value = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("LTRIM: first argument must be a string".to_string())
+                })?;
+
+                let result = if evaluated_args.len() == 2 {
+                     let chars = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError("LTRIM: second argument must be a string".to_string())
+                     })?;
+                     value.trim_start_matches(|ch| chars.contains(ch))
+                } else {
+                    value.trim_start()
+                };
+                Ok(Value::String(result.to_string()))
+            }
+
+            // RTRIM(value, chars?)
+            "RTRIM" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                     return Err(DbError::ExecutionError(
+                        "RTRIM requires 1-2 arguments: value, [chars]".to_string(),
+                    ));
+                }
+                let value = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("RTRIM: first argument must be a string".to_string())
+                })?;
+
+                let result = if evaluated_args.len() == 2 {
+                     let chars = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError("RTRIM: second argument must be a string".to_string())
+                     })?;
+                     value.trim_end_matches(|ch| chars.contains(ch))
+                } else {
+                    value.trim_end()
+                };
+                Ok(Value::String(result.to_string()))
+            }
+
+            // JSON_PARSE(text)
+            "JSON_PARSE" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "JSON_PARSE requires 1 argument: text".to_string(),
+                    ));
+                }
+                let text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("JSON_PARSE: argument must be a string".to_string())
+                })?;
+
+                match serde_json::from_str::<Value>(text) {
+                    Ok(v) => Ok(v),
+                    Err(_) => Ok(Value::Null), // ArangoDB spec: invalid JSON returns NULL
+                }
+            }
+
+            // JSON_STRINGIFY(value)
+            "JSON_STRINGIFY" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "JSON_STRINGIFY requires 1 argument: value".to_string(),
+                    ));
+                }
+                match serde_json::to_string(&evaluated_args[0]) {
+                    Ok(s) => Ok(Value::String(s)),
+                    Err(_) => Ok(Value::Null),
+                }
+            }
+
+             // TO_BOOL(value)
+            "TO_BOOL" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "TO_BOOL requires 1 argument: value".to_string(),
+                    ));
+                }
+                let val = &evaluated_args[0];
+                let bool_val = match val {
+                    Value::Null => false,
+                    Value::Bool(b) => *b,
+                    Value::Number(n) => {
+                        // 0 is false, everything else is true
+                        if let Some(i) = n.as_i64() {
+                            i != 0
+                        } else if let Some(f) = n.as_f64() {
+                            f != 0.0
+                        } else {
+                            true // Should be covered
+                        }
+                    },
+                    Value::String(s) => !s.is_empty(),
+                    Value::Array(_) => true,
+                    Value::Object(_) => true,
+                };
+                Ok(Value::Bool(bool_val))
+            }
+
+            // TO_NUMBER(value)
+            "TO_NUMBER" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "TO_NUMBER requires 1 argument: value".to_string(),
+                    ));
+                }
+                
+                let mut current = &evaluated_args[0];
+                // Unwrap arrays with single element
+                while let Value::Array(arr) = current {
+                    if arr.len() == 1 {
+                        current = &arr[0];
+                    } else {
+                         // Empty or >1 elements -> 0
+                         return Ok(Value::Number(serde_json::Number::from(0)));
+                    }
+                }
+
+                let num_val = match current {
+                    Value::Null => 0.0,
+                    Value::Bool(true) => 1.0,
+                    Value::Bool(false) => 0.0,
+                    Value::Number(n) => n.as_f64().unwrap_or(0.0), 
+                    Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
+                    Value::Array(_) => 0.0, 
+                    Value::Object(_) => 0.0,
+                };
+
+                // Return as integer if it's a whole number
+                if num_val.fract() == 0.0 {
+                     // Check range? i64 range.
+                     if num_val >= (i64::MIN as f64) && num_val <= (i64::MAX as f64) {
+                         return Ok(Value::Number(serde_json::Number::from(num_val as i64)));
+                     }
+                }
+                
+               if let Some(n) = serde_json::Number::from_f64(num_val) {
+                   Ok(Value::Number(n))
+               } else {
+                   Ok(Value::Number(serde_json::Number::from(0)))
+               }
+            }
+
+            // TO_STRING(value)
+            "TO_STRING" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "TO_STRING requires 1 argument: value".to_string(),
+                    ));
+                }
+                let val = &evaluated_args[0];
+                match val {
+                    Value::Null => Ok(Value::String("".to_string())),
+                    Value::String(s) => Ok(Value::String(s.clone())),
+                    _ => {
+                        match serde_json::to_string(val) {
+                            Ok(s) => Ok(Value::String(s)),
+                            Err(_) => Ok(Value::String("".to_string())), // Should fail safe?
+                        }
+                    }
+                }
+            }
+
+            // TO_ARRAY(value)
+            "TO_ARRAY" => {
+                if evaluated_args.len() != 1 {
+                     return Err(DbError::ExecutionError(
+                        "TO_ARRAY requires 1 argument: value".to_string(),
+                    ));
+                }
+                let val = &evaluated_args[0];
+                match val {
+                    Value::Null => Ok(Value::Array(vec![])),
+                    Value::Array(arr) => Ok(Value::Array(arr.clone())),
+                    Value::Object(obj) => {
+                        let values: Vec<Value> = obj.values().cloned().collect();
+                        Ok(Value::Array(values))
+                    },
+                    _ => Ok(Value::Array(vec![val.clone()])),
+                }
             }
 
             // UNION(array1, array2, ...) - union of arrays (unique values)
@@ -4283,22 +4930,9 @@ impl<'a> QueryExecutor<'a> {
     }
 }
 
-/// Parse a field path string into an Expression (e.g., "u.name" -> FieldAccess)
-fn parse_field_expr(field_path: &str) -> Expression {
-    let parts: Vec<&str> = field_path.split('.').collect();
 
-    if parts.is_empty() {
-        return Expression::Literal(Value::Null);
-    }
 
-    let mut expr = Expression::Variable(parts[0].to_string());
 
-    for part in &parts[1..] {
-        expr = Expression::FieldAccess(Box::new(expr), part.to_string());
-    }
-
-    expr
-}
 
 #[inline]
 fn get_field_value(value: &Value, field_path: &str) -> Value {

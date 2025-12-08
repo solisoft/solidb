@@ -279,6 +279,35 @@ pub async fn auth_middleware(
                 Err(_) => return Err(StatusCode::UNAUTHORIZED),
             }
         }
+        
+        // Support: Authorization: Basic <base64(user:pass)>
+        if header.starts_with("Basic ") {
+            let encoded = &header[6..];
+            if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded) {
+                if let Ok(credentials) = String::from_utf8(decoded) {
+                    if let Some((username, password)) = credentials.split_once(':') {
+                        // Validate against _admins collection
+                        if let Ok(db) = state.storage.get_database("_system") {
+                            if let Ok(collection) = db.get_collection("_admins") {
+                                if let Ok(doc) = collection.get(username) {
+                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value()) {
+                                        if AuthService::verify_password(password, &user.password_hash) {
+                                            let claims = Claims {
+                                                sub: username.to_string(),
+                                                exp: usize::MAX,
+                                            };
+                                            req.extensions_mut().insert(claims);
+                                            return Ok(next.run(req).await);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return Err(StatusCode::UNAUTHORIZED);
+        }
     }
 
     Err(StatusCode::UNAUTHORIZED)

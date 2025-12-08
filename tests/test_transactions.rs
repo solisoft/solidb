@@ -10,7 +10,7 @@ fn create_test_engine() -> (StorageEngine, TempDir) {
     
     // Create a test collection
     let db = engine.get_database("_system").unwrap();
-    db.create_collection("users".to_string()).unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
     
     (engine, temp_dir)
 }
@@ -174,7 +174,7 @@ fn test_wal_recovery() {
         engine.initialize_transactions().unwrap();
         
         let db = engine.get_database("_system").unwrap();
-        db.create_collection("users".to_string()).unwrap();
+        db.create_collection("users".to_string(), None).unwrap();
         
         let tx_manager = engine.transaction_manager().unwrap();
         let tx_id = tx_manager.begin(IsolationLevel::ReadCommitted).unwrap();

@@ -24,6 +24,12 @@ impl Parser {
         self.tokens.get(self.position).unwrap_or(&Token::Eof)
     }
 
+    fn peek_token(&self, offset: usize) -> &Token {
+        self.tokens
+            .get(self.position + offset)
+            .unwrap_or(&Token::Eof)
+    }
+
     fn advance(&mut self) {
         if self.position < self.tokens.len() {
             self.position += 1;
@@ -222,10 +228,45 @@ impl Parser {
         }
 
         // If we see a number (depth) or OUTBOUND/INBOUND/ANY, it's a graph traversal
-        if matches!(
+        // If we see a number (depth) or OUTBOUND/INBOUND/ANY, it's a graph traversal
+        let is_graph = if matches!(
             self.current_token(),
-            Token::Number(_) | Token::Outbound | Token::Inbound | Token::Any
+            Token::Outbound | Token::Inbound | Token::Any
         ) {
+            true
+        } else if matches!(self.current_token(), Token::Integer(_) | Token::Float(_)) {
+            // Check if this is a graph traversal depth or just a range expression
+            // Graph traversal: [min..max] OUTBOUND... or [depth] OUTBOUND...
+            // Range expression: min..max ...
+
+            // Look ahead to see if we find OUTBOUND/INBOUND/ANY
+            if matches!(self.peek_token(1), Token::Outbound | Token::Inbound | Token::Any) {
+                // Case: 1 OUTBOUND ...
+                true
+            } else if matches!(self.peek_token(1), Token::DotDot) {
+                // Case: 1..
+                if matches!(self.peek_token(2), Token::Integer(_) | Token::Float(_)) {
+                    // Case: 1..2
+                    if matches!(
+                        self.peek_token(3),
+                        Token::Outbound | Token::Inbound | Token::Any
+                    ) {
+                        // Case: 1..2 OUTBOUND ...
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_graph {
             let gt_clause = self.parse_graph_traversal_clause(first_var, second_var)?;
             return Ok(ForOrGraph::GraphTraversal(gt_clause));
         }
@@ -286,44 +327,7 @@ impl Parser {
         })
     }
 
-    fn parse_for_clause(&mut self) -> DbResult<ForClause> {
-        self.expect(Token::For)?;
 
-        let variable = if let Token::Identifier(name) = self.current_token() {
-            let var = name.clone();
-            self.advance();
-            var
-        } else {
-            return Err(DbError::ParseError(
-                "Expected variable name after FOR".to_string(),
-            ));
-        };
-
-        self.expect(Token::In)?;
-
-        // Check if the source is an identifier (collection/variable) or an expression (e.g., range)
-        if let Token::Identifier(name) = self.current_token() {
-            let n = name.clone();
-            self.advance();
-
-            // We'll determine at execution time whether this is a collection or a LET variable
-            Ok(ForClause {
-                variable,
-                collection: n.clone(),
-                source_variable: Some(n),
-                source_expression: None,
-            })
-        } else {
-            // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
-            let expr = self.parse_expression()?;
-            Ok(ForClause {
-                variable,
-                collection: String::new(), // No collection for expression sources
-                source_variable: None,
-                source_expression: Some(expr),
-            })
-        }
-    }
 
     fn parse_filter_clause(&mut self) -> DbResult<FilterClause> {
         self.expect(Token::Filter)?;
@@ -420,18 +424,18 @@ impl Parser {
         // Already consumed FOR v[, e] IN
 
         // Parse optional depth range (e.g., 1..3)
-        let (min_depth, max_depth) = if let Token::Number(n) = self.current_token() {
+        let (min_depth, max_depth) = if let Token::Integer(n) = self.current_token() {
             let min = *n as usize;
             self.advance();
             if matches!(self.current_token(), Token::DotDot) {
                 self.advance();
-                if let Token::Number(m) = self.current_token() {
+                if let Token::Integer(m) = self.current_token() {
                     let max = *m as usize;
                     self.advance();
                     (min, max)
                 } else {
                     return Err(DbError::ParseError(
-                        "Expected number after '..' in depth range".to_string(),
+                        "Expected integer after '..' in depth range".to_string(),
                     ));
                 }
             } else {
@@ -576,13 +580,13 @@ impl Parser {
     fn parse_limit_clause(&mut self) -> DbResult<LimitClause> {
         self.expect(Token::Limit)?;
 
-        let first = if let Token::Number(n) = self.current_token() {
+        let first = if let Token::Integer(n) = self.current_token() {
             let num = *n as usize;
             self.advance();
             num
         } else {
             return Err(DbError::ParseError(
-                "Expected number after LIMIT".to_string(),
+                "Expected integer after LIMIT".to_string(),
             ));
         };
 
@@ -590,13 +594,13 @@ impl Parser {
         if matches!(self.current_token(), Token::Comma) {
             self.advance();
 
-            let count = if let Token::Number(n) = self.current_token() {
+            let count = if let Token::Integer(n) = self.current_token() {
                 let num = *n as usize;
                 self.advance();
                 num
             } else {
                 return Err(DbError::ParseError(
-                    "Expected count after comma in LIMIT".to_string(),
+                    "Expected count (integer) after comma in LIMIT".to_string(),
                 ));
             };
 
@@ -841,8 +845,16 @@ impl Parser {
                 }
             }
 
-            Token::Number(n) => {
+            Token::Integer(n) => {
                 let num = *n;
+                self.advance();
+                Ok(Expression::Literal(Value::Number(
+                    serde_json::Number::from(num),
+                )))
+            }
+
+            Token::Float(f) => {
+                let num = *f;
                 self.advance();
                 Ok(Expression::Literal(Value::Number(
                     serde_json::Number::from_f64(num).unwrap(),
@@ -958,32 +970,7 @@ impl Parser {
         Ok(Expression::Array(elements))
     }
 
-    fn parse_field_path(&mut self) -> DbResult<String> {
-        let mut path = String::new();
 
-        if let Token::Identifier(name) = self.current_token() {
-            path.push_str(name);
-            self.advance();
-        } else {
-            return Err(DbError::ParseError("Expected field path".to_string()));
-        }
-
-        while matches!(self.current_token(), Token::Dot) {
-            self.advance();
-
-            if let Token::Identifier(field) = self.current_token() {
-                path.push('.');
-                path.push_str(field);
-                self.advance();
-            } else {
-                return Err(DbError::ParseError(
-                    "Expected field name after '.'".to_string(),
-                ));
-            }
-        }
-
-        Ok(path)
-    }
 }
 
 pub fn parse(input: &str) -> DbResult<Query> {

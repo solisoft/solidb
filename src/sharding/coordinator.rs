@@ -744,8 +744,8 @@ impl ShardCoordinator {
     /// Scatter-gather query across all shards (for non-indexed scans)
     pub async fn scatter_gather<F, T>(
         &self,
-        db_name: &str,
-        coll_name: &str,
+        _db_name: &str,
+        _coll_name: &str,
         shard_config: &CollectionShardConfig,
         local_fn: F,
     ) -> DbResult<Vec<T>>

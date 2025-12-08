@@ -7,7 +7,7 @@ fn test_merge_nested_behavior() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
 
-    storage.create_collection("test".to_string()).unwrap();
+    storage.create_collection("test".to_string(), None).unwrap();
     let collection = storage.get_collection("test").unwrap();
     collection.insert(json!({"_key": "1"})).unwrap();
 
@@ -33,9 +33,9 @@ fn test_merge_nested_behavior() {
     );
 
     // The nested object from the second argument completely replaces the first
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
-    assert_eq!(results[0]["nested"]["z"], json!(3.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
+    assert_eq!(results[0]["nested"]["z"], json!(3));
     // x and y are gone because nested was replaced, not merged
     assert_eq!(results[0]["nested"]["x"], json!(null));
     assert_eq!(results[0]["nested"]["y"], json!(null));

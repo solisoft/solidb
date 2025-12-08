@@ -14,7 +14,7 @@ fn create_test_storage() -> (StorageEngine, TempDir) {
 #[test]
 fn test_insert_simple() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("numbers".to_string()).unwrap();
+    storage.create_collection("numbers".to_string(), None).unwrap();
 
     // Insert a single document (without RETURN NEW - that feature requires executor support)
     let query = parse("FOR i IN 1..1 INSERT { value: 42 } INTO numbers RETURN i").unwrap();
@@ -25,13 +25,13 @@ fn test_insert_simple() {
     let collection = storage.get_collection("numbers").unwrap();
     let all_docs = collection.scan(None);
     assert_eq!(all_docs.len(), 1);
-    assert_eq!(all_docs[0].data["value"], json!(42.0));
+    assert_eq!(all_docs[0].data["value"], json!(42));
 }
 
 #[test]
 fn test_insert_in_loop() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("numbers".to_string()).unwrap();
+    storage.create_collection("numbers".to_string(), None).unwrap();
 
     // Insert multiple documents using FOR loop
     let query = parse(
@@ -56,7 +56,7 @@ fn test_insert_in_loop() {
 #[test]
 fn test_insert_with_object_construction() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
 
     // Insert with object construction
     let query = parse(
@@ -83,13 +83,13 @@ fn test_insert_from_existing_collection() {
     let (storage, _dir) = create_test_storage();
 
     // Create source collection with data
-    storage.create_collection("source".to_string()).unwrap();
+    storage.create_collection("source".to_string(), None).unwrap();
     let source = storage.get_collection("source").unwrap();
     source.insert(json!({"name": "Alice", "age": 30})).unwrap();
     source.insert(json!({"name": "Bob", "age": 25})).unwrap();
 
     // Create target collection
-    storage.create_collection("target".to_string()).unwrap();
+    storage.create_collection("target".to_string(), None).unwrap();
 
     // Copy documents from source to target
     let query = parse(

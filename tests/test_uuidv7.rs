@@ -9,7 +9,7 @@ fn test_uuidv7_time_ordering() {
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
 
     // Create collection
-    storage.create_collection("test".to_string()).unwrap();
+    storage.create_collection("test".to_string(), None).unwrap();
     let collection = storage.get_collection("test").unwrap();
 
     // Insert documents with small time gaps

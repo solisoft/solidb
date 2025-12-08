@@ -1515,12 +1515,7 @@ impl ReplicationService {
                 
                 Operation::PutBlobChunk => {
                    if let (Some(idx), Some(data)) = (entry.chunk_index, &entry.document_data) {
-                        if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
-                             // This assumes data is just bytes, but entry.document_data is loaded as bytes.
-                             // Wait, entry.document_data is Vec<u8>. 
-                             // collection.put_blob_chunk takes &[u8].
-                             // We don't need to deserialize it as JSON.
-                        }
+
                         
                         // We need to use the data directly, but we borrow it from entry struct?
                         // entry.document_data is Option<Vec<u8>>.

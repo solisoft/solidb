@@ -1,5 +1,5 @@
 use super::wal::WalWriter;
-use super::{IsolationLevel, Operation, Transaction, TransactionId, TransactionState};
+use super::{IsolationLevel, Operation, Transaction, TransactionId};
 use crate::error::{DbError, DbResult};
 use std::collections::HashMap;
 use std::path::PathBuf;

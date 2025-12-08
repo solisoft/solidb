@@ -171,8 +171,6 @@ mod tests {
         let (db, _dir) = create_test_db();
         let database = Database::new("testdb".to_string(), db);
 
-        let database = Database::new("testdb".to_string(), db);
-
         database.create_collection("users".to_string(), None).unwrap();
         assert!(database.delete_collection("users").is_ok());
         assert!(!database.list_collections().contains(&"users".to_string()));
@@ -181,8 +179,6 @@ mod tests {
     #[test]
     fn test_list_collections() {
         let (db, _dir) = create_test_db();
-        let database = Database::new("testdb".to_string(), db);
-
         let database = Database::new("testdb".to_string(), db);
 
         database.create_collection("users".to_string(), None).unwrap();

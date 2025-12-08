@@ -3,6 +3,7 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
+#[ignore] // Integration test: requires live server (run with `cargo test -- --ignored`)
 fn test_dump_and_restore_collection() {
     // Setup: Start a test server
     let temp_dir = TempDir::new().unwrap();
@@ -103,6 +104,7 @@ fn test_dump_and_restore_collection() {
 }
 
 #[test]
+#[ignore] // Integration test: requires live server
 fn test_dump_entire_database() {
     // Setup
     let temp_dir = TempDir::new().unwrap();
@@ -170,6 +172,7 @@ fn test_dump_entire_database() {
 }
 
 #[test]
+#[ignore] // Integration test: requires live server
 fn test_dump_sharded_collection() {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("test_db");

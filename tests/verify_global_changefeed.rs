@@ -51,7 +51,7 @@ async fn verify_global_changefeed_aggregation() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;
     let engine = solidb::storage::StorageEngine::new(dir.path())?;
     engine.initialize()?;
-    engine.create_collection("test_collection".to_string())?;
+    engine.create_collection("test_collection".to_string(), None)?;
 
     // Mock the ShardCoordinator in AppState
     // Since ShardCoordinator is complex to mock directly (it's a struct, not trait),

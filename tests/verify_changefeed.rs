@@ -9,7 +9,7 @@ async fn test_changefeed_logic() {
     let storage = StorageEngine::new(temp_dir.path()).unwrap();
     storage.initialize().unwrap();
 
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Subscribe to changes

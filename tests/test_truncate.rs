@@ -23,7 +23,7 @@ async fn post_json(app: &axum::Router, path: &str, body: Value) -> (StatusCode, 
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(path)
+                .uri(path).header("Authorization", "Basic YWRtaW46YWRtaW4=")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -46,7 +46,7 @@ async fn put(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(path)
+                .uri(path).header("Authorization", "Basic YWRtaW46YWRtaW4=")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -68,7 +68,7 @@ async fn get(app: &axum::Router, path: &str) -> (StatusCode, Value) {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(path)
+                .uri(path).header("Authorization", "Basic YWRtaW46YWRtaW4=")
                 .body(Body::empty())
                 .unwrap(),
         )

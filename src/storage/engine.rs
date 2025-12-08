@@ -221,7 +221,7 @@ impl StorageEngine {
         }
 
         // Store database metadata
-        let mut db = self.db.write().unwrap();
+        let db = self.db.write().unwrap();
         let meta_cf = db.cf_handle(META_CF).expect("META_CF should exist");
         let db_key = format!("db:{}", name);
         db.put_cf(meta_cf, db_key.as_bytes(), b"1")
@@ -249,7 +249,7 @@ impl StorageEngine {
         }
 
         // Remove database metadata
-        let mut db = self.db.write().unwrap();
+        let db = self.db.write().unwrap();
         let meta_cf = db.cf_handle(META_CF).expect("META_CF should exist");
         let db_key = format!("db:{}", name);
         db.delete_cf(meta_cf, db_key.as_bytes())

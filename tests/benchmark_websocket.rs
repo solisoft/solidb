@@ -9,7 +9,7 @@ async fn benchmark_websocket_overhead() {
     let storage = StorageEngine::new(temp_dir.path()).unwrap();
     storage.initialize().unwrap();
 
-    storage.create_collection("bench_ws".to_string()).unwrap();
+    storage.create_collection("bench_ws".to_string(), None).unwrap();
     let collection = storage.get_collection("bench_ws").unwrap();
 
     let num_docs = 20_000;
@@ -33,7 +33,7 @@ async fn benchmark_websocket_overhead() {
     println!("Running benchmark with subscribers...");
     
     // Create new collection for clean state (avoid RocksDB compaction noise affecting results)
-    storage.create_collection("bench_ws_active".to_string()).unwrap();
+    storage.create_collection("bench_ws_active".to_string(), None).unwrap();
     let collection_active = storage.get_collection("bench_ws_active").unwrap();
 
     // Spawn subscribers

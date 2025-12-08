@@ -117,7 +117,7 @@ fn test_shard_config_update() {
     // Create a database and collection
     storage.create_database("test_db".to_string()).expect("Failed to create database");
     let db = storage.get_database("test_db").expect("Failed to get database");
-    db.create_collection("test_coll".to_string()).expect("Failed to create collection");
+    db.create_collection("test_coll".to_string(), None).expect("Failed to create collection");
     let coll = db.get_collection("test_coll").expect("Failed to get collection");
     
     // Set initial shard config

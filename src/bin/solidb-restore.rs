@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::HashMap;
-use base64::{Engine as _, engine::general_purpose};
+
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb-restore")]
@@ -157,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Let's simplify: Only JSONL supports streaming. A Blob dump IS JSONL.
     
     // Check format first
-    let mut peek_buffer = [0u8; 1];
+
     let mut is_json_array = false;
     if reader.fill_buf()?.len() > 0 {
        if reader.fill_buf()?[0] == b'[' {
@@ -440,114 +440,6 @@ async fn create_database_if_not_exists(
 }
 
 use colored::*;
-use indicatif::{ProgressBar, ProgressStyle};
 
-async fn restore_collection(
-    client: &reqwest::Client,
-    base_url: &str,
-    database: &str,
-    collection_name: &str,
-    documents: &[Value],
-    shard_config: Option<&Value>,
-    drop_existing: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("{} {}", "Restoring collection:".blue(), collection_name.white());
 
-    // Drop existing collection if requested
-    if drop_existing {
-        let url = format!("{}/_api/database/{}/collection/{}", base_url, database, collection_name);
-        let response = client.delete(&url).send().await?;
-        
-        if response.status().is_success() || response.status().as_u16() == 404 {
-            eprintln!("  {}", "Dropped existing collection".yellow());
-        }
-    }
 
-    // Create collection with shard config if present
-    let url = format!("{}/_api/database/{}/collection", base_url, database);
-    
-    let mut create_payload = serde_json::json!({ "name": collection_name });
-    
-    if let Some(config) = shard_config {
-        if let Some(num_shards) = config.get("num_shards") {
-            create_payload["numShards"] = num_shards.clone();
-        }
-        if let Some(replication_factor) = config.get("replication_factor") {
-            create_payload["replicationFactor"] = replication_factor.clone();
-        }
-        if let Some(shard_key) = config.get("shard_key") {
-            create_payload["shardKey"] = shard_key.clone();
-        }
-    }
-
-    let response = client
-        .post(&url)
-        .json(&create_payload)
-        .send()
-        .await?;
-
-    if !response.status().is_success() && response.status().as_u16() != 409 {
-        return Err(format!("Failed to create collection: {}", response.status()).into());
-    }
-
-    if response.status().is_success() {
-        eprintln!("  {}", "Created collection".green());
-    } else {
-        eprintln!("  {}", "Collection already exists".yellow());
-    }
-
-    // Chunk and Upload
-    eprintln!("  Uploading Batches of {} documents (batch size: 10,000)...", documents.len());
-    let pb = ProgressBar::new(documents.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
-        .progress_chars("#>-"));
-
-    let chunk_size = 10_000;
-    let url = format!("{}/_api/database/{}/collection/{}/import", base_url, database, collection_name);
-
-    let mut total_imported = 0;
-    let mut total_failed = 0;
-
-    for chunk in documents.chunks(chunk_size) {
-        let mut jsonl_data = Vec::with_capacity(chunk.len() * 100);
-        for doc in chunk {
-            serde_json::to_writer(&mut jsonl_data, doc)?;
-            jsonl_data.push(b'\n');
-        }
-
-        // Create multipart form
-        let part = reqwest::multipart::Part::bytes(jsonl_data)
-            .file_name("restore.jsonl")
-            .mime_str("application/x-ndjson")?;
-            
-        let form = reqwest::multipart::Form::new()
-            .part("file", part);
-
-        let response = client
-            .post(&url)
-            .multipart(form)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            pb.finish_with_message("Failed");
-            return Err(format!("Failed to import batch: {}", response.status()).into());
-        }
-
-        let result: serde_json::Value = response.json().await?;
-        total_imported += result["imported"].as_u64().unwrap_or(0);
-        total_failed += result["failed"].as_u64().unwrap_or(0);
-        
-        pb.inc(chunk.len() as u64);
-    }
-    
-    pb.finish_with_message("Done");
-
-    eprintln!("  → {} documents restored successfully", total_imported.to_string().green());
-    if total_failed > 0 {
-        eprintln!("  → {} documents failed", total_failed.to_string().red().bold());
-    }
-    
-    Ok(())
-}

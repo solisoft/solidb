@@ -16,8 +16,8 @@ async fn create_test_server() -> (axum::Router, TempDir) {
     // Create test database and collection
     engine.create_database("testdb".to_string()).unwrap();
     let db = engine.get_database("testdb").unwrap();
-    db.create_collection("users".to_string()).unwrap();
-    db.create_collection("backup".to_string()).unwrap();
+    db.create_collection("users".to_string(), None).unwrap();
+    db.create_collection("backup".to_string(), None).unwrap();
 
     let router = create_router(engine, None);
     (router, temp_dir)
@@ -38,7 +38,7 @@ async fn test_transactional_aql_simple_insert() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -52,7 +52,7 @@ async fn test_transactional_aql_simple_insert() {
     // 2. Execute AQL INSERT with transaction header
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .header("X-Transaction-ID", tx_id)
         .body(Body::from(
@@ -72,7 +72,7 @@ async fn test_transactional_aql_simple_insert() {
     // 3. Verify document not visible before commit
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
@@ -86,7 +86,7 @@ async fn test_transactional_aql_simple_insert() {
     // 4. Commit transaction
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     
@@ -96,7 +96,7 @@ async fn test_transactional_aql_simple_insert() {
     // 5. Verify document visible after commit
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
@@ -121,7 +121,7 @@ async fn test_transactional_aql_with_for_loop() {
     for i in 1..=10 {
         let request = Request::builder()
             .method("POST")
-            .uri("/_api/database/testdb/document/users")
+            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
             .header("content-type", "application/json")
             .body(Body::from(
                 json!({"name": format!("User{}", i), "age": i * 10}).to_string(),
@@ -133,7 +133,7 @@ async fn test_transactional_aql_with_for_loop() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -145,7 +145,7 @@ async fn test_transactional_aql_with_for_loop() {
     // 2. Execute AQL with FOR loop - copy users with age >= 60
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -166,7 +166,7 @@ async fn test_transactional_aql_with_for_loop() {
     // 3. Commit transaction
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     
@@ -176,7 +176,7 @@ async fn test_transactional_aql_with_for_loop() {
     // 4. Verify backup collection has 5 documents
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN backup RETURN u"}).to_string(),
@@ -196,7 +196,7 @@ async fn test_transactional_aql_rollback() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -208,7 +208,7 @@ async fn test_transactional_aql_rollback() {
     // 2. Execute multiple AQL operations with header
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .header("X-Transaction-ID", tx_id)
         .body(Body::from(
@@ -222,7 +222,7 @@ async fn test_transactional_aql_rollback() {
 
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .header("X-Transaction-ID", tx_id)
         .body(Body::from(
@@ -237,7 +237,7 @@ async fn test_transactional_aql_rollback() {
     // 3. Rollback transaction
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/rollback", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/rollback", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     
@@ -247,7 +247,7 @@ async fn test_transactional_aql_rollback() {
     // 4. Verify no documents were inserted
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
@@ -266,7 +266,7 @@ async fn test_transactional_aql_update() {
     // Insert initial document
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/document/users")
+        .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"_key": "user1", "name": "Alice", "age": 25}).to_string(),
@@ -278,7 +278,7 @@ async fn test_transactional_aql_update() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -290,7 +290,7 @@ async fn test_transactional_aql_update() {
     // 2. Execute UPDATE via AQL with header
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .header("X-Transaction-ID", tx_id)
         .body(Body::from(
@@ -307,7 +307,7 @@ async fn test_transactional_aql_update() {
     // 3. Commit
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     app.clone().oneshot(request).await.unwrap();
@@ -315,7 +315,7 @@ async fn test_transactional_aql_update() {
     // 4. Verify update
     let request = Request::builder()
         .method("GET")
-        .uri("/_api/database/testdb/document/users/user1")
+        .uri("/_api/database/testdb/document/users/user1").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     
@@ -333,7 +333,7 @@ async fn test_transactional_aql_remove() {
     for i in 1..=5 {
         let request = Request::builder()
             .method("POST")
-            .uri("/_api/database/testdb/document/users")
+            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
             .header("content-type", "application/json")
             .body(Body::from(
                 json!({"name": format!("User{}", i), "age": i * 10}).to_string(),
@@ -345,7 +345,7 @@ async fn test_transactional_aql_remove() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -357,7 +357,7 @@ async fn test_transactional_aql_remove() {
     // 2. Execute REMOVE with FOR loop using header
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .header("X-Transaction-ID", tx_id)
         .body(Body::from(
@@ -376,7 +376,7 @@ async fn test_transactional_aql_remove() {
     // 3. Commit
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     app.clone().oneshot(request).await.unwrap();
@@ -384,7 +384,7 @@ async fn test_transactional_aql_remove() {
     // 4. Verify only 3 users remain
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
@@ -407,7 +407,7 @@ async fn test_transactional_aql_complex_query() {
     for i in 1..=20 {
         let request = Request::builder()
             .method("POST")
-            .uri("/_api/database/testdb/document/users")
+            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
             .header("content-type", "application/json")
             .body(Body::from(
                 json!({"name": format!("User{}", i), "age": i, "active": i % 2 == 0}).to_string(),
@@ -419,7 +419,7 @@ async fn test_transactional_aql_complex_query() {
     // 1. Begin transaction
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin")
+        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -431,7 +431,7 @@ async fn test_transactional_aql_complex_query() {
     // 2. Complex query with FOR, LET, and FILTER
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -450,7 +450,7 @@ async fn test_transactional_aql_complex_query() {
     // 3. Commit
     let request = Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id))
+        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
     app.clone().oneshot(request).await.unwrap();
@@ -458,7 +458,7 @@ async fn test_transactional_aql_complex_query() {
     // 4. Verify backup collection
     let request = Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor")
+        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .header("content-type", "application/json")
         .body(Body::from(
             json!({"query": "FOR u IN backup FILTER u.backed_up == true RETURN u"}).to_string(),

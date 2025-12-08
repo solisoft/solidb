@@ -8,7 +8,7 @@ fn test_index_optimization_performance() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
 
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Create index on age field
@@ -56,7 +56,7 @@ fn test_index_optimization_correctness() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
 
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Create index

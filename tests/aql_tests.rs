@@ -15,7 +15,7 @@ fn create_test_storage() -> (StorageEngine, TempDir) {
 
 /// Setup test data in users collection
 fn setup_users_collection(storage: &StorageEngine) {
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection
@@ -133,7 +133,7 @@ fn test_return_only_simple() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(42.0));
+    assert_eq!(results[0], json!(42));
 }
 
 #[test]
@@ -157,10 +157,10 @@ fn test_return_only_merge() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
-    assert_eq!(results[0]["c"], json!(3.0));
-    assert_eq!(results[0]["d"], json!(4.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
+    assert_eq!(results[0]["c"], json!(3));
+    assert_eq!(results[0]["d"], json!(4));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn test_return_only_array() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!([1.0, 2.0, 3.0]));
+    assert_eq!(results[0], json!([1, 2, 3]));
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn test_return_only_object() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["name"], json!("test"));
-    assert_eq!(results[0]["value"], json!(123.0));
+    assert_eq!(results[0]["value"], json!(123));
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn test_let_with_return_only() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(1.0));
+    assert_eq!(results[0], json!(1));
 }
 
 #[test]
@@ -450,13 +450,13 @@ fn test_execute_join() {
     let (storage, _dir) = create_test_storage();
 
     // Create users
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let users = storage.get_collection("users").unwrap();
     users.insert(json!({"_key": "1", "name": "Alice"})).unwrap();
     users.insert(json!({"_key": "2", "name": "Bob"})).unwrap();
 
     // Create orders
-    storage.create_collection("orders".to_string()).unwrap();
+    storage.create_collection("orders".to_string(), None).unwrap();
     let orders = storage.get_collection("orders").unwrap();
     orders
         .insert(json!({"_key": "o1", "user_id": "1", "product": "Laptop"}))
@@ -526,7 +526,7 @@ fn test_execute_lower_function() {
 #[test]
 fn test_execute_round_function() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("numbers".to_string()).unwrap();
+    storage.create_collection("numbers".to_string(), None).unwrap();
     let collection = storage.get_collection("numbers").unwrap();
     collection
         .insert(json!({"_key": "1", "value": 3.7}))
@@ -543,7 +543,7 @@ fn test_execute_round_function() {
 #[test]
 fn test_execute_abs_function() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("numbers".to_string()).unwrap();
+    storage.create_collection("numbers".to_string(), None).unwrap();
     let collection = storage.get_collection("numbers").unwrap();
     collection
         .insert(json!({"_key": "1", "value": -42}))
@@ -560,7 +560,7 @@ fn test_execute_abs_function() {
 #[test]
 fn test_execute_concat_separator_function() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("data".to_string()).unwrap();
+    storage.create_collection("data".to_string(), None).unwrap();
     let collection = storage.get_collection("data").unwrap();
     collection
         .insert(json!({
@@ -580,7 +580,7 @@ fn test_execute_concat_separator_function() {
 #[test]
 fn test_execute_concat_separator_with_numbers() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("data".to_string()).unwrap();
+    storage.create_collection("data".to_string(), None).unwrap();
     let collection = storage.get_collection("data").unwrap();
     collection
         .insert(json!({
@@ -600,7 +600,7 @@ fn test_execute_concat_separator_with_numbers() {
 #[test]
 fn test_execute_concat_separator_empty_array() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("data".to_string()).unwrap();
+    storage.create_collection("data".to_string(), None).unwrap();
     let collection = storage.get_collection("data").unwrap();
     collection
         .insert(json!({
@@ -636,10 +636,10 @@ fn test_merge_two_objects() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
-    assert_eq!(results[0]["c"], json!(3.0));
-    assert_eq!(results[0]["d"], json!(4.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
+    assert_eq!(results[0]["c"], json!(3));
+    assert_eq!(results[0]["d"], json!(4));
 }
 
 #[test]
@@ -660,9 +660,9 @@ fn test_merge_override_values() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(99.0)); // Overridden
-    assert_eq!(results[0]["c"], json!(3.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(99)); // Overridden
+    assert_eq!(results[0]["c"], json!(3));
 }
 
 #[test]
@@ -682,10 +682,10 @@ fn test_merge_multiple_objects() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
-    assert_eq!(results[0]["c"], json!(3.0));
-    assert_eq!(results[0]["d"], json!(4.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
+    assert_eq!(results[0]["c"], json!(3));
+    assert_eq!(results[0]["d"], json!(4));
 }
 
 #[test]
@@ -709,7 +709,7 @@ fn test_merge_with_document() {
     assert_eq!(results[0]["name"], json!("Alice"));
     assert_eq!(results[0]["age"], json!(30));
     assert_eq!(results[0]["status"], json!("premium"));
-    assert_eq!(results[0]["points"], json!(100.0));
+    assert_eq!(results[0]["points"], json!(100));
 }
 
 #[test]
@@ -730,8 +730,8 @@ fn test_merge_with_null() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
 }
 
 #[test]
@@ -751,8 +751,8 @@ fn test_merge_single_object() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["a"], json!(1.0));
-    assert_eq!(results[0]["b"], json!(2.0));
+    assert_eq!(results[0]["a"], json!(1));
+    assert_eq!(results[0]["b"], json!(2));
 }
 
 // ==================== Geo Function Tests ====================
@@ -760,7 +760,7 @@ fn test_merge_single_object() {
 #[test]
 fn test_execute_distance_function() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string()).unwrap();
+    storage.create_collection("places".to_string(), None).unwrap();
     let collection = storage.get_collection("places").unwrap();
     collection
         .insert(json!({
@@ -788,7 +788,7 @@ fn test_execute_distance_function() {
 #[test]
 fn test_empty_collection() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("empty".to_string()).unwrap();
+    storage.create_collection("empty".to_string(), None).unwrap();
 
     let query = parse("FOR doc IN empty RETURN doc").unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -812,7 +812,7 @@ fn test_filter_no_matches() {
 #[test]
 fn test_nested_field_access() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
     collection
         .insert(json!({
@@ -836,7 +836,7 @@ fn test_nested_field_access() {
 #[test]
 fn test_filter_nested_field() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
     collection
         .insert(json!({
@@ -865,7 +865,7 @@ fn test_filter_nested_field() {
 #[test]
 fn test_null_field_handling() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
     collection
         .insert(json!({
@@ -1024,10 +1024,10 @@ fn test_execute_let_array_literal() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 3);
-    // Numbers from lexer are f64, so compare with floats
-    assert!(results.contains(&json!(1.0)));
-    assert!(results.contains(&json!(2.0)));
-    assert!(results.contains(&json!(3.0)));
+    // Numbers from lexer are integers where applicable
+    assert!(results.contains(&json!(1)));
+    assert!(results.contains(&json!(2)));
+    assert!(results.contains(&json!(3)));
 }
 
 #[test]
@@ -1057,7 +1057,7 @@ fn test_array_access_basic() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(1.0));
+    assert_eq!(results[0], json!(1));
 }
 
 #[test]
@@ -1071,7 +1071,7 @@ fn test_array_access_second_element() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(2.0));
+    assert_eq!(results[0], json!(2));
 }
 
 #[test]
@@ -1085,7 +1085,7 @@ fn test_array_access_last_element() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(3.0));
+    assert_eq!(results[0], json!(3));
 }
 
 #[test]
@@ -1113,13 +1113,13 @@ fn test_array_access_nested() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!(2.0));
+    assert_eq!(results[0], json!(2));
 }
 
 #[test]
 fn test_array_access_from_document() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("data".to_string()).unwrap();
+    storage.create_collection("data".to_string(), None).unwrap();
     let collection = storage.get_collection("data").unwrap();
     collection
         .insert(json!({
@@ -1433,7 +1433,7 @@ fn test_explain_with_filter() {
     assert_eq!(explain.filters.len(), 1);
     assert_eq!(explain.filters[0].documents_before, 3);
     assert_eq!(explain.filters[0].documents_after, 2); // Alice (30) and Charlie (35)
-    assert!(explain.filters[0].time_us >= 0);
+
 
     assert_eq!(explain.documents_scanned, 3);
     assert_eq!(explain.documents_returned, 2);
@@ -1453,7 +1453,7 @@ fn test_explain_with_sort() {
     let sort = explain.sort.unwrap();
     assert_eq!(sort.field, "doc.age");
     assert_eq!(sort.direction, "DESC");
-    assert!(sort.time_us >= 0);
+
 }
 
 #[test]
@@ -1488,13 +1488,13 @@ fn test_explain_with_subquery() {
     assert_eq!(explain.let_bindings.len(), 1);
     assert_eq!(explain.let_bindings[0].variable, "activeUsers");
     assert!(explain.let_bindings[0].is_subquery);
-    assert!(explain.let_bindings[0].time_us >= 0);
+
 
     // Should return Alice and Bob (active users)
     assert_eq!(explain.documents_returned, 2);
 
     // Check timing breakdown exists
-    assert!(explain.timing.let_clauses_us >= 0);
+
     assert!(explain.timing.total_us > 0);
 }
 
@@ -1554,10 +1554,7 @@ fn test_explain_complex_query() {
 
     // All timing fields should be populated
     assert!(explain.timing.total_us > 0);
-    assert!(explain.timing.let_clauses_us >= 0);
-    assert!(explain.timing.filter_us >= 0);
-    assert!(explain.timing.limit_us >= 0);
-    assert!(explain.timing.return_projection_us >= 0);
+
 
     // Should return Alice (age 30, active)
     assert_eq!(explain.documents_returned, 1);
@@ -1586,7 +1583,7 @@ fn test_explain_with_bind_vars() {
 // ==================== Fulltext Search Tests ====================
 
 fn setup_articles_collection(storage: &StorageEngine) {
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     // Insert articles with text content
@@ -1814,7 +1811,7 @@ fn test_fulltext_with_max_distance() {
 // ==================== Correlated Subquery Tests ====================
 
 fn setup_orders_collection(storage: &StorageEngine) {
-    storage.create_collection("orders".to_string()).unwrap();
+    storage.create_collection("orders".to_string(), None).unwrap();
     let collection = storage.get_collection("orders").unwrap();
 
     // Orders referencing users by name
@@ -1958,13 +1955,13 @@ fn test_correlated_subquery_empty_result() {
     let (storage, _dir) = create_test_storage();
 
     // Add a user with no orders
-    storage.create_collection("users2".to_string()).unwrap();
+    storage.create_collection("users2".to_string(), None).unwrap();
     let users = storage.get_collection("users2").unwrap();
     users
         .insert(json!({"_key": "1", "name": "NoOrders"}))
         .unwrap();
 
-    storage.create_collection("orders2".to_string()).unwrap();
+    storage.create_collection("orders2".to_string(), None).unwrap();
     // No orders collection is empty
 
     let query = parse(
@@ -2080,7 +2077,7 @@ fn test_collection_count_basic() {
 #[test]
 fn test_collection_count_empty_collection() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("empty".to_string()).unwrap();
+    storage.create_collection("empty".to_string(), None).unwrap();
 
     let query = parse(r#"RETURN COLLECTION_COUNT("empty")"#).unwrap();
     let executor = QueryExecutor::new(&storage);
@@ -3623,7 +3620,7 @@ fn test_date_diff_invalid_unit() {
 fn test_insert_simple() {
     let (storage, _dir) = create_test_storage();
     storage.create_database("testdb".to_string()).unwrap();
-    storage.create_collection("numbers".to_string()).unwrap();
+    storage.create_collection("numbers".to_string(), None).unwrap();
 
     // Insert documents using FOR loop with LET array
     let query = parse(
@@ -3650,7 +3647,7 @@ fn test_insert_simple() {
 fn test_insert_with_object_construction() {
     let (storage, _dir) = create_test_storage();
     storage.create_database("testdb".to_string()).unwrap();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
 
     // Insert with object construction
     let query = parse(
@@ -3729,7 +3726,7 @@ fn test_update_multiple_fields() {
     let collection = storage.get_collection("users").unwrap();
     let bob = collection.get("bob").unwrap();
     assert_eq!(bob.to_value()["status"], json!("vip"));
-    assert_eq!(bob.to_value()["level"], json!(5.0));
+    assert_eq!(bob.to_value()["level"], json!(5));
     assert_eq!(bob.to_value()["verified"], json!(true));
 }
 
@@ -3756,7 +3753,7 @@ fn test_update_overwrite_field() {
     // Verify the field was overwritten
     let collection = storage.get_collection("users").unwrap();
     let charlie = collection.get("charlie").unwrap();
-    assert_eq!(charlie.to_value()["age"], json!(40.0)); // Was 35, now 40
+    assert_eq!(charlie.to_value()["age"], json!(40)); // Was 35, now 40
                                                         // Original name should still exist
     assert_eq!(charlie.to_value()["name"], json!("Charlie"));
 }
@@ -4008,7 +4005,7 @@ fn test_range_with_arithmetic() {
 fn test_range_for_insert() {
     let (storage, _dir) = create_test_storage();
     storage.create_database("testdb".to_string()).unwrap();
-    storage.create_collection("items".to_string()).unwrap();
+    storage.create_collection("items".to_string(), None).unwrap();
 
     // Use range in FOR loop for insert
     let query = parse(
@@ -4203,7 +4200,7 @@ fn test_remove_all() {
 #[test]
 fn test_bm25_basic_scoring() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     collection
@@ -4232,7 +4229,7 @@ fn test_bm25_basic_scoring() {
 #[test]
 fn test_bm25_sort_descending() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     collection
@@ -4280,7 +4277,7 @@ fn test_bm25_sort_descending() {
 #[test]
 fn test_bm25_with_limit() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     for i in 1..=10 {
@@ -4310,7 +4307,7 @@ fn test_bm25_with_limit() {
 #[test]
 fn test_bm25_no_matches() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     collection
@@ -4338,7 +4335,7 @@ fn test_bm25_no_matches() {
 #[test]
 fn test_bm25_empty_query() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("articles".to_string()).unwrap();
+    storage.create_collection("articles".to_string(), None).unwrap();
     let collection = storage.get_collection("articles").unwrap();
 
     collection
@@ -4361,4 +4358,715 @@ fn test_bm25_empty_query() {
     assert_eq!(results.len(), 1);
     // Empty query should return 0 score
     assert_eq!(results[0].as_f64().unwrap(), 0.0);
+}
+
+// ==================== AGGREGATE FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_avg_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN AVG([10, 20, 30, 40, 50])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 30.0);
+}
+
+#[test]
+fn test_execute_min_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN MIN([5, 2, 8, 1, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 1.0);
+}
+
+#[test]
+fn test_execute_max_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN MAX([5, 2, 8, 1, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 9.0);
+}
+
+#[test]
+fn test_execute_count_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN COUNT([1, 2, 3, 4, 5])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 5);
+}
+
+#[test]
+fn test_execute_count_distinct_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN COUNT_DISTINCT([1, 2, 2, 3, 3, 3])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 3);
+}
+
+#[test]
+fn test_execute_variance_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN VARIANCE([2, 4, 4, 4, 5, 5, 7, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let variance = results[0].as_f64().unwrap();
+    assert!((variance - 4.0).abs() < 0.01);
+}
+
+#[test]
+fn test_execute_variance_sample_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN VARIANCE_SAMPLE([2, 4, 4, 4, 5, 5, 7, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let variance = results[0].as_f64().unwrap();
+    assert!((variance - 4.571).abs() < 0.01);
+}
+
+#[test]
+fn test_execute_stddev_population_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN STDDEV_POPULATION([2, 4, 4, 4, 5, 5, 7, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let stddev = results[0].as_f64().unwrap();
+    assert!((stddev - 2.0).abs() < 0.01);
+}
+
+#[test]
+fn test_execute_stddev_sample_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN STDDEV_SAMPLE([2, 4, 4, 4, 5, 5, 7, 9])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let stddev = results[0].as_f64().unwrap();
+    assert!((stddev - 2.138).abs() < 0.01);
+}
+
+#[test]
+fn test_execute_median_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN MEDIAN([1, 2, 3, 4, 5])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 3.0);
+}
+
+#[test]
+fn test_execute_median_even_count() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN MEDIAN([1, 2, 3, 4])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 2.5);
+}
+
+#[test]
+fn test_execute_percentile_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN PERCENTILE([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 50)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 5.5);
+}
+
+// ==================== ARRAY FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_unique_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN UNIQUE([1, 2, 2, 3, 3, 3])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+}
+
+#[test]
+fn test_execute_sorted_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN SORTED([3, 1, 4, 1, 5, 9, 2, 6])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr[0].as_f64().unwrap() as i64, 1);
+    assert_eq!(arr[arr.len()-1].as_f64().unwrap() as i64, 9);
+}
+
+#[test]
+fn test_execute_sorted_unique_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN SORTED_UNIQUE([3, 1, 4, 1, 5, 9, 2, 6, 5])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 7); // unique values
+    assert_eq!(arr[0].as_f64().unwrap() as i64, 1);
+}
+
+#[test]
+fn test_execute_reverse_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN REVERSE([1, 2, 3, 4, 5])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr[0].as_f64().unwrap() as i64, 5);
+    assert_eq!(arr[4].as_f64().unwrap() as i64, 1);
+}
+
+#[test]
+fn test_execute_first_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN FIRST([10, 20, 30])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap() as i64, 10);
+}
+
+#[test]
+fn test_execute_last_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN LAST([10, 20, 30])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap() as i64, 30);
+}
+
+#[test]
+fn test_execute_slice_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use LET to ensure integers are properly typed
+    let query = parse("LET arr = [1, 2, 3, 4, 5] LET s = 1 LET l = 3 RETURN SLICE(arr, s, l)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+    assert_eq!(arr[0].as_f64().unwrap() as i64, 2);
+}
+
+#[test]
+fn test_execute_flatten_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN FLATTEN([[1, 2], [3, 4], [5]])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 5);
+}
+
+#[test]
+fn test_execute_push_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN PUSH([1, 2, 3], 4)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 4);
+    assert_eq!(arr[3].as_f64().unwrap() as i64, 4);
+}
+
+#[test]
+fn test_execute_append_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN APPEND([1, 2], [3, 4])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 4);
+}
+
+#[test]
+fn test_execute_union_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN UNION([1, 2, 3], [2, 3, 4])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 4); // UNION returns unique values
+}
+
+#[test]
+fn test_execute_union_distinct_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN UNION_DISTINCT([1, 2, 3], [2, 3, 4])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 4); // unique values only
+}
+
+#[test]
+fn test_execute_minus_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN MINUS([1, 2, 3, 4], [2, 4])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0].as_i64().unwrap(), 1);
+    assert_eq!(arr[1].as_i64().unwrap(), 3);
+}
+
+#[test]
+fn test_execute_intersection_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN INTERSECTION([1, 2, 3, 4], [2, 3, 5])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let arr = results[0].as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+}
+
+#[test]
+fn test_execute_position_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN POSITION([10, 20, 30, 40], 30)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 2);
+}
+
+#[test]
+fn test_execute_contains_array_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN CONTAINS_ARRAY([1, 2, 3, 4], 3)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_bool().unwrap(), true);
+}
+
+#[test]
+fn test_execute_contains_array_false() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN CONTAINS_ARRAY([1, 2, 3, 4], 5)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_bool().unwrap(), false);
+}
+
+// ==================== MATH FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_floor_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN FLOOR(4.7)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 4.0);
+}
+
+#[test]
+fn test_execute_ceil_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN CEIL(4.2)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 5.0);
+}
+
+#[test]
+fn test_execute_abs_negative() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN ABS(-42)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 42.0);
+}
+
+// ==================== STRING FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_substring_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use LET to ensure integers are properly typed
+    let query = parse(r#"LET s = "Hello World" LET start = 0 LET len = 5 RETURN SUBSTRING(s, start, len)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "Hello");
+}
+
+#[test]
+fn test_execute_substring_from_offset() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use LET to ensure integers are properly typed
+    let query = parse(r#"LET s = "Hello World" LET start = 6 RETURN SUBSTRING(s, start)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "World");
+}
+
+#[test]
+fn test_execute_has_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR u IN users FILTER HAS(u, "age") RETURN u.name"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3); // All users have age
+}
+
+#[test]
+fn test_execute_has_function_missing_field() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR u IN users FILTER HAS(u, "salary") RETURN u.name"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 0); // No users have salary field
+}
+
+#[test]
+fn test_execute_keep_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR u IN users RETURN KEEP(u, "name", "age")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    for result in results {
+        let obj = result.as_object().unwrap();
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("age"));
+        assert!(!obj.contains_key("city"));
+        assert!(!obj.contains_key("active"));
+    }
+}
+
+#[test]
+fn test_execute_keep_function_array_syntax() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"FOR u IN users RETURN KEEP(u, ["name", "city"])"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 3);
+    for result in results {
+        let obj = result.as_object().unwrap();
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("city"));
+        assert!(!obj.contains_key("age"));
+    }
+}
+
+// ==================== GEO FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_geo_distance_function() {
+    let (storage, _dir) = create_test_storage();
+    storage.create_collection("places".to_string(), None).unwrap();
+    let collection = storage.get_collection("places").unwrap();
+
+    collection
+        .insert(json!({
+            "_key": "paris",
+            "name": "Paris",
+            "location": {"lat": 48.8566, "lon": 2.3522}
+        }))
+        .unwrap();
+
+    let query = parse(
+        r#"
+        FOR p IN places
+        LET london = {"lat": 51.5074, "lon": -0.1278}
+        RETURN GEO_DISTANCE(p.location, london)
+    "#,
+    )
+    .unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    let distance = results[0].as_f64().unwrap();
+    // Distance Paris-London is approximately 344km
+    assert!(distance > 340000.0 && distance < 350000.0);
+}
+
+// ==================== DATE FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_date_subtract_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Use timestamp instead of string since RFC3339 parsing is strict
+    // 2024-01-15T00:00:00Z = 1705276800000 ms
+    let query = parse(r#"RETURN DATE_SUBTRACT(1705276800000, 5, "days")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].as_str().unwrap().starts_with("2024-01-10"));
+}
+
+#[test]
+fn test_execute_date_dayofyear_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // 2024-02-01T00:00:00Z = 1706745600000 ms 
+    let query = parse("RETURN DATE_DAYOFYEAR(1706745600000)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 32); // Feb 1 is day 32
+}
+
+#[test]
+fn test_execute_date_days_in_month_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // 2024-02-15T00:00:00Z = 1707955200000 ms
+    let query = parse("RETURN DATE_DAYS_IN_MONTH(1707955200000)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 29); // 2024 is leap year
+}
+
+#[test]
+fn test_execute_date_isoweek_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // 2024-01-08T00:00:00Z = 1704672000000 ms
+    let query = parse("RETURN DATE_ISOWEEK(1704672000000)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_i64().unwrap(), 2); // Jan 8, 2024 is week 2
+}
+
+
+// ==================== MISSING FUNCTION TESTS ====================
+
+#[test]
+fn test_execute_sum_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse("RETURN SUM([10, 20, 30, 40])").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_f64().unwrap(), 100.0);
+}
+
+#[test]
+fn test_execute_nth_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // NTH is 0-based
+    let query = parse("LET arr = [10, 20, 30, 40] LET idx = 2 RETURN NTH(arr, idx)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+    assert_eq!(results[0].as_f64().unwrap() as i64, 30);
+}
+
+#[test]
+fn test_execute_concat_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"RETURN CONCAT("Hello", " ", "World", "!")"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "Hello World!");
+}
+
+#[test]
+fn test_execute_concat_with_numbers() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    let query = parse(r#"RETURN CONCAT("Age: ", 30)"#).unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "Age: 30");
+}
+
+#[test]
+fn test_execute_date_iso8601_function() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // 1704067200000 = 2024-01-01T00:00:00.000Z
+    let query = parse("RETURN DATE_ISO8601(1704067200000)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "2024-01-01T00:00:00.000Z");
+}
+
+#[test]
+fn test_execute_date_iso8601_with_float() {
+    let (storage, _dir) = create_test_storage();
+    setup_users_collection(&storage);
+
+    // Float timestamp
+    let query = parse("RETURN DATE_ISO8601(1704067200000.5)").unwrap();
+    let executor = QueryExecutor::new(&storage);
+    let results = executor.execute(&query).unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].as_str().unwrap(), "2024-01-01T00:00:00.000Z");
 }

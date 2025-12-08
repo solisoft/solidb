@@ -18,7 +18,7 @@ fn create_test_storage() -> (StorageEngine, TempDir) {
 fn test_create_collection() {
     let (storage, _dir) = create_test_storage();
 
-    let result = storage.create_collection("users".to_string());
+    let result = storage.create_collection("users".to_string(), None);
     assert!(result.is_ok());
 
     let collections = storage.list_collections();
@@ -29,8 +29,8 @@ fn test_create_collection() {
 fn test_create_duplicate_collection_fails() {
     let (storage, _dir) = create_test_storage();
 
-    storage.create_collection("users".to_string()).unwrap();
-    let result = storage.create_collection("users".to_string());
+    storage.create_collection("users".to_string(), None).unwrap();
+    let result = storage.create_collection("users".to_string(), None);
 
     assert!(matches!(result, Err(DbError::CollectionAlreadyExists(_))));
 }
@@ -39,7 +39,7 @@ fn test_create_duplicate_collection_fails() {
 fn test_get_collection() {
     let (storage, _dir) = create_test_storage();
 
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users");
 
     assert!(collection.is_ok());
@@ -58,7 +58,7 @@ fn test_get_nonexistent_collection_fails() {
 fn test_delete_collection() {
     let (storage, _dir) = create_test_storage();
 
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let result = storage.delete_collection("users");
 
     assert!(result.is_ok());
@@ -69,9 +69,9 @@ fn test_delete_collection() {
 fn test_list_multiple_collections() {
     let (storage, _dir) = create_test_storage();
 
-    storage.create_collection("users".to_string()).unwrap();
-    storage.create_collection("products".to_string()).unwrap();
-    storage.create_collection("orders".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
+    storage.create_collection("products".to_string(), None).unwrap();
+    storage.create_collection("orders".to_string(), None).unwrap();
 
     let collections = storage.list_collections();
     assert_eq!(collections.len(), 3);
@@ -85,7 +85,7 @@ fn test_list_multiple_collections() {
 #[test]
 fn test_insert_document() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let doc = collection
@@ -102,7 +102,7 @@ fn test_insert_document() {
 #[test]
 fn test_insert_document_with_custom_key() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let doc = collection
@@ -119,7 +119,7 @@ fn test_insert_document_with_custom_key() {
 #[test]
 fn test_get_document() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let inserted = collection
@@ -137,7 +137,7 @@ fn test_get_document() {
 #[test]
 fn test_get_nonexistent_document_fails() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let result = collection.get("nonexistent");
@@ -147,7 +147,7 @@ fn test_get_nonexistent_document_fails() {
 #[test]
 fn test_update_document() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection
@@ -177,7 +177,7 @@ fn test_update_document() {
 #[test]
 fn test_delete_document() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection
@@ -197,7 +197,7 @@ fn test_delete_document() {
 #[test]
 fn test_all_documents() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection.insert(json!({"name": "Alice"})).unwrap();
@@ -211,7 +211,7 @@ fn test_all_documents() {
 #[test]
 fn test_document_count() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     assert_eq!(collection.count(), 0);
@@ -227,7 +227,7 @@ fn test_document_count() {
 #[test]
 fn test_create_index() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let stats = collection
@@ -246,7 +246,7 @@ fn test_create_index() {
 #[test]
 fn test_index_lookup_eq() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Insert documents first
@@ -280,7 +280,7 @@ fn test_index_lookup_eq() {
 #[test]
 fn test_list_indexes() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection
@@ -307,7 +307,7 @@ fn test_list_indexes() {
 #[test]
 fn test_drop_index() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     collection
@@ -336,7 +336,7 @@ fn test_data_persists_after_reopen() {
     // Create storage, insert data, drop storage
     {
         let storage = StorageEngine::new(&path).unwrap();
-        storage.create_collection("users".to_string()).unwrap();
+        storage.create_collection("users".to_string(), None).unwrap();
         let collection = storage.get_collection("users").unwrap();
         collection
             .insert(json!({
@@ -369,7 +369,7 @@ fn test_index_persists_after_reopen() {
     // Create storage with index
     {
         let storage = StorageEngine::new(&path).unwrap();
-        storage.create_collection("users".to_string()).unwrap();
+        storage.create_collection("users".to_string(), None).unwrap();
         let collection = storage.get_collection("users").unwrap();
         collection
             .insert(json!({"_key": "alice", "age": 30}))
@@ -399,7 +399,7 @@ fn test_index_persists_after_reopen() {
 #[test]
 fn test_create_geo_index() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string()).unwrap();
+    storage.create_collection("places".to_string(), None).unwrap();
     let collection = storage.get_collection("places").unwrap();
 
     let stats = collection
@@ -413,7 +413,7 @@ fn test_create_geo_index() {
 #[test]
 fn test_geo_near() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string()).unwrap();
+    storage.create_collection("places".to_string(), None).unwrap();
     let collection = storage.get_collection("places").unwrap();
 
     // Insert places
@@ -459,7 +459,7 @@ fn test_geo_near() {
 #[test]
 fn test_geo_within() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string()).unwrap();
+    storage.create_collection("places".to_string(), None).unwrap();
     let collection = storage.get_collection("places").unwrap();
 
     // Insert places
@@ -496,7 +496,7 @@ fn test_geo_within() {
 #[test]
 fn test_document_has_revision() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     let doc = collection
@@ -516,7 +516,7 @@ fn test_document_has_revision() {
 #[test]
 fn test_revision_changes_on_update() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
@@ -546,7 +546,7 @@ fn test_revision_changes_on_update() {
 #[test]
 fn test_update_with_rev_success() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
@@ -575,7 +575,7 @@ fn test_update_with_rev_success() {
 #[test]
 fn test_update_with_rev_conflict() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document
@@ -613,7 +613,7 @@ fn test_update_with_rev_conflict() {
 #[test]
 fn test_revision_accessible_via_get() {
     let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string()).unwrap();
+    storage.create_collection("users".to_string(), None).unwrap();
     let collection = storage.get_collection("users").unwrap();
 
     // Insert document

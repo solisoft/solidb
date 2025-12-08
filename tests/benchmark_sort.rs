@@ -10,7 +10,7 @@ async fn test_benchmark_sort_limit() {
     let temp_dir = TempDir::new().unwrap();
     let storage = StorageEngine::new(temp_dir.path().to_str().unwrap()).unwrap();
     
-    storage.create_collection("bench".to_string()).unwrap();
+    storage.create_collection("bench".to_string(), None).unwrap();
     let collection = storage.get_collection("bench").unwrap();
     
     collection.create_index("idx1".to_string(), "val".to_string(), IndexType::Persistent, false).unwrap();
