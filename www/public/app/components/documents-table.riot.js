@@ -186,13 +186,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr369="expr369" class="flex justify-center items-center py-12"></div><div expr370="expr370" class="text-center py-12"></div><div expr373="expr373" class="text-center py-12"></div><div expr375="expr375" class="max-h-[60vh] overflow-y-auto"></div><div expr383="expr383" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr584="expr584" class="flex justify-center items-center py-12"></div><div expr585="expr585" class="text-center py-12"></div><div expr588="expr588" class="text-center py-12"></div><div expr590="expr590" class="max-h-[60vh] overflow-y-auto"></div><div expr598="expr598" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr369',
-        selector: '[expr369]',
+        redundantAttribute: 'expr584',
+        selector: '[expr584]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>',
@@ -202,15 +202,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr370',
-        selector: '[expr370]',
+        redundantAttribute: 'expr585',
+        selector: '[expr585]',
 
         template: template(
-          '<p expr371="expr371" class="text-red-400"> </p><button expr372="expr372" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr586="expr586" class="text-red-400"> </p><button expr587="expr587" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr371',
-              selector: '[expr371]',
+              redundantAttribute: 'expr586',
+              selector: '[expr586]',
 
               expressions: [
                 {
@@ -227,8 +227,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr372',
-              selector: '[expr372]',
+              redundantAttribute: 'expr587',
+              selector: '[expr587]',
 
               expressions: [
                 {
@@ -244,15 +244,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length===0,
-        redundantAttribute: 'expr373',
-        selector: '[expr373]',
+        redundantAttribute: 'expr588',
+        selector: '[expr588]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr374="expr374" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr589="expr589" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr374',
-              selector: '[expr374]',
+              redundantAttribute: 'expr589',
+              selector: '[expr589]',
 
               expressions: [
                 {
@@ -268,11 +268,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
-        redundantAttribute: 'expr375',
-        selector: '[expr375]',
+        redundantAttribute: 'expr590',
+        selector: '[expr590]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr376="expr376" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr591="expr591" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -280,11 +280,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr377="expr377" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr378="expr378" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr379="expr379" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr380="expr380" class="inline-block"></div><button expr381="expr381" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr382="expr382" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
+                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr592="expr592" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr593="expr593" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr594="expr594" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr595="expr595" class="inline-block"></div><button expr596="expr596" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr597="expr597" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr377',
-                    selector: '[expr377]',
+                    redundantAttribute: 'expr592',
+                    selector: '[expr592]',
 
                     expressions: [
                       {
@@ -300,8 +300,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => !_scope.state.isBlob,
-                    redundantAttribute: 'expr378',
-                    selector: '[expr378]',
+                    redundantAttribute: 'expr593',
+                    selector: '[expr593]',
 
                     template: template(
                       '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>',
@@ -321,8 +321,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId !==_scope.doc._key,
-                    redundantAttribute: 'expr379',
-                    selector: '[expr379]',
+                    redundantAttribute: 'expr594',
+                    selector: '[expr594]',
 
                     template: template(
                       '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>',
@@ -342,8 +342,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId===_scope.doc._key,
-                    redundantAttribute: 'expr380',
-                    selector: '[expr380]',
+                    redundantAttribute: 'expr595',
+                    selector: '[expr595]',
 
                     template: template(
                       '<svg class="animate-spin h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>',
@@ -351,8 +351,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr381',
-                    selector: '[expr381]',
+                    redundantAttribute: 'expr596',
+                    selector: '[expr596]',
 
                     expressions: [
                       {
@@ -363,8 +363,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr382',
-                    selector: '[expr382]',
+                    redundantAttribute: 'expr597',
+                    selector: '[expr597]',
 
                     expressions: [
                       {
@@ -377,8 +377,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr376',
-              selector: '[expr376]',
+              redundantAttribute: 'expr591',
+              selector: '[expr591]',
               itemName: 'doc',
               indexName: 'idx',
               evaluate: _scope => _scope.state.documents
@@ -389,15 +389,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount> 0,
-        redundantAttribute: 'expr383',
-        selector: '[expr383]',
+        redundantAttribute: 'expr598',
+        selector: '[expr598]',
 
         template: template(
-          '<div expr384="expr384" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr385="expr385" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr386="expr386" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
+          '<div expr599="expr599" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr600="expr600" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr601="expr601" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr384',
-              selector: '[expr384]',
+              redundantAttribute: 'expr599',
+              selector: '[expr599]',
 
               expressions: [
                 {
@@ -422,8 +422,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr385',
-              selector: '[expr385]',
+              redundantAttribute: 'expr600',
+              selector: '[expr600]',
 
               expressions: [
                 {
@@ -440,8 +440,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr386',
-              selector: '[expr386]',
+              redundantAttribute: 'expr601',
+              selector: '[expr601]',
 
               expressions: [
                 {

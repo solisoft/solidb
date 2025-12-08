@@ -85,20 +85,20 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr387="expr387" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
+    '<div expr560="expr560" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr387',
-        selector: '[expr387]',
+        redundantAttribute: 'expr560',
+        selector: '[expr560]',
 
         template: template(
-          '<div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-100">View Document</h3><button expr388="expr388" class="text-gray-400 hover:text-gray-300"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><pre expr389="expr389" class="bg-gray-900 p-4 rounded-md text-gray-100 font-mono text-sm overflow-x-auto"> </pre><div class="flex justify-end space-x-3 mt-4"><button expr390="expr390" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n          Close\n        </button><button expr391="expr391" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"></button><button expr393="expr393" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n          Edit\n        </button></div></div>',
+          '<div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-100">View Document</h3><button expr561="expr561" class="text-gray-400 hover:text-gray-300"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><pre expr562="expr562" class="bg-gray-900 p-4 rounded-md text-gray-100 font-mono text-sm overflow-x-auto"> </pre><div class="flex justify-end space-x-3 mt-4"><button expr563="expr563" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n          Close\n        </button><button expr564="expr564" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"></button><button expr566="expr566" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n          Edit\n        </button></div></div>',
           [
             {
-              redundantAttribute: 'expr388',
-              selector: '[expr388]',
+              redundantAttribute: 'expr561',
+              selector: '[expr561]',
 
               expressions: [
                 {
@@ -109,8 +109,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr389',
-              selector: '[expr389]',
+              redundantAttribute: 'expr562',
+              selector: '[expr562]',
 
               expressions: [
                 {
@@ -121,8 +121,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr390',
-              selector: '[expr390]',
+              redundantAttribute: 'expr563',
+              selector: '[expr563]',
 
               expressions: [
                 {
@@ -135,11 +135,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.isBlob,
-              redundantAttribute: 'expr391',
-              selector: '[expr391]',
+              redundantAttribute: 'expr564',
+              selector: '[expr564]',
 
               template: template(
-                '<svg expr392="expr392" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ',
+                '<svg expr565="expr565" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ',
                 [
                   {
                     expressions: [
@@ -169,8 +169,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.state.downloading,
-                    redundantAttribute: 'expr392',
-                    selector: '[expr392]',
+                    redundantAttribute: 'expr565',
+                    selector: '[expr565]',
 
                     template: template(
                       '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>',
@@ -181,8 +181,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr393',
-              selector: '[expr393]',
+              redundantAttribute: 'expr566',
+              selector: '[expr566]',
 
               expressions: [
                 {

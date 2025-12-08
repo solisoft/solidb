@@ -24,6 +24,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 🧩 **Sharding**: Horizontal data partitioning with configurable shard count
 - ⚖️ **Auto-Rebalancing**: Automatic data redistribution when nodes change
 - 💳 **Transactions**: ACID transactions via X-Transaction-ID header
+- 🖥️ **Web Dashboard**: Built-in admin UI for managing the database
 
 ## Quick Start
 
@@ -175,6 +176,31 @@ solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6
 # Node 3 (joins via any existing node)
 solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
 ```
+
+### Cluster Mode
+
+```bash
+# Node 1 (initial node)
+solidb --data-dir ./data1 --port 6745 --replication-port 6746
+
+# Node 2 (joins the cluster)
+solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746
+
+# Node 3 (joins via any existing node)
+solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
+```
+
+### Web Dashboard
+
+SoliDB includes a modern web-based administration dashboard source code in the `www/` directory.
+
+To run the dashboard locally for development:
+
+1. Navigate to the `www` directory: `cd www`
+2. Install dependencies: `npm install`
+3. Start the development server: `beans dev`
+
+For full documentation on the dashboard, see [www/README.md](www/README.md).
 
 ### Basic Usage
 

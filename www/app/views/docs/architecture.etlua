@@ -1,708 +1,235 @@
-<div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-  <!-- Header Section -->
-  <div class="mb-12 relative">
-    <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 blur-3xl -z-10 rounded-full"></div>
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
-      <div>
-        <a href="/docs" class="inline-flex items-center text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors mb-4 group">
-          <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to Documentation
-        </a>
-        <h1 class="text-5xl font-black text-white tracking-tight mb-4">
-          Architecture <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">Deep Dive</span>
-        </h1>
-        <p class="text-xl text-gray-400 max-w-2xl">
-          Complete documentation of SoliDB's Rust codebase, internal structure, and design principles.
-        </p>
-      </div>
-    </div>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
   </div>
 
   <div class="grid grid-cols-12 gap-8 lg:gap-12">
-    <!-- Sidebar Navigation -->
-    <div class="col-span-12 lg:col-span-3">
-      <nav class="sticky top-24 space-y-2 bg-gray-900/30 backdrop-blur-sm rounded-xl p-4 border border-white/5">
-        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 px-3">Navigation</h3>
-        <a href="#overview" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Overview</a>
-        <a href="#tech-stack" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Technology Stack</a>
-        <a href="#project-structure" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Project Structure</a>
-        <a href="#storage-layer" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Storage Layer</a>
-        <a href="#aql-engine" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">AQL Engine</a>
-        <a href="#server-api" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Server & API</a>
-        <a href="#cluster" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Cluster & Replication</a>
-        <a href="#sharding" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Sharding</a>
-        <a href="#transactions" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">Transactions</a>
-        <a href="#cli-tools" class="block px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">CLI Tools</a>
-      </nav>
-    </div>
+    
+    <!-- Sidebar Partial -->
+    <%- Partial("architecture_sidebar") %>
 
     <!-- Main Content -->
-    <div class="col-span-12 lg:col-span-9 space-y-16">
-      
-      <!-- Overview -->
-      <section id="overview" class="scroll-mt-24">
-        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-          <div class="flex items-center mb-6">
-            <div class="p-3 bg-indigo-500/10 rounded-lg mr-4">
-              <i class="fas fa-layer-group text-indigo-400 text-xl"></i>
-            </div>
-            <h2 class="text-2xl font-bold text-white">Overview</h2>
-          </div>
-          <p class="text-gray-300 leading-relaxed text-lg mb-6">
-            SoliDB is a high-performance document database written in Rust. It combines memory safety with zero-copy serialization to deliver exceptional throughput for JSON document storage and AQL queries.
+    <div class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+       <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 mb-4 tracking-tight">System Architecture</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            A deep dive into the internals of SoliDB, built with Rust for performance and safety.
           </p>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5 text-center">
-              <div class="text-2xl font-bold text-indigo-400 mb-1">~9K</div>
-              <div class="text-xs text-gray-500">Lines of Rust</div>
-            </div>
-            <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5 text-center">
-              <div class="text-2xl font-bold text-purple-400 mb-1">7</div>
-              <div class="text-xs text-gray-500">Core Modules</div>
-            </div>
-            <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5 text-center">
-              <div class="text-2xl font-bold text-pink-400 mb-1">50+</div>
-              <div class="text-xs text-gray-500">AQL Functions</div>
-            </div>
-            <div class="bg-gray-950/50 p-4 rounded-xl border border-white/5 text-center">
-              <div class="text-2xl font-bold text-green-400 mb-1">4</div>
-              <div class="text-xs text-gray-500">CLI Tools</div>
-            </div>
-          </div>
         </div>
-      </section>
+      </div>
 
-      <!-- Technology Stack -->
-      <section id="tech-stack" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-indigo-500 rounded-full"></span>
-            Technology Stack
-          </h2>
-          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- Core Runtime -->
-          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-indigo-500/30 transition-all group">
-            <div class="flex items-center mb-6 gap-6">
-              <div class="p-3 bg-indigo-500/20 rounded-xl border border-indigo-500/30 group-hover:scale-110 transition-transform">
-                <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+      <!-- Introduction Section -->
+        <section id="introduction" class="scroll-mt-24">
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+                <i class="fas fa-layer-group text-sm"></i>
               </div>
-              <h3 class="text-xl font-bold text-white">Core Runtime</h3>
+              <h2 class="text-2xl font-bold text-white">Overview</h2>
             </div>
-            <ul class="space-y-4">
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-indigo-300 block mb-1">Rust</strong>
-                  <span class="text-sm text-gray-400">Memory safety without garbage collection, ensuring predictable high performance.</span>
-                </div>
-              </li>
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-indigo-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-indigo-300 block mb-1">Tokio</strong>
-                  <span class="text-sm text-gray-400">Asynchronous runtime for handling thousands of concurrent connections.</span>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Web Server -->
-          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-purple-500/30 transition-all group">
-            <div class="flex items-center mb-6 gap-6">
-              <div class="p-3 bg-purple-500/20 rounded-xl border border-purple-500/30 group-hover:scale-110 transition-transform">
-                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+            
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB is a high-performance, distributed, multi-model database. It features a layered architecture that separates network handling, query processing, clustering logic, and storage.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+                 <div class="text-indigo-400 font-bold mb-1">API Layer</div>
+                 <p class="text-xs text-gray-500">Axum & Tokio</p>
               </div>
-              <h3 class="text-xl font-bold text-white">Web Server</h3>
-            </div>
-            <ul class="space-y-4">
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-purple-300 block mb-1">Axum</strong>
-                  <span class="text-sm text-gray-400">Ergonomic, modular web framework built on Hyper.</span>
-                </div>
-              </li>
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-purple-300 block mb-1">Tower</strong>
-                  <span class="text-sm text-gray-400">Middleware stack for timeouts, tracing, and backpressure.</span>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Storage Engine -->
-          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-pink-500/30 transition-all group">
-            <div class="flex items-center mb-6 gap-6">
-              <div class="p-3 bg-pink-500/20 rounded-xl border border-pink-500/30 group-hover:scale-110 transition-transform">
-                <svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+                 <div class="text-blue-400 font-bold mb-1">Cluster Layer</div>
+                 <p class="text-xs text-gray-500">Sharding & Raft</p>
               </div>
-              <h3 class="text-xl font-bold text-white">Storage Engine</h3>
-            </div>
-            <ul class="space-y-4">
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-pink-300 block mb-1">RocksDB</strong>
-                  <span class="text-sm text-gray-400">Battle-tested LSM-tree key-value store optimized for SSDs.</span>
-                </div>
-              </li>
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-pink-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-pink-300 block mb-1">Serde</strong>
-                  <span class="text-sm text-gray-400">Zero-copy serialization framework for efficient JSON handling.</span>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Utilities -->
-          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl p-8 hover:border-green-500/30 transition-all group">
-            <div class="flex items-center mb-6 gap-6">
-              <div class="p-3 bg-green-500/20 rounded-xl border border-green-500/30 group-hover:scale-110 transition-transform">
-                <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+                 <div class="text-purple-400 font-bold mb-1">Logic Layer</div>
+                 <p class="text-xs text-gray-500">AQL Engine</p>
               </div>
-              <h3 class="text-xl font-bold text-white">Utilities</h3>
+              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+                 <div class="text-pink-400 font-bold mb-1">Storage Layer</div>
+                 <p class="text-xs text-gray-500">RocksDB</p>
+              </div>
             </div>
-            <ul class="space-y-4">
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-green-300 block mb-1">Tracing</strong>
-                  <span class="text-sm text-gray-400">Structured logging and distributed tracing for observability.</span>
-                </div>
-              </li>
-              <li class="flex items-start">
-                <svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                <div>
-                  <strong class="text-green-300 block mb-1">Chrono</strong>
-                  <span class="text-sm text-gray-400">Date and time library for AQL date functions.</span>
-                </div>
-              </li>
-            </ul>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Project Structure -->
-      <section id="project-structure" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-purple-500 rounded-full"></span>
-            Project Structure
-          </h2>
-          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
-        </div>
-
-        <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto mb-8">
-          <pre class="text-gray-300">src/
-├── main.rs           <span class="text-gray-500"># Application entry point, CLI args, daemon mode</span>
-├── lib.rs            <span class="text-gray-500"># Library exports</span>
-├── error.rs          <span class="text-gray-500"># Error types (DbError, DbResult)</span>
-├── aql/              <span class="text-gray-500"># AQL Query Engine</span>
-│   ├── lexer.rs      <span class="text-gray-500"># Tokenizer</span>
-│   ├── parser.rs     <span class="text-gray-500"># AST builder</span>
-│   ├── ast.rs        <span class="text-gray-500"># Abstract Syntax Tree types</span>
-│   └── executor.rs   <span class="text-gray-500"># Query execution (4000+ lines)</span>
-├── storage/          <span class="text-gray-500"># Data Persistence Layer</span>
-│   ├── engine.rs     <span class="text-gray-500"># StorageEngine - RocksDB wrapper</span>
-│   ├── database.rs   <span class="text-gray-500"># Database namespace management</span>
-│   ├── collection.rs <span class="text-gray-500"># Document CRUD, indexes (2400+ lines)</span>
-│   ├── document.rs   <span class="text-gray-500"># Document struct with _key, _rev</span>
-│   ├── index.rs      <span class="text-gray-500"># Index metadata types</span>
-│   └── geo.rs        <span class="text-gray-500"># Geo-spatial indexing</span>
-├── server/           <span class="text-gray-500"># HTTP API Layer</span>
-│   ├── routes.rs     <span class="text-gray-500"># Route definitions</span>
-│   ├── handlers.rs   <span class="text-gray-500"># Request handlers</span>
-│   ├── transaction_handlers.rs <span class="text-gray-500"># Transaction API</span>
-│   └── cursor_store.rs <span class="text-gray-500"># Query cursor management</span>
-├── cluster/          <span class="text-gray-500"># Multi-Node Replication</span>
-│   ├── service.rs    <span class="text-gray-500"># ReplicationService (1600+ lines)</span>
-│   ├── replication.rs <span class="text-gray-500"># Persistent replication log</span>
-│   ├── hlc.rs        <span class="text-gray-500"># Hybrid Logical Clocks</span>
-│   └── config.rs     <span class="text-gray-500"># Cluster configuration</span>
-├── sharding/         <span class="text-gray-500"># Horizontal Partitioning</span>
-│   ├── coordinator.rs <span class="text-gray-500"># ShardCoordinator</span>
-│   ├── router.rs     <span class="text-gray-500"># Consistent hashing router</span>
-│   ├── health.rs     <span class="text-gray-500"># Node health tracking</span>
-│   └── replication_queue.rs <span class="text-gray-500"># Async replication queue</span>
-├── transaction/      <span class="text-gray-500"># ACID Transactions</span>
-│   ├── mod.rs        <span class="text-gray-500"># Transaction types</span>
-│   ├── manager.rs    <span class="text-gray-500"># TransactionManager</span>
-│   └── wal.rs        <span class="text-gray-500"># Write-Ahead Log</span>
-└── bin/              <span class="text-gray-500"># CLI Tools</span>
-    ├── solidb-dump.rs    <span class="text-gray-500"># Database export</span>
-    ├── solidb-restore.rs <span class="text-gray-500"># Database import</span>
-    ├── benchmark.rs      <span class="text-gray-500"># Performance testing</span>
-    └── http-benchmark.rs <span class="text-gray-500"># HTTP API benchmarks</span></pre>
-        </div>
-      </section>
-
-      <!-- Storage Layer -->
-      <section id="storage-layer" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-pink-500 rounded-full"></span>
-            Storage Layer
-          </h2>
-          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
-        </div>
-
-        <div class="space-y-6">
-          <!-- StorageEngine -->
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-pink-300 mb-4 font-mono">StorageEngine</h3>
-            <p class="text-gray-400 mb-4">Central orchestrator for all data operations. Wraps RocksDB with column families for each collection.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-2">Key Methods</code>
-                <ul class="text-xs text-gray-500 space-y-1">
-                  <li><code class="text-pink-400">new(data_dir)</code> - Initialize RocksDB</li>
-                  <li><code class="text-pink-400">create_database(name)</code> - Create namespace</li>
-                  <li><code class="text-pink-400">get_database(name)</code> - Get database handle</li>
-                  <li><code class="text-pink-400">create_collection(name)</code> - Create column family</li>
-                  <li><code class="text-pink-400">get_collection(name)</code> - Get collection handle</li>
+      <!-- Tech Stack Section -->
+        <section id="tech-stack" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                <i class="fas fa-code text-sm"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Technology Stack</h2>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fab fa-rust text-orange-500 mr-2"></i> Core</h3>
+                <ul class="space-y-2 text-sm text-gray-400">
+                  <li><strong class="text-gray-300">Rust:</strong> Memory safety and performance without garbage collection.</li>
+                  <li><strong class="text-gray-300">Tokio:</strong> Asynchronous runtime for handling high concurrency.</li>
                 </ul>
               </div>
-              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-2">Features</code>
-                <ul class="text-xs text-gray-500 space-y-1">
-                  <li>• Cluster configuration support</li>
-                  <li>• Transaction manager integration</li>
-                  <li>• Auto-flush stats on shutdown</li>
-                  <li>• Cached collection handles</li>
+              <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-hdd text-green-500 mr-2"></i> Storage</h3>
+                 <ul class="space-y-2 text-sm text-gray-400">
+                  <li><strong class="text-gray-300">RocksDB:</strong> Embedded key-value store optimized for fast storage.</li>
+                  <li><strong class="text-gray-300">Sled:</strong> Experimental support for pure-Rust storage engine.</li>
+                </ul>
+              </div>
+               <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-network-wired text-purple-500 mr-2"></i> Networking</h3>
+                 <ul class="space-y-2 text-sm text-gray-400">
+                  <li><strong class="text-gray-300">Axum:</strong> Ergonomic and modular web framework.</li>
+                  <li><strong class="text-gray-300">Reqwest:</strong> HTTP client for cluster communication.</li>
+                </ul>
+              </div>
+               <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-project-diagram text-yellow-500 mr-2"></i> Tools</h3>
+                 <ul class="space-y-2 text-sm text-gray-400">
+                  <li><strong class="text-gray-300">Clap:</strong> Command-line argument parser.</li>
+                  <li><strong class="text-gray-300">Serde:</strong> Serialization framework for JSON handling.</li>
                 </ul>
               </div>
             </div>
           </div>
+        </section>
 
-          <!-- Collection -->
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-xl font-bold text-pink-300 mb-4 font-mono">Collection</h3>
-            <p class="text-gray-400 mb-4">Document container with full CRUD operations, indexing, and statistics tracking.</p>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-2">Document Operations</code>
-                <ul class="text-xs text-gray-500 space-y-1">
-                  <li><code class="text-pink-400">insert(data)</code></li>
-                  <li><code class="text-pink-400">insert_batch(docs)</code></li>
-                  <li><code class="text-pink-400">get(key)</code></li>
-                  <li><code class="text-pink-400">update(key, data)</code></li>
-                  <li><code class="text-pink-400">delete(key)</code></li>
-                  <li><code class="text-pink-400">scan_all()</code></li>
-                </ul>
+        <!-- Project Structure Section -->
+        <section id="project-structure" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+                <i class="fas fa-folder-open text-sm"></i>
               </div>
-              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-2">Index Types</code>
-                <ul class="text-xs text-gray-500 space-y-1">
-                  <li>• <strong class="text-white">Persistent</strong> - B-tree style</li>
-                  <li>• <strong class="text-white">Unique</strong> - Constraint enforcement</li>
-                  <li>• <strong class="text-white">Fulltext</strong> - N-gram tokenization</li>
-                  <li>• <strong class="text-white">Geo</strong> - Spatial (lat/lon)</li>
-                </ul>
+              <h2 class="text-2xl font-bold text-white">Project Structure</h2>
+            </div>
+            
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
+              <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500">
+                src/
               </div>
-              <div class="bg-gray-950/50 p-4 rounded border border-white/5">
-                <code class="text-sm font-bold text-white block mb-2">Index Methods</code>
-                <ul class="text-xs text-gray-500 space-y-1">
-                  <li><code class="text-pink-400">create_index(name, fields, type)</code></li>
-                  <li><code class="text-pink-400">delete_index(name)</code></li>
-                  <li><code class="text-pink-400">get_all_indexes()</code></li>
-                  <li><code class="text-pink-400">rebuild_all_indexes()</code></li>
-                </ul>
+              <div class="p-4 space-y-2">
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">api/</span>
+                  <span class="text-gray-500"># API route handlers and definitions</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">aql/</span>
+                  <span class="text-gray-500"># Query parser, optimizer, and execution engine</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">cluster/</span>
+                  <span class="text-gray-500"># Node discovery and replication logic</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">sharding/</span>
+                  <span class="text-gray-500"># Consistent hashing and shard management</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">storage/</span>
+                  <span class="text-gray-500"># RocksDB wrapper and collection management</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">server/</span>
+                  <span class="text-gray-500"># HTTP server startup and configuration</span>
+                </div>
+                 <div class="flex">
+                  <span class="text-indigo-400 w-32">main.rs</span>
+                  <span class="text-gray-500"># Application entry point</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- AQL Engine -->
-      <section id="aql-engine" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-orange-500 rounded-full"></span>
-            AQL Query Engine
-          </h2>
-          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
-        </div>
-
-        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 mb-6">
-          <h3 class="text-lg font-bold text-white mb-4">Query Pipeline</h3>
-          <div class="flex flex-wrap items-center justify-center gap-4">
-            <div class="bg-orange-500/20 px-4 py-2 rounded-lg border border-orange-500/30 text-center">
-              <div class="text-orange-300 font-bold">1. Lexer</div>
-              <div class="text-xs text-gray-500">Tokenization</div>
+        <!-- Storage Layer Section -->
+        <section id="storage-layer" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]">
+                <i class="fas fa-hdd text-sm"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Storage Layer</h2>
             </div>
-            <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            <div class="bg-orange-500/20 px-4 py-2 rounded-lg border border-orange-500/30 text-center">
-              <div class="text-orange-300 font-bold">2. Parser</div>
-              <div class="text-xs text-gray-500">AST Building</div>
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              The storage layer is an abstraction over RocksDB. It handles document serialization, index management, and atomic operations.
+            </p>
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
+                 <h4 class="text-yellow-400 font-bold mb-2">Documents</h4>
+                 <p class="text-xs text-gray-400">Stored as JSON bytes. Key format: <code class="bg-white/10 px-1 rounded">collection/key</code>.</p>
+               </div>
+               <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
+                 <h4 class="text-yellow-400 font-bold mb-2">Indexes</h4>
+                 <p class="text-xs text-gray-400">Secondary indexes stored in separate column families for efficient lookups.</p>
+               </div>
+             </div>
+          </div>
+        </section>
+
+        <!-- AQL Engine Section -->
+        <section id="aql-engine" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+                <i class="fas fa-terminal text-sm"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">AQL Engine</h2>
             </div>
-            <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            <div class="bg-orange-500/20 px-4 py-2 rounded-lg border border-orange-500/30 text-center">
-              <div class="text-orange-300 font-bold">3. Executor</div>
-              <div class="text-xs text-gray-500">Query Execution</div>
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              The AQL (ArangoDB Query Language) engine parses query strings into an Abstract Syntax Tree (AST), optimizes the execution plan, and executes it against the storage layer.
+            </p>
+             <div class="bg-gray-900 rounded-xl border border-white/10 p-4 font-mono text-xs text-gray-400 flex justify-between items-center overflow-x-auto">
+               <div>Query String</div>
+               <i class="fas fa-arrow-right text-gray-600"></i>
+               <div>Lexer/Parser</div>
+               <i class="fas fa-arrow-right text-gray-600"></i>
+               <div class="text-purple-400">AST</div>
+                <i class="fas fa-arrow-right text-gray-600"></i>
+               <div>Optimizer</div>
+                <i class="fas fa-arrow-right text-gray-600"></i>
+               <div class="text-green-400">Execution Plan</div>
+             </div>
+          </div>
+        </section>
+
+       <!-- Server & API Section -->
+        <section id="server-api" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+                <i class="fas fa-server text-sm"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Server & API</h2>
             </div>
-            <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            <div class="bg-green-500/20 px-4 py-2 rounded-lg border border-green-500/30 text-center">
-              <div class="text-green-300 font-bold">Results</div>
-              <div class="text-xs text-gray-500">JSON Array</div>
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Built on Axum, the server handles HTTP requests, authentication middleware, and routing to appropriate handlers.
+            </p>
+          </div>
+        </section>
+
+        <!-- Cluster & Replication Section -->
+        <section id="cluster-replication" class="scroll-mt-24">
+           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-6">
+              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+                <i class="fas fa-network-wired text-sm"></i>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Cluster & Replication</h2>
             </div>
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Nodes form a mesh network. Data is replicated updates are propagated to peers. The system uses a leader-follower model for sharded collections.
+            </p>
           </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-orange-300 mb-4 font-mono">QueryExecutor</h3>
-            <p class="text-gray-400 text-sm mb-4">Core execution engine supporting all AQL operations.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-orange-400">new(storage)</code> - Create executor</li>
-              <li><code class="text-orange-400">with_database(storage, db)</code> - With database context</li>
-              <li><code class="text-orange-400">with_bind_vars(storage, vars)</code> - Parameterized queries</li>
-              <li><code class="text-orange-400">execute(query)</code> - Run query, return results</li>
-              <li><code class="text-orange-400">explain(query)</code> - Get execution plan</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-orange-300 mb-4">Supported Operations</h3>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">FOR</code> <span class="text-gray-500">iteration</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">FILTER</code> <span class="text-gray-500">conditions</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">SORT</code> <span class="text-gray-500">ordering</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">LIMIT</code> <span class="text-gray-500">pagination</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">LET</code> <span class="text-gray-500">variables</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">COLLECT</code> <span class="text-gray-500">aggregation</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">INSERT</code> <span class="text-gray-500">create docs</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">UPDATE</code> <span class="text-gray-500">modify docs</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">REMOVE</code> <span class="text-gray-500">delete docs</span></div>
-              <div class="bg-gray-950/50 p-2 rounded"><code class="text-white">RETURN</code> <span class="text-gray-500">output</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Server & API -->
-      <section id="server-api" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span>
-            Server & API Layer
-          </h2>
-          <div class="h-px bg-gray-800 flex-grow ml-6"></div>
-        </div>
-
-        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6 mb-6">
-          <h3 class="text-lg font-bold text-white mb-4">HTTP API Routes</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-gray-500 border-b border-white/10">
-                  <th class="pb-3 pr-4">Method</th>
-                  <th class="pb-3 pr-4">Route</th>
-                  <th class="pb-3">Description</th>
-                </tr>
-              </thead>
-              <tbody class="text-gray-300">
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-green-400">GET</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_api/database</td>
-                  <td class="py-2 text-gray-500">List all databases</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-blue-400">POST</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_api/database</td>
-                  <td class="py-2 text-gray-500">Create database</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-green-400">GET</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_db/{db}/_api/collection</td>
-                  <td class="py-2 text-gray-500">List collections</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-blue-400">POST</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_db/{db}/_api/collection</td>
-                  <td class="py-2 text-gray-500">Create collection</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-blue-400">POST</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_db/{db}/_api/document/{coll}</td>
-                  <td class="py-2 text-gray-500">Insert document</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-green-400">GET</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_db/{db}/_api/document/{coll}/{key}</td>
-                  <td class="py-2 text-gray-500">Get document</td>
-                </tr>
-                <tr class="border-b border-white/5">
-                  <td class="py-2 pr-4"><span class="text-blue-400">POST</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_db/{db}/_api/cursor</td>
-                  <td class="py-2 text-gray-500">Execute AQL query</td>
-                </tr>
-                <tr>
-                  <td class="py-2 pr-4"><span class="text-blue-400">POST</span></td>
-                  <td class="py-2 pr-4 font-mono text-xs">/_api/transaction/begin</td>
-                  <td class="py-2 text-gray-500">Begin transaction</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-blue-300 mb-4 font-mono">handlers.rs</h3>
-            <p class="text-gray-400 text-sm mb-4">Request handlers implementing business logic.</p>
-            <ul class="text-xs text-gray-500 space-y-1">
-              <li>• Database CRUD handlers</li>
-              <li>• Collection CRUD handlers</li>
-              <li>• Document CRUD handlers</li>
-              <li>• AQL cursor handlers</li>
-              <li>• Index management handlers</li>
-              <li>• Cluster status handlers</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-blue-300 mb-4 font-mono">cursor_store.rs</h3>
-            <p class="text-gray-400 text-sm mb-4">Manages query result pagination.</p>
-            <ul class="text-xs text-gray-500 space-y-1">
-              <li><code class="text-blue-400">CursorStore</code> - In-memory cursor cache</li>
-              <li><code class="text-blue-400">create(results, batch_size)</code> - Create cursor</li>
-              <li><code class="text-blue-400">get_next_batch(id)</code> - Fetch next page</li>
-              <li><code class="text-blue-400">delete(id)</code> - Release cursor</li>
-              <li>• Auto-expiry after timeout</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <!-- Cluster & Replication -->
-      <section id="cluster" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-emerald-500 rounded-full"></span>
-            Cluster & Replication
-          </h2>
-          <span class="ml-4 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-500/30">MASTER-MASTER</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-emerald-300 mb-4 font-mono">ReplicationService</h3>
-            <p class="text-gray-400 text-sm mb-4">Peer-to-peer replication with automatic conflict resolution.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-emerald-400">new(storage, config, data_dir)</code></li>
-              <li><code class="text-emerald-400">start()</code> - Start TCP listener</li>
-              <li><code class="text-emerald-400">record_write(db, coll, op, key, data)</code></li>
-              <li><code class="text-emerald-400">apply_entries(entries)</code> - LWW resolution</li>
-              <li><code class="text-emerald-400">send_full_sync(writer)</code> - Initial sync</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-emerald-300 mb-4 font-mono">HlcGenerator</h3>
-            <p class="text-gray-400 text-sm mb-4">Hybrid Logical Clocks for distributed event ordering.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-emerald-400">now()</code> - Generate timestamp</li>
-              <li><code class="text-emerald-400">update(remote_ts)</code> - Sync with peer</li>
-              <li>• Combines wall clock + logical counter</li>
-              <li>• Causal ordering across nodes</li>
-              <li>• Node ID tiebreaker</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 font-mono text-sm overflow-x-auto">
-          <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Topology Diagram</h4>
-          <pre class="text-gray-300">┌─────────────────────────────────────────────────────────────┐
-│                    Cluster Architecture                     │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────┐    TCP/JSON    ┌─────────────┐            │
-│  │   Node 1    │◄──────────────►│   Node 2    │            │
-│  │  :6745/:6746│                │  :6755/:6756│            │
-│  └──────┬──────┘                └──────┬──────┘            │
-│         │                              │                   │
-│         │         TCP/JSON             │                   │
-│         └──────────────┬───────────────┘                   │
-│                        │                                   │
-│                        ▼                                   │
-│               ┌─────────────┐                              │
-│               │   Node 3    │                              │
-│               │  :6765/:6766│                              │
-│               └─────────────┘                              │
-│                                                             │
-│  Features:                                                  │
-│  • Bidirectional push/pull sync                            │
-│  • Last-Write-Wins conflict resolution                     │
-│  • Full sync for new nodes                                 │
-│  • Persistent replication log                              │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘</pre>
-        </div>
-      </section>
-
-      <!-- Sharding -->
-      <section id="sharding" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-amber-500 rounded-full"></span>
-            Sharding
-          </h2>
-          <span class="ml-4 px-3 py-1 bg-amber-500/20 text-amber-300 text-xs font-bold rounded-full border border-amber-500/30">HORIZONTAL SCALING</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-amber-300 mb-4 font-mono">ShardCoordinator</h3>
-            <p class="text-gray-400 text-sm mb-4">Coordinates shard-aware document operations across nodes.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-amber-400">new(storage, node_index, addresses)</code></li>
-              <li><code class="text-amber-400">insert(db, coll, config, doc)</code> - Route & replicate</li>
-              <li><code class="text-amber-400">get(db, coll, config, key)</code> - Read with failover</li>
-              <li><code class="text-amber-400">scan_all_shards(db, coll, config)</code> - Full scan</li>
-              <li><code class="text-amber-400">rebalance()</code> - Redistribute data</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-amber-300 mb-4 font-mono">ShardRouter</h3>
-            <p class="text-gray-400 text-sm mb-4">Consistent hashing for shard assignment.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-amber-400">route(key)</code> - Get shard ID (0-255)</li>
-              <li><code class="text-amber-400">get_node_for_shard(shard_id)</code></li>
-              <li><code class="text-amber-400">get_replicas(key, replication_factor)</code></li>
-              <li>• FNV-1a hashing algorithm</li>
-              <li>• 256 virtual shards</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-amber-300 mb-4 font-mono">CollectionShardConfig</h3>
-            <p class="text-gray-400 text-sm mb-4">Per-collection sharding configuration.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-white">shard_key</code> - Field used for routing (default: _key)</li>
-              <li><code class="text-white">num_shards</code> - Number of shards (default: 256)</li>
-              <li><code class="text-white">replication_factor</code> - Copies per shard (default: 1)</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-amber-300 mb-4 font-mono">NodeHealth</h3>
-            <p class="text-gray-400 text-sm mb-4">Tracks node availability for failover.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-amber-400">is_healthy(node_addr)</code></li>
-              <li><code class="text-amber-400">mark_success(node_addr)</code></li>
-              <li><code class="text-amber-400">mark_failure(node_addr)</code></li>
-              <li>• Configurable failure threshold</li>
-              <li>• Background health checker</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <!-- Transactions -->
-      <section id="transactions" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-violet-500 rounded-full"></span>
-            Transactions
-          </h2>
-          <span class="ml-4 px-3 py-1 bg-violet-500/20 text-violet-300 text-xs font-bold rounded-full border border-violet-500/30">ACID</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-violet-300 mb-4 font-mono">TransactionManager</h3>
-            <p class="text-gray-400 text-sm mb-4">Manages transaction lifecycle with WAL durability.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-violet-400">new(wal_path)</code> - Initialize with WAL</li>
-              <li><code class="text-violet-400">begin(isolation_level)</code> - Start transaction</li>
-              <li><code class="text-violet-400">commit(tx_id)</code> - Commit changes</li>
-              <li><code class="text-violet-400">rollback(tx_id)</code> - Abort transaction</li>
-              <li><code class="text-violet-400">cleanup_expired()</code> - Remove timed-out txns</li>
-            </ul>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-violet-300 mb-4 font-mono">WalWriter</h3>
-            <p class="text-gray-400 text-sm mb-4">Write-Ahead Log for crash recovery.</p>
-            <ul class="text-xs text-gray-500 space-y-2">
-              <li><code class="text-violet-400">write(entry)</code> - Append to log</li>
-              <li><code class="text-violet-400">sync()</code> - Flush to disk</li>
-              <li><code class="text-violet-400">recover()</code> - Replay on startup</li>
-              <li>• Binary format for efficiency</li>
-              <li>• Checkpointing support</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6 mt-6">
-          <h4 class="text-sm font-bold text-white mb-4">Transaction Flow</h4>
-          <div class="flex flex-wrap items-center justify-center gap-4 text-xs">
-            <div class="bg-violet-500/20 px-3 py-1 rounded border border-violet-500/30 text-violet-300">BEGIN</div>
-            <span class="text-gray-600">→</span>
-            <div class="bg-gray-800 px-3 py-1 rounded border border-white/10 text-gray-300">Operations (buffered)</div>
-            <span class="text-gray-600">→</span>
-            <div class="bg-blue-500/20 px-3 py-1 rounded border border-blue-500/30 text-blue-300">WAL Write</div>
-            <span class="text-gray-600">→</span>
-            <div class="bg-green-500/20 px-3 py-1 rounded border border-green-500/30 text-green-300">COMMIT</div>
-            <span class="text-gray-600">/</span>
-            <div class="bg-red-500/20 px-3 py-1 rounded border border-red-500/30 text-red-300">ROLLBACK</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- CLI Tools -->
-      <section id="cli-tools" class="scroll-mt-24">
-        <div class="flex items-center mb-8">
-           <h2 class="text-3xl font-bold text-white flex items-center gap-4">
-            <span class="w-1.5 h-8 bg-cyan-500 rounded-full"></span>
-            CLI Tools
-          </h2>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-cyan-300 mb-2 font-mono">solidb-dump</h3>
-            <p class="text-gray-400 text-sm mb-4">Export databases to JSON files for backup.</p>
-            <div class="bg-gray-950/50 p-3 rounded font-mono text-xs">
-              <span class="text-gray-500">$</span> <span class="text-cyan-400">solidb-dump</span> --url http://localhost:6745 --output ./backup
-            </div>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-cyan-300 mb-2 font-mono">solidb-restore</h3>
-            <p class="text-gray-400 text-sm mb-4">Import databases from JSON backup files.</p>
-            <div class="bg-gray-950/50 p-3 rounded font-mono text-xs">
-              <span class="text-gray-500">$</span> <span class="text-cyan-400">solidb-restore</span> --url http://localhost:6745 --input ./backup
-            </div>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-cyan-300 mb-2 font-mono">benchmark</h3>
-            <p class="text-gray-400 text-sm mb-4">Direct storage engine performance testing.</p>
-            <div class="bg-gray-950/50 p-3 rounded font-mono text-xs">
-              <span class="text-gray-500">$</span> <span class="text-cyan-400">cargo run --bin benchmark</span>
-            </div>
-          </div>
-
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-xl p-6">
-            <h3 class="text-lg font-bold text-cyan-300 mb-2 font-mono">http-benchmark</h3>
-            <p class="text-gray-400 text-sm mb-4">HTTP API performance testing with concurrent clients.</p>
-            <div class="bg-gray-950/50 p-3 rounded font-mono text-xs">
-              <span class="text-gray-500">$</span> <span class="text-cyan-400">cargo run --bin http-benchmark</span> -- --clients 10
-            </div>
-          </div>
-        </div>
-      </section>
+        </section>
 
     </div>
   </div>

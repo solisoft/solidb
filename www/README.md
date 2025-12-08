@@ -1,31 +1,61 @@
-# luaonbeans
+# SoliDB Web Dashboard
 
-A tiny [redbean](https://redbean.dev/) MVC Lua framework
+The official web-based administration interface for SoliDB.
 
-[![CI](https://github.com/solisoft/luaonbeans/actions/workflows/specs.yml/badge.svg?branch=main)](https://github.com/solisoft/luaonbeans/actions/workflows/specs.yml)
+## Overview
 
-See documentation at [luaonbeans.org](https://luaonbeans.org)
+This dashboard provides a graphical user interface to manage your SoliDB instance. It allows you to:
 
-## Getting started
+- **Monitor Cluster Status**: View the health and status of your SoliDB nodes.
+- **Manage Databases & Collections**: Create, delete, and configure databases and collections.
+- **Data Explorer**: View, edit, and delete documents.
+- **AQL Query Editor**: Run AQL queries with syntax highlighting and view results.
+- **Visualizations**: View charts and statistics about your data.
 
-### Install the CLI
+## Technology Stack
 
-Use your favorite package manager to install the CLI:
+The dashboard is built using:
+
+- **[LuaOnBeans](https://luaonbeans.org)**: A full-stack Lua framework running on Redbean.
+- **[Riot.js](https://riot.js.org)**: A simple and elegant component-based UI library.
+- **[Tailwind CSS](https://tailwindcss.com)**: A utility-first CSS framework (v4).
+
+## Prerequisites
+
+To develop or build the dashboard, you need:
+
+- **Node.js & npm**: For managing frontend dependencies.
+- **LuaOnBeans CLI**: For running the development server.
 
 ```bash
 npm install -g luaonbeans-cli
 ```
 
-### Create a new project
+## Setup & Development
 
-```bash
-beans new my-project
-```
+1.  **Install Dependencies**:
+    ```bash
+    cd www
+    npm install
+    ```
 
-### Run the project
+2.  **Run Development Server**:
+    ```bash
+    beans dev
+    ```
+    This will start the dashboard on `http://localhost:3000` (default port, check console output).
+    It expects a generic SoliDB instance running on `http://localhost:6745`.
 
-```bash
-cd my-project
-npm install
-beans dev
-```
+3.  **Build for Production**:
+    The production build is handled by the `luaonbeans` build process.
+    ```bash
+    beans build
+    ```
+
+## Project Structure
+
+- `app/views`: Server-side views (Etlua templates).
+- `app/components`: Riot.js frontend components.
+- `app/controllers`: Lua controllers handling backend logic.
+- `public`: Static assets (compiled CSS, JS, images).
+- `config`: Configuration files.
