@@ -60,7 +60,7 @@ tempfile = "3.10"
 reqwest = { version = "0.11", features = ["json", "blocking", "multipart"] }
 
 # FUSE filesystem (requires macFUSE on macOS)
-fuser = "0.14"
+fuser = { version = "0.14", optional = true }
 
 # Daemon mode (Unix only)
 daemonize = "0.5"
@@ -93,3 +93,11 @@ path = "src/bin/solidb-restore.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[features]
+fuse = ["dep:fuser"]
+
+[[bin]]
+name = "solidb-fuse"
+path = "src/bin/solidb-fuse.rs"
+required-features = ["fuse"]

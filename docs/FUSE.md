@@ -10,6 +10,13 @@ Access your SoliDB blob collections directly from your operating system's file m
    brew install macfuse
    ```
 
+### Linux (Ubuntu/Debian)
+1. Install `libfuse3-dev` and `pkg-config`:
+   ```bash
+   sudo apt-get update && sudo apt-get install libfuse3-dev pkg-config fuse3
+   ```
+
+
 ## Usage
 
 Run the `solidb-fuse` tool to mount a SolidB instance to a local directory.

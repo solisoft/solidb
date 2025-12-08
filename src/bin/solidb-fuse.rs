@@ -230,8 +230,8 @@ impl SolidBFS {
                     kind: FileType::RegularFile,
                     perm: 0o644,
                     nlink: 1,
-                    uid: 501,
-                    gid: 20,
+                    uid: self.uid,
+                    gid: self.gid,
                     rdev: 0,
                     flags: 0,
                     blksize: 512,
@@ -583,6 +583,7 @@ impl Filesystem for SolidBFS {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let mountpoint = args.mount;
+    let mut options = vec![MountOption::RO];
     options.push(MountOption::FSName("solidb".to_string()));
     
     #[cfg(target_os = "macos")]
