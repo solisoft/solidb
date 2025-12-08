@@ -45,26 +45,25 @@ struct Args {
 
 #[derive(Debug, Deserialize)]
 struct DatabaseList {
-    result: Vec<String>,
+    databases: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Collection {
-    id: String,
     name: String,
-    #[serde(default)]
+    #[serde(default, rename = "type")]
     r#type: String, 
 }
 
 #[derive(Debug, Deserialize)]
 struct CollectionList {
-    result: Vec<Collection>,
+    collections: Vec<Collection>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct BlobMetadata {
     _key: String,
-    #[serde(default)]
+    #[serde(default, alias = "name")]
     filename: Option<String>,
     #[serde(default)]
     size: u64,
@@ -198,8 +197,8 @@ impl SolidBClient {
              let list = resp.json::<DatabaseList>()?;
              
              // Update cache
-             self.db_list_cache = Some((std::time::Instant::now(), list.result.clone()));
-             return Ok(list.result);
+             self.db_list_cache = Some((std::time::Instant::now(), list.databases.clone()));
+             return Ok(list.databases);
         }
         
         if !resp.status().is_success() {
@@ -209,9 +208,9 @@ impl SolidBClient {
         let list = resp.json::<DatabaseList>()?;
         
         // Update cache
-        self.db_list_cache = Some((std::time::Instant::now(), list.result.clone()));
+        self.db_list_cache = Some((std::time::Instant::now(), list.databases.clone()));
         
-        Ok(list.result)
+        Ok(list.databases)
     }
 
     fn list_collections(&self, db: &str) -> Result<Vec<String>, anyhow::Error> {
@@ -224,7 +223,7 @@ impl SolidBClient {
         let resp = req.send()?
             .json::<CollectionList>()?;
         
-        Ok(resp.result.into_iter()
+        Ok(resp.collections.into_iter()
             .filter(|c| c.r#type == "blob")
             .map(|c| c.name)
             .collect())

@@ -880,6 +880,21 @@
                    </table>
                  </div>
                </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "geo_location_idx",
+                     "field": "location",
+                     "type": "geo",
+                     "status": "created"
+                   }
+                 </div>
+               </div>
             </div>
               <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">
@@ -920,6 +935,22 @@
                        </tr>
                      </tbody>
                    </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "results": [
+                       { "document": { "_key": "...", "location": [34.05, -118.25] }, "distance": 123.45 },
+                       { "document": { "_key": "...", "location": [34.06, -118.26] }, "distance": 234.56 }
+                     ],
+                     "count": 2
+                   }
                  </div>
                </div>
             </div>
@@ -964,6 +995,22 @@
                    </table>
                  </div>
                </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "results": [
+                       { "_key": "...", "location": [34.05, -118.25] },
+                       { "_key": "...", "location": [34.06, -118.26] }
+                     ],
+                     "count": 2
+                   }
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -991,6 +1038,21 @@
                    <p>Requires <code class="text-fuchsia-400">multipart/form-data</code> with a single field named <code class="text-emerald-400">file</code> containing the binary data.</p>
                  </div>
                </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">201 Created</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "_key": "blob_123",
+                     "filename": "image.jpg",
+                     "size": 123456,
+                     "mime_type": "image/jpeg"
+                   }
+                 </div>
+               </div>
             </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
@@ -998,6 +1060,17 @@
                 <code class="text-gray-300">/_api/blob/:db/:collection/:key</code>
               </div>
               <p class="text-sm text-gray-400">Download a blob.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/octet-stream</span>
+                   </div>
+                   <span class="italic text-gray-500">// Binary file content</span>
+                 </div>
+               </div>
             </div>
            </div>
          </div>
@@ -1043,6 +1116,20 @@
                    </table>
                  </div>
                </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "tx_id": "transaction_123",
+                     "status": "active",
+                     "isolation_level": "read_committed"
+                   }
+                 </div>
+               </div>
             </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
@@ -1053,6 +1140,20 @@
                <div class="mt-2 bg-gray-950/50 p-2 rounded border border-white/5 font-mono text-xs text-gray-500 italic">
                  No request body required.
                </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "tx_id": "transaction_123",
+                     "status": "committed",
+                     "operations_count": 5
+                   }
+                 </div>
+               </div>
             </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
@@ -1062,6 +1163,19 @@
               <p class="text-sm text-gray-400 mb-2">Rollback a transaction.</p>
                <div class="mt-2 bg-gray-950/50 p-2 rounded border border-white/5 font-mono text-xs text-gray-500 italic">
                  No request body required.
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "tx_id": "transaction_123",
+                     "status": "rolled_back"
+                   }
+                 </div>
                </div>
             </div>
            </div>
@@ -1084,6 +1198,22 @@
                 <code class="text-gray-300">/_api/cluster/status</code>
               </div>
               <p class="text-sm text-gray-400">Get cluster node status and peers.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "node_id": "node_1",
+                     "status": "cluster",
+                     "peers": [ ... ],
+                     "stats": { ... }
+                   }
+                 </div>
+               </div>
             </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
@@ -1091,6 +1221,21 @@
                 <code class="text-gray-300">/_api/cluster/info</code>
               </div>
               <p class="text-sm text-gray-400">Get general cluster information.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "node_id": "node_1",
+                     "is_cluster_mode": true,
+                     "cluster_config": { ... }
+                   }
+                 </div>
+               </div>
             </div>
               <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">
