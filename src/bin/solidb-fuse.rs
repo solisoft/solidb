@@ -15,6 +15,7 @@ use std::io::Read; // Keep needed if we use Read trait? Actually read() on respo
 
 use chrono::{DateTime, Utc, Datelike, TimeZone};
 use uuid::Uuid;
+use tracing::{info, error, debug};
 
 const TTL: Duration = Duration::from_secs(1);
 const BLOCK_SIZE: u64 = 512;
@@ -95,11 +96,17 @@ impl SolidBClient {
 
     fn list_databases(&self) -> Result<Vec<String>, anyhow::Error> {
         let url = format!("{}/_api/database", self.base_url);
+        info!("Fetching databases from {}", url);
         let resp = self.client.get(&url)
             .basic_auth(&self.username, self.password.as_deref())
-            .send()?
-            .json::<DatabaseList>()?;
-        Ok(resp.result)
+            .send()?;
+        
+        if !resp.status().is_success() {
+            error!("API Error listing databases: Status {}", resp.status());
+        }
+        
+        let list = resp.json::<DatabaseList>()?;
+        Ok(list.result)
     }
 
     fn list_collections(&self, db: &str) -> Result<Vec<String>, anyhow::Error> {
@@ -420,24 +427,27 @@ impl Filesystem for SolidBFS {
 
         match parent_kind {
              InodeType::Root => {
-                if let Ok(dbs) = client.list_databases() {
-                    for db in dbs {
-                         // We pre-allocate inodes even during readdir so they persist for lookup?
-                         // Ideally lookup uses stable naming. Here we just return names.
-                         // But FUSE expects (inode, name).
-                         // We create temporary inodes here? Or permanent?
-                         // Let's create permanent ones.
-                         let child_ino = self.allocate_inode(InodeType::Database(db.clone()));
-                         entries.push((child_ino, FileType::Directory, db));
-                    }
+                match client.list_databases() {
+                    Ok(dbs) => {
+                        info!("Listing databases: {:?}", dbs);
+                        for db in dbs {
+                             let child_ino = self.allocate_inode(InodeType::Database(db.clone()));
+                             entries.push((child_ino, FileType::Directory, db));
+                        }
+                    },
+                    Err(e) => error!("Failed to list databases: {:?}", e),
                 }
             },
             InodeType::Database(db) => {
-                 if let Ok(colls) = client.list_collections(&db) {
-                    for coll in colls {
-                         let child_ino = self.allocate_inode(InodeType::Collection(db.clone(), coll.clone()));
-                         entries.push((child_ino, FileType::Directory, coll));
-                    }
+                 match client.list_collections(&db) {
+                    Ok(colls) => {
+                        debug!("Listing collections for {}: {:?}", db, colls);
+                        for coll in colls {
+                             let child_ino = self.allocate_inode(InodeType::Collection(db.clone(), coll.clone()));
+                             entries.push((child_ino, FileType::Directory, coll));
+                        }
+                    },
+                    Err(e) => error!("Failed to list collections for {}: {:?}", db, e),
                 }
             },
             InodeType::Collection(db, coll) => {
@@ -581,6 +591,8 @@ impl Filesystem for SolidBFS {
 }
 
 fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    
     let args = Args::parse();
     let mountpoint = args.mount;
     let mut options = vec![MountOption::RO];

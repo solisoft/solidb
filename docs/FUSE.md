@@ -13,9 +13,14 @@ Access your SoliDB blob collections directly from your operating system's file m
 ### Linux (Ubuntu/Debian)
 1. Install `libfuse3-dev` and `pkg-config`:
    ```bash
-   sudo apt-get update && sudo apt-get install libfuse3-dev pkg-config fuse3
+   sudo apt-get update && sudo apt-get install libfuse3-dev fuse3 pkg-config
    ```
 
+## Build
+
+```bash
+cargo build --bin solidb-fuse --features fuse
+```
 
 ## Usage
 
@@ -23,7 +28,7 @@ Run the `solidb-fuse` tool to mount a SolidB instance to a local directory.
 
 ```bash
 # Create a mount point
-mkdir -p /tmp/solidb_mount
+mkdir -p /tmp/mnt
 
 # Mount the filesystem
 ./target/debug/solidb-fuse \
@@ -31,13 +36,13 @@ mkdir -p /tmp/solidb_mount
   --port 6755 \
   --username admin \
   --password admin \
-  --mount /tmp/solidb_mount \
+  --mount /tmp/mnt \
   --foreground
 ```
 
 To unmount:
 ```bash
-umount /tmp/solidb_mount
+umount /tmp/mnt
 # or press Ctrl+C if running in foreground
 ```
 
