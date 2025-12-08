@@ -40,10 +40,29 @@ mkdir -p /tmp/mnt
   --foreground
 ```
 
-To unmount:
+### Running as a Daemon (Unix only)
+
+You can run `solidb-fuse` as a background daemon:
+
+```bash
+./target/debug/solidb-fuse \
+  --mount /tmp/mnt \
+  --daemon \
+  --pid-file /tmp/solidb-fuse.pid \
+  --log-file /tmp/solidb-fuse.log
+```
+
+To stop the daemon, simply run the command again (it detects the PID file and kills the old process), or manually kill it:
+
+```bash
+kill $(cat /tmp/solidb-fuse.pid)
+```
+
+### Unmounting
+
 ```bash
 umount /tmp/mnt
-# or press Ctrl+C if running in foreground
+# or if running in foreground, press Ctrl+C
 ```
 
 ## Folder Structure

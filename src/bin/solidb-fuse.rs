@@ -41,6 +41,15 @@ struct Args {
 
     #[arg(long, default_value_t = false, help = "Run in foreground")]
     foreground: bool,
+
+    #[arg(short, long, help = "Run as a daemon (background process)")]
+    daemon: bool,
+
+    #[arg(long, default_value = "./solidb-fuse.pid", help = "PID file path (used in daemon mode)")]
+    pid_file: String,
+
+    #[arg(long, default_value = "./solidb-fuse.log", help = "Log file path (used in daemon mode)")]
+    log_file: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -710,12 +719,65 @@ impl Filesystem for SolidBFS {
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    
+    #[cfg(unix)]
+    if args.daemon {
+        use daemonize::Daemonize;
+        use std::fs::File;
+        use std::path::Path;
+        use std::time::Duration;
+
+        // Check if PID file exists and kill existing process
+        if Path::new(&args.pid_file).exists() {
+            match std::fs::read_to_string(&args.pid_file) {
+                Ok(pid_str) => {
+                    if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                        eprintln!("Found existing FUSE process with PID {}. Stopping it...", pid);
+                        // Send SIGTERM to gracefully stop the process
+                        unsafe {
+                            libc::kill(pid, libc::SIGTERM);
+                        }
+                        // Give it a moment to cleanup mounts
+                        std::thread::sleep(Duration::from_millis(500));
+                        let _ = std::fs::remove_file(&args.pid_file);
+                    }
+                }
+                Err(e) => eprintln!("Warning: Could not read PID file: {}", e),
+            }
+        }
+
+        let stdout = File::create(&args.log_file)?;
+        let stderr = File::create(&args.log_file)?;
+
+        let daemonize = Daemonize::new()
+            .pid_file(&args.pid_file)
+            // .working_directory(".") // Don't change dir, might break relative mount paths
+            .stdout(stdout)
+            .stderr(stderr);
+
+        match daemonize.start() {
+            Ok(_) => {
+                // We're now in the daemon process
+            }
+            Err(e) => {
+                eprintln!("Error starting daemon: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    if args.daemon {
+        eprintln!("Daemon mode is only supported on Unix systems");
+        std::process::exit(1);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
             .add_directive(tracing::Level::INFO.into()))
         .init();
     
-    let args = Args::parse();
     let mountpoint = args.mount;
     
     // Check mountpoint
@@ -747,10 +809,24 @@ fn main() -> anyhow::Result<()> {
         println!("Filesystem mounted at {}.", mountpoint);
         println!("Press Ctrl+C to unmount.");
         
-        // Wait for Ctrl+C
-        tokio::signal::ctrl_c().await?;
+        // Wait for Ctrl+C (or SIGTERM if daemon)
+        let ctrl_c = tokio::signal::ctrl_c();
+        let sig_term = async {
+            #[cfg(unix)]
+            {
+               let mut stream = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+               stream.recv().await;
+            }
+            #[cfg(not(unix))]
+            std::future::pending::<()>().await;
+        };
         
-        println!("\nReceived Ctrl+C, unmounting...");
+        tokio::select! {
+            _ = ctrl_c => { println!("\nReceived Ctrl+C"); },
+            _ = sig_term => { println!("\nReceived SIGTERM"); },
+        }
+
+        println!("Unmounting {}...", mountpoint);
         info!("Unmounting {}...", mountpoint);
 
         // Explicitly run system unmount command to be sure
