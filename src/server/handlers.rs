@@ -245,8 +245,9 @@ pub async fn delete_api_key_handler(
 pub async fn upload_blob(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
-    mut multipart: Multipart,
+    multipart_result: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Json<Value>, DbError> {
+    let mut multipart = multipart_result.map_err(|e| DbError::BadRequest(e.to_string()))?;
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
@@ -1332,6 +1333,12 @@ pub async fn delete_document(
     }
 
     collection.delete(&key)?;
+
+    // If this is a blob collection, trigger compaction to reclaim space from deleted chunks immediately
+    if collection.get_type() == "blob" {
+        tracing::info!("Compacting blob collection {}/{} after deletion of {}", db_name, coll_name, key);
+        collection.compact();
+    }
 
     // Record to replication log
     if let Some(ref repl) = state.replication {

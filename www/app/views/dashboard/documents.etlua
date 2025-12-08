@@ -48,8 +48,9 @@
         <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
         </svg>
-        Upload Blob
+        Upload File
       </button>
+      <input type="file" id="headerFileInput" class="hidden" multiple />
     </div>
   </div>
 
@@ -86,20 +87,43 @@
 
   // Wait for DOM to be ready
   document.addEventListener('DOMContentLoaded', async () => {
+    let isBlobCollection = false;
+    let collectionType = 'document';
+
+    // Check collection type first
+    try {
+        console.log('Fetching collection details for', "<%= Params['db'] %>", "<%= Params['collection'] %>")
+        const response = await authenticatedFetch(`${getApiUrl()}/database/<%= Params['db'] %>/collection`)
+        if (response.ok) {
+            const data = await response.json()
+            console.log('Collections data:', data)
+            const collection = data.collections.find(c => c.name === "<%= Params['collection'] %>")
+            if (collection) {
+                console.log('Found collection:', collection)
+                collectionType = collection.type
+                isBlobCollection = collection.type === 'blob'
+            } else {
+                console.warn('Collection not found in list:', "<%= Params['collection'] %>")
+            }
+        } else {
+            console.error('Failed to fetch collections:', response.status)
+        }
+    } catch (e) {
+        console.error('Failed to check collection type:', e)
+    }
+
+    console.log('Mounting with type:', collectionType)
+
     // Mount the components
-
-
     const editModalComponent = riot.mount('document-modal', {
       db: "<%= Params['db'] %>",
       collection: "<%= Params['collection'] %>",
       onClose: () => editModalComponent[0].hide(),
       onSaved: () => {
         editModalComponent[0].hide()
-        tableComponent.loadDocuments()
+        tableComponent[0].loadDocuments()
       }
     })
-
-    let isBlobCollection = false;
 
     const viewModalComponent = riot.mount('document-view-modal', {
       db: "<%= Params['db'] %>",
@@ -111,13 +135,25 @@
       }
     })
 
+    const uploadBlobModalComponent = riot.mount('upload-blob-modal', {
+        db: "<%= Params['db'] %>",
+        collection: "<%= Params['collection'] %>",
+        onUploaded: () => {
+            tableComponent[0].loadDocuments()
+        }
+    })
+
     const tableComponent = riot.mount('documents-table', {
       db: "<%= Params['db'] %>",
       collection: "<%= Params['collection'] %>",
+      type: collectionType,
       onCreateClick: () => editModalComponent[0].show(null, isBlobCollection),
       onEditDocument: (doc) => editModalComponent[0].show(doc, isBlobCollection),
       onViewDocument: (doc) => {
         viewModalComponent[0].show(doc, isBlobCollection) // Pass isBlob state
+      },
+      onUploadFile: (file) => {
+        uploadBlobModalComponent[0].show(file)
       }
     })
 
@@ -125,67 +161,58 @@
         db: "<%= Params['db'] %>",
         collection: "<%= Params['collection'] %>",
         onImported: () => {
-            tableComponent.loadDocuments()
+            tableComponent[0].loadDocuments()
         }
     })
 
-    const uploadBlobModalComponent = riot.mount('upload-blob-modal', {
-        db: "<%= Params['db'] %>",
-        collection: "<%= Params['collection'] %>",
-        onUploaded: () => {
-            tableComponent.loadDocuments()
-        }
-    })
+    // Update UI based on collection type
+    const createBtn = document.getElementById('createBtn')
+    const importBtn = document.getElementById('importBtn')
+    const exportBtn = document.getElementById('exportBtn')
+    const uploadBtn = document.getElementById('uploadBlobBtn')
+
+    if (isBlobCollection) {
+        if (createBtn) createBtn.remove()
+        if (importBtn) importBtn.remove()
+        if (exportBtn) exportBtn.remove()
+    } else {
+        if (uploadBtn) uploadBtn.remove()
+    }
 
     // Handle create button click
-    document.getElementById('createBtn').addEventListener('click', () => {
-      editModalComponent[0].show(null, isBlobCollection)
-    })
-
-    // Handle import button click
-    document.getElementById('importBtn').addEventListener('click', () => {
-      importModalComponent[0].show()
-    })
-
-    // Handle export button click
-    document.getElementById('exportBtn').addEventListener('click', () => {
-        const url = `${getApiUrl()}/database/<%= Params['db'] %>/collection/<%= Params['collection'] %>/export`
-        window.location.href = url
-    })
-
-    // Handle upload blob button click
-    const uploadBlobBtn = document.getElementById('uploadBlobBtn')
-    if (uploadBlobBtn) {
-        uploadBlobBtn.addEventListener('click', () => {
-            uploadBlobModalComponent[0].show()
+    if (createBtn) {
+        createBtn.addEventListener('click', () => {
+          editModalComponent[0].show(null, isBlobCollection)
         })
     }
 
-    // Check collection type to toggle buttons
-    try {
-        const response = await authenticatedFetch(`${getApiUrl()}/database/<%= Params['db'] %>/collection`)
-        if (response.ok) {
-            const data = await response.json()
-            const collection = data.collections.find(c => c.name === "<%= Params['collection'] %>")
-            
-            if (collection) {
-                isBlobCollection = collection.type === 'blob' // Update global flag
-                const isBlob = isBlobCollection
-                const createBtn = document.getElementById('createBtn')
-                const importBtn = document.getElementById('importBtn')
-                const uploadBtn = document.getElementById('uploadBlobBtn')
+    // Handle import button click
+    if (importBtn) {
+        importBtn.addEventListener('click', () => {
+          importModalComponent[0].show()
+        })
+    }
 
-                if (isBlob) {
-                    if (createBtn) createBtn.remove()
-                    if (importBtn) importBtn.remove()
-                } else {
-                    //if (createBtn) createBtn.remove()
-                    if (uploadBtn) uploadBtn.remove()
-                }
+    // Handle export button click
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            const url = `${getApiUrl()}/database/<%= Params['db'] %>/collection/<%= Params['collection'] %>/export`
+            window.location.href = url
+        })
+    }
+
+    // Handle upload file button click
+    if (uploadBtn) {
+        const headerFileInput = document.getElementById('headerFileInput')
+        uploadBtn.addEventListener('click', () => {
+            headerFileInput.click()
+        })
+        headerFileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                tableComponent[0].uploadFiles(Array.from(e.target.files))
+                e.target.value = ''
             }
-        }
-    } catch (e) {
-        console.error("Failed to fetch collection details", e)
+        })
     }
   })
 </script>

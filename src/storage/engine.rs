@@ -58,6 +58,16 @@ impl StorageEngine {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
+        
+        // Limit WAL file size to prevent unbounded disk growth
+        // Max total WAL size across all column families: 50MB
+        opts.set_max_total_wal_size(50 * 1024 * 1024);
+        
+        // Keep fewer LOG files (RocksDB info logs, not WALs)
+        opts.set_keep_log_file_num(5);
+        
+        // Recycle LOG files instead of deleting
+        opts.set_recycle_log_file_num(3);
 
         // Get existing column families or create default
         let cf_names = match DB::list_cf(&opts, &path) {

@@ -104,11 +104,11 @@
                 isDragging: false
             },
 
-            show() {
+            show(file) {
                 this.update({
                     visible: true,
                     error: null,
-                    selectedFile: null,
+                    selectedFile: file || null,
                     uploading: false,
                     progress: 0,
                     isDragging: false

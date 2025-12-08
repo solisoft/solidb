@@ -1357,6 +1357,24 @@ impl Collection {
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
+        // Clear blob chunks (for blob collections)
+        let blo_prefix = BLO_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, blo_prefix);
+        let mut blo_keys_to_delete = Vec::new();
+
+        for result in iter {
+            if let Ok((key, _)) = result {
+                if key.starts_with(blo_prefix) {
+                    blo_keys_to_delete.push(key.to_vec());
+                }
+            }
+        }
+
+        for key in blo_keys_to_delete {
+            db.delete_cf(cf, &key)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+
         // Reset document count to 0 (both in-memory and on disk)
         self.doc_count.store(0, Ordering::Relaxed);
         self.count_dirty.store(false, Ordering::Relaxed);

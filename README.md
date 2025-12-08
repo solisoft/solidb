@@ -1075,6 +1075,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~Graph traversal queries~~ ✅ Implemented! (OUTBOUND, INBOUND, ANY, SHORTEST_PATH)
 - [ ] Role-based authorization
 - [x] ~~WebSocket support~~ ✅ Implemented! (Real-time Changefeeds)
+- [x] ~~Blob Storage~~ ✅ Implemented! (Store and retrieve binary data in collections)
 - [ ] Query optimization
 
 ## Real-time Changefeeds

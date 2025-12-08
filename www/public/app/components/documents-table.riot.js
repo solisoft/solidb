@@ -1,4 +1,4 @@
-import { getApiUrl, authenticatedFetch } from '/api-config.js'
+import { getApiUrl, authenticatedFetch, getAuthToken } from '/api-config.js'
 
 export default {
   css: `documents-table .scrollbar-hidden,[is="documents-table"] .scrollbar-hidden{ -ms-overflow-style: none; scrollbar-width: none; }documents-table .scrollbar-hidden::-webkit-scrollbar,[is="documents-table"] .scrollbar-hidden::-webkit-scrollbar{ display: none; }`,
@@ -12,7 +12,17 @@ export default {
       limit: 20,
       totalCount: 0,
       isBlob: false,
-      downloadingDocId: null
+      downloadingDocId: null,
+      uploading: false,
+      uploadProgress: 0,
+      uploadError: null,
+      isDragging: false
+    },
+
+    onBeforeMount(props, state) {
+      state.isBlob = props.type === 'blob'
+      // Debug log
+      console.log('DocumentsTable mounted', { type: props.type, isBlob: state.isBlob, props: props })
     },
 
     onMounted() {
@@ -51,24 +61,6 @@ export default {
         }
 
         const data = await response.json()
-
-        // Check if it's a blob collection (if not already checked)
-        if (!this.state.isBlobChecked) {
-          try {
-            const collsResponse = await authenticatedFetch(`${url}/collection`)
-            if (collsResponse.ok) {
-              const collsData = await collsResponse.json()
-              const currentColl = collsData.collections.find(c => c.name === this.props.collection)
-              if (currentColl && currentColl.type === 'blob') {
-                this.update({ isBlob: true, isBlobChecked: true })
-              } else {
-                this.update({ isBlobChecked: true })
-              }
-            }
-          } catch (e) {
-            console.warn('Failed to check collection type:', e)
-          }
-        }
 
         this.update({
           documents: data.result || [],
@@ -177,6 +169,117 @@ export default {
       } finally {
         this.update({ downloadingDocId: null })
       }
+    },
+
+    handleDragOver(e) {
+      if (!this.state.isBlob) return
+      e.preventDefault()
+      e.stopPropagation()
+    },
+
+    handleDragEnter(e) {
+      if (!this.state.isBlob) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.update({ isDragging: true })
+    },
+
+    handleDragLeave(e) {
+      if (!this.state.isBlob) return
+      e.preventDefault()
+      e.stopPropagation()
+      // Only reset if we're leaving the drop zone itself, or if we left the window
+      if (e.target === e.currentTarget) {
+        this.update({ isDragging: false })
+      }
+    },
+
+    triggerFileInput() {
+      if (this.state.uploading) return
+      this.$('input[ref="fileInput"]').click()
+    },
+
+    handleFileChange(e) {
+      if (e.target.files && e.target.files.length > 0) {
+        this.uploadFiles(Array.from(e.target.files))
+        e.target.value = ''
+      }
+    },
+
+    handleDrop(e) {
+      if (!this.state.isBlob) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.update({ isDragging: false })
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        this.uploadFiles(Array.from(e.dataTransfer.files))
+      }
+    },
+
+    async uploadFiles(files) {
+      if (this.state.uploading || files.length === 0) return
+
+      const totalFiles = files.length
+      let completedFiles = 0
+
+      this.update({ uploading: true, uploadProgress: 0, uploadError: null, uploadTotal: totalFiles, uploadCurrent: 0 })
+
+      for (const file of files) {
+        completedFiles++
+        this.update({ uploadCurrent: completedFiles })
+        try {
+          await this.uploadSingleFile(file, completedFiles, totalFiles)
+        } catch (error) {
+          console.error('Upload error for file:', file.name, error)
+          this.update({ uploadError: `Failed to upload ${file.name}: ${error.message}` })
+          break
+        }
+      }
+
+      this.update({ uploading: false })
+      this.loadDocuments()
+    },
+
+    async uploadSingleFile(file, currentIndex, totalFiles) {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+
+      const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}`
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', url, true)
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100)
+            this.update({ uploadProgress: percent })
+          }
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText))
+          } else {
+            try {
+              const err = JSON.parse(xhr.responseText)
+              reject(new Error(err.error || 'Upload failed'))
+            } catch (e) {
+              reject(new Error(`Upload failed with status ${xhr.status}`))
+            }
+          }
+        }
+
+        xhr.onerror = () => reject(new Error('Network error'))
+        xhr.send(formData)
+      })
     }
   },
 
@@ -186,13 +289,124 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr584="expr584" class="flex justify-center items-center py-12"></div><div expr585="expr585" class="text-center py-12"></div><div expr588="expr588" class="text-center py-12"></div><div expr590="expr590" class="max-h-[60vh] overflow-y-auto"></div><div expr598="expr598" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
+    '<div expr1055="expr1055"><div expr1056="expr1056" class="absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center z-50"></div><div expr1059="expr1059" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900/90 text-red-100 px-4 py-2 rounded-md shadow-lg border border-red-500/50 flex items-center"></div><div expr1060="expr1060" class="flex justify-center items-center py-12"></div><div expr1061="expr1061" class="text-center py-12"></div><div expr1064="expr1064" class="text-center py-12"></div><div expr1072="expr1072" class="px-4 py-2\n      bg-gray-700/50 border-b border-gray-600 text-sm text-gray-400 flex items-center"></div><div expr1073="expr1073" class="max-h-[60vh] overflow-y-auto"></div><div expr1081="expr1081" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
     [
+      {
+        redundantAttribute: 'expr1055',
+        selector: '[expr1055]',
+
+        expressions: [
+          {
+            type: expressionTypes.ATTRIBUTE,
+            isBoolean: false,
+            name: 'class',
+
+            evaluate: _scope => `bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700 transition-colors
+${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-500/10' : ''}`
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'ondragover',
+            evaluate: _scope => _scope.handleDragOver
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'ondragenter',
+            evaluate: _scope => _scope.handleDragEnter
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'ondragleave',
+            evaluate: _scope => _scope.handleDragLeave
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'ondrop',
+            evaluate: _scope => _scope.handleDrop
+          }
+        ]
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.uploading,
+        redundantAttribute: 'expr1056',
+        selector: '[expr1056]',
+
+        template: template(
+          '<div class="w-64"><div class="flex justify-between mb-2"><span class="text-indigo-400 font-medium">Uploading...</span><span expr1057="expr1057" class="text-indigo-400 font-medium"> </span></div><div class="w-full bg-gray-700 rounded-full h-2"><div expr1058="expr1058" class="bg-indigo-500 h-2 rounded-full transition-all duration-200"></div></div></div>',
+          [
+            {
+              redundantAttribute: 'expr1057',
+              selector: '[expr1057]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+
+                  evaluate: _scope => [
+                    _scope.state.uploadProgress,
+                    '%'
+                  ].join(
+                    ''
+                  )
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr1058',
+              selector: '[expr1058]',
+
+              expressions: [
+                {
+                  type: expressionTypes.ATTRIBUTE,
+                  isBoolean: false,
+                  name: 'style',
+
+                  evaluate: _scope => [
+                    'width: ',
+                    _scope.state.uploadProgress,
+                    '%'
+                  ].join(
+                    ''
+                  )
+                }
+              ]
+            }
+          ]
+        )
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.uploadError,
+        redundantAttribute: 'expr1059',
+        selector: '[expr1059]',
+
+        template: template(
+          '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ',
+          [
+            {
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 1,
+
+                  evaluate: _scope => [
+                    _scope.state.uploadError
+                  ].join(
+                    ''
+                  )
+                }
+              ]
+            }
+          ]
+        )
+      },
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr584',
-        selector: '[expr584]',
+        redundantAttribute: 'expr1060',
+        selector: '[expr1060]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>',
@@ -202,15 +416,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr585',
-        selector: '[expr585]',
+        redundantAttribute: 'expr1061',
+        selector: '[expr1061]',
 
         template: template(
-          '<p expr586="expr586" class="text-red-400"> </p><button expr587="expr587" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr1062="expr1062" class="text-red-400"> </p><button expr1063="expr1063" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr586',
-              selector: '[expr586]',
+              redundantAttribute: 'expr1062',
+              selector: '[expr1062]',
 
               expressions: [
                 {
@@ -227,8 +441,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr587',
-              selector: '[expr587]',
+              redundantAttribute: 'expr1063',
+              selector: '[expr1063]',
 
               expressions: [
                 {
@@ -244,21 +458,109 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length===0,
-        redundantAttribute: 'expr588',
-        selector: '[expr588]',
+        redundantAttribute: 'expr1064',
+        selector: '[expr1064]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr589="expr589" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
+          '<svg expr1065="expr1065" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr1066="expr1066" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><h3 expr1067="expr1067" class="mt-2 text-sm font-medium text-gray-300"> </h3><p expr1068="expr1068" class="mt-1 text-sm text-gray-500"> </p><div class="mt-6"><button expr1069="expr1069" class="inline-flex items-center px-4 py-2\n          border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><button expr1070="expr1070" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><input expr1071="expr1071" type="file" ref="fileInput" class="hidden" multiple/></div>',
           [
             {
-              redundantAttribute: 'expr589',
-              selector: '[expr589]',
+              type: bindingTypes.IF,
+              evaluate: _scope => !_scope.state.isBlob,
+              redundantAttribute: 'expr1065',
+              selector: '[expr1065]',
+
+              template: template(
+                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>',
+                []
+              )
+            },
+            {
+              type: bindingTypes.IF,
+              evaluate: _scope => _scope.state.isBlob,
+              redundantAttribute: 'expr1066',
+              selector: '[expr1066]',
+
+              template: template(
+                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>',
+                []
+              )
+            },
+            {
+              redundantAttribute: 'expr1067',
+              selector: '[expr1067]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.isBlob ? 'No files' : 'No documents'
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr1068',
+              selector: '[expr1068]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.isBlob ? 'Drag and drop a file or click to upload.' : 'Get started by creating a new document.'
+                }
+              ]
+            },
+            {
+              type: bindingTypes.IF,
+              evaluate: _scope => !_scope.state.isBlob,
+              redundantAttribute: 'expr1069',
+              selector: '[expr1069]',
+
+              template: template(
+                '\n          Create Document\n        ',
+                [
+                  {
+                    expressions: [
+                      {
+                        type: expressionTypes.EVENT,
+                        name: 'onclick',
+                        evaluate: _scope => () => _scope.props.onCreateClick()
+                      }
+                    ]
+                  }
+                ]
+              )
+            },
+            {
+              type: bindingTypes.IF,
+              evaluate: _scope => _scope.state.isBlob,
+              redundantAttribute: 'expr1070',
+              selector: '[expr1070]',
+
+              template: template(
+                '\n          Upload File\n        ',
+                [
+                  {
+                    expressions: [
+                      {
+                        type: expressionTypes.EVENT,
+                        name: 'onclick',
+                        evaluate: _scope => _scope.triggerFileInput
+                      }
+                    ]
+                  }
+                ]
+              )
+            },
+            {
+              redundantAttribute: 'expr1071',
+              selector: '[expr1071]',
 
               expressions: [
                 {
                   type: expressionTypes.EVENT,
-                  name: 'onclick',
-                  evaluate: _scope => () => _scope.props.onCreateClick()
+                  name: 'onchange',
+                  evaluate: _scope => _scope.handleFileChange
                 }
               ]
             }
@@ -267,12 +569,23 @@ export default {
       },
       {
         type: bindingTypes.IF,
-        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
-        redundantAttribute: 'expr590',
-        selector: '[expr590]',
+        evaluate: _scope => _scope.state.isBlob && !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
+        redundantAttribute: 'expr1072',
+        selector: '[expr1072]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr591="expr591" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
+          '<svg class="w-4 h-4 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>\n      Drag and drop files here to upload\n    ',
+          []
+        )
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
+        redundantAttribute: 'expr1073',
+        selector: '[expr1073]',
+
+        template: template(
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr1074="expr1074" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -280,11 +593,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr592="expr592" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr593="expr593" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr594="expr594" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr595="expr595" class="inline-block"></div><button expr596="expr596" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr597="expr597" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
+                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr1075="expr1075" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr1076="expr1076" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr1077="expr1077" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr1078="expr1078" class="inline-block"></div><button expr1079="expr1079" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr1080="expr1080" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr592',
-                    selector: '[expr592]',
+                    redundantAttribute: 'expr1075',
+                    selector: '[expr1075]',
 
                     expressions: [
                       {
@@ -300,8 +613,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => !_scope.state.isBlob,
-                    redundantAttribute: 'expr593',
-                    selector: '[expr593]',
+                    redundantAttribute: 'expr1076',
+                    selector: '[expr1076]',
 
                     template: template(
                       '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>',
@@ -321,8 +634,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId !==_scope.doc._key,
-                    redundantAttribute: 'expr594',
-                    selector: '[expr594]',
+                    redundantAttribute: 'expr1077',
+                    selector: '[expr1077]',
 
                     template: template(
                       '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>',
@@ -342,8 +655,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId===_scope.doc._key,
-                    redundantAttribute: 'expr595',
-                    selector: '[expr595]',
+                    redundantAttribute: 'expr1078',
+                    selector: '[expr1078]',
 
                     template: template(
                       '<svg class="animate-spin h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>',
@@ -351,8 +664,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr596',
-                    selector: '[expr596]',
+                    redundantAttribute: 'expr1079',
+                    selector: '[expr1079]',
 
                     expressions: [
                       {
@@ -363,8 +676,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr597',
-                    selector: '[expr597]',
+                    redundantAttribute: 'expr1080',
+                    selector: '[expr1080]',
 
                     expressions: [
                       {
@@ -377,8 +690,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr591',
-              selector: '[expr591]',
+              redundantAttribute: 'expr1074',
+              selector: '[expr1074]',
               itemName: 'doc',
               indexName: 'idx',
               evaluate: _scope => _scope.state.documents
@@ -389,15 +702,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount> 0,
-        redundantAttribute: 'expr598',
-        selector: '[expr598]',
+        redundantAttribute: 'expr1081',
+        selector: '[expr1081]',
 
         template: template(
-          '<div expr599="expr599" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr600="expr600" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr601="expr601" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
+          '<div expr1082="expr1082" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr1083="expr1083" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr1084="expr1084" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr599',
-              selector: '[expr599]',
+              redundantAttribute: 'expr1082',
+              selector: '[expr1082]',
 
               expressions: [
                 {
@@ -422,8 +735,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr600',
-              selector: '[expr600]',
+              redundantAttribute: 'expr1083',
+              selector: '[expr1083]',
 
               expressions: [
                 {
@@ -440,8 +753,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr601',
-              selector: '[expr601]',
+              redundantAttribute: 'expr1084',
+              selector: '[expr1084]',
 
               expressions: [
                 {

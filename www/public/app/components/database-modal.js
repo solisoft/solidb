@@ -85,20 +85,20 @@ var databaseModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr105="expr105" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr80="expr80" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.visible,
-    redundantAttribute: 'expr105',
-    selector: '[expr105]',
-    template: template('<div expr106="expr106" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Create New Database</h3><div expr107="expr107" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr109="expr109"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Database Name</label><input expr110="expr110" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., myapp, production"/><p class="mt-1 text-xs text-gray-400">Only letters, numbers, and underscores allowed</p></div><div class="flex justify-end space-x-3"><button expr111="expr111" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button expr112="expr112" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"> </button></div></form></div>', [{
+    redundantAttribute: 'expr80',
+    selector: '[expr80]',
+    template: template('<div expr81="expr81" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Create New Database</h3><div expr82="expr82" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr84="expr84"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Database Name</label><input expr85="expr85" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., myapp, production"/><p class="mt-1 text-xs text-gray-400">Only letters, numbers, and underscores allowed</p></div><div class="flex justify-end space-x-3"><button expr86="expr86" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button expr87="expr87" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"> </button></div></form></div>', [{
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleBackdropClick
       }]
     }, {
-      redundantAttribute: 'expr106',
-      selector: '[expr106]',
+      redundantAttribute: 'expr81',
+      selector: '[expr81]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -107,11 +107,11 @@ var databaseModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.error,
-      redundantAttribute: 'expr107',
-      selector: '[expr107]',
-      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr108="expr108" class="text-sm text-red-300"> </p></div>', [{
-        redundantAttribute: 'expr108',
-        selector: '[expr108]',
+      redundantAttribute: 'expr82',
+      selector: '[expr82]',
+      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr83="expr83" class="text-sm text-red-300"> </p></div>', [{
+        redundantAttribute: 'expr83',
+        selector: '[expr83]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -119,16 +119,16 @@ var databaseModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr109',
-      selector: '[expr109]',
+      redundantAttribute: 'expr84',
+      selector: '[expr84]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onsubmit',
         evaluate: _scope => _scope.handleSubmit
       }]
     }, {
-      redundantAttribute: 'expr110',
-      selector: '[expr110]',
+      redundantAttribute: 'expr85',
+      selector: '[expr85]',
       expressions: [{
         type: expressionTypes.VALUE,
         evaluate: _scope => _scope.state.name
@@ -138,16 +138,16 @@ var databaseModal = {
         evaluate: _scope => _scope.handleInput
       }]
     }, {
-      redundantAttribute: 'expr111',
-      selector: '[expr111]',
+      redundantAttribute: 'expr86',
+      selector: '[expr86]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleClose
       }]
     }, {
-      redundantAttribute: 'expr112',
-      selector: '[expr112]',
+      redundantAttribute: 'expr87',
+      selector: '[expr87]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,

@@ -1,5 +1,31 @@
 <documents-table>
-  <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
+  <div class={ `bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700 transition-colors
+    ${state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-500/10' : '' }` } ondragover={
+    handleDragOver } ondragenter={ handleDragEnter } ondragleave={ handleDragLeave } ondrop={ handleDrop }>
+
+    <!-- Upload Overlay -->
+    <div if={ state.uploading } class="absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center z-50">
+      <div class="w-64">
+        <div class="flex justify-between mb-2">
+          <span class="text-indigo-400 font-medium">Uploading...</span>
+          <span class="text-indigo-400 font-medium">{ state.uploadProgress }%</span>
+        </div>
+        <div class="w-full bg-gray-700 rounded-full h-2">
+          <div class="bg-indigo-500 h-2 rounded-full transition-all duration-200"
+            style="width: { state.uploadProgress }%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div if={ state.uploadError }
+      class="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900/90 text-red-100 px-4 py-2 rounded-md shadow-lg border border-red-500/50 flex items-center">
+      <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      { state.uploadError }
+    </div>
+
     <div if={ state.loading } class="flex justify-center items-center py-12">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
       <span class="ml-3 text-gray-400">Loading documents...</span>
@@ -11,18 +37,41 @@
     </div>
 
     <div if={ !state.loading && !state.error && state.documents.length===0 } class="text-center py-12">
-      <svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg if={ !state.isBlob } class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor"
+        viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
-      <h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3>
-      <p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p>
+      <svg if={ state.isBlob } class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor"
+        viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      </svg>
+
+      <h3 class="mt-2 text-sm font-medium text-gray-300">{ state.isBlob ? 'No files' : 'No documents' }</h3>
+      <p class="mt-1 text-sm text-gray-500">{ state.isBlob ? 'Drag and drop a file or click to upload.' : 'Get started by creating a new document.' }</p>
+
       <div class="mt-6">
-        <button onclick={ ()=> props.onCreateClick() } class="inline-flex items-center px-4 py-2 border
+        <button if={ !state.isBlob } onclick={ ()=> props.onCreateClick() } class="inline-flex items-center px-4 py-2
+          border
           border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
           Create Document
         </button>
+        <button if={ state.isBlob } onclick={ triggerFileInput } class="inline-flex items-center px-4 py-2 border
+          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+          Upload File
+        </button>
+        <input type="file" ref="fileInput" class="hidden" onchange={ handleFileChange } multiple />
       </div>
+    </div>
+
+    <div if={ state.isBlob && !state.loading && !state.error && state.documents.length> 0 } class="px-4 py-2
+      bg-gray-700/50 border-b border-gray-600 text-sm text-gray-400 flex items-center">
+      <svg class="w-4 h-4 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      </svg>
+      Drag and drop files here to upload
     </div>
 
     <div if={ !state.loading && !state.error && state.documents.length> 0 } class="max-h-[60vh] overflow-y-auto">
@@ -116,7 +165,7 @@
   </div>
 
   <script>
-    import { getApiUrl, authenticatedFetch } from '/api-config.js'
+    import { getApiUrl, authenticatedFetch, getAuthToken } from '/api-config.js'
 
     export default {
       state: {
@@ -127,7 +176,17 @@
         limit: 20,
         totalCount: 0,
         isBlob: false,
-        downloadingDocId: null
+        downloadingDocId: null,
+        uploading: false,
+        uploadProgress: 0,
+        uploadError: null,
+        isDragging: false
+      },
+
+      onBeforeMount(props, state) {
+        state.isBlob = props.type === 'blob'
+        // Debug log
+        console.log('DocumentsTable mounted', { type: props.type, isBlob: state.isBlob, props: props })
       },
 
       onMounted() {
@@ -166,24 +225,6 @@
           }
 
           const data = await response.json()
-
-          // Check if it's a blob collection (if not already checked)
-          if (!this.state.isBlobChecked) {
-            try {
-              const collsResponse = await authenticatedFetch(`${url}/collection`)
-              if (collsResponse.ok) {
-                const collsData = await collsResponse.json()
-                const currentColl = collsData.collections.find(c => c.name === this.props.collection)
-                if (currentColl && currentColl.type === 'blob') {
-                  this.update({ isBlob: true, isBlobChecked: true })
-                } else {
-                  this.update({ isBlobChecked: true })
-                }
-              }
-            } catch (e) {
-              console.warn('Failed to check collection type:', e)
-            }
-          }
 
           this.update({
             documents: data.result || [],
@@ -292,6 +333,117 @@
         } finally {
           this.update({ downloadingDocId: null })
         }
+      },
+
+      handleDragOver(e) {
+        if (!this.state.isBlob) return
+        e.preventDefault()
+        e.stopPropagation()
+      },
+
+      handleDragEnter(e) {
+        if (!this.state.isBlob) return
+        e.preventDefault()
+        e.stopPropagation()
+        this.update({ isDragging: true })
+      },
+
+      handleDragLeave(e) {
+        if (!this.state.isBlob) return
+        e.preventDefault()
+        e.stopPropagation()
+        // Only reset if we're leaving the drop zone itself, or if we left the window
+        if (e.target === e.currentTarget) {
+          this.update({ isDragging: false })
+        }
+      },
+
+      triggerFileInput() {
+        if (this.state.uploading) return
+        this.$('input[ref="fileInput"]').click()
+      },
+
+      handleFileChange(e) {
+        if (e.target.files && e.target.files.length > 0) {
+          this.uploadFiles(Array.from(e.target.files))
+          e.target.value = ''
+        }
+      },
+
+      handleDrop(e) {
+        if (!this.state.isBlob) return
+        e.preventDefault()
+        e.stopPropagation()
+        this.update({ isDragging: false })
+
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          this.uploadFiles(Array.from(e.dataTransfer.files))
+        }
+      },
+
+      async uploadFiles(files) {
+        if (this.state.uploading || files.length === 0) return
+
+        const totalFiles = files.length
+        let completedFiles = 0
+
+        this.update({ uploading: true, uploadProgress: 0, uploadError: null, uploadTotal: totalFiles, uploadCurrent: 0 })
+
+        for (const file of files) {
+          completedFiles++
+          this.update({ uploadCurrent: completedFiles })
+          try {
+            await this.uploadSingleFile(file, completedFiles, totalFiles)
+          } catch (error) {
+            console.error('Upload error for file:', file.name, error)
+            this.update({ uploadError: `Failed to upload ${file.name}: ${error.message}` })
+            break
+          }
+        }
+
+        this.update({ uploading: false })
+        this.loadDocuments()
+      },
+
+      async uploadSingleFile(file, currentIndex, totalFiles) {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const token = getAuthToken()
+        if (!token) {
+          throw new Error('Not authenticated')
+        }
+
+        const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}`
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', url, true)
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100)
+              this.update({ uploadProgress: percent })
+            }
+          }
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(JSON.parse(xhr.responseText))
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText)
+                reject(new Error(err.error || 'Upload failed'))
+              } catch (e) {
+                reject(new Error(`Upload failed with status ${xhr.status}`))
+              }
+            }
+          }
+
+          xhr.onerror = () => reject(new Error('Network error'))
+          xhr.send(formData)
+        })
       }
     }
   </script>
