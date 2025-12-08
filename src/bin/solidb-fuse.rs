@@ -267,6 +267,8 @@ impl Filesystem for SolidBFS {
         let client_arc = self.client.clone();
         let client = client_arc.lock().unwrap();
 
+        println!("FUSE: lookup called for {} in parent {}", name_str, parent);
+        
         match parent_kind {
             InodeType::Root => {
                 // Check databases
@@ -425,10 +427,14 @@ impl Filesystem for SolidBFS {
         // We accumulate entries then skip based on offset (simplification)
         // Offset logic in FUSE is tricky. We'll use index + 2 as offset.
 
+        // Plain println for debugging visibility
+        println!("FUSE: readdir called on inode {}", ino); 
+
         match parent_kind {
              InodeType::Root => {
                 match client.list_databases() {
                     Ok(dbs) => {
+                        println!("FUSE: Found databases: {:?}", dbs);
                         info!("Listing databases: {:?}", dbs);
                         for db in dbs {
                              let child_ino = self.allocate_inode(InodeType::Database(db.clone()));
@@ -591,7 +597,10 @@ impl Filesystem for SolidBFS {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive(tracing::Level::INFO.into()))
+        .init();
     
     let args = Args::parse();
     let mountpoint = args.mount;
