@@ -450,6 +450,22 @@
                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                  {"name": "Alice", "age": 30}
                </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "_key": "123456",
+                     "_rev": "1",
+                     "name": "Alice",
+                     "age": 30
+                   }
+                 </div>
+               </div>
              </div>
 
             <!-- GET -->
@@ -458,7 +474,23 @@
                  <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
                 <code class="text-gray-300">/_api/database/:db/document/:collection/:key</code>
               </div>
-              <p class="text-sm text-gray-400">Retrieve a document by key.</p>
+               <p class="text-sm text-gray-400">Retrieve a document by key.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "_key": "123456",
+                     "_rev": "1",
+                     "name": "Alice",
+                     "age": 30
+                   }
+                 </div>
+               </div>
             </div>
 
              <!-- PUT -->
@@ -467,7 +499,23 @@
                  <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/database/:db/document/:collection/:key</code>
               </div>
-              <p class="text-sm text-gray-400">Replace/Update a document.</p>
+               <p class="text-sm text-gray-400">Replace/Update a document.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "_key": "123456",
+                     "_rev": "2",
+                     "name": "Alice",
+                     "age": 31
+                   }
+                 </div>
+               </div>
             </div>
 
              <!-- DELETE -->
@@ -476,7 +524,16 @@
                  <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
                 <code class="text-gray-300">/_api/database/:db/document/:collection/:key</code>
               </div>
-              <p class="text-sm text-gray-400">Remove a document.</p>
+               <p class="text-sm text-gray-400">Remove a document.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -498,7 +555,7 @@
                 <code class="text-gray-300">/_api/database/:db/cursor</code>
               </div>
               <p class="text-sm text-gray-400 mb-4">Execute an AQL query.</p>
-              
+
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
@@ -538,6 +595,23 @@
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                 {"query": "FOR d IN users RETURN d", "batchSize": 50}
               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "result": [{"_key": "...", "...": "..."}, "..."],
+                     "count": 50,
+                     "hasMore": true,
+                     "id": "cursor_123",
+                     "executionTimeMs": 1.5
+                   }
+                 </div>
+               </div>
             </div>
 
               <div class="p-6 hover:bg-white/5 transition-colors">
@@ -582,7 +656,24 @@
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/cursor/:id</code>
               </div>
-              <p class="text-sm text-gray-400">Fetch next batch of results for a cursor.</p>
+               <p class="text-sm text-gray-400">Fetch next batch of results for a cursor.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "result": ["...", "..."],
+                     "count": 50,
+                     "hasMore": false,
+                     "id": null,
+                     "cached": true
+                   }
+                 </div>
+               </div>
             </div>
 
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -590,7 +681,16 @@
                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
                 <code class="text-gray-300">/_api/cursor/:id</code>
               </div>
-              <p class="text-sm text-gray-400">Close a cursor and free resources.</p>
+               <p class="text-sm text-gray-400">Close a cursor and free resources.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -612,7 +712,7 @@
                 <code class="text-gray-300">/_api/database/:db/index/:collection</code>
               </div>
               <p class="text-sm text-gray-400 mb-4">Create a new index for a collection.</p>
-              
+
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
@@ -658,16 +758,49 @@
                </div>
 
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                {"type": "persistent", "fields": ["email"], "unique": true}
-              </div>
-            </div>
+                 {"type": "persistent", "fields": ["email"], "unique": true}
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "idx_email",
+                     "field": "email",
+                     "type": "persistent",
+                     "unique": true,
+                     "status": "created"
+                   }
+                 </div>
+               </div>
+             </div>
 
             <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
                 <code class="text-gray-300">/_api/database/:db/index/:collection</code>
               </div>
-              <p class="text-sm text-gray-400">List all indexes for a collection.</p>
+               <p class="text-sm text-gray-400">List all indexes for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "indexes": [
+                       { "name": "primary", "type": "primary", "fields": ["_key"], "...": "..." },
+                       { "name": "idx_email", "type": "persistent", "...": "..." }
+                     ]
+                   }
+                 </div>
+               </div>
             </div>
 
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -675,7 +808,23 @@
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/database/:db/index/:collection/rebuild</code>
               </div>
-              <p class="text-sm text-gray-400">Rebuild all indexes for a collection.</p>
+               <p class="text-sm text-gray-400">Rebuild all indexes for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "database": "my_db",
+                     "collection": "users",
+                     "documents_indexed": 1250,
+                     "status": "rebuilt"
+                   }
+                 </div>
+               </div>
             </div>
 
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -683,9 +832,18 @@
                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
                 <code class="text-gray-300">/_api/database/:db/index/:collection/:name</code>
               </div>
-              <p class="text-sm text-gray-400">Drop an index.</p>
+               <p class="text-sm text-gray-400">Drop an index.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
             </div>
-             
+
              <!-- Geo Indexes -->
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">

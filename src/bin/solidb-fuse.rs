@@ -165,7 +165,8 @@ impl SolidBClient {
             }
         }
 
-        let url = format!("{}/_api/database", self.base_url);
+        // Correct endpoint is /_api/databases (plural)
+        let url = format!("{}/_api/databases", self.base_url);
         info!("Fetching databases from {}", url);
         
         let mut req = self.client.get(&url);
@@ -230,7 +231,8 @@ impl SolidBClient {
     }
 
     fn list_blobs(&self, db: &str, coll: &str) -> Result<Vec<BlobMetadata>, anyhow::Error> {
-        let url = format!("{}/_api/cursor", self.base_url);
+        // Endpoint is /_api/database/:db/cursor
+        let url = format!("{}/_api/database/{}/cursor", self.base_url, db);
         let query = format!("FOR doc IN {} RETURN doc", coll);
         let body = serde_json::json!({
             "query": query,
