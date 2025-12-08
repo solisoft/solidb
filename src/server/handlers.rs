@@ -13,6 +13,7 @@ use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::aql::{parse, BodyClause, Query, QueryExecutor};
 use crate::cluster::{Operation, ReplicationService};
@@ -239,6 +240,161 @@ pub async fn delete_api_key_handler(
     Ok(Json(DeleteApiKeyResponse { deleted: true }))
 }
 
+// ==================== Blob Handlers ====================
+
+pub async fn upload_blob(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    mut multipart: Multipart,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    if collection.get_type() != "blob" {
+        return Err(DbError::BadRequest(format!("Collection '{}' is not a blob collection", coll_name)));
+    }
+
+    let mut file_name = None;
+    let mut mime_type = None;
+    let mut total_size = 0usize;
+    let mut chunk_count = 0u32;
+    // Generate a temporary key or use one if we support PUT (for now auto-generate)
+    let blob_key = uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
+    tracing::info!("Starting upload_blob for {}/{} with key {}", db_name, coll_name, blob_key);
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| DbError::BadRequest(e.to_string()))? {
+        if let Some(name) = field.name() {
+            tracing::info!("Processing field: {}", name);
+            if name == "file" {
+                if let Some(fname) = field.file_name() {
+                    file_name = Some(fname.to_string());
+                }
+                if let Some(mtype) = field.content_type() {
+                    mime_type = Some(mtype.to_string());
+                }
+
+                let mut stream = field;
+                while let Some(chunk_res) = stream.next().await {
+                    let chunk = chunk_res.map_err(|e| {
+                        tracing::error!("Chunk error: {}", e);
+                        DbError::BadRequest(e.to_string())
+                    })?;
+                    let data = chunk.to_vec();
+                    let len = data.len();
+                    tracing::debug!("Received chunk size: {}", len);
+                    
+                    if len > 0 {
+                        // Store locally
+                        collection.put_blob_chunk(&blob_key, chunk_count, &data)?;
+
+                        // Replicate chunk
+                        if let Some(ref repl) = state.replication {
+                            repl.record_blob_chunk(
+                                &db_name,
+                                &coll_name,
+                                &blob_key,
+                                chunk_count,
+                                data
+                            );
+                        }
+
+                        total_size += len;
+                        chunk_count += 1;
+                    }
+                }
+                tracing::info!("Finished processing file field. Total size: {}, chunks: {}", total_size, chunk_count);
+            }
+        }
+    }
+
+    // Create metadata document
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("_key".to_string(), Value::String(blob_key.clone()));
+    if let Some(fn_str) = file_name {
+        metadata.insert("name".to_string(), Value::String(fn_str));
+    }
+    if let Some(mt_str) = mime_type {
+        metadata.insert("type".to_string(), Value::String(mt_str));
+    }
+    metadata.insert("size".to_string(), Value::Number(total_size.into()));
+    metadata.insert("chunks".to_string(), Value::Number(chunk_count.into()));
+    metadata.insert("created".to_string(), Value::String(chrono::Utc::now().to_rfc3339()));
+
+    let doc_value = Value::Object(metadata);
+
+    // Insert metadata document (handles standard replication for the doc)
+    collection.insert(doc_value.clone())?;
+    
+    // Explicit replication record for insert is handled by insert() -> record_write call?
+    // Wait, collection.insert() does NOT call repl.record_write automatically. 
+    // Handlers usually do it. existing `insert_document` does.
+    // So we must record it here for the metadata doc.
+    if let Some(ref repl) = state.replication {
+        let doc_bytes = serde_json::to_vec(&doc_value).ok();
+        repl.record_write(
+            &db_name,
+            &coll_name,
+            Operation::Insert,
+            &blob_key,
+            doc_bytes.as_deref(),
+            None
+        );
+    }
+
+    Ok(Json(doc_value))
+}
+
+pub async fn download_blob(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, key)): Path<(String, String, String)>,
+) -> Result<Response, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    if collection.get_type() != "blob" {
+        return Err(DbError::BadRequest(format!("Collection '{}' is not a blob collection", coll_name)));
+    }
+
+    // Get metadata
+    let doc = collection.get(&key)?;
+    let metadata = doc.to_value();
+    
+    let chunk_count = metadata.get("chunks")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| DbError::InternalError("Missing chunks count in metadata".to_string()))? as u32;
+
+    let mime_type = metadata.get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    let filename = metadata.get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("blob.bin")
+        .to_string();
+
+    let collection_clone = collection.clone();
+    let key_clone = key.clone();
+
+    let stream = async_stream::stream! {
+        for i in 0..chunk_count {
+            match collection_clone.get_blob_chunk(&key_clone, i) {
+                Ok(Some(data)) => yield Ok::<_, std::io::Error>(axum::body::Bytes::from(data)),
+                Ok(None) => break, // Should not happen if consistent
+                Err(e) => yield Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+            }
+        }
+    };
+
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .header("Content-Type", mime_type)
+        .header("Content-Disposition", format!("attachment; filename=\"{}\"", filename))
+        .body(body)
+        .unwrap())
+}
+
 // ==================== Request/Response Types ====================
 
 #[derive(Debug, Deserialize)]
@@ -297,6 +453,8 @@ pub struct CollectionSummary {
     pub collection_type: String,
     #[serde(rename = "shardConfig", skip_serializing_if = "Option::is_none")]
     pub shard_config: Option<crate::sharding::coordinator::CollectionShardConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<crate::storage::CollectionStats>,
 }
 
 #[derive(Debug, Serialize)]
@@ -471,9 +629,10 @@ pub async fn create_collection(
     let database = state.storage.get_database(&db_name)?;
     database.create_collection(req.name.clone(), req.collection_type.clone())?;
 
+    let collection = database.get_collection(&req.name)?;
+
     // Store sharding configuration if specified
     if let Some(num_shards) = req.num_shards {
-        let collection = database.get_collection(&req.name)?;
         let shard_config = crate::sharding::coordinator::CollectionShardConfig {
             num_shards,
             shard_key: req.shard_key.clone().unwrap_or_else(|| "_key".to_string()),
@@ -481,6 +640,13 @@ pub async fn create_collection(
         };
         // Store shard config in collection metadata
         collection.set_shard_config(&shard_config)?;
+    }
+
+    // Set persistence type if blob
+    if let Some(ctype) = &req.collection_type {
+        if ctype == "blob" {
+            collection.set_type("blob")?;
+        }
     }
 
     // Record to replication log
@@ -517,11 +683,14 @@ pub async fn list_collections(
             let count = coll.count();
             let shard_config = coll.get_shard_config();
             let collection_type = coll.get_type().to_string();
+            let stats = coll.stats();
+            
             collections.push(CollectionSummary {
                 name,
                 count,
                 collection_type,
                 shard_config,
+                stats: Some(stats),
             });
         }
     }
@@ -715,6 +884,20 @@ pub async fn export_collection(
     let db_name_clone = db_name.clone();
     let coll_name_clone = coll_name.clone();
     let shard_config = collection.get_shard_config();
+    let is_blob = collection.get_type() == "blob";
+
+    // Need to clone collection for the async block if we want to read chunks
+    // But Collection is just an Arc wrapper essentially, so it's cheap to clone?
+    // Wait, Collection struct has Arc<RwLock<DB>>, so cloning is cheap.
+    // However, we can't easily move it into the stream macro if it's not Send? 
+    // It should be Send.
+    let collection_clone = if is_blob {
+        // We need to re-get collection inside the stream or clone it
+        // Re-getting is safest to avoid lifetime issues with 'stream!' macro capture
+        Some(state.storage.get_database(&db_name)?.get_collection(&coll_name)?)
+    } else {
+        None
+    };
 
     let stream = async_stream::stream! {
         for doc in docs {
@@ -726,6 +909,39 @@ pub async fn export_collection(
             }
             if let Ok(json) = serde_json::to_string(&val) {
                 yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", json)));
+            }
+
+            // For blob collections, also export the blob chunks
+            if is_blob {
+                if let Some(coll) = &collection_clone {
+                     let key = &doc.key;
+                     // Iterate chunks until none found
+                     let mut chunk_index: u32 = 0;
+                     loop {
+                         match coll.get_blob_chunk(key, chunk_index) {
+                             Ok(Some(data)) => {
+                                 // Create a specific chunk document
+                                 // We use a special field _type: "blob_chunk" to distinguish during import
+                                 let chunk_doc = serde_json::json!({
+                                     "_type": "blob_chunk",
+                                     "_doc_key": key,
+                                     "_chunk_index": chunk_index,
+                                     "_blob_data": general_purpose::STANDARD.encode(&data)
+                                 });
+                                 
+                                 if let Ok(chunk_json) = serde_json::to_string(&chunk_doc) {
+                                     yield Ok(axum::body::Bytes::from(format!("{}\n", chunk_json)));
+                                 }
+                                 chunk_index += 1;
+                             },
+                             Ok(None) => break, // No more chunks
+                             Err(e) => {
+                                 tracing::error!("Failed to read blob chunk {} for {}: {}", chunk_index, key, e);
+                                 break;
+                             }
+                         }
+                     }
+                }
             }
         }
     };
@@ -813,6 +1029,39 @@ pub async fn import_collection(
             let mut batch_docs = Vec::with_capacity(10000);
             
             for mut doc in docs {
+                // Check if this is a blob chunk
+                let is_blob_chunk = doc.get("_type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "blob_chunk")
+                    .unwrap_or(false);
+
+                if is_blob_chunk {
+                    // Handle blob chunk immediately (no batching for simplicity, or we could batch?)
+                    // Chunks must be processed individually using put_blob_chunk
+                    if let (Some(key), Some(index), Some(data_b64)) = (
+                        doc.get("_doc_key").and_then(|s| s.as_str()),
+                        doc.get("_chunk_index").and_then(|n| n.as_u64()),
+                        doc.get("_blob_data").and_then(|s| s.as_str())
+                    ) {
+                        if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
+                            match collection.put_blob_chunk(key, index as u32, &data) {
+                                Ok(_) => success_count += 1, // Count chunks as imported items? Or separate?
+                                Err(e) => {
+                                    tracing::error!("Failed to import blob chunk {} for {}: {}", index, key, e);
+                                    error_count += 1;
+                                }
+                            }
+                        } else {
+                             tracing::error!("Failed to decode base64 blob data");
+                             error_count += 1;
+                        }
+                    } else {
+                        tracing::error!("Invalid blob chunk format");
+                        error_count += 1;
+                    }
+                    continue; 
+                }
+
                 // Remove metadata if present
                 if let Some(obj) = doc.as_object_mut() {
                     obj.remove("_database");
@@ -838,12 +1087,11 @@ pub async fn import_collection(
                     batch_docs.clear();
                 }
             }
-            
-            // Insert remaining docs
+            // Insert remaining docs (same logic as before)
             if !batch_docs.is_empty() {
                 match collection.insert_batch(batch_docs.clone()) {
                     Ok(inserted) => {
-                        if let Err(e) = collection.index_documents(&inserted) {
+                         if let Err(e) = collection.index_documents(&inserted) {
                             tracing::error!("Failed to index batch: {}", e);
                         }
                         success_count += inserted.len();

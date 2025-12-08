@@ -19,6 +19,9 @@ pub enum Operation {
     // Database operations
     CreateDatabase,
     DeleteDatabase,
+    // Blob operations
+    PutBlobChunk,
+    DeleteBlob,
 }
 
 /// A single entry in the replication log
@@ -50,6 +53,9 @@ pub struct ReplicationEntry {
 
     /// Previous revision (for conflict detection)
     pub prev_rev: Option<String>,
+
+    /// Chunk index (for blob chunks)
+    pub chunk_index: Option<u32>,
 }
 
 impl ReplicationEntry {
@@ -74,6 +80,31 @@ impl ReplicationEntry {
             document_key,
             document_data,
             prev_rev,
+            chunk_index: None,
+        }
+    }
+
+    pub fn new_blob_chunk(
+        sequence: u64,
+        node_id: String,
+        hlc: HybridLogicalClock,
+        database: String,
+        collection: String,
+        document_key: String,
+        chunk_index: u32,
+        data: Vec<u8>,
+    ) -> Self {
+        Self {
+            sequence,
+            node_id,
+            hlc,
+            database,
+            collection,
+            operation: Operation::PutBlobChunk,
+            document_key,
+            document_data: Some(data),
+            prev_rev: None,
+            chunk_index: Some(chunk_index),
         }
     }
 

@@ -142,6 +142,9 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
             "/_api/database/:db/document/:collection/:key",
             delete(delete_document),
         )
+        // Blob routes
+        .route("/_api/blob/:db/:collection", post(upload_blob))
+        .route("/_api/blob/:db/:collection/:key", get(download_blob))
         // Query routes
         .route("/_api/database/:db/cursor", post(execute_query))
         .route("/_api/cursor/:id", put(get_next_batch))

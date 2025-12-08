@@ -45,6 +45,18 @@
         </div>
 
         <div class="flex justify-end space-x-3">
+          <button if={ state.isBlob && state.document } type="button" onclick={ handleDownload } disabled={
+            state.downloading }
+            class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed mr-auto">
+            <svg if={ state.downloading } class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none"
+              viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+              </path>
+            </svg>
+            { state.downloading ? 'Downloading...' : 'Download Blob' }
+          </button>
           <button type="button" onclick={ handleClose }
             class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">
             Cancel
@@ -65,13 +77,15 @@
       state: {
         visible: false,
         error: null,
-        document: null
+        document: null,
+        isBlob: false,
+        downloading: false
       },
 
       editor: null,
 
-      show(document = null) {
-        this.update({ visible: true, document: document, error: null })
+      show(document = null, isBlob) {
+        this.update({ visible: true, document: document, error: null, isBlob: !!isBlob, downloading: false })
       },
 
       hide() {
@@ -214,6 +228,49 @@
           }
         } catch (error) {
           this.update({ error: error.message })
+        }
+      },
+
+      async handleDownload(e) {
+        if (e) e.preventDefault()
+        const doc = this.state.document
+        if (!doc) return
+
+        try {
+          this.update({ downloading: true, error: null })
+          const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}/${doc._key}`
+          const response = await authenticatedFetch(url)
+
+          if (response.ok) {
+            const blob = await response.blob()
+            const downloadUrl = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = downloadUrl
+
+            let filename = doc.filename || doc.name || doc._key
+            const disposition = response.headers.get('Content-Disposition')
+            if (disposition && disposition.indexOf('attachment') !== -1) {
+              const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+              const matches = filenameRegex.exec(disposition);
+              if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+              }
+            }
+
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            window.URL.revokeObjectURL(downloadUrl)
+          } else {
+            const error = await response.json().catch(() => ({}))
+            this.update({ error: error.error || `Download failed: ${response.statusText}` })
+          }
+        } catch (error) {
+          console.error('Error downloading blob:', error)
+          this.update({ error: 'Error downloading blob: ' + error.message })
+        } finally {
+          this.update({ downloading: false })
         }
       }
     }

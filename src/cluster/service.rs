@@ -1512,6 +1512,35 @@ impl ReplicationService {
                 | Operation::DeleteDatabase => {
                     unreachable!("Should have been handled earlier");
                 }
+                
+                Operation::PutBlobChunk => {
+                   if let (Some(idx), Some(data)) = (entry.chunk_index, &entry.document_data) {
+                        if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
+                             // This assumes data is just bytes, but entry.document_data is loaded as bytes.
+                             // Wait, entry.document_data is Vec<u8>. 
+                             // collection.put_blob_chunk takes &[u8].
+                             // We don't need to deserialize it as JSON.
+                        }
+                        
+                        // We need to use the data directly, but we borrow it from entry struct?
+                        // entry.document_data is Option<Vec<u8>>.
+                        // We can access it.
+                        if let Ok(col) = db.get_collection(&entry.collection) {
+                             if let Err(e) = col.put_blob_chunk(&entry.document_key, idx, data) {
+                                  tracing::error!("Failed to replicate blob chunk: {}", e);
+                             } else {
+                                  tracing::debug!("[APPLY] Applied blob chunk {} for {}/{}", 
+                                       idx, entry.database, entry.document_key);
+                             }
+                        }
+                   }
+                }
+                
+                Operation::DeleteBlob => {
+                    if let Ok(col) = db.get_collection(&entry.collection) {
+                         let _ = col.delete_blob_data(&entry.document_key);
+                    }
+                }
             }
         }
     }
@@ -1550,6 +1579,44 @@ impl ReplicationService {
         tracing::debug!(
             "[REPL-LOG] Recorded {:?} {}/{}/{} as seq {}",
             operation,
+            database,
+            collection,
+            document_key,
+            seq
+        );
+        seq
+    }
+
+    /// Record a blob chunk in the replication log
+    pub fn record_blob_chunk(
+        &self,
+        database: &str,
+        collection: &str,
+        document_key: &str,
+        chunk_index: u32,
+        data: Vec<u8>,
+    ) -> u64 {
+        if !self.config.is_cluster_mode() {
+            return 0;
+        }
+
+        let hlc = self.hlc_generator.now();
+        
+        let entry = ReplicationEntry::new_blob_chunk(
+            0,
+            self.config.node_id.clone(),
+            hlc,
+            database.to_string(),
+            collection.to_string(),
+            document_key.to_string(),
+            chunk_index,
+            data
+        );
+
+        let seq = self.replication_log.append(entry);
+        tracing::debug!(
+            "[REPL-LOG] Recorded blob chunk {} for {}/{}/{} as seq {}",
+            chunk_index,
             database,
             collection,
             document_key,

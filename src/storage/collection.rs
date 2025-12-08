@@ -24,6 +24,7 @@ const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
+const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 
 /// Type of change event
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -88,7 +89,7 @@ pub struct Collection {
     last_flush_time: Arc<std::sync::atomic::AtomicU64>,
     /// Broadcast channel for real-time change events
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
-    /// Collection type (document, edge)
+    /// Collection type (document, edge, blob)
     pub collection_type: String,
 }
 
@@ -239,6 +240,11 @@ impl Collection {
         format!("{}{}", DOC_PREFIX, key).into_bytes()
     }
 
+    /// Build a blob chunk key
+    fn blo_chunk_key(key: &str, chunk_index: u32) -> Vec<u8> {
+        format!("{}{}:{:010}", BLO_PREFIX, key, chunk_index).into_bytes()
+    }
+
     /// Build an index metadata key
     fn idx_meta_key(index_name: &str) -> Vec<u8> {
         format!("{}{}", IDX_META_PREFIX, index_name).into_bytes()
@@ -275,6 +281,61 @@ impl Collection {
     /// Build a fulltext term entry key (term → doc_key with position)
     fn ft_term_key(index_name: &str, term: &str, doc_key: &str) -> Vec<u8> {
         format!("{}{}:{}:{}", FT_TERM_PREFIX, index_name, term, doc_key).into_bytes()
+    }
+
+    // ==================== Blob Operations ====================
+
+    /// Store a blob chunk
+    pub fn put_blob_chunk(&self, key: &str, chunk_index: u32, data: &[u8]) -> DbResult<()> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        
+        db.put_cf(cf, Self::blo_chunk_key(key, chunk_index), data)
+            .map_err(|e| DbError::InternalError(format!("Failed to put blob chunk: {}", e)))?;
+            
+        Ok(())
+    }
+
+    /// Get a blob chunk
+    pub fn get_blob_chunk(&self, key: &str, chunk_index: u32) -> DbResult<Option<Vec<u8>>> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        
+        let res = db.get_cf(cf, Self::blo_chunk_key(key, chunk_index))
+            .map_err(|e| DbError::InternalError(format!("Failed to get blob chunk: {}", e)))?;
+            
+        Ok(res)
+    }
+
+    /// Delete all chunks for a blob
+    pub fn delete_blob_data(&self, key: &str) -> DbResult<()> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        // The prefix for all chunks of this blob is "blo:<key>:"
+        let prefix = format!("{}{}:", BLO_PREFIX, key);
+        let prefix_bytes = prefix.as_bytes();
+
+        let iter = db.iterator_cf(cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+        
+        for item in iter {
+             if let Ok((k, _)) = item {
+                 if k.starts_with(prefix_bytes) {
+                     db.delete_cf(cf, k)
+                        .map_err(|e| DbError::InternalError(format!("Failed to delete blob chunk: {}", e)))?;
+                 } else {
+                     break;
+                 }
+             }
+        }
+
+        Ok(())
     }
 
     // ==================== Document Operations ====================
@@ -666,6 +727,11 @@ impl Collection {
                 .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
         }
 
+        // If blob collection, delete chunks
+        if self.collection_type == "blob" {
+            self.delete_blob_data(key)?;
+        }
+
         // Update indexes
         self.update_indexes_on_delete(key, &doc_value)?;
 
@@ -902,9 +968,35 @@ impl Collection {
                         type_: ChangeType::Delete,
                         key: key.clone(),
                         data: None,
-                        old_data: Some(old_data.clone()),
+                        old_data: None, // We don't have old data in transaction op
                     });
                 }
+                crate::transaction::Operation::PutBlobChunk { key, chunk_index, data, .. } => {
+                    let blob_key = Self::blo_chunk_key(key, *chunk_index);
+                    batch.put_cf(cf, blob_key, data);
+                }
+                crate::transaction::Operation::DeleteBlob { key, .. } => {
+                    // Iterate and delete all chunks
+                    let prefix = format!("{}{}:", crate::storage::collection::BLO_PREFIX, key);
+                    let prefix_bytes = prefix.as_bytes();
+                    
+                    // We need to collect keys first to avoid borrowing issues with iterator?
+                    // Actually RocksDB iterator needs DB, batch is separate.
+                    // But usually we iterate then delete.
+                    // Since we are adding to batch, it's fine.
+                    
+                    let iter = db.iterator_cf(cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+                    for item in iter {
+                         if let Ok((k, _)) = item {
+                             if k.starts_with(prefix_bytes) {
+                                 batch.delete_cf(cf, k);
+                             } else {
+                                 break;
+                             }
+                         }
+                    }
+                }
+                _ => {} // Ignore other ops like CreateCollection inside a collection apply
             }
         }
 

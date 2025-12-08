@@ -101,6 +101,20 @@ pub enum Operation {
         key: String,
         old_data: Value,
     },
+    /// Store a blob chunk
+    PutBlobChunk {
+        database: String,
+        collection: String,
+        key: String,
+        chunk_index: u32,
+        data: Vec<u8>,
+    },
+    /// Delete blob data
+    DeleteBlob {
+        database: String,
+        collection: String,
+        key: String,
+    },
 }
 
 impl Operation {
@@ -110,6 +124,8 @@ impl Operation {
             Operation::Insert { database, .. } => database,
             Operation::Update { database, .. } => database,
             Operation::Delete { database, .. } => database,
+            Operation::PutBlobChunk { database, .. } => database,
+            Operation::DeleteBlob { database, .. } => database,
         }
     }
 
@@ -119,6 +135,8 @@ impl Operation {
             Operation::Insert { collection, .. } => collection,
             Operation::Update { collection, .. } => collection,
             Operation::Delete { collection, .. } => collection,
+            Operation::PutBlobChunk { collection, .. } => collection,
+            Operation::DeleteBlob { collection, .. } => collection,
         }
     }
 
@@ -128,6 +146,8 @@ impl Operation {
             Operation::Insert { key, .. } => key,
             Operation::Update { key, .. } => key,
             Operation::Delete { key, .. } => key,
+            Operation::PutBlobChunk { key, .. } => key,
+            Operation::DeleteBlob { key, .. } => key,
         }
     }
 }

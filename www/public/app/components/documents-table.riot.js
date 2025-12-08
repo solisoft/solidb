@@ -10,7 +10,9 @@ export default {
       error: null,
       offset: 0,
       limit: 20,
-      totalCount: 0
+      totalCount: 0,
+      isBlob: false,
+      downloadingDocId: null
     },
 
     onMounted() {
@@ -49,6 +51,25 @@ export default {
         }
 
         const data = await response.json()
+
+        // Check if it's a blob collection (if not already checked)
+        if (!this.state.isBlobChecked) {
+          try {
+            const collsResponse = await authenticatedFetch(`${url}/collection`)
+            if (collsResponse.ok) {
+              const collsData = await collsResponse.json()
+              const currentColl = collsData.collections.find(c => c.name === this.props.collection)
+              if (currentColl && currentColl.type === 'blob') {
+                this.update({ isBlob: true, isBlobChecked: true })
+              } else {
+                this.update({ isBlobChecked: true })
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to check collection type:', e)
+          }
+        }
+
         this.update({
           documents: data.result || [],
           totalCount: totalCount,
@@ -98,7 +119,7 @@ export default {
       }
 
       try {
-        const url = `http://localhost:6745/_api/database/${this.props.db}`
+        const url = `${getApiUrl()}/database/${this.props.db}`
         const response = await authenticatedFetch(`${url}/document/${this.props.collection}/${key}`, {
           method: 'DELETE'
         })
@@ -112,6 +133,50 @@ export default {
       } catch (error) {
         console.error('Error deleting document:', error.message)
       }
+    },
+
+    async downloadBlob(doc) {
+      if (this.state.downloadingDocId) return // Prevent multiple downloads at once
+
+      try {
+        this.update({ downloadingDocId: doc._key })
+
+        const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}/${doc._key}`
+        const response = await authenticatedFetch(url)
+
+        if (response.ok) {
+          const blob = await response.blob()
+          const downloadUrl = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = downloadUrl
+          // Try to get filename from doc metadata or header
+          let filename = doc.filename || doc.name || doc._key
+
+          // Fallback to Content-Disposition header if available
+          const disposition = response.headers.get('Content-Disposition')
+          if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) {
+              filename = matches[1].replace(/['"]/g, '');
+            }
+          }
+
+          a.download = filename
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          window.URL.revokeObjectURL(downloadUrl)
+        } else {
+          console.error('Download failed:', response.statusText)
+          alert('Failed to download blob')
+        }
+      } catch (error) {
+        console.error('Error downloading blob:', error)
+        alert('Error downloading blob: ' + error.message)
+      } finally {
+        this.update({ downloadingDocId: null })
+      }
     }
   },
 
@@ -121,13 +186,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr0="expr0" class="flex justify-center items-center py-12"></div><div expr1="expr1" class="text-center py-12"></div><div expr4="expr4" class="text-center py-12"></div><div expr6="expr6" class="max-h-[60vh] overflow-y-auto"></div><div expr12="expr12" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
+    '<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr369="expr369" class="flex justify-center items-center py-12"></div><div expr370="expr370" class="text-center py-12"></div><div expr373="expr373" class="text-center py-12"></div><div expr375="expr375" class="max-h-[60vh] overflow-y-auto"></div><div expr383="expr383" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr0',
-        selector: '[expr0]',
+        redundantAttribute: 'expr369',
+        selector: '[expr369]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>',
@@ -137,15 +202,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr1',
-        selector: '[expr1]',
+        redundantAttribute: 'expr370',
+        selector: '[expr370]',
 
         template: template(
-          '<p expr2="expr2" class="text-red-400"> </p><button expr3="expr3" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
+          '<p expr371="expr371" class="text-red-400"> </p><button expr372="expr372" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>',
           [
             {
-              redundantAttribute: 'expr2',
-              selector: '[expr2]',
+              redundantAttribute: 'expr371',
+              selector: '[expr371]',
 
               expressions: [
                 {
@@ -162,8 +227,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr3',
-              selector: '[expr3]',
+              redundantAttribute: 'expr372',
+              selector: '[expr372]',
 
               expressions: [
                 {
@@ -179,15 +244,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length===0,
-        redundantAttribute: 'expr4',
-        selector: '[expr4]',
+        redundantAttribute: 'expr373',
+        selector: '[expr373]',
 
         template: template(
-          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr5="expr5" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
+          '<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No documents</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new document.</p><div class="mt-6"><button expr374="expr374" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Document\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr5',
-              selector: '[expr5]',
+              redundantAttribute: 'expr374',
+              selector: '[expr374]',
 
               expressions: [
                 {
@@ -203,11 +268,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length> 0,
-        redundantAttribute: 'expr6',
-        selector: '[expr6]',
+        redundantAttribute: 'expr375',
+        selector: '[expr375]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr7="expr7" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr376="expr376" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -215,11 +280,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr8="expr8" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr9="expr9" class="text-blue-400 hover:text-blue-300 transition-colors" title="View document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button><button expr10="expr10" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Edit document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr11="expr11" class="text-red-400 hover:text-red-300\n                transition-colors" title="Delete document"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
+                '<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr377="expr377" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr378="expr378" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr379="expr379" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr380="expr380" class="inline-block"></div><button expr381="expr381" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr382="expr382" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>',
                 [
                   {
-                    redundantAttribute: 'expr8',
-                    selector: '[expr8]',
+                    redundantAttribute: 'expr377',
+                    selector: '[expr377]',
 
                     expressions: [
                       {
@@ -233,20 +298,61 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr9',
-                    selector: '[expr9]',
+                    type: bindingTypes.IF,
+                    evaluate: _scope => !_scope.state.isBlob,
+                    redundantAttribute: 'expr378',
+                    selector: '[expr378]',
 
-                    expressions: [
-                      {
-                        type: expressionTypes.EVENT,
-                        name: 'onclick',
-                        evaluate: _scope => () => _scope.viewDocument(_scope.doc)
-                      }
-                    ]
+                    template: template(
+                      '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>',
+                      [
+                        {
+                          expressions: [
+                            {
+                              type: expressionTypes.EVENT,
+                              name: 'onclick',
+                              evaluate: _scope => () => _scope.viewDocument(_scope.doc)
+                            }
+                          ]
+                        }
+                      ]
+                    )
                   },
                   {
-                    redundantAttribute: 'expr10',
-                    selector: '[expr10]',
+                    type: bindingTypes.IF,
+                    evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId !==_scope.doc._key,
+                    redundantAttribute: 'expr379',
+                    selector: '[expr379]',
+
+                    template: template(
+                      '<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>',
+                      [
+                        {
+                          expressions: [
+                            {
+                              type: expressionTypes.EVENT,
+                              name: 'onclick',
+                              evaluate: _scope => () => _scope.downloadBlob(_scope.doc)
+                            }
+                          ]
+                        }
+                      ]
+                    )
+                  },
+                  {
+                    type: bindingTypes.IF,
+                    evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId===_scope.doc._key,
+                    redundantAttribute: 'expr380',
+                    selector: '[expr380]',
+
+                    template: template(
+                      '<svg class="animate-spin h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>',
+                      []
+                    )
+                  },
+                  {
+                    redundantAttribute: 'expr381',
+                    selector: '[expr381]',
 
                     expressions: [
                       {
@@ -257,8 +363,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr11',
-                    selector: '[expr11]',
+                    redundantAttribute: 'expr382',
+                    selector: '[expr382]',
 
                     expressions: [
                       {
@@ -271,8 +377,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr7',
-              selector: '[expr7]',
+              redundantAttribute: 'expr376',
+              selector: '[expr376]',
               itemName: 'doc',
               indexName: 'idx',
               evaluate: _scope => _scope.state.documents
@@ -283,15 +389,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount> 0,
-        redundantAttribute: 'expr12',
-        selector: '[expr12]',
+        redundantAttribute: 'expr383',
+        selector: '[expr383]',
 
         template: template(
-          '<div expr13="expr13" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr14="expr14" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr15="expr15" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
+          '<div expr384="expr384" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr385="expr385" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr386="expr386" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>',
           [
             {
-              redundantAttribute: 'expr13',
-              selector: '[expr13]',
+              redundantAttribute: 'expr384',
+              selector: '[expr384]',
 
               expressions: [
                 {
@@ -316,8 +422,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr14',
-              selector: '[expr14]',
+              redundantAttribute: 'expr385',
+              selector: '[expr385]',
 
               expressions: [
                 {
@@ -334,8 +440,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr15',
-              selector: '[expr15]',
+              redundantAttribute: 'expr386',
+              selector: '[expr386]',
 
               expressions: [
                 {

@@ -2129,6 +2129,7 @@ dependencies = [
  "argon2",
  "async-stream",
  "axum",
+ "base64 0.21.7",
  "chrono",
  "chrono-tz",
  "clap",

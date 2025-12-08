@@ -43,6 +43,13 @@
         </svg>
         Create Document
       </button>
+
+      <button id="uploadBlobBtn" class="hidden inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        Upload Blob
+      </button>
     </div>
   </div>
 
@@ -54,6 +61,7 @@
 <document-modal id="documentModal"></document-modal>
 <document-view-modal id="viewModal"></document-view-modal>
 <import-data-modal id="importModal"></import-data-modal>
+<upload-blob-modal id="uploadBlobModal"></upload-blob-modal>
 
 <!-- Load Ace Editor -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.2/ace.js"></script>
@@ -66,24 +74,20 @@
   import DocumentModal from '<%= PublicPath("/app/components/document-modal.riot.js") %>'
   import DocumentViewModal from '<%= PublicPath("/app/components/document-view-modal.riot.js") %>'
   import ImportDataModal from '<%= PublicPath("/app/components/import-data-modal.riot.js") %>'
-  import { getApiUrl } from '/api-config.js'
+  import UploadBlobModal from '<%= PublicPath("/app/components/upload-blob-modal.riot.js") %>'
+  import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
   // register the riot components
   riot.register('documents-table', DocumentsTable)
   riot.register('document-modal', DocumentModal)
   riot.register('document-view-modal', DocumentViewModal)
   riot.register('import-data-modal', ImportDataModal)
+  riot.register('upload-blob-modal', UploadBlobModal)
 
   // Wait for DOM to be ready
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     // Mount the components
-    const tableComponent = riot.mount('documents-table', {
-      db: "<%= Params['db'] %>",
-      collection: "<%= Params['collection'] %>",
-      onCreateClick: () => editModalComponent[0].show(null),
-      onViewDocument: (doc) => viewModalComponent[0].show(doc),
-      onEditDocument: (doc) => editModalComponent[0].show(doc)
-    })[0]
+
 
     const editModalComponent = riot.mount('document-modal', {
       db: "<%= Params['db'] %>",
@@ -95,11 +99,25 @@
       }
     })
 
+    let isBlobCollection = false;
+
     const viewModalComponent = riot.mount('document-view-modal', {
+      db: "<%= Params['db'] %>",
+      collection: "<%= Params['collection'] %>",
       onClose: () => viewModalComponent[0].hide(),
       onEdit: (doc) => {
         viewModalComponent[0].hide()
-        editModalComponent[0].show(doc)
+        editModalComponent[0].show(doc, isBlobCollection)
+      }
+    })
+
+    const tableComponent = riot.mount('documents-table', {
+      db: "<%= Params['db'] %>",
+      collection: "<%= Params['collection'] %>",
+      onCreateClick: () => editModalComponent[0].show(null, isBlobCollection),
+      onEditDocument: (doc) => editModalComponent[0].show(doc, isBlobCollection),
+      onViewDocument: (doc) => {
+        viewModalComponent[0].show(doc, isBlobCollection) // Pass isBlob state
       }
     })
 
@@ -111,9 +129,17 @@
         }
     })
 
+    const uploadBlobModalComponent = riot.mount('upload-blob-modal', {
+        db: "<%= Params['db'] %>",
+        collection: "<%= Params['collection'] %>",
+        onUploaded: () => {
+            tableComponent.loadDocuments()
+        }
+    })
+
     // Handle create button click
     document.getElementById('createBtn').addEventListener('click', () => {
-      editModalComponent[0].show(null)
+      editModalComponent[0].show(null, isBlobCollection)
     })
 
     // Handle import button click
@@ -126,5 +152,40 @@
         const url = `${getApiUrl()}/database/<%= Params['db'] %>/collection/<%= Params['collection'] %>/export`
         window.location.href = url
     })
+
+    // Handle upload blob button click
+    const uploadBlobBtn = document.getElementById('uploadBlobBtn')
+    if (uploadBlobBtn) {
+        uploadBlobBtn.addEventListener('click', () => {
+            uploadBlobModalComponent[0].show()
+        })
+    }
+
+    // Check collection type to toggle buttons
+    try {
+        const response = await authenticatedFetch(`${getApiUrl()}/database/<%= Params['db'] %>/collection`)
+        if (response.ok) {
+            const data = await response.json()
+            const collection = data.collections.find(c => c.name === "<%= Params['collection'] %>")
+            
+            if (collection) {
+                isBlobCollection = collection.type === 'blob' // Update global flag
+                const isBlob = isBlobCollection
+                const createBtn = document.getElementById('createBtn')
+                const importBtn = document.getElementById('importBtn')
+                const uploadBtn = document.getElementById('uploadBlobBtn')
+
+                if (isBlob) {
+                    if (createBtn) createBtn.remove()
+                    if (importBtn) importBtn.remove()
+                } else {
+                    //if (createBtn) createBtn.remove()
+                    if (uploadBtn) uploadBtn.remove()
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Failed to fetch collection details", e)
+    }
   })
 </script>

@@ -191,66 +191,73 @@ async fn dump_collection_jsonl(
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
         .progress_chars("#>-"));
 
-    // Get all documents via AQL
-    // Note: Ideally we should use a CURSOR and stream batches.
-    // The current implementation does `FOR doc IN coll RETURN doc` which might load EVERYTHING in memory on server if not careful?
-    // But `client.post` here returns everything in one JSON response if we don't handle pagination/cursor.
-    // The previous code had "batchSize": 10000. It likely returns a cursor ID if more results.
-    // The previous code `query_result["result"]` implies getting a single batch.
-    // Wait, the previous code treated it as ALL documents.
-    // If the collection is huge, the previous code was buggy (only fetched first batch).
-    // Let's fix that while we are here: Handle cursor pagination!
-    // Or just fetch all if small.
-    // The user wants "batch imports".
-    // For DUMP, let's just stick to the existing logic but wrap the writing loop with progress.
-    // If documents.len() != count, the bar will be partial.
-    
-    let query = format!("FOR doc IN {} RETURN doc", collection);
-    let query_url = format!("{}/_api/database/{}/cursor", base_url, database);
-    
-    // We'll set a large batch size to try getting all
-    let response = client
-        .post(&query_url)
-        .json(&serde_json::json!({
-            "query": query,
-            "batchSize": 1_000_000 // Try to get all
-        }))
-        .send()
-        .await?;
+    // Check collection type to decide dump method
+    let collection_type = collection_info["type"].as_str().unwrap_or("document");
 
-    if !response.status().is_success() {
-        pb.finish_with_message("Failed to query");
-        return Err(format!("Failed to query collection: {}", response.status()).into());
-    }
+    if collection_type == "blob" {
+        eprintln!("  Using streaming export for blob collection...");
+        let export_url = format!("{}/_api/database/{}/collection/{}/export", base_url, database, collection);
+        let mut response = client.get(&export_url).send().await?;
 
-    let query_result: Value = response.json().await?;
-    let documents = query_result["result"]
-        .as_array()
-        .ok_or("Invalid query result")?;
-
-    // Write each document as JSONL with metadata
-    for doc in documents {
-        let mut doc_with_meta = serde_json::json!({
-            "_database": database,
-            "_collection": collection,
-        });
-        
-        // Add shard config if present
-        if let Some(shard_config) = collection_info.get("shardConfig") {
-            doc_with_meta["_shardConfig"] = shard_config.clone();
+        if !response.status().is_success() {
+            return Err(format!("Failed to export collection: {}", response.status()).into());
         }
+
+        // Stream response to output
+        while let Some(chunk) = response.chunk().await? {
+            output.write_all(&chunk)?;
+            // Update progress bar roughly? bytes?
+            // Without total size, we can only spin or count bytes
+            pb.inc(chunk.len() as u64 / 100); // Rough approximation for doc count? No, just spinning
+        }
+    } else {
+        // Standard AQL dump for document/edge collections
+        let query = format!("FOR doc IN {} RETURN doc", collection);
+        let query_url = format!("{}/_api/database/{}/cursor", base_url, database);
         
-        // Merge document data
-        if let Some(obj) = doc.as_object() {
-            for (k, v) in obj {
-                doc_with_meta[k] = v.clone();
+        let response = client
+            .post(&query_url)
+            .json(&serde_json::json!({
+                "query": query,
+                "batchSize": 1_000_000 // Try to get all
+            }))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            pb.finish_with_message("Failed to query");
+            return Err(format!("Failed to query collection: {}", response.status()).into());
+        }
+
+        let query_result: Value = response.json().await?;
+        let documents = query_result["result"]
+            .as_array()
+            .ok_or("Invalid query result")?;
+
+        // Write each document as JSONL with metadata
+        for doc in documents {
+            let mut doc_with_meta = serde_json::json!({
+                "_database": database,
+                "_collection": collection,
+            });
+            
+            // Add shard config if present
+            if let Some(shard_config) = collection_info.get("shardConfig") {
+                doc_with_meta["_shardConfig"] = shard_config.clone();
             }
+            
+            // Merge document data
+            if let Some(obj) = doc.as_object() {
+                for (k, v) in obj {
+                    doc_with_meta[k] = v.clone();
+                }
+            }
+            
+            writeln!(output, "{}", serde_json::to_string(&doc_with_meta)?)?;
+            pb.inc(1);
         }
-        
-        writeln!(output, "{}", serde_json::to_string(&doc_with_meta)?)?;
-        pb.inc(1);
     }
-    
+
     pb.finish_with_message("Done");
 
     Ok(())

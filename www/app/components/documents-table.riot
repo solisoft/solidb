@@ -45,7 +45,8 @@
               </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32">
-              <button onclick={ ()=> viewDocument(doc) } class="text-blue-400 hover:text-blue-300 transition-colors"
+              <button if={ !state.isBlob } onclick={ ()=> viewDocument(doc) } class="text-blue-400 hover:text-blue-300
+                transition-colors cursor-pointer"
                 title="View document">
                 <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -54,16 +55,34 @@
                     d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
               </button>
-              <button onclick={ ()=> editDocument(doc) } class="text-indigo-400 hover:text-indigo-300 transition-colors"
-                title="Edit document">
+              <button if={ state.isBlob && state.downloadingDocId !==doc._key } onclick={ ()=> downloadBlob(doc) }
+                class="text-green-400 hover:text-green-300 transition-colors cursor-pointer"
+                title="Download blob">
+                <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
+              <div if={ state.isBlob && state.downloadingDocId===doc._key } class="inline-block">
+                <svg class="animate-spin h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none"
+                  viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                  </path>
+                </svg>
+              </div>
+              <button onclick={ ()=> editDocument(doc) } class="text-indigo-400 hover:text-indigo-300 transition-colors
+                cursor-pointer"
+                title="Edit metadata">
                 <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </button>
               <button onclick={ ()=> deleteDocument(doc._key) } class="text-red-400 hover:text-red-300
-                transition-colors"
-                title="Delete document">
+                transition-colors cursor-pointer"
+                title="Delete">
                 <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -106,7 +125,9 @@
         error: null,
         offset: 0,
         limit: 20,
-        totalCount: 0
+        totalCount: 0,
+        isBlob: false,
+        downloadingDocId: null
       },
 
       onMounted() {
@@ -145,6 +166,25 @@
           }
 
           const data = await response.json()
+
+          // Check if it's a blob collection (if not already checked)
+          if (!this.state.isBlobChecked) {
+            try {
+              const collsResponse = await authenticatedFetch(`${url}/collection`)
+              if (collsResponse.ok) {
+                const collsData = await collsResponse.json()
+                const currentColl = collsData.collections.find(c => c.name === this.props.collection)
+                if (currentColl && currentColl.type === 'blob') {
+                  this.update({ isBlob: true, isBlobChecked: true })
+                } else {
+                  this.update({ isBlobChecked: true })
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to check collection type:', e)
+            }
+          }
+
           this.update({
             documents: data.result || [],
             totalCount: totalCount,
@@ -194,7 +234,7 @@
         }
 
         try {
-          const url = `http://localhost:6745/_api/database/${this.props.db}`
+          const url = `${getApiUrl()}/database/${this.props.db}`
           const response = await authenticatedFetch(`${url}/document/${this.props.collection}/${key}`, {
             method: 'DELETE'
           })
@@ -207,6 +247,50 @@
           }
         } catch (error) {
           console.error('Error deleting document:', error.message)
+        }
+      },
+
+      async downloadBlob(doc) {
+        if (this.state.downloadingDocId) return // Prevent multiple downloads at once
+
+        try {
+          this.update({ downloadingDocId: doc._key })
+
+          const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}/${doc._key}`
+          const response = await authenticatedFetch(url)
+
+          if (response.ok) {
+            const blob = await response.blob()
+            const downloadUrl = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = downloadUrl
+            // Try to get filename from doc metadata or header
+            let filename = doc.filename || doc.name || doc._key
+
+            // Fallback to Content-Disposition header if available
+            const disposition = response.headers.get('Content-Disposition')
+            if (disposition && disposition.indexOf('attachment') !== -1) {
+              const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+              const matches = filenameRegex.exec(disposition);
+              if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+              }
+            }
+
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            window.URL.revokeObjectURL(downloadUrl)
+          } else {
+            console.error('Download failed:', response.statusText)
+            alert('Failed to download blob')
+          }
+        } catch (error) {
+          console.error('Error downloading blob:', error)
+          alert('Error downloading blob: ' + error.message)
+        } finally {
+          this.update({ downloadingDocId: null })
         }
       }
     }
