@@ -10,6 +10,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
 - 🚀 **Fast & Efficient**: Built with Rust for maximum performance
 - 📄 **JSON Document Storage**: Store and query JSON documents with ease
+- 🗃️ **Blob Storage**: Native support for storing and retrieving binary files
 - 🔍 **AQL Query Language**: Familiar query syntax inspired by ArangoDB
 - 🌐 **HTTP REST API**: Simple and intuitive API endpoints
 - 💾 **RocksDB Storage**: Production-grade persistence with automatic crash recovery
