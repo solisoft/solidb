@@ -126,18 +126,28 @@ impl SolidBClient {
                 password: pass,
             };
             
-            info!("Authenticating as {}...", self.username);
+            info!("Authenticating as {} to {}...", self.username, url);
             let resp = self.client.post(&url)
                 .json(&body)
                 .send()?;
                 
-            if !resp.status().is_success() {
-                return Err(anyhow::anyhow!("Login failed: {}", resp.status()));
+            let status = resp.status();
+            if !status.is_success() {
+                let text = resp.text().unwrap_or_default();
+                error!("Login failed with status {}. Response: {}", status, text);
+                return Err(anyhow::anyhow!("Login failed: {}", status));
             }
             
-            let data: LoginResponse = resp.json()?;
-            self.token = Some(data.token);
-            info!("Authentication successful.");
+            match resp.json::<LoginResponse>() {
+                Ok(data) => {
+                    self.token = Some(data.token);
+                    info!("Authentication successful. Token received.");
+                },
+                Err(e) => {
+                    error!("Failed to parse login response: {}", e);
+                    return Err(e.into());
+                }
+            }
         }
         Ok(())
     }
