@@ -75,45 +75,141 @@ struct CursorResponse<T> {
     result: Vec<T>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct LoginRequest<'a> {
+    username: &'a str,
+    password: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginResponse {
+    token: String,
+}
+
+#[derive(Debug)]
 struct SolidBClient {
     client: reqwest::blocking::Client,
     base_url: String,
-    // Add auth headers if needed
     username: String,
     password: Option<String>,
+    token: Option<String>,
+    // Cache for list_databases: (timestamp, data)
+    db_list_cache: Option<(std::time::Instant, Vec<String>)>,
 }
 
 impl SolidBClient {
     fn new(host: &str, port: u16, username: &str, password: Option<&str>) -> Self {
         let base_url = format!("http://{}:{}", host, port);
-        Self {
+        
+        let mut client = Self {
             client: reqwest::blocking::Client::new(),
             base_url,
             username: username.to_string(),
             password: password.map(|s| s.to_string()),
+            token: None,
+            db_list_cache: None,
+        };
+        
+        // Attempt login immediately
+        if let Err(e) = client.authenticate() {
+            error!("Initial authentication failed: {}. Subsequent requests may fail.", e);
         }
+        
+        client
     }
 
-    fn list_databases(&self) -> Result<Vec<String>, anyhow::Error> {
+    fn authenticate(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(pass) = &self.password {
+            let url = format!("{}/_api/auth/login", self.base_url);
+            let body = LoginRequest {
+                username: &self.username,
+                password: pass,
+            };
+            
+            info!("Authenticating as {}...", self.username);
+            let resp = self.client.post(&url)
+                .json(&body)
+                .send()?;
+                
+            if !resp.status().is_success() {
+                return Err(anyhow::anyhow!("Login failed: {}", resp.status()));
+            }
+            
+            let data: LoginResponse = resp.json()?;
+            self.token = Some(data.token);
+            info!("Authentication successful.");
+        }
+        Ok(())
+    }
+
+    fn get_auth_header(&self) -> Option<String> {
+        self.token.as_ref().map(|t| t.clone())
+    }
+
+    fn list_databases(&mut self) -> Result<Vec<String>, anyhow::Error> {
+        // Check cache (TTL 5 seconds)
+        if let Some((ts, dbs)) = &self.db_list_cache {
+            if ts.elapsed() < Duration::from_secs(5) {
+                return Ok(dbs.clone());
+            }
+        }
+
         let url = format!("{}/_api/database", self.base_url);
         info!("Fetching databases from {}", url);
-        let resp = self.client.get(&url)
-            .basic_auth(&self.username, self.password.as_deref())
-            .send()?;
+        
+        let mut req = self.client.get(&url);
+        if let Some(token) = &self.token {
+             req = req.bearer_auth(token);
+        } else {
+             // Fallback or Basic? Server only supports Bearer probably.
+             // Try Basic if no token and no password? No, token is key.
+             if self.password.is_some() {
+                 // Try re-auth?
+                 // For now, if token is missing and we have password, maybe we failed init.
+             }
+        }
+        
+        let resp = req.send()?;
+        
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+             // Try re-login once
+             info!("Got 401, attempting re-login...");
+             self.authenticate()?;
+             let mut req = self.client.get(&url);
+             if let Some(token) = &self.token {
+                 req = req.bearer_auth(token);
+             }
+             let resp = req.send()?;
+             if !resp.status().is_success() {
+                 error!("API Error listing databases after re-login: Status {}", resp.status());
+             }
+             let list = resp.json::<DatabaseList>()?;
+             
+             // Update cache
+             self.db_list_cache = Some((std::time::Instant::now(), list.result.clone()));
+             return Ok(list.result);
+        }
         
         if !resp.status().is_success() {
             error!("API Error listing databases: Status {}", resp.status());
         }
         
         let list = resp.json::<DatabaseList>()?;
+        
+        // Update cache
+        self.db_list_cache = Some((std::time::Instant::now(), list.result.clone()));
+        
         Ok(list.result)
     }
 
     fn list_collections(&self, db: &str) -> Result<Vec<String>, anyhow::Error> {
         let url = format!("{}/_api/database/{}/collection", self.base_url, db);
-        let resp = self.client.get(&url)
-            .basic_auth(&self.username, self.password.as_deref())
-            .send()?
+        let mut req = self.client.get(&url);
+        if let Some(token) = &self.token {
+             req = req.bearer_auth(token);
+        }
+        
+        let resp = req.send()?
             .json::<CollectionList>()?;
         
         Ok(resp.result.into_iter()
@@ -130,9 +226,12 @@ impl SolidBClient {
             "database": db
         });
 
-        let resp = self.client.post(&url)
-            .basic_auth(&self.username, self.password.as_deref())
-            .json(&body)
+        let mut req = self.client.post(&url);
+        if let Some(token) = &self.token {
+             req = req.bearer_auth(token);
+        }
+
+        let resp = req.json(&body)
             .send()?
             .json::<CursorResponse<BlobMetadata>>()?;
         
@@ -141,9 +240,12 @@ impl SolidBClient {
     
     fn get_blob_content(&self, db: &str, coll: &str, key: &str) -> Result<Vec<u8>, anyhow::Error> {
         let url = format!("{}/_api/blob/{}/{}/{}", self.base_url, db, coll, key);
-         let resp = self.client.get(&url)
-            .basic_auth(&self.username, self.password.as_deref())
-            .send()?;
+        let mut req = self.client.get(&url);
+        if let Some(token) = &self.token {
+             req = req.bearer_auth(token);
+        }
+        
+        let resp = req.send()?;
         
         if resp.status().is_success() {
             Ok(resp.bytes()?.to_vec())
@@ -265,7 +367,7 @@ impl Filesystem for SolidBFS {
         };
 
         let client_arc = self.client.clone();
-        let client = client_arc.lock().unwrap();
+        let mut client = client_arc.lock().unwrap();
 
         println!("FUSE: lookup called for {} in parent {}", name_str, parent);
         
@@ -420,7 +522,7 @@ impl Filesystem for SolidBFS {
         }
 
         let client_arc = self.client.clone();
-        let client = client_arc.lock().unwrap();
+        let mut client = client_arc.lock().unwrap();
         let mut entries = Vec::new();
 
         // 0 and 1 are already sent.
