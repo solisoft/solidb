@@ -604,22 +604,41 @@ fn main() -> anyhow::Result<()> {
     
     let args = Args::parse();
     let mountpoint = args.mount;
-    let mut options = vec![MountOption::RO];
-    options.push(MountOption::FSName("solidb".to_string()));
     
+    // Check mountpoint
+    if !std::path::Path::new(&mountpoint).exists() {
+        error!("Mount point '{}' does not exist. Attempting to create it...", mountpoint);
+        std::fs::create_dir_all(&mountpoint)?;
+    }
+
+    // Simplified options for debugging
+    let options = vec![MountOption::RO, MountOption::FSName("solidb".to_string())];
+    #[cfg(target_os = "macos")]
+    let mut options = options;
     #[cfg(target_os = "macos")]
     options.push(MountOption::AutoUnmount);
 
+    println!("Attempting to mount at {}", mountpoint);
     let client = SolidBClient::new(&args.host, args.port, &args.username, args.password.as_deref());
     let fs = SolidBFS::new(client);
 
-    println!("Mounting SolidB at {}", mountpoint);
-    
-    if args.foreground {
-        fuser::mount2(fs, &mountpoint, &options)?;
+    let res = if args.foreground {
+        fuser::mount2(fs, &mountpoint, &options)
     } else {
-        fuser::spawn_mount2(fs, &mountpoint, &options)?;
-        loop { std::thread::sleep(Duration::from_secs(3600)); }
+        match fuser::spawn_mount2(fs, &mountpoint, &options) {
+            Ok(handle) => {
+                 // Keep main thread alive
+                 loop { std::thread::sleep(Duration::from_secs(3600)); }
+                 #[allow(unreachable_code)]
+                 Ok(())
+            },
+            Err(e) => Err(e)
+        }
+    };
+    
+    match res {
+        Ok(_) => println!("Mount session finished successfully."),
+        Err(e) => error!("Mount failed or session errored: {:?}", e),
     }
 
     Ok(())
