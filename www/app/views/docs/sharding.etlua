@@ -23,13 +23,13 @@
         </div>
       </div>
 
-      <!-- Overview Section -->
-      <section id="overview" class="scroll-mt-24">
+      <!-- Architecture Section -->
+      <section id="architecture" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
               <svg class="w-6 h-6 mr-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
-               Concepts
+               Architecture
             </h2>
           </div>
           
@@ -63,41 +63,30 @@
         </div>
       </section>
 
-      <!-- Configuration Section -->
-      <section id="configuration" class="scroll-mt-24">
+      <!-- Replication Section -->
+      <section id="replication" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-              Configuration
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+              Replication Strategy
             </h2>
           </div>
-          
           <div class="p-8">
-            <p class="text-gray-300 mb-6">
-              Enable sharding when creating a collection by specifying sharding properties.
+            <p class="text-gray-300 leading-relaxed">
+              Updates are synchronously replicated to the leader and asynchronously propagated to followers. Reading from followers provides eventual consistency, while reading from the leader guarantees strong consistency.
             </p>
-
-            <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5">
-              <div class="text-gray-500 mb-2">POST /_api/database/_system/collection</div>
-              <pre><code class="language-json text-gray-300">{
-  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"users"</span>,
-  <span class="text-purple-400">"shardKey"</span>: <span class="text-green-400">"_key"</span>,
-  <span class="text-purple-400">"numShards"</span>: <span class="text-yellow-300">16</span>,
-  <span class="text-purple-400">"replicationFactor"</span>: <span class="text-yellow-300">3</span>
-}</code></pre>
-            </div>
           </div>
         </div>
       </section>
 
-       <!-- Auto-Healing Section (Updated) -->
-      <section id="auto-healing" class="scroll-mt-24">
+      <!-- Availability (Auto-Healing) Section -->
+      <section id="availability" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-              Auto-Healing & Failover
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Auto-Healing & Rebalancing
             </h2>
           </div>
           
@@ -116,52 +105,75 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/30 p-4 rounded-xl border border-white/5">
-                 <h4 class="text-white font-bold mb-2">1. Detection</h4>
-                 <p class="text-sm text-gray-400">The `ShardCoordinator` detects unreachable peers via failed requests or gossip.</p>
-              </div>
-              <div class="bg-gray-800/30 p-4 rounded-xl border border-white/5">
-                 <h4 class="text-white font-bold mb-2">2. Promotion</h4>
-                 <p class="text-sm text-gray-400">Remaining nodes update their routing table to promote the next available replica for affected shards.</p>
-              </div>
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 mt-6">
+               <h4 class="text-blue-400 font-bold mb-2 text-sm">Manual Rebalancing</h4>
+               <p class="text-sm text-blue-200/70 mb-2">Trigger a rebalance to redistribute shards evenly after adding/removing nodes.</p>
+               <code class="block text-xs bg-black/30 p-2 rounded font-mono text-gray-300">curl -X POST http://localhost:6745/_api/cluster/rebalance</code>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Rebalancing Section (Updated) -->
-      <section id="rebalancing" class="scroll-mt-24">
+      <!-- API Section -->
+      <section id="api" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              API Extensions
+            </h2>
+          </div>
+          <div class="p-8">
+             <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3 rounded-vl-lg">Method</th>
+                    <th class="px-4 py-3">Endpoint</th>
+                    <th class="px-4 py-3 rounded-vr-lg">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">GET</td>
+                    <td class="px-4 py-3 font-mono">/_api/cluster/health</td>
+                    <td class="px-4 py-3">Get cluster health status</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">POST</td>
+                    <td class="px-4 py-3 font-mono">/_api/cluster/rebalance</td>
+                    <td class="px-4 py-3">Trigger shard rebalancing</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration Section -->
+      <section id="configuration" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-              Cluster Rebalancing
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+              Configuration
             </h2>
           </div>
           
           <div class="p-8">
-            <p class="text-gray-300 mb-6 leading-relaxed">
-             When new nodes join or nodes are removed, you can trigger a rebalance to redistribute shards evenly.
+            <p class="text-gray-300 mb-6">
+              Enable sharding when creating a collection by specifying sharding properties.
             </p>
 
-            <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5 mb-6">
-              <div class="flex items-center justify-between mb-2">
-                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Trigger Rebalance</span>
-              </div>
-              <div class="text-gray-300">
-                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/cluster/rebalance
-              </div>
-            </div>
-
-            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4">
-               <h4 class="text-blue-400 font-bold mb-2 text-sm">How it works</h4>
-               <ul class="space-y-2 text-sm text-blue-200/70">
-                 <li>1. Calculates ideal shard distribution count (Total Shards / Node Count).</li>
-                 <li>2. Identifies overloaded and underloaded nodes.</li>
-                 <li>3. Moves shards from overloaded nodes to underloaded ones one by one.</li>
-                 <li>4. Data is automatically replicated to the new location.</li>
-               </ul>
+            <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5">
+              <div class="text-gray-500 mb-2">POST /_api/database/_system/collection</div>
+              <pre><code class="language-json text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"users"</span>,
+  <span class="text-purple-400">"shardKey"</span>: <span class="text-green-400">"_key"</span>,
+  <span class="text-purple-400">"numShards"</span>: <span class="text-yellow-300">16</span>,
+  <span class="text-purple-400">"replicationFactor"</span>: <span class="text-yellow-300">3</span>
+}</code></pre>
             </div>
           </div>
         </div>

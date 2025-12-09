@@ -5,12 +5,6 @@
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Contents</h3>
       
       <nav class="space-y-1">
-        <!-- Overview -->
-        <a href="#overview" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Overview
-        </a>
-
         <!-- Architecture -->
         <a href="#architecture" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>

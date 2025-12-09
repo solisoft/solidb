@@ -157,6 +157,10 @@
                   <span class="text-purple-400">solidb.log(message)</span>
                   <div class="text-xs text-gray-500 mt-1">Log a message to the server console.</div>
                 </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.fetch(url, options)</span> <span class="text-gray-500">-&gt; Response</span>
+                  <div class="text-xs text-gray-500 mt-1">Make an HTTP request. Options: <code>{ method="GET", headers={}, body="" }</code>. Returns <code>{ status, body, headers, ok }</code>.</div>
+                </li>
               </ul>
             </div>
 
@@ -331,6 +335,30 @@
 <span class="text-purple-400">local</span> customer = customers:<span class="text-blue-400">get</span>(id)
 
 <span class="text-purple-400">return</span> customer <span class="text-purple-400">or</span> { error = <span class="text-green-400">"Customer not found"</span> }</pre>
+                 </div>
+               </div>
+             </div>
+
+            <!-- Example 5 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">5. HTTP Request (Webhook)</h3>
+               <p class="text-gray-400 text-sm mb-3">Send data to an external service using <code>solidb.fetch</code>.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Post data to an external API</span>
+<span class="text-purple-400">local</span> res = solidb.fetch(<span class="text-green-400">"https://api.example.com/webhook"</span>, {
+    method = <span class="text-green-400">"POST"</span>,
+    headers = {
+        [<span class="text-green-400">"Content-Type"</span>] = <span class="text-green-400">"application/json"</span>,
+        [<span class="text-green-400">"Authorization"</span>] = <span class="text-green-400">"Bearer secret"</span>
+    },
+    body = <span class="text-green-400">'{ "event": "user_created" }'</span>
+})
+
+<span class="text-purple-400">return</span> {
+    status = res.status,
+    upstream_response = res.body
+}</pre>
                  </div>
                </div>
             </div>

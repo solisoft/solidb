@@ -5,12 +5,6 @@
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Contents</h3>
       
       <nav class="space-y-1">
-        <!-- Overview -->
-        <a href="#overview" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Overview
-        </a>
-
         <!-- Architecture -->
         <a href="#architecture" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-teal-500 mr-3 group-hover:scale-125 transition-transform"></span>
@@ -23,40 +17,16 @@
           Cluster Setup
         </a>
 
-        <!-- CLI Options -->
-        <a href="#cli-options" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          CLI Options
-        </a>
-
-        <!-- Cluster API -->
-        <a href="#api" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Cluster API
-        </a>
-
-        <!-- Replication -->
-        <a href="#replication" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Replication
-        </a>
-
-         <!-- Conflict Resolution -->
-        <a href="#conflict-resolution" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Conflict Resolution
-        </a>
-
         <!-- Security -->
         <a href="#security" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-violet-500 mr-3 group-hover:scale-125 transition-transform"></span>
           Security
         </a>
 
-        <!-- Best Practices -->
-        <a href="#best-practices" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Best Practices
+        <!-- CLI Options -->
+        <a href="#cli-options" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          CLI Options
         </a>
       </nav>
     </div>
