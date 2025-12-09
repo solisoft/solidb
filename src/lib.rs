@@ -5,6 +5,7 @@ pub mod server;
 pub mod sharding;
 pub mod storage;
 pub mod transaction;
+pub mod scripting;
 
 pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};

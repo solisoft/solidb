@@ -172,6 +172,55 @@
       </div>
     </a>
 
+    <!-- Lua Scripting -->
+    <a
+      href="/docs/scripting"
+      class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-blue-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)] hover:-translate-y-1"
+    >
+      <div
+        class="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+      ></div>
+
+      <div class="relative z-10 flex flex-col h-full">
+        <div class="flex items-center justify-between mb-6">
+          <div
+            class="p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors"
+          >
+            <i class="fas fa-scroll text-2xl text-blue-400"></i>
+          </div>
+        </div>
+
+        <h3
+          class="text-2xl font-bold text-white mb-3 group-hover:text-blue-300 transition-colors"
+        >
+          Lua Scripting
+        </h3>
+        <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
+          Create custom API endpoints with embedded Lua scripts. High-performance
+          logic directly on the data.
+        </p>
+
+        <div
+          class="flex items-center text-sm font-bold text-blue-400 uppercase tracking-wider group-hover:text-blue-300"
+        >
+          Start Scripting
+          <svg
+            class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M17 8l4 4m0 0l-4 4m4-4H3"
+            />
+          </svg>
+        </div>
+      </div>
+    </a>
+
     <!-- Graphs & Edge Collections -->
     <a
       href="/docs/graphs"

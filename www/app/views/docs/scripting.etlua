@@ -1,0 +1,344 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("scripting_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Lua Scripting</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Extend SoliDB with custom API endpoints written in Lua. Execute logic directly on the database server for maximum performance.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Overview
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB allows you to embed Lua scripts that act as custom API endpoints. These scripts have direct access to internal database objects, allowing you to perform complex data manipulations, validations, or multi-step transactions in a single HTTP request.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-bolt mr-2"></i> Performance</h3>
+                <p class="text-sm text-gray-400">Zero network latency between your logic and your data. Ideal for complex aggregates.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-code mr-2"></i> Simplicity</h3>
+                <p class="text-sm text-gray-400">Write clean, synchronous Lua code. No async/await hell.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                 <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-globe mr-2"></i> Custom APIs</h3>
+                <p class="text-sm text-gray-400">Expose exactly the endpoints your frontend needs, hiding complex queries.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Management API -->
+      <section id="management" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+              Management API
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Before you can execute a script, you must register it via the management API.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Example Request</span>
+                 <span class="text-xs text-indigo-400">POST /_api/database/:db/scripts</span>
+               </div>
+               
+               <div class="overflow-x-auto text-gray-300">
+                  <div>
+                    <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/my_app/scripts \
+                  </div>
+                  <div class="pl-4">
+                    -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+                  </div>
+                  <div class="pl-4">
+                    -d <span class="text-yellow-300">'{
+  "name": "Greeting API",
+  "path": "greet",             # Result: /api/custom/my_app/greet
+  "methods": ["GET"],
+  "code": "return { greeting = \"Hello!\" }"
+}'</span>
+                  </div>
+               </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-4">Endpoints</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3 rounded-vl-lg">Method</th>
+                    <th class="px-4 py-3">Endpoint</th>
+                    <th class="px-4 py-3 rounded-vr-lg">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">POST</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts</td>
+                    <td class="px-4 py-3">Create a new script</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-blue-400 font-bold">GET</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts</td>
+                    <td class="px-4 py-3">List all scripts</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-yellow-400 font-bold">PUT</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts/:id</td>
+                    <td class="px-4 py-3">Update a script</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-red-400 font-bold">DELETE</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts/:id</td>
+                    <td class="px-4 py-3">Delete a script</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lua Reference -->
+      <section id="reference" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+               Lua API Reference
+            </h2>
+          </div>
+          
+          <div class="p-8 space-y-8">
+            <!-- solidb Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">solidb</h3>
+              <p class="text-gray-400 text-sm mb-4">The main entry point for database operations.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db</span>
+                  <div class="text-xs text-gray-500 mt-1">The current database object.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.log(message)</span>
+                  <div class="text-xs text-gray-500 mt-1">Log a message to the server console.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Database Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Database</h3>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:collection(name)</span> <span class="text-gray-500">-&gt; Collection</span>
+                  <div class="text-xs text-gray-500 mt-1">Get a handle to a collection.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:query(query, params)</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
+                  <div class="text-xs text-gray-500 mt-1">Execute an SDBQL query.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Collection Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Collection</h3>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                   <span class="text-purple-400">col:all()</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                   <span class="text-purple-400">col:count()</span> <span class="text-gray-500">-&gt; int</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Request Object -->
+             <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">request</h3>
+              <p class="text-gray-400 text-sm mb-4">Contains information about the incoming HTTP request.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.method</span> <span class="text-gray-500">-&gt; string</span> ("GET", "POST", etc.)
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.path</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.query</span> <span class="text-gray-500">-&gt; table</span> (URL query parameters)
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.params</span> <span class="text-gray-500">-&gt; table</span> (URL path parameters, e.g. :id)
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.body</span> <span class="text-gray-500">-&gt; table | nil</span> (Parsed JSON body)
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.headers</span> <span class="text-gray-500">-&gt; table</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Examples Section -->
+      <section id="examples" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+               Examples
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            
+            <!-- Example 1 -->
+            <div>
+               <h3 class="text-lg font-bold text-white mb-3">1. Hello World with Query Params</h3>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Returns: { "greeting": "Hello, Alice!" }</span>
+<span class="text-purple-400">local</span> name = request.query.name <span class="text-purple-400">or</span> <span class="text-green-400">"World"</span>
+<span class="text-purple-400">return</span> {
+    greeting = <span class="text-green-400">"Hello, "</span> .. name .. <span class="text-green-400">"!"</span>
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 2 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">2. CRUD API for "Users"</h3>
+               <p class="text-gray-400 text-sm mb-3">Handle both GET (list) and POST (create) in a single script.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Global 'db' object is pre-connected to your database</span>
+<span class="text-purple-400">local</span> users = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"users"</span>)
+
+<span class="text-purple-400">if</span> request.method == <span class="text-green-400">"POST"</span> <span class="text-purple-400">then</span>
+    <span class="text-gray-500">-- Validate input</span>
+    <span class="text-purple-400">if</span> <span class="text-purple-400">not</span> request.body.email <span class="text-purple-400">then</span>
+        <span class="text-purple-400">return</span> { error = <span class="text-green-400">"Email required"</span> }
+    <span class="text-purple-400">end</span>
+
+    <span class="text-gray-500">-- Create user</span>
+    <span class="text-purple-400">local</span> doc = users:<span class="text-blue-400">insert</span>(request.body)
+    <span class="text-purple-400">return</span> { status = <span class="text-green-400">"created"</span>, user = doc }
+
+<span class="text-purple-400">else</span>
+    <span class="text-gray-500">-- List users (supports simple pagination via query params)</span>
+    <span class="text-purple-400">local</span> limit = <span class="text-blue-400">tonumber</span>(request.query.limit) <span class="text-purple-400">or</span> <span class="text-yellow-300">10</span>
+    <span class="text-purple-400">local</span> all_users = users:<span class="text-blue-400">all</span>()
+    
+    <span class="text-gray-500">-- (Note: In production, consider using SDBQL for pagination)</span>
+    
+    <span class="text-purple-400">return</span> { 
+        data = all_users,
+        count = users:<span class="text-blue-400">count</span>() 
+    }
+<span class="text-purple-400">end</span></pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 3 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">3. SDBQL Query with Parameters</h3>
+               <p class="text-gray-400 text-sm mb-3">Execute complex queries safely using bind parameters.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Get users older than 'min_age' query parameter</span>
+<span class="text-purple-400">local</span> min_age = <span class="text-blue-400">tonumber</span>(request.query.age) <span class="text-purple-400">or</span> <span class="text-yellow-300">18</span>
+
+<span class="text-gray-500">-- Execute SDBQL query with bind variables (safe against injection)</span>
+<span class="text-purple-400">local</span> results = db:<span class="text-blue-400">query</span>(
+    <span class="text-green-400">"FOR u IN users FILTER u.age >= @age RETURN u"</span>,
+    { age = min_age }
+)
+
+<span class="text-purple-400">return</span> {
+    count = #results,
+    users = results
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 4 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">4. URL Path Parameters</h3>
+               <p class="text-gray-400 text-sm mb-3">Handle dynamic paths like <code class="bg-gray-800 px-1 rounded text-gray-300">customers/:id</code>.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Script path defined as: customers/:id</span>
+<span class="text-purple-400">local</span> id = request.params.id
+
+<span class="text-purple-400">if</span> <span class="text-purple-400">not</span> id <span class="text-purple-400">then</span>
+    <span class="text-purple-400">return</span> { error = <span class="text-green-400">"ID required"</span> }
+<span class="text-purple-400">end</span>
+
+<span class="text-gray-500">-- Look up customer by ID</span>
+<span class="text-purple-400">local</span> customers = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"customers"</span>)
+<span class="text-purple-400">local</span> customer = customers:<span class="text-blue-400">get</span>(id)
+
+<span class="text-purple-400">return</span> customer <span class="text-purple-400">or</span> { error = <span class="text-green-400">"Customer not found"</span> }</pre>
+                 </div>
+               </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

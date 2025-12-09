@@ -33,6 +33,10 @@ local app = {
     Page("dashboard/cluster", "app")
   end,
 
+  scripts = function()
+    Page("dashboard/scripts", "app")
+  end,
+
   apikeys = function()
     Page("dashboard/apikeys", "app")
   end

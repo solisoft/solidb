@@ -1,0 +1,16 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <scripts-manager></scripts-manager>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/mode-lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/theme-tomorrow_night.min.js"></script>
+
+<script type="module">
+  import ScriptsManager from '<%= PublicPath("/app/components/scripts-manager.riot.js") %>';
+  
+  riot.register('scripts-manager', ScriptsManager);
+  riot.mount('scripts-manager', {
+    db: '<%= Params["db"] %>'
+  });
+</script>

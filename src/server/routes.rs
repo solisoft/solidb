@@ -17,7 +17,7 @@ use crate::storage::StorageEngine;
 pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>) -> Router {
     // Initialize Auth (create default admin if needed)
     tracing::info!("Initializing authentication...");
-    if let Err(e) = crate::server::auth::AuthService::init(&storage) {
+    if let Err(e) = crate::server::auth::AuthService::init(&storage, replication.as_ref()) {
         tracing::error!("Failed to initialize authentication: {}", e);
     } else {
         tracing::info!("Authentication initialized successfully");
@@ -192,6 +192,12 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/_api/auth/api-keys", post(create_api_key_handler))
         .route("/_api/auth/api-keys", get(list_api_keys_handler))
         .route("/_api/auth/api-keys/:key_id", delete(delete_api_key_handler))
+        // Script management routes
+        .route("/_api/database/:db/scripts", post(super::script_handlers::create_script_handler))
+        .route("/_api/database/:db/scripts", get(super::script_handlers::list_scripts_handler))
+        .route("/_api/database/:db/scripts/:script_id", get(super::script_handlers::get_script_handler))
+        .route("/_api/database/:db/scripts/:script_id", put(super::script_handlers::update_script_handler))
+        .route("/_api/database/:db/scripts/:script_id", delete(super::script_handlers::delete_script_handler))
         // Apply authentication middleware
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
 
@@ -201,6 +207,11 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         // WebSocket route (outside auth middleware - uses token in query param)
         .route("/_api/cluster/status/ws", get(cluster_status_ws))
         .route("/_api/ws/changefeed", get(ws_changefeed_handler))
+        // Custom Lua API endpoints (public, script handles own auth if needed)
+        .route("/api/custom/*path", get(super::script_handlers::execute_script_handler))
+        .route("/api/custom/*path", post(super::script_handlers::execute_script_handler))
+        .route("/api/custom/*path", put(super::script_handlers::execute_script_handler))
+        .route("/api/custom/*path", delete(super::script_handlers::execute_script_handler))
         .merge(api_routes)
         .with_state(state)
         // Global request body limit: 10MB default (import/blob have 500MB override)

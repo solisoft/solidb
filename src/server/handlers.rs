@@ -132,7 +132,19 @@ pub async fn change_password_handler(
     let updated_value = serde_json::to_value(&updated_user)
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
     
-    collection.update(&claims.sub, updated_value)?;
+    collection.update(&claims.sub, updated_value.clone())?;
+
+    // Record write for replication
+    if let Some(ref repl) = state.replication {
+        let _ = repl.record_write(
+            "_system",
+            "_admins",
+            Operation::Update,
+            &claims.sub,
+            serde_json::to_vec(&updated_value).ok().as_deref(),
+            None
+        );
+    }
 
     Ok(Json(ChangePasswordResponse {
         status: "password_updated".to_string(),
@@ -196,7 +208,19 @@ pub async fn create_api_key_handler(
     let doc_value = serde_json::to_value(&api_key)
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
     
-    collection.insert(doc_value)?;
+    collection.insert(doc_value.clone())?;
+    
+    // Record write for replication
+    if let Some(ref repl) = state.replication {
+        let _ = repl.record_write(
+            "_system",
+            crate::server::auth::API_KEYS_COLL,
+            Operation::Insert,
+            &id, // API keys use ID as _key
+            serde_json::to_vec(&doc_value).ok().as_deref(),
+            None
+        );
+    }
     
     tracing::info!("API key '{}' created", req.name);
     
@@ -248,6 +272,18 @@ pub async fn delete_api_key_handler(
     let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
     
     collection.delete(&key_id)?;
+    
+    // Record write for replication
+    if let Some(ref repl) = state.replication {
+        let _ = repl.record_write(
+            "_system",
+            crate::server::auth::API_KEYS_COLL,
+            Operation::Delete,
+            &key_id,
+            None,
+            None
+        );
+    }
     
     tracing::info!("API key '{}' deleted", key_id);
     
@@ -575,7 +611,7 @@ pub async fn login_handler(
         Err(DbError::CollectionNotFound(_)) => {
             // Collection doesn't exist - initialize auth (creates collection and default admin)
             tracing::warn!("_admins collection not found, initializing...");
-            crate::server::auth::AuthService::init(&state.storage)?;
+            crate::server::auth::AuthService::init(&state.storage, state.replication.as_ref())?;
             db.get_collection("_admins")?
         }
         Err(e) => return Err(e),
@@ -584,7 +620,7 @@ pub async fn login_handler(
     // 3. Check if collection is empty (also create default admin)
     if collection.count() == 0 {
         tracing::warn!("_admins collection empty, creating default admin...");
-        crate::server::auth::AuthService::init(&state.storage)?;
+        crate::server::auth::AuthService::init(&state.storage, state.replication.as_ref())?;
     }
     
     // 4. Get user document

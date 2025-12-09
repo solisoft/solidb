@@ -1,5 +1,6 @@
 use crate::error::DbError;
 use crate::storage::StorageEngine;
+use crate::cluster::{ReplicationService, Operation};
 
 use argon2::{
     password_hash::{
@@ -132,68 +133,107 @@ pub struct AuthService;
 impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
-    pub fn init(storage: &StorageEngine) -> Result<(), DbError> {
+    pub fn init(storage: &StorageEngine, replication: Option<&ReplicationService>) -> Result<(), DbError> {
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
         
         let db = storage.get_database(ADMIN_DB)?;
+
+        // Check for cluster mode with peers (joining node)
+        // If we have peers, we expect to sync data, so we SHOULD NOT create default admins/api_keys
+        // Unless there is an explicit password override
+        let is_joining_cluster = storage.cluster_config()
+            .map(|c| !c.peers.is_empty())
+            .unwrap_or(false);
+            
+        let has_override_password = std::env::var("SOLIDB_ADMIN_PASSWORD")
+            .map(|p| !p.is_empty())
+            .unwrap_or(false);
+
+        let should_skip_defaults = is_joining_cluster && !has_override_password;
         
         // Ensure _admins collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ADMIN_COLL) {
-            tracing::info!("Creating {} collection", ADMIN_COLL);
-            db.create_collection(ADMIN_COLL.to_string(), None)?;
+            if should_skip_defaults {
+                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", ADMIN_COLL);
+            } else {
+                tracing::info!("Creating {} collection", ADMIN_COLL);
+                db.create_collection(ADMIN_COLL.to_string(), None)?;
+            }
         }
         
         // Ensure _api_keys collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(API_KEYS_COLL) {
-            tracing::info!("Creating {} collection", API_KEYS_COLL);
-            db.create_collection(API_KEYS_COLL.to_string(), None)?;
+            if should_skip_defaults {
+                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", API_KEYS_COLL);
+            } else {
+                tracing::info!("Creating {} collection", API_KEYS_COLL);
+                db.create_collection(API_KEYS_COLL.to_string(), None)?;
+            }
         }
         
         // Check if any admin exists
-        let collection = db.get_collection(ADMIN_COLL)?;
-        if collection.count() == 0 {
-            // Check for override password (for testing/development)
-            // If SOLIDB_ADMIN_PASSWORD is set, use it; otherwise generate random
-            let (password, is_override) = match std::env::var("SOLIDB_ADMIN_PASSWORD") {
-                Ok(pwd) if !pwd.is_empty() => (pwd, true),
-                _ => {
-                    // Generate a secure random password for production
-                    let mut password_bytes = [0u8; 16];
-                    OsRng.fill_bytes(&mut password_bytes);
-                    (hex::encode(password_bytes), false)
+        // Use if let Ok to handle case where we skipped creation above
+        if let Ok(collection) = db.get_collection(ADMIN_COLL) {
+            if collection.count() == 0 {
+                if should_skip_defaults {
+                     tracing::info!("Cluster join detected: Skipping default admin user creation (waiting for sync)");
+                } else {
+                    // Check for override password (for testing/development)
+                    // If SOLIDB_ADMIN_PASSWORD is set, use it; otherwise generate random
+                    let (password, is_override) = match std::env::var("SOLIDB_ADMIN_PASSWORD") {
+                        Ok(pwd) if !pwd.is_empty() => (pwd, true),
+                        _ => {
+                            // Generate a secure random password for production
+                            let mut password_bytes = [0u8; 16];
+                            OsRng.fill_bytes(&mut password_bytes);
+                            (hex::encode(password_bytes), false)
+                        }
+                    };
+                    
+                    let salt = SaltString::generate(&mut OsRng);
+                    let argon2 = Argon2::default();
+                    let password_hash = argon2
+                        .hash_password(password.as_bytes(), &salt)
+                        .map_err(|e| DbError::InternalError(format!("Hashing error: {}", e)))?
+                        .to_string();
+
+                    let user = User {
+                        username: DEFAULT_USER.to_string(),
+                        password_hash,
+                    };
+
+                    let doc_value = serde_json::to_value(user)
+                        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+
+                    collection.insert(doc_value.clone())?; // Clone for recording
+                    
+                    // Record write for replication
+                    if let Some(repl) = replication {
+                         let _ = repl.record_write(
+                             ADMIN_DB,
+                             ADMIN_COLL,
+                             Operation::Insert,
+                             DEFAULT_USER, // Document key is username ("admin")
+                             serde_json::to_vec(&doc_value).ok().as_deref(),
+                             None
+                         );
+                    }
+                    
+                    if is_override {
+                        tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");
+                    } else {
+                        tracing::warn!("╔══════════════════════════════════════════════════════════════════╗");
+                        tracing::warn!("║              INITIAL ADMIN ACCOUNT CREATED                       ║");
+                        tracing::warn!("╠══════════════════════════════════════════════════════════════════╣");
+                        tracing::warn!("║  Username: admin                                                 ║");
+                        tracing::warn!("║  Password: {}                             ║", password);
+                        tracing::warn!("║                                                                  ║");
+                        tracing::warn!("║  ⚠️  SAVE THIS PASSWORD! It will not be shown again.             ║");
+                        tracing::warn!("║  Change it after first login via the API.                        ║");
+                        tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
+                    }
                 }
-            };
-            
-            let salt = SaltString::generate(&mut OsRng);
-            let argon2 = Argon2::default();
-            let password_hash = argon2
-                .hash_password(password.as_bytes(), &salt)
-                .map_err(|e| DbError::InternalError(format!("Hashing error: {}", e)))?
-                .to_string();
-
-            let user = User {
-                username: DEFAULT_USER.to_string(),
-                password_hash,
-            };
-
-            let doc_value = serde_json::to_value(user)
-                .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
-
-            collection.insert(doc_value)?;
-            
-            if is_override {
-                tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");
-            } else {
-                tracing::warn!("╔══════════════════════════════════════════════════════════════════╗");
-                tracing::warn!("║              INITIAL ADMIN ACCOUNT CREATED                       ║");
-                tracing::warn!("╠══════════════════════════════════════════════════════════════════╣");
-                tracing::warn!("║  Username: admin                                                 ║");
-                tracing::warn!("║  Password: {}                             ║", password);
-                tracing::warn!("║                                                                  ║");
-                tracing::warn!("║  ⚠️  SAVE THIS PASSWORD! It will not be shown again.             ║");
-                tracing::warn!("║  Change it after first login via the API.                        ║");
-                tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
             }
         }
 

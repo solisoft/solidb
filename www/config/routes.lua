@@ -20,6 +20,7 @@ Logger(Routes)
 CustomRoute("GET", "/database/:db/databases", "dashboard#databases")
 CustomRoute("GET", "/database/:db/cluster", "dashboard#cluster")
 CustomRoute("GET", "/database/:db/apikeys", "dashboard#apikeys")
+CustomRoute("GET", "/database/:db/scripts", "dashboard#scripts")
 
 -- docs pages
 CustomRoute("GET", "/docs/:page", "docs#show")
