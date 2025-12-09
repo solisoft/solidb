@@ -2,3 +2,4 @@
 /data*
 *.pid
 *.log
+www/deploy.sh
