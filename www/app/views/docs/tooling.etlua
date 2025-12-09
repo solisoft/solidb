@@ -1,494 +1,381 @@
-<div>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-    
-    <!-- Header -->
-    <div class="mb-12">
-      <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 mb-6 transition-colors">
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-        </svg>
-        Back to Documentation
-      </a>
-      
-      <h1 class="text-5xl font-black text-white mb-4">
-        Command-Line <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Tools</span>
-      </h1>
-      <p class="text-xl text-gray-400">
-        Backup, restore, and manage your SoliDB data with powerful CLI utilities
-      </p>
-    </div>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-      
-      <!-- Sidebar -->
-      <div class="lg:col-span-1">
-        <div class="sticky top-24 bg-gray-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">On This Page</h2>
-          <nav class="space-y-2">
-            <a href="#overview" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Overview</a>
-            <a href="#solidb-dump" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">solidb-dump</a>
-            <a href="#solidb-restore" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">solidb-restore</a>
-            <a href="#solidb-fuse" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">solidb-fuse</a>
-            <a href="#supported-formats" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Supported Formats</a>
-            <a href="#workflows" class="block text-gray-300 hover:text-indigo-400 transition-colors py-1">Common Workflows</a>
-          </nav>
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("tooling_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-4 tracking-tight">Command-Line Tools</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Backup, restore, and manage your SoliDB data with powerful CLI utilities.
+          </p>
         </div>
       </div>
 
-      <!-- Main Content -->
-      <div class="lg:col-span-3 space-y-12">
-        
-        <!-- Overview -->
-        <section id="overview" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">Overview</h2>
-          <p class="text-gray-300 leading-relaxed mb-4">
-            SoliDB provides two essential command-line tools for data management:
-          </p>
-          <div class="grid md:grid-cols-2 gap-4 mt-6">
-            <div class="bg-gray-900/50 border border-indigo-500/20 rounded-xl p-6">
-              <div class="flex items-center mb-3">
-                <i class="fas fa-download text-2xl text-indigo-400 mr-3"></i>
-                <h3 class="text-xl font-bold text-white">solidb-dump</h3>
-              </div>
-              <p class="text-gray-400 text-sm">Export databases and collections to JSONL format</p>
-            </div>
-            <div class="bg-gray-900/50 border border-purple-500/20 rounded-xl p-6">
-              <div class="flex items-center mb-3">
-                <i class="fas fa-upload text-2xl text-purple-400 mr-3"></i>
-                <h3 class="text-xl font-bold text-white">solidb-restore</h3>
-              </div>
-              <p class="text-gray-400 text-sm">Import data from JSONL dumps back into SoliDB</p>
-            </div>
-            <div class="bg-gray-900/50 border border-teal-500/20 rounded-xl p-6">
-              <div class="flex items-center mb-3">
-                <i class="fas fa-folder-open text-2xl text-teal-400 mr-3"></i>
-                <h3 class="text-xl font-bold text-white">solidb-fuse</h3>
-              </div>
-              <p class="text-gray-400 text-sm">Mount blob collections as a filesystem</p>
-            </div>
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Overview
+            </h2>
           </div>
-        </section>
-
-        <!-- solidb-dump -->
-        <section id="solidb-dump" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">solidb-dump</h2>
           
-          <h3 class="text-xl font-semibold text-indigo-300 mb-4">Usage</h3>
-          <div class="bg-gray-900 rounded-lg p-4 mb-6 font-mono text-sm overflow-x-auto">
-            <code class="text-green-400">solidb-dump [OPTIONS] --database &lt;DATABASE&gt;</code>
-          </div>
-
-          <h3 class="text-xl font-semibold text-indigo-300 mb-4">Options</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-700">
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Option</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Description</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Default</th>
-                </tr>
-              </thead>
-              <tbody class="text-gray-400">
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-d, --database</td>
-                  <td class="py-3 px-4">Database name (required)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-c, --collection</td>
-                  <td class="py-3 px-4">Collection name (optional)</td>
-                  <td class="py-3 px-4">All collections</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-o, --output</td>
-                  <td class="py-3 px-4">Output file</td>
-                  <td class="py-3 px-4">stdout</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-H, --host</td>
-                  <td class="py-3 px-4">Database host</td>
-                  <td class="py-3 px-4">localhost</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-P, --port</td>
-                  <td class="py-3 px-4">Database port</td>
-                  <td class="py-3 px-4">6745</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-u, --user</td>
-                  <td class="py-3 px-4">Username (for authentication)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-indigo-300">-p, --password</td>
-                  <td class="py-3 px-4">Password (for authentication)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <h3 class="text-xl font-semibold text-indigo-300 mt-8 mb-4">Examples</h3>
-          <div class="space-y-4">
-            <div>
-              <p class="text-gray-400 mb-2">Dump entire database:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-dump -d mydb -o backup.jsonl</code>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB provides essential command-line tools for data management:
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-download text-xl text-indigo-400 mr-3"></i>
+                  <h3 class="text-white font-bold">solidb-dump</h3>
+                </div>
+                <p class="text-sm text-gray-400">Export databases and collections to JSONL format.</p>
               </div>
-            </div>
-            <div>
-              <p class="text-gray-400 mb-2">Dump single collection:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-dump -d mydb -c users -o users.jsonl</code>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-upload text-xl text-purple-400 mr-3"></i>
+                  <h3 class="text-white font-bold">solidb-restore</h3>
+                </div>
+                <p class="text-sm text-gray-400">Import data from JSONL dumps back into SoliDB.</p>
               </div>
-            </div>
-            <div>
-              <p class="text-gray-400 mb-2">Dump to stdout (pipe to gzip):</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-dump -d mydb | gzip > backup.jsonl.gz</code>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-folder-open text-xl text-teal-400 mr-3"></i>
+                  <h3 class="text-white font-bold">solidb-fuse</h3>
+                </div>
+                <p class="text-sm text-gray-400">Mount blob collections as a filesystem.</p>
               </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div class="mt-6 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4">
-            <div class="flex items-start">
-              <i class="fas fa-info-circle text-indigo-400 text-xl mr-3 mt-1"></i>
-              <div>
-                <p class="text-indigo-200 font-semibold mb-1">Shard-Aware Queries</p>
-                <p class="text-indigo-300/80 text-sm">
-                  solidb-dump automatically queries all shards across all nodes for sharded collections, ensuring complete backups.
-                </p>
-              </div>
-            </div>
+      <!-- solidb-dump -->
+      <section id="solidb-dump" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              solidb-dump
+            </h2>
           </div>
-        </section>
-
-        <!-- solidb-restore -->
-        <section id="solidb-restore" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">solidb-restore</h2>
           
-          <h3 class="text-xl font-semibold text-purple-300 mb-4">Usage</h3>
-          <div class="bg-gray-900 rounded-lg p-4 mb-6 font-mono text-sm overflow-x-auto">
-            <code class="text-green-400">solidb-restore [OPTIONS] --input &lt;FILE&gt;</code>
-          </div>
+          <div class="p-8">
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-indigo-500/20 text-indigo-300 text-xs px-2 py-1 rounded border border-indigo-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
+              <code class="text-green-400">solidb-dump [OPTIONS] --database &lt;DATABASE&gt;</code>
+            </div>
 
-          <h3 class="text-xl font-semibold text-purple-300 mb-4">Options</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-700">
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Option</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Description</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Default</th>
-                </tr>
-              </thead>
-              <tbody class="text-gray-400">
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">-i, --input</td>
-                  <td class="py-3 px-4">Input JSONL file (required)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">--database</td>
-                  <td class="py-3 px-4">Override database name</td>
-                  <td class="py-3 px-4">From dump</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">--collection</td>
-                  <td class="py-3 px-4">Override collection name</td>
-                  <td class="py-3 px-4">From dump</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">--create-database</td>
-                  <td class="py-3 px-4">Create database if missing</td>
-                  <td class="py-3 px-4">false</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">--drop</td>
-                  <td class="py-3 px-4">Drop existing collections first</td>
-                  <td class="py-3 px-4">false</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">-H, --host</td>
-                  <td class="py-3 px-4">Target database host</td>
-                  <td class="py-3 px-4">localhost</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">-P, --port</td>
-                  <td class="py-3 px-4">Target database port</td>
-                  <td class="py-3 px-4">6745</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">-u, --user</td>
-                  <td class="py-3 px-4">Username (for authentication)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-purple-300">-p, --password</td>
-                  <td class="py-3 px-4">Password (for authentication)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+            <h3 class="text-lg font-bold text-white mb-4">Options</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Option</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-d, --database</td>
+                    <td class="px-4 py-3">Database name (required)</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-c, --collection</td>
+                    <td class="px-4 py-3">Collection name</td>
+                    <td class="px-4 py-3">All</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-o, --output</td>
+                    <td class="px-4 py-3">Output file</td>
+                    <td class="px-4 py-3">stdout</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-H, --host</td>
+                    <td class="px-4 py-3">Database host</td>
+                    <td class="px-4 py-3">localhost</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-P, --port</td>
+                    <td class="px-4 py-3">Database port</td>
+                    <td class="px-4 py-3">6745</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-u, --user</td>
+                    <td class="px-4 py-3">Username</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-indigo-300">-p, --password</td>
+                    <td class="px-4 py-3">Password</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <h3 class="text-xl font-semibold text-purple-300 mt-8 mb-4">Examples</h3>
-          <div class="space-y-4">
-            <div>
-              <p class="text-gray-400 mb-2">Restore from backup:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-restore -i backup.jsonl --create-database</code>
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+            <div class="space-y-4">
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Dump entire database</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-dump</span> -d mydb -o backup.jsonl
+                 </div>
+              </div>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Dump single collection to gzip</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-dump</span> -d mydb -c users | gzip > users.jsonl.gz
+                 </div>
               </div>
             </div>
-            <div>
-              <p class="text-gray-400 mb-2">Restore to different database:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-restore -i backup.jsonl --database newdb --create-database</code>
-              </div>
-            </div>
-            <div>
-              <p class="text-gray-400 mb-2">Replace existing data:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-restore -i backup.jsonl --drop</code>
-              </div>
+            
+            <div class="mt-6 bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>Shard-Aware:</strong> queries all shards across all nodes for sharded collections, ensuring complete backups.</p>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- solidb-fuse -->
-        <section id="solidb-fuse" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">solidb-fuse</h2>
+      <!-- solidb-restore -->
+      <section id="solidb-restore" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+              solidb-restore
+            </h2>
+          </div>
           
-          <h3 class="text-xl font-semibold text-teal-300 mb-4">Usage</h3>
-          <div class="bg-gray-900 rounded-lg p-4 mb-6 font-mono text-sm overflow-x-auto">
-            <code class="text-green-400">solidb-fuse [OPTIONS] --mount &lt;MOUNT&gt;</code>
-          </div>
+          <div class="p-8">
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-purple-500/20 text-purple-300 text-xs px-2 py-1 rounded border border-purple-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
+              <code class="text-green-400">solidb-restore [OPTIONS] --input &lt;FILE&gt;</code>
+            </div>
 
-          <h3 class="text-xl font-semibold text-teal-300 mb-4">Options</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-700">
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Option</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Description</th>
-                  <th class="text-left py-3 px-4 text-gray-300 font-semibold">Default</th>
-                </tr>
-              </thead>
-              <tbody class="text-gray-400">
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--mount</td>
-                  <td class="py-3 px-4">Mount point path (required)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--host</td>
-                  <td class="py-3 px-4">Database host</td>
-                  <td class="py-3 px-4">localhost</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--port</td>
-                  <td class="py-3 px-4">Database port</td>
-                  <td class="py-3 px-4">6745</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--username</td>
-                  <td class="py-3 px-4">Username (for authentication)</td>
-                  <td class="py-3 px-4">admin</td>
-                </tr>
-                 <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--password</td>
-                  <td class="py-3 px-4">Password (for authentication)</td>
-                  <td class="py-3 px-4">-</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--foreground</td>
-                  <td class="py-3 px-4">Run in foreground</td>
-                  <td class="py-3 px-4">false</td>
-                </tr>
-                 <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">-d, --daemon</td>
-                  <td class="py-3 px-4">Run as a daemon (background process)</td>
-                  <td class="py-3 px-4">false</td>
-                </tr>
-                <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--pid-file</td>
-                  <td class="py-3 px-4">PID file path (daemon mode)</td>
-                  <td class="py-3 px-4">./solidb-fuse.pid</td>
-                </tr>
-                 <tr class="border-b border-gray-800">
-                  <td class="py-3 px-4 font-mono text-teal-300">--log-file</td>
-                  <td class="py-3 px-4">Log file path (daemon mode)</td>
-                  <td class="py-3 px-4">./solidb-fuse.log</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+            <h3 class="text-lg font-bold text-white mb-4">Options</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Option</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">-i, --input</td>
+                    <td class="px-4 py-3">Input JSONL file (required)</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--database</td>
+                    <td class="px-4 py-3">Override database name</td>
+                    <td class="px-4 py-3">From dump</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--collection</td>
+                    <td class="px-4 py-3">Override collection name</td>
+                    <td class="px-4 py-3">From dump</td>
+                  </tr>
+                   <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--create-database</td>
+                    <td class="px-4 py-3">Create database if missing</td>
+                    <td class="px-4 py-3">false</td>
+                  </tr>
+                   <tr>
+                    <td class="px-4 py-3 font-mono text-purple-300">--drop</td>
+                    <td class="px-4 py-3">Drop existing collections first</td>
+                    <td class="px-4 py-3">false</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <h3 class="text-xl font-semibold text-teal-300 mt-8 mb-4">Examples</h3>
-          <div class="space-y-4">
-            <div>
-              <p class="text-gray-400 mb-2">Mount to local directory:</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">mkdir ~/solidb-mount
-solidb-fuse --mount ~/solidb-mount --password admin</code>
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+             <div class="space-y-4">
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Restore and create db</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-restore</span> -i backup.jsonl --create-database
+                 </div>
+              </div>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Restore to different database</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-restore</span> -i backup.jsonl --database newdb --create-database
+                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- solidb-fuse -->
+      <section id="solidb-fuse" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path></svg>
+              solidb-fuse
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-teal-500/20 text-teal-300 text-xs px-2 py-1 rounded border border-teal-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
+              <code class="text-green-400">solidb-fuse [OPTIONS] --mount &lt;MOUNT&gt;</code>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Options</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Option</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">--mount</td>
+                    <td class="px-4 py-3">Mount point path (required)</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">-d, --daemon</td>
+                    <td class="px-4 py-3">Run as daemon</td>
+                    <td class="px-4 py-3">false</td>
+                  </tr>
+                   <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">--pid-file</td>
+                    <td class="px-4 py-3">PID file</td>
+                    <td class="px-4 py-3">./solidb-fuse.pid</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-teal-300">--log-file</td>
+                    <td class="px-4 py-3">Log file</td>
+                    <td class="px-4 py-3">./solidb-fuse.log</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+             <div class="space-y-4">
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Mount to directory</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">mkdir</span> ~/solidb-mount<br>
+                   <span class="text-green-400">solidb-fuse</span> --mount ~/solidb-mount --password admin
+                 </div>
+              </div>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Run as Daemon</div>
+                 <div class="p-4 font-mono text-sm text-gray-300">
+                   <span class="text-green-400">solidb-fuse</span> --mount /mnt/db -d --log-file /var/log/fuse.log
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Supported Formats -->
+      <section id="supported-formats" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              Supported Formats
+            </h2>
+          </div>
+          
+          <div class="p-8 space-y-8">
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2">JSONL (Recommended)</h3>
+              <p class="text-gray-400 text-sm mb-3">One document per line. Supports metadata for full reconstruction.</p>
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs border border-white/10 text-gray-300">
+                {"_database":"mydb","_collection":"users","_id":"1","name":"Alice"}<br>
+                {"_database":"mydb","_collection":"users","_id":"2","name":"Bob"}
+              </div>
+            </div>
+            
              <div>
-              <p class="text-gray-400 mb-2">Run in background (Daemon):</p>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-green-400">solidb-fuse --mount /mnt/solidb --daemon --log-file /var/log/solidb-fuse.log</code>
+              <h3 class="text-lg font-bold text-white mb-2">JSON Array</h3>
+              <p class="text-gray-400 text-sm mb-3">Standard JSON array. Good for migrations.</p>
+               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs border border-white/10 text-gray-300">
+                [<br>
+                  {"name":"Alice"},<br>
+                  {"name":"Bob"}<br>
+                ]
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2">CSV</h3>
+              <p class="text-gray-400 text-sm mb-3">Rows and columns. Requires <code class="bg-gray-800 px-1 rounded text-xs">--database</code> and <code class="bg-gray-800 px-1 rounded text-xs">--collection</code> flags.</p>
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs border border-white/10 text-gray-300">
+                name,age,active<br>
+                Alice,30,true<br>
+                Bob,25,false
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Supported Formats -->
-        <section id="supported-formats" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">Supported Formats</h2>
-          <p class="text-gray-300 leading-relaxed mb-6">
-            SolidDB restore supports multiple input formats. The tool automatically detects the format based on the file content.
-          </p>
-
-          <div class="space-y-8">
-            <!-- JSONL -->
-            <div>
-               <h3 class="text-xl font-semibold text-indigo-300 mb-2">JSONL (Recommended)</h3>
-               <p class="text-gray-400 mb-3">
-                 One document per line. Supports metadata (`_database`, `_collection`, `_shardConfig`) for full restoration.
-               </p>
-               <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-indigo-500/20">
-            <pre class="text-gray-300"><code>{"_database":"mydb","_collection":"users","_id":"1","name":"Alice"}
-{"_database":"mydb","_collection":"users","_id":"2","name":"Bob"}</code></pre>
-               </div>
-            </div>
-
-            <!-- JSON Array -->
-            <div>
-               <h3 class="text-xl font-semibold text-blue-300 mb-2">JSON Array</h3>
-               <p class="text-gray-400 mb-3">
-                 Standard JSON array of objects. Useful for migrating from other systems.
-               </p>
-               <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-blue-500/20">
-            <pre class="text-gray-300"><code>[
-  {"_database":"mydb","_collection":"users","name":"Alice"},
-  {"_database":"mydb","_collection":"users","name":"Bob"}
-]</code></pre>
-               </div>
-            </div>
-
-            <!-- CSV -->
-            <div>
-               <h3 class="text-xl font-semibold text-green-300 mb-2">CSV</h3>
-               <p class="text-gray-400 mb-3">
-                 Comma-Separated Values. First row must be headers.
-                 <br>
-                 <span class="text-yellow-400 text-xs font-bold uppercase tracking-wide">Requirement:</span>
-                 You MUST specify <code class="text-purple-300">--database</code> and <code class="text-purple-300">--collection</code> args, as CSV files lack metadata.
-               </p>
-               <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-green-500/20">
-            <pre class="text-gray-300"><code>name,age,active
-Alice,30,true
-Bob,25,false</code></pre>
-               </div>
-               <div class="mt-2 text-sm text-gray-500">
-                 Note: Types (Numbers, Booleans) are automatically inferred from CSV strings.
-               </div>
-            </div>
-
-            <!-- SQL -->
-            <div>
-               <h3 class="text-xl font-semibold text-pink-300 mb-2">SQL</h3>
-                <p class="text-gray-400 mb-3">
-                  Standard SQL dumps with `INSERT INTO` statements.
-                  <span class="text-pink-300 text-xs ml-2">(Auto-detected via .sql extension)</span>
-                </p>
-               <div class="bg-gray-900 rounded-lg p-4 font-mono text-xs overflow-x-auto border border-pink-500/20">
-            <pre class="text-gray-300"><code>INSERT INTO users (id, name) VALUES (1, 'Alice');
-INSERT INTO users (id, name) VALUES (2, 'Bob'), (3, 'Charlie');</code></pre>
-               </div>
-               <div class="mt-2 text-sm text-gray-500">
-                 Note: Table name is used as collection name (e.g., `INSERT INTO users` -> collection `users`).
-               </div>
-            </div>
+      <!-- Workflows -->
+      <section id="workflows" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Common Workflows
+            </h2>
           </div>
-        </section>
-
-        <!-- Common Workflows -->
-        <section id="workflows" class="bg-gray-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
-          <h2 class="text-3xl font-bold text-white mb-6">Common Workflows</h2>
-          
-          <div class="space-y-8">
-            <!-- Workflow 1 -->
-            <div>
-              <h3 class="text-xl font-semibold text-indigo-300 mb-3">
-                <i class="fas fa-calendar-alt text-indigo-400 mr-2"></i>
-                Daily Backups
-              </h3>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
-                <code class="text-gray-300"># Automated daily backup script
-DATE=$(date +%Y%m%d)
-solidb-dump -d production -o "backups/prod-${DATE}.jsonl"
-gzip "backups/prod-${DATE}.jsonl"</code>
-              </div>
-            </div>
-
-            <!-- Workflow 2 -->
-            <div>
-              <h3 class="text-xl font-semibold text-purple-300 mb-3">
-                <i class="fas fa-exchange-alt text-purple-400 mr-2"></i>
-                Environment Migration
-              </h3>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto space-y-2">
-                <code class="text-gray-300 block"># Export from production</code>
-                <code class="text-green-400 block">solidb-dump -H prod.example.com -d mydb -o prod-export.jsonl</code>
-                <code class="text-gray-300 block mt-2"># Import to staging</code>
-                <code class="text-green-400 block">solidb-restore -i prod-export.jsonl -H staging.local --create-database --drop</code>
-              </div>
-            </div>
-
-            <!-- Workflow 3 -->
-            <div>
-              <h3 class="text-xl font-semibold text-blue-300 mb-3">
-                <i class="fas fa-clone text-blue-400 mr-2"></i>
-                Clone Collection
-              </h3>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto space-y-2">
-                <code class="text-green-400 block">solidb-dump -d mydb -c users -o users.jsonl</code>
-                <code class="text-green-400 block">solidb-restore -i users.jsonl --collection users_backup</code>
-              </div>
-            </div>
-
-            <!-- Workflow 4 -->
-            <div>
-              <h3 class="text-xl font-semibold text-green-300 mb-3">
-                <i class="fas fa-filter text-green-400 mr-2"></i>
-                Selective Restore with jq
-              </h3>
-              <div class="bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto space-y-2">
-                <code class="text-gray-300 block"># Filter specific documents before restore</code>
-                <code class="text-green-400 block">cat backup.jsonl | jq -c 'select(.status == "active")' > active-only.jsonl</code>
-                <code class="text-green-400 block">solidb-restore -i active-only.jsonl --create-database</code>
-              </div>
-            </div>
+          <div class="p-8 space-y-6">
+             <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-indigo-500/50 transition-colors">
+               <h3 class="text-indigo-400 font-bold mb-3">Environment Migration</h3>
+                <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
+                  <div class="text-gray-500"># Export production</div>
+                  <div>solidb-dump -H prod.db -d app -o prod.jsonl</div>
+                  <div class="text-gray-500 mt-2"># Import to staging</div>
+                  <div>solidb-restore -i prod.jsonl -H staging.db --create-database --drop</div>
+                </div>
+             </div>
+             
+             <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-green-500/50 transition-colors">
+               <h3 class="text-green-400 font-bold mb-3">Selective Restore</h3>
+               <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
+                 <div class="text-gray-500"># Filter with jq and restore</div>
+                 <div>cat backup.jsonl | jq -c 'select(.type=="user")' > users.jsonl</div>
+                 <div>solidb-restore -i users.jsonl</div>
+               </div>
+             </div>
           </div>
+         </div>
+      </section>
 
-          <div class="mt-8 bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4">
-            <div class="flex items-start">
-              <i class="fas fa-exclamation-triangle text-yellow-400 text-xl mr-3 mt-1"></i>
-              <div>
-                <p class="text-yellow-200 font-semibold mb-1">Best Practices</p>
-                <ul class="text-yellow-300/80 text-sm space-y-1 list-disc list-inside">
-                  <li>Test restores regularly to ensure backups are valid</li>
-                  <li>Compress large dumps with gzip to save storage</li>
-                  <li>Use --drop flag carefully - it deletes existing data</li>
-                  <li>For sharded collections, dumps automatically include all shards</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-
-      </div>
-    </div>
+    </main>
   </div>
 </div>
