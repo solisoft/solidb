@@ -219,11 +219,14 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin(
+                .allow_origin([
                     "http://localhost:8080"
                         .parse::<axum::http::HeaderValue>()
                         .unwrap(),
-                )
+                    "https://solidb.solisoft.net"
+                        .parse::<axum::http::HeaderValue>()
+                        .unwrap(),
+                ])
                 .allow_methods([
                     Method::GET,
                     Method::POST,
