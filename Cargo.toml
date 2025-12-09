@@ -80,7 +80,7 @@ sysinfo = "0.30"
 futures = { version = "0.3.31", features = ["std"] }
 
 # Embedded Lua scripting
-mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize"] }
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 
 # Default binary
 [[bin]]

@@ -3,9 +3,10 @@
 //! This module provides embedded Lua scripting capabilities that allow users
 //! to create custom API endpoints with full access to database operations.
 
-use mlua::{Lua, Result as LuaResult, Value as LuaValue};
+use mlua::{Lua, Result as LuaResult, Value as LuaValue, IntoLua};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::error::DbError;
 use crate::storage::StorageEngine;
@@ -19,11 +20,11 @@ pub struct ScriptContext {
     /// Request path (after /api/custom/)
     pub path: String,
     /// Query parameters
-    pub query_params: std::collections::HashMap<String, String>,
+    pub query_params: HashMap<String, String>,
     /// URL parameters (e.g., :id)
-    pub params: std::collections::HashMap<String, String>,
+    pub params: HashMap<String, String>,
     /// Request headers
-    pub headers: std::collections::HashMap<String, String>,
+    pub headers: HashMap<String, String>,
     /// Request body (parsed as JSON if applicable)
     pub body: Option<JsonValue>,
 }
@@ -51,7 +52,6 @@ pub struct Script {
     /// Creation timestamp
     pub created_at: String,
     /// Last modified timestamp
-    /// Last modified timestamp
     pub updated_at: String,
 }
 
@@ -71,7 +71,7 @@ impl ScriptEngine {
     }
 
     /// Execute a Lua script with the given context
-    pub fn execute(&self, script: &Script, db_name: &str, context: &ScriptContext) -> Result<ScriptResult, DbError> {
+    pub async fn execute(&self, script: &Script, db_name: &str, context: &ScriptContext) -> Result<ScriptResult, DbError> {
         let lua = Lua::new();
 
         // Set up the Lua environment
@@ -80,14 +80,14 @@ impl ScriptEngine {
         // Execute the script
         let chunk = lua.load(&script.code);
 
-        match chunk.eval::<LuaValue>() {
+        match chunk.eval_async::<LuaValue>().await {
             Ok(result) => {
                 // Convert Lua result to JSON
                 let json_result = self.lua_to_json(&lua, result)?;
                 Ok(ScriptResult {
                     status: 200,
                     body: json_result,
-                    headers: std::collections::HashMap::new(),
+                    headers: HashMap::new(),
                 })
             }
             Err(e) => Err(DbError::InternalError(format!("Lua error: {}", e))),
@@ -98,7 +98,7 @@ impl ScriptEngine {
     fn setup_lua_globals(&self, lua: &Lua, db_name: &str, context: &ScriptContext) -> Result<(), DbError> {
         let globals = lua.globals();
 
-        // Create 'solidb' namespace (just for logging or utils now)
+        // Create 'solidb' namespace
         let solidb = lua.create_table()
             .map_err(|e| DbError::InternalError(format!("Failed to create solidb table: {}", e)))?;
 
@@ -109,6 +109,71 @@ impl ScriptEngine {
         }).map_err(|e| DbError::InternalError(format!("Failed to create log function: {}", e)))?;
         solidb.set("log", log_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set log: {}", e)))?;
+
+        // solidb.fetch(url, options)
+        let fetch_fn = lua.create_async_function(|lua, (url, options): (String, Option<LuaValue>)| async move {
+            let client = reqwest::Client::new();
+            let mut req_builder = client.get(&url); // Default to GET
+
+            if let Some(opts) = options {
+                if let LuaValue::Table(t) = opts {
+                    // Method
+                    if let Ok(method) = t.get::<String>("method") {
+                        match method.to_uppercase().as_str() {
+                            "POST" => req_builder = client.post(&url),
+                            "PUT" => req_builder = client.put(&url),
+                            "DELETE" => req_builder = client.delete(&url),
+                            "PATCH" => req_builder = client.patch(&url),
+                            "HEAD" => req_builder = client.head(&url),
+                            _ => {} // Default GET
+                        }
+                    }
+
+                    // Headers
+                    if let Ok(headers) = t.get::<LuaValue>("headers") {
+                        if let LuaValue::Table(h) = headers {
+                            for pair in h.pairs::<String, String>() {
+                                if let Ok((k, v)) = pair {
+                                    req_builder = req_builder.header(k, v);
+                                }
+                            }
+                        }
+                    }
+
+                    // Body
+                    if let Ok(body) = t.get::<String>("body") {
+                        req_builder = req_builder.body(body);
+                    }
+                }
+            }
+
+            match req_builder.send().await {
+                Ok(res) => {
+                    let status = res.status().as_u16();
+                    let headers_map = res.headers().clone();
+                    let text = res.text().await.unwrap_or_default();
+
+                    let response_table = lua.create_table()?;
+                    response_table.set("status", status)?;
+                    response_table.set("body", text)?;
+                    response_table.set("ok", status >= 200 && status < 300)?;
+                    
+                    let resp_headers = lua.create_table()?;
+                    for (k, v) in headers_map.iter() {
+                         if let Ok(val_str) = v.to_str() {
+                             resp_headers.set(k.as_str(), val_str)?;
+                         }
+                    }
+                    response_table.set("headers", resp_headers)?;
+
+                    Ok(response_table)
+                }
+                Err(e) => Err(mlua::Error::RuntimeError(format!("Fetch error: {}", e))),
+            }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create fetch function: {}", e)))?;
+
+        solidb.set("fetch", fetch_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set fetch: {}", e)))?;
 
         // Set solidb global
         globals.set("solidb", solidb)

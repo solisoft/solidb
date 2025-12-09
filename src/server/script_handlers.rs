@@ -297,7 +297,7 @@ pub async fn execute_script_handler(
     let engine = ScriptEngine::new(state.storage.clone());
     
     // Auto-select DB in Lua context using the path's db_name
-    let result = engine.execute(&script, db_name, &context)?;
+    let result = engine.execute(&script, db_name, &context).await?;
 
     Ok((StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK), Json(result.body)))
 }

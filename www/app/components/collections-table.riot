@@ -170,6 +170,10 @@
 
           // Filter out protected system collections in _system database
           let collections = data.collections || [];
+
+          // Always hide _scripts collection (managed via Scripts tab)
+          collections = collections.filter(c => c.name !== '_scripts');
+
           if (this.props.db === '_system') {
             collections = collections.filter(c => !c.name.startsWith('_'));
           }
