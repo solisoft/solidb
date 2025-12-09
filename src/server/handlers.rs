@@ -18,6 +18,20 @@ use base64::{Engine as _, engine::general_purpose};
 use crate::aql::{parse, BodyClause, Query, QueryExecutor};
 use crate::cluster::{Operation, ReplicationService};
 use crate::error::DbError;
+
+/// Default query execution timeout (30 seconds)
+const QUERY_TIMEOUT_SECS: u64 = 30;
+
+/// Sanitize a filename for use in Content-Disposition header to prevent header injection
+/// Removes/replaces: quotes, backslashes, newlines, carriage returns, and non-ASCII characters
+fn sanitize_filename(filename: &str) -> String {
+    filename
+        .chars()
+        .filter(|c| c.is_ascii() && *c != '"' && *c != '\\' && *c != '\n' && *c != '\r')
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
 use crate::server::cursor_store::CursorStore;
 use crate::storage::{GeoIndexStats, IndexStats, IndexType, StorageEngine};
 use crate::transaction::TransactionId;
@@ -389,11 +403,11 @@ pub async fn download_blob(
 
     let body = Body::from_stream(stream);
 
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", mime_type)
-        .header("Content-Disposition", format!("attachment; filename=\"{}\"", filename))
+        .header("Content-Disposition", format!("attachment; filename=\"{}\"", sanitize_filename(&filename)))
         .body(body)
-        .unwrap())
+        .map_err(|e| DbError::InternalError(format!("Failed to build response: {}", e)))
 }
 
 // ==================== Request/Response Types ====================
@@ -533,8 +547,25 @@ impl IntoResponse for DbError {
 
 pub async fn login_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, DbError> {
+    // Extract client IP for rate limiting (check X-Forwarded-For first for proxied requests)
+    let client_ip = headers
+        .get("X-Forwarded-For")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            headers
+                .get("X-Real-IP")
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    // Check rate limit before processing
+    crate::server::auth::check_rate_limit(&client_ip)?;
     // 1. Get _system database
     let db = state.storage.get_database("_system")?;
     
@@ -948,11 +979,11 @@ pub async fn export_collection(
 
     let body = Body::from_stream(stream);
 
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "application/x-ndjson")
-        .header("Content-Disposition", format!("attachment; filename=\"{}-{}.jsonl\"", db_name, coll_name))
+        .header("Content-Disposition", format!("attachment; filename=\"{}-{}.jsonl\"", sanitize_filename(&db_name), sanitize_filename(&coll_name)))
         .body(body)
-        .unwrap())
+        .map_err(|e| DbError::InternalError(format!("Failed to build response: {}", e)))
 }
 
 pub async fn import_collection(
@@ -1140,7 +1171,7 @@ pub async fn insert_document(
     if let Some(tx_id) = get_transaction_id(&headers) {
         let tx_manager = state.storage.transaction_manager()?;
         let tx_arc = tx_manager.get(tx_id)?;
-        let mut tx = tx_arc.write().unwrap();
+        let mut tx = tx_arc.write().map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
         let wal = tx_manager.wal();
 
         let doc = collection.insert_tx(&mut tx, wal, data)?;
@@ -1245,7 +1276,7 @@ pub async fn update_document(
     if let Some(tx_id) = get_transaction_id(&headers) {
         let tx_manager = state.storage.transaction_manager()?;
         let tx_arc = tx_manager.get(tx_id)?;
-        let mut tx = tx_arc.write().unwrap();
+        let mut tx = tx_arc.write().map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
         let wal = tx_manager.wal();
 
         let doc = collection.update_tx(&mut tx, wal, &key, data)?;
@@ -1307,7 +1338,7 @@ pub async fn delete_document(
     if let Some(tx_id) = get_transaction_id(&headers) {
         let tx_manager = state.storage.transaction_manager()?;
         let tx_arc = tx_manager.get(tx_id)?;
-        let mut tx = tx_arc.write().unwrap();
+        let mut tx = tx_arc.write().map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
         let wal = tx_manager.wal();
 
         collection.delete_tx(&mut tx, wal, &key)?;
@@ -1365,7 +1396,7 @@ pub async fn execute_query(
         // Get transaction manager
         let tx_manager = state.storage.transaction_manager()?;
         let tx_arc = tx_manager.get(tx_id)?;
-        let mut tx = tx_arc.write().unwrap();
+        let mut tx = tx_arc.write().map_err(|_| DbError::InternalError("Transaction lock poisoned".into()))?;
         let wal = tx_manager.wal();
         
         // Check if query contains mutation operations
@@ -1575,32 +1606,37 @@ pub async fn execute_query(
         let shard_coordinator = state.shard_coordinator.clone();
         let is_scatter_gather = headers.contains_key("X-Scatter-Gather");
 
-        tokio::task::spawn_blocking(move || {
-            let mut executor = if bind_vars.is_empty() {
-                QueryExecutor::with_database(&storage, db_name)
-            } else {
-                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
-            };
+        // Apply timeout to prevent DoS from long-running queries
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+            tokio::task::spawn_blocking(move || {
+                let mut executor = if bind_vars.is_empty() {
+                    QueryExecutor::with_database(&storage, db_name)
+                } else {
+                    QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                };
 
-            // Add replication service for mutation logging
-            if let Some(ref repl) = replication {
-                executor = executor.with_replication(repl);
-            }
-            
-            // Inject shard coordinator for scatter-gather (if not already a sub-query)
-            if !is_scatter_gather {
-                if let Some(coord) = shard_coordinator {
-                    executor = executor.with_shard_coordinator(coord);
+                // Add replication service for mutation logging
+                if let Some(ref repl) = replication {
+                    executor = executor.with_replication(repl);
                 }
-            }
+                
+                // Inject shard coordinator for scatter-gather (if not already a sub-query)
+                if !is_scatter_gather {
+                    if let Some(coord) = shard_coordinator {
+                        executor = executor.with_shard_coordinator(coord);
+                    }
+                }
 
-            let start = std::time::Instant::now();
-            let result = executor.execute(&query)?;
-            let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-            Ok::<_, DbError>((result, execution_time_ms))
-        })
-        .await
-        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
+                let start = std::time::Instant::now();
+                let result = executor.execute(&query)?;
+                let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+                Ok::<_, DbError>((result, execution_time_ms))
+            })
+        ).await {
+            Ok(join_result) => join_result.map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
+            Err(_) => return Err(DbError::BadRequest(format!("Query execution timeout: exceeded {} seconds", QUERY_TIMEOUT_SECS))),
+        }
     } else {
         let mut executor = if req.bind_vars.is_empty() {
             QueryExecutor::with_database(&state.storage, db_name)
@@ -2328,7 +2364,7 @@ pub async fn ws_changefeed_handler(
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body(Body::empty())
-            .unwrap()
+            .expect("Valid status code should not fail")
             .into_response();
     }
 

@@ -4,6 +4,7 @@ use solidb::{
     create_router, StorageEngine,
 };
 use std::sync::Arc;
+use sysinfo::{Pid, System};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -62,6 +63,18 @@ fn main() -> anyhow::Result<()> {
             match std::fs::read_to_string(&args.pid_file) {
                 Ok(pid_str) => {
                     if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                        // Verify process identity using sysinfo to prevent killing arbitrary processes
+                        let mut sys = System::new_all();
+                        sys.refresh_all();
+                        
+                        let sys_pid = Pid::from(pid as usize);
+                        if let Some(proc) = sys.process(sys_pid) {
+                             if proc.name() != "solidb" {
+                                 eprintln!("SECURITY ERROR: Process with PID {} is named '{}', not 'solidb'. Refusing to kill potential mismatch.", pid, proc.name());
+                                 return Ok(());
+                             }
+                        }
+
                         eprintln!("Found existing server with PID {}. Stopping it...", pid);
                         
                         // Send SIGTERM to gracefully stop the process

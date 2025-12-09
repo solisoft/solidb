@@ -1052,6 +1052,64 @@ All data mutations are replicated:
 3. **Data Directories**: Each node must have its own data directory
 4. **Monitoring**: Check cluster status regularly via the API
 
+## Security
+
+SoliDB includes multiple security features to protect against common attack vectors:
+
+### Authentication & Authorization
+
+| Feature | Description |
+|---------|-------------|
+| **JWT Authentication** | All API endpoints require Bearer token authentication |
+| **Random Admin Password** | Default admin password is randomly generated on first startup (shown in logs) |
+| **Secure Password Hashing** | Passwords are hashed with Argon2id (memory-hard algorithm) |
+| **API Keys** | Alternative to JWT tokens for programmatic access |
+| **Rate Limiting** | Login attempts limited to **5 per 60 seconds** per IP to prevent brute force |
+
+### Production Configuration
+
+Set these environment variables for production deployments:
+
+```bash
+# REQUIRED: Set a secure JWT secret (32+ characters)
+export JWT_SECRET="your-secure-random-secret-here"
+
+# OPTIONAL: Set admin password (otherwise randomly generated)
+export SOLIDB_ADMIN_PASSWORD="your-secure-password"
+```
+
+### Cluster Security
+
+For multi-node clusters, create a shared keyfile for node authentication:
+
+```bash
+# Generate a secure keyfile (use the same file on all nodes)
+openssl rand -base64 756 > solidb-keyfile
+chmod 600 solidb-keyfile
+
+# Start with keyfile authentication
+solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746
+```
+
+Cluster nodes use **HMAC-SHA256** for mutual authentication.
+
+### Built-in Protections
+
+| Protection | Description |
+|------------|-------------|
+| **Request Body Limits** | 10MB default (500MB for imports/blobs) to prevent memory exhaustion |
+| **Query Timeout** | 30-second timeout for AQL queries to prevent resource exhaustion |
+| **Header Injection Prevention** | Content-Disposition filenames are sanitized |
+| **Constant-Time Comparison** | API key validation uses timing-safe comparison |
+
+### Security Recommendations
+
+1. **Always set `JWT_SECRET`** in production to persist tokens across restarts
+2. **Use HTTPS** via a reverse proxy (nginx, Caddy) for encrypted connections
+3. **Firewall replication ports** (6746) to only allow trusted nodes
+4. **Change the admin password** after first login
+5. **Monitor login failures** for brute force attempts
+
 ## Limitations
 
 This is an initial implementation focusing on core functionality. Current limitations:

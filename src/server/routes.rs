@@ -203,6 +203,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         .merge(api_routes)
         .with_state(state)
+        // Global request body limit: 10MB default (import/blob have 500MB override)
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()

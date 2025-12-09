@@ -18,7 +18,45 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use once_cell::sync::Lazy;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::HashMap;
+use std::sync::RwLock;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+/// Rate limiting configuration
+const MAX_LOGIN_ATTEMPTS: usize = 5;
+const RATE_LIMIT_WINDOW_SECS: u64 = 60;
+
+/// In-memory rate limiter for login attempts
+/// Tracks attempts per IP address with automatic cleanup
+static LOGIN_RATE_LIMITER: Lazy<RwLock<HashMap<String, Vec<Instant>>>> = 
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Check if an IP is rate limited, return error if too many attempts
+pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
+    let now = Instant::now();
+    let window = std::time::Duration::from_secs(RATE_LIMIT_WINDOW_SECS);
+    
+    let mut limiter = LOGIN_RATE_LIMITER.write().unwrap_or_else(|e| e.into_inner());
+    
+    // Get or create entry for this IP
+    let attempts = limiter.entry(ip.to_string()).or_insert_with(Vec::new);
+    
+    // Remove old attempts outside the window
+    attempts.retain(|t| now.duration_since(*t) < window);
+    
+    // Check if rate limited
+    if attempts.len() >= MAX_LOGIN_ATTEMPTS {
+        return Err(crate::error::DbError::BadRequest(format!(
+            "Too many login attempts. Please wait {} seconds before trying again.",
+            RATE_LIMIT_WINDOW_SECS
+        )));
+    }
+    
+    // Record this attempt
+    attempts.push(now);
+    
+    Ok(())
+}
 
 const ADMIN_DB: &str = "_system";
 const ADMIN_COLL: &str = "_admins";

@@ -9,6 +9,11 @@ use crate::cluster::{Operation, ReplicationService};
 use crate::error::{DbError, DbResult};
 use crate::storage::{distance_meters, Collection, GeoPoint, StorageEngine};
 
+/// Convert f64 to serde_json::Number, returning 0 for NaN/Infinity instead of panicking
+fn number_from_f64(f: f64) -> serde_json::Number {
+    serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0))
+}
+
 /// Execution context holding variable bindings
 type Context = HashMap<String, Value>;
 
@@ -1856,7 +1861,7 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let dist = distance_meters(lat1, lon1, lat2, lon2);
-                Ok(Value::Number(serde_json::Number::from_f64(dist).unwrap()))
+                Ok(Value::Number(number_from_f64(dist)))
             }
 
             // GEO_DISTANCE(geopoint1, geopoint2) - distance between two geo points
@@ -1878,7 +1883,7 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let dist = distance_meters(p1.lat, p1.lon, p2.lat, p2.lon);
-                Ok(Value::Number(serde_json::Number::from_f64(dist).unwrap()))
+                Ok(Value::Number(number_from_f64(dist)))
             }
 
             // HAS(doc, attribute) - check if document has attribute
@@ -2031,7 +2036,7 @@ impl<'a> QueryExecutor<'a> {
                     .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
                 match min {
-                    Some(n) => Ok(Value::Number(serde_json::Number::from_f64(n).unwrap())),
+                    Some(n) => Ok(Value::Number(number_from_f64(n))),
                     None => Ok(Value::Null),
                 }
             }
@@ -2053,7 +2058,7 @@ impl<'a> QueryExecutor<'a> {
                     .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
                 match max {
-                    Some(n) => Ok(Value::Number(serde_json::Number::from_f64(n).unwrap())),
+                    Some(n) => Ok(Value::Number(number_from_f64(n))),
                     None => Ok(Value::Null),
                 }
             }
@@ -3252,7 +3257,7 @@ impl<'a> QueryExecutor<'a> {
                 let factor = 10_f64.powi(precision);
                 let rounded = (num * factor).round() / factor;
                 Ok(Value::Number(
-                    serde_json::Number::from_f64(rounded).unwrap(),
+                    number_from_f64(rounded),
                 ))
             }
 
@@ -3267,7 +3272,7 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("ABS: argument must be a number".to_string())
                 })?;
                 Ok(Value::Number(
-                    serde_json::Number::from_f64(num.abs()).unwrap(),
+                    number_from_f64(num.abs()),
                 ))
             }
 
@@ -3282,7 +3287,7 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("FLOOR: argument must be a number".to_string())
                 })?;
                 Ok(Value::Number(
-                    serde_json::Number::from_f64(num.floor()).unwrap(),
+                    number_from_f64(num.floor()),
                 ))
             }
 
@@ -3297,7 +3302,7 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("CEIL: argument must be a number".to_string())
                 })?;
                 Ok(Value::Number(
-                    serde_json::Number::from_f64(num.ceil()).unwrap(),
+                    number_from_f64(num.ceil()),
                 ))
             }
 
@@ -4334,7 +4339,7 @@ impl<'a> QueryExecutor<'a> {
                         if let Some(i) = n.as_i64() {
                             Value::Number(serde_json::Number::from(-i))
                         } else if let Some(f) = n.as_f64() {
-                            Value::Number(serde_json::Number::from_f64(-f).unwrap())
+                            Value::Number(number_from_f64(-f))
                         } else {
                             return Err(DbError::ExecutionError(
                                 "DATE_SUBTRACT: amount must be a number".to_string(),
@@ -4768,7 +4773,7 @@ impl<'a> QueryExecutor<'a> {
                     )),
                 };
 
-                Ok(Value::Number(serde_json::Number::from_f64(diff).unwrap()))
+                Ok(Value::Number(number_from_f64(diff)))
             }
 
             _ => Err(DbError::ExecutionError(format!(
@@ -4980,7 +4985,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
 
         BinaryOperator::Add => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
-                Ok(Value::Number(serde_json::Number::from_f64(a + b).unwrap()))
+                Ok(Value::Number(number_from_f64(a + b)))
             } else if let (Some(a), Some(b)) = (left.as_str(), right.as_str()) {
                 Ok(Value::String(format!("{}{}", a, b)))
             } else {
@@ -4992,7 +4997,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
 
         BinaryOperator::Subtract => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
-                Ok(Value::Number(serde_json::Number::from_f64(a - b).unwrap()))
+                Ok(Value::Number(number_from_f64(a - b)))
             } else {
                 Err(DbError::ExecutionError(
                     "Cannot subtract non-numbers".to_string(),
@@ -5002,7 +5007,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
 
         BinaryOperator::Multiply => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
-                Ok(Value::Number(serde_json::Number::from_f64(a * b).unwrap()))
+                Ok(Value::Number(number_from_f64(a * b)))
             } else {
                 Err(DbError::ExecutionError(
                     "Cannot multiply non-numbers".to_string(),
@@ -5015,7 +5020,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                 if b == 0.0 {
                     Err(DbError::ExecutionError("Division by zero".to_string()))
                 } else {
-                    Ok(Value::Number(serde_json::Number::from_f64(a / b).unwrap()))
+                    Ok(Value::Number(number_from_f64(a / b)))
                 }
             } else {
                 Err(DbError::ExecutionError(
@@ -5032,7 +5037,7 @@ fn evaluate_unary_op(op: &UnaryOperator, operand: &Value) -> DbResult<Value> {
         UnaryOperator::Not => Ok(Value::Bool(!to_bool(operand))),
         UnaryOperator::Negate => {
             if let Some(n) = operand.as_f64() {
-                Ok(Value::Number(serde_json::Number::from_f64(-n).unwrap()))
+                Ok(Value::Number(number_from_f64(-n)))
             } else {
                 Err(DbError::ExecutionError(
                     "Cannot negate non-number".to_string(),

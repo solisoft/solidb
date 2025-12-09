@@ -45,19 +45,19 @@
                 <div class="flex items-start">
                    <span class="text-pink-400 mr-2 select-none">1.</span>
                    <div class="text-gray-300 bg-gray-900 px-3 py-2 rounded flex-1">
-                     ./solidb --port 8081 --data-dir ./data1 --peers 127.0.0.1:9081
+                     ./solidb --port 8081 --data-dir ./data1 --peer 127.0.0.1:9081
                    </div>
                 </div>
                 <div class="flex items-start">
                    <span class="text-pink-400 mr-2 select-none">2.</span>
                    <div class="text-gray-300 bg-gray-900 px-3 py-2 rounded flex-1">
-                     ./solidb --port 8082 --data-dir ./data2 --peers 127.0.0.1:9081
+                     ./solidb --port 8082 --data-dir ./data2 --peer 127.0.0.1:9081
                    </div>
                 </div>
                  <div class="flex items-start">
                    <span class="text-pink-400 mr-2 select-none">3.</span>
                    <div class="text-gray-300 bg-gray-900 px-3 py-2 rounded flex-1">
-                     ./solidb --port 8083 --data-dir ./data3 --peers 127.0.0.1:9081
+                     ./solidb --port 8083 --data-dir ./data3 --peer 127.0.0.1:9081
                    </div>
                 </div>
               </div>

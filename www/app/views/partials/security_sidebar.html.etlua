@@ -1,0 +1,53 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 space-y-8">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">On this page</h3>
+      
+      <nav class="space-y-1">
+        <!-- Auth -->
+        <a href="#auth" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Authentication & Authorization
+        </a>
+
+        <!-- Production -->
+        <a href="#production" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Production Config
+        </a>
+
+        <!-- Cluster Security -->
+        <a href="#cluster" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Cluster Security
+        </a>
+
+        <!-- Protections -->
+        <a href="#protections" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Built-in Protections
+        </a>
+
+        <!-- Recommendations -->
+        <a href="#recommendations" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Recommendations
+        </a>
+      </nav>
+    </div>
+
+    <!-- Quick Tip Card -->
+    <div class="bg-gradient-to-br from-rose-900/40 to-pink-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <div class="flex items-center mb-3 relative z-10">
+        <i class="fas fa-shield-alt text-rose-400 mr-2"></i>
+        <h4 class="text-white font-semibold">Security Tip</h4>
+      </div>
+      <p class="text-sm text-gray-300 mb-0 relative z-10 leading-relaxed">
+        Always set <code>JWT_SECRET</code> in production to ensure tokens persist across server restarts.
+      </p>
+    </div>
+  </div>
+</div>

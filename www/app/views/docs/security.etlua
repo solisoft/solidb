@@ -1,0 +1,223 @@
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-rose-400 hover:text-rose-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("security_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-rose-500 to-pink-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-pink-400 to-purple-400 mb-4 tracking-tight">Security</h1>
+          <p class="text-xl text-gray-300 leading-relaxed max-w-3xl">
+            SoliDB includes robust built-in security features to protect your data and infrastructure from common attack vectors.
+          </p>
+        </div>
+      </div>
+
+      <!-- Authentication & Authorization -->
+      <section id="auth" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3 border border-indigo-500/30">
+            <i class="fas fa-user-lock text-indigo-400 text-sm"></i>
+          </span>
+          Authentication & Authorization
+        </h2>
+
+        <div class="bg-gray-800/40 border border-white/5 rounded-2xl overflow-hidden mb-6">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-white/10 bg-white/5">
+                  <th class="p-4 text-sm font-semibold text-gray-200">Feature</th>
+                  <th class="p-4 text-sm font-semibold text-gray-200">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5">
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">JWT Authentication</td>
+                  <td class="p-4 text-gray-400">All API endpoints require Bearer token authentication signed with HMAC-SHA256.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">Random Admin Password</td>
+                  <td class="p-4 text-gray-400">Default admin password is randomly generated on first startup and displayed in logs.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">Secure Password Hashing</td>
+                  <td class="p-4 text-gray-400">Passwords are hashed using Argon2id, a memory-hard algorithm resistant to GPU cracking.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">API Keys</td>
+                  <td class="p-4 text-gray-400">Long-lived keys for programmatic access, alternative to ephemeral JWT tokens.</td>
+                </tr>
+                <tr class="hover:bg-white/5 transition-colors">
+                  <td class="p-4 text-gray-300 font-medium">Rate Limiting</td>
+                  <td class="p-4 text-gray-400">Login attempts are limited to <strong>5 per 60 seconds</strong> per IP address to prevent brute force attacks.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Production Configuration -->
+      <section id="production" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center mr-3 border border-blue-500/30">
+            <i class="fas fa-server text-blue-400 text-sm"></i>
+          </span>
+          Production Configuration
+        </h2>
+
+        <p class="text-gray-300 mb-6 text-lg">
+          For production deployments, configure these environment variables to verify security and persistence:
+        </p>
+
+        <div class="bg-gray-900 rounded-xl border border-white/10 overflow-hidden mb-6 group">
+          <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
+             <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-red-500/50"></span>
+              <span class="w-3 h-3 rounded-full bg-yellow-500/50"></span>
+              <span class="w-3 h-3 rounded-full bg-green-500/50"></span>
+              <span class="ml-2 text-xs text-gray-400 font-mono">setup.sh</span>
+            </div>
+          </div>
+          <div class="p-6 overflow-x-auto">
+<pre><code class="language-bash text-sm text-gray-300 font-mono"># REQUIRED: Set a secure JWT secret (32+ characters)
+# If not set, a random secret is generated on startup (invalidating tokens on restart)
+export JWT_SECRET="your-secure-random-secret-here"
+
+# OPTIONAL: Set admin password (otherwise randomly generated)
+# Useful for automated deployments where you can't read logs
+export SOLIDB_ADMIN_PASSWORD="your-secure-password"</code></pre>
+          </div>
+        </div>
+
+        <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start space-x-4">
+          <div class="flex-shrink-0 mt-1">
+            <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+          </div>
+          <div>
+            <h4 class="text-white font-semibold mb-1">Important Warning</h4>
+            <p class="text-gray-300 text-sm">
+              If you do not set <code>JWT_SECRET</code>, all user sessions and API tokens will be <strong>invalidated</strong> every time the server restarts.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cluster Security -->
+      <section id="cluster" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-3 border border-emerald-500/30">
+            <i class="fas fa-network-wired text-emerald-400 text-sm"></i>
+          </span>
+          Cluster Security
+        </h2>
+
+        <p class="text-gray-300 mb-6 text-lg">
+          For multi-node clusters, SoliDB uses a sheared secret keyfile to authenticate nodes.
+        </p>
+
+        <div class="bg-gray-900 rounded-xl border border-white/10 overflow-hidden mb-6">
+          <div class="p-6 overflow-x-auto">
+<pre><code class="language-bash text-sm text-gray-300 font-mono"># 1. Generate a secure keyfile (do this once)
+openssl rand -base64 756 > solidb-keyfile
+chmod 600 solidb-keyfile
+
+# 2. Copy the keyfile to all nodes
+
+# 3. Start with keyfile authentication
+solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746</code></pre>
+          </div>
+        </div>
+
+        <p class="text-gray-400">
+          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster.
+        </p>
+      </section>
+
+      <!-- Built-in Protections -->
+      <section id="protections" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center mr-3 border border-rose-500/30">
+            <i class="fas fa-shield-virus text-rose-400 text-sm"></i>
+          </span>
+          Built-in Protections
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Request Body Limits</h3>
+            <p class="text-gray-400 text-sm">
+              Global limit of <strong>10MB</strong> for standard requests. Specialized endpoints (imports, blob uploads) allow up to <strong>500MB</strong>. Attempts to send larger payloads are rejected with HTTP 413.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Query Timeout</h3>
+            <p class="text-gray-400 text-sm">
+              AQL queries have a strict <strong>30-second timeout</strong>. Long-running queries (e.g., infinite loops) are automatically terminated to free up server resources.
+            </p>
+          </div>
+
+          <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Header Injection Prevention</h3>
+            <p class="text-gray-400 text-sm">
+              User-provided filenames in <code>Content-Disposition</code> headers are strictly sanitized to prevent HTTP header injection attacks.
+            </p>
+          </div>
+
+           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
+            <h3 class="text-lg font-bold text-white mb-2">Timing Attack Protection</h3>
+            <p class="text-gray-400 text-sm">
+              API key validation uses constant-time string comparison algorithms to prevent side-channel timing attacks that could reveal key contents.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recommendations -->
+      <section id="recommendations" class="scroll-mt-32">
+        <h2 class="text-3xl font-bold text-white mb-6 flex items-center">
+          <span class="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center mr-3 border border-yellow-500/30">
+            <i class="fas fa-check-circle text-yellow-400 text-sm"></i>
+          </span>
+          Recommendations
+        </h2>
+
+        <div class="bg-gray-800/40 border border-white/5 rounded-2xl p-8">
+          <ol class="space-y-4">
+            <li class="flex items-start">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">1</span>
+              <span class="ml-4 text-gray-300"><strong>Use HTTPS in production.</strong> Put SoliDB behind a reverse proxy like Nginx, Caddy, or Apache to handle SSL/TLS termination.</span>
+            </li>
+            <li class="flex items-start">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">2</span>
+              <span class="ml-4 text-gray-300"><strong>Firewall internal ports.</strong> Restrict access to the replication port (default 6746) to trusted cluster nodes only.</span>
+            </li>
+            <li class="flex items-start">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">3</span>
+              <span class="ml-4 text-gray-300"><strong>Change the admin password</strong> immediately after your first login via the dashboard or API.</span>
+            </li>
+            <li class="flex items-start">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">4</span>
+              <span class="ml-4 text-gray-300"><strong>Monitor logs</strong> for repeated login failures, which may indicate a brute force attempt (mitigated by rate limiting, but still worth monitoring).</span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
