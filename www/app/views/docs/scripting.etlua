@@ -56,6 +56,50 @@
         </div>
       </section>
 
+      <!-- Security Section -->
+      <section id="security" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              Security Sandbox
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Scripts run in a <strong>strictly sandboxed isolation environment</strong> to ensure server stability and security.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-5">
+                 <h3 class="text-green-400 font-bold mb-3 flex items-center"><i class="fas fa-check-circle mr-2"></i> Allowed Modules</h3>
+                 <ul class="space-y-2 text-sm text-gray-300 font-mono">
+                   <li>string</li>
+                   <li>table</li>
+                   <li>math</li>
+                   <li>utf8</li>
+                   <li>bit</li>
+                 </ul>
+               </div>
+
+               <div class="bg-red-900/10 border border-red-500/20 rounded-xl p-5">
+                 <h3 class="text-red-400 font-bold mb-3 flex items-center"><i class="fas fa-ban mr-2"></i> Disabled Modules</h3>
+                 <ul class="space-y-2 text-sm text-gray-300 font-mono">
+                   <li>os <span class="text-gray-500 text-xs">(Access system commands)</span></li>
+                   <li>io <span class="text-gray-500 text-xs">(File system access)</span></li>
+                   <li>debug <span class="text-gray-500 text-xs">(Reflection tools)</span></li>
+                   <li>package <span class="text-gray-500 text-xs">(Module loading)</span></li>
+                 </ul>
+               </div>
+            </div>
+            
+             <p class="mt-6 text-sm text-gray-400">
+               <i class="fas fa-info-circle text-blue-400 mr-1"></i> Attempts to access disabled modules or perform unauthorized system calls will result in a runtime error.
+             </p>
+          </div>
+        </div>
+      </section>
+
       <!-- Management API -->
       <section id="management" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -175,6 +219,30 @@
                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">db:query(query, params)</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
                   <div class="text-xs text-gray-500 mt-1">Execute an SDBQL query.</div>
+                </li>
+              </ul>
+            </div>
+
+
+
+            <!-- String Extensions -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">String Extensions</h3>
+              <p class="text-gray-400 text-sm mb-4">Extensions to the standard Lua string library.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.regex(subject, pattern)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Check if a string matches a regex pattern. Also available as <code>subject:regex(pattern)</code>.
+                    <br><span class="text-gray-600">Example:</span> <code>string.regex("hello", "^he")</code> -> <code>true</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.regex_replace(subject, pattern, replacement)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Replace all occurrences of a regex pattern. Also available as <code>subject:regex_replace(pattern, repl)</code>.
+                    <br><span class="text-gray-600">Example:</span> <code>string.regex_replace("a1b2", "\\d", "#")</code> -> <code>"a#b#"</code>
+                  </div>
                 </li>
               </ul>
             </div>

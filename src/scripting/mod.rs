@@ -74,6 +74,17 @@ impl ScriptEngine {
     pub async fn execute(&self, script: &Script, db_name: &str, context: &ScriptContext) -> Result<ScriptResult, DbError> {
         let lua = Lua::new();
 
+        // Secure environment: Remove unsafe standard libraries and functions
+        let globals = lua.globals();
+        globals.set("os", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure os: {}", e)))?;
+        globals.set("io", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure io: {}", e)))?;
+        globals.set("debug", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure debug: {}", e)))?;
+        globals.set("package", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure package: {}", e)))?;
+        globals.set("dofile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure dofile: {}", e)))?;
+        globals.set("load", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure load: {}", e)))?;
+        globals.set("loadfile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure loadfile: {}", e)))?;
+        globals.set("require", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure require: {}", e)))?;
+
         // Set up the Lua environment
         self.setup_lua_globals(&lua, db_name, context)?;
 
@@ -109,6 +120,26 @@ impl ScriptEngine {
         }).map_err(|e| DbError::InternalError(format!("Failed to create log function: {}", e)))?;
         solidb.set("log", log_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set log: {}", e)))?;
+
+        // Extend string library with regex
+        if let Ok(string_table) = globals.get::<mlua::Table>("string") {
+            let regex_fn = lua.create_function(|_, (s, pattern): (String, String)| {
+                let re = regex::Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                Ok(re.is_match(&s))
+            }).map_err(|e| DbError::InternalError(format!("Failed to create regex function: {}", e)))?;
+            
+            string_table.set("regex", regex_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.regex: {}", e)))?;
+            
+            // string.regex_replace(subject, pattern, replacement)
+            let regex_replace_fn = lua.create_function(|_, (s, pattern, replacement): (String, String, String)| {
+                let re = regex::Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                Ok(re.replace_all(&s, replacement.as_str()).to_string())
+            }).map_err(|e| DbError::InternalError(format!("Failed to create regex_replace function: {}", e)))?;
+            
+            string_table.set("regex_replace", regex_replace_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.regex_replace: {}", e)))?;
+        }
 
         // solidb.fetch(url, options)
         let fetch_fn = lua.create_async_function(|lua, (url, options): (String, Option<LuaValue>)| async move {

@@ -11,6 +11,12 @@
           Overview
         </a>
 
+        <!-- Security -->
+        <a href="#security" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Security Sandbox
+        </a>
+
         <!-- Management API -->
         <a href="#management" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
