@@ -263,9 +263,6 @@
                  <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">col:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
                 </li>
-                <li class="bg-black/20 p-2 rounded border border-white/5">
-                   <span class="text-purple-400">col:all()</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
-                </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
                    <span class="text-purple-400">col:count()</span> <span class="text-gray-500">-&gt; int</span>
                 </li>
@@ -349,9 +346,9 @@
 <span class="text-purple-400">else</span>
     <span class="text-gray-500">-- List users (supports simple pagination via query params)</span>
     <span class="text-purple-400">local</span> limit = <span class="text-blue-400">tonumber</span>(request.query.limit) <span class="text-purple-400">or</span> <span class="text-yellow-300">10</span>
-    <span class="text-purple-400">local</span> all_users = users:<span class="text-blue-400">all</span>()
     
-    <span class="text-gray-500">-- (Note: In production, consider using SDBQL for pagination)</span>
+    <span class="text-gray-500">-- Execute SDBQL query for better performance</span>
+    <span class="text-purple-400">local</span> all_users = db:<span class="text-blue-400">query</span>(<span class="text-green-400">"FOR u IN users RETURN u"</span>)
     
     <span class="text-purple-400">return</span> { 
         data = all_users,

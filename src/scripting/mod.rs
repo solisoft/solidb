@@ -305,29 +305,7 @@ impl ScriptEngine {
             })?;
             coll_handle.set("delete", delete_fn)?;
 
-            // col:all() - returns all documents
-            let storage_all = storage.clone();
-            let db_all = db_name.clone();
-            let coll_all = coll_name.clone();
-            let all_fn = lua.create_function(move |lua, _: LuaValue| {
-                let db = storage_all.get_database(&db_all)
-                    .map_err(|e| mlua::Error::external(e))?;
-                let collection = db.get_collection(&coll_all)
-                    .map_err(|e| mlua::Error::external(e))?;
 
-                let docs: Vec<JsonValue> = collection.scan(None)
-                    .into_iter()
-                    .map(|doc| doc.to_value())
-                    .collect();
-
-                let result = lua.create_table()?;
-                for (i, doc) in docs.iter().enumerate() {
-                    result.set(i + 1, json_to_lua(lua, doc)?)?;
-                }
-
-                Ok(LuaValue::Table(result))
-            })?;
-            coll_handle.set("all", all_fn)?;
 
             // col:count()
             let storage_count = storage.clone();

@@ -128,7 +128,7 @@ fn test_script_with_database_access() {
                     return { status = "created", item = doc }
                 else
                     -- Return all items
-                    local all = items:all()
+                    local all = db:query("FOR doc IN items RETURN doc")
                     return { items = all, count = items:count() }
                 end
             "#

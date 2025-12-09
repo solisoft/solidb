@@ -196,8 +196,8 @@
           Lua Scripting
         </h3>
         <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
-          Create custom API endpoints with embedded Lua scripts. High-performance
-          logic directly on the data.
+          Create custom API endpoints with embedded Lua scripts.
+          High-performance logic directly on the data.
         </p>
 
         <div
@@ -301,7 +301,7 @@
         <div
           class="flex items-center text-sm font-bold text-emerald-400 uppercase tracking-wider group-hover:text-emerald-300"
         >
-          Scale Ou
+          Scale Out
           <svg
             class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform"
             fill="none"

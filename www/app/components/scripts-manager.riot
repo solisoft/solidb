@@ -289,7 +289,7 @@
                         path: '',
                         collection: '',
                         methods: ['GET'],
-                        code: '-- Available globals: db, solidb, request\n\nlocal col = db:collection("my-collection")\nlocal all = col:all()\n\nreturn {\n  count = #all\n}'
+                        code: '-- Available globals: db, solidb, request\n\nlocal col = db:collection("my-collection")\nlocal count = col:count()\n\nreturn {\n  count = count\n}'
                     }
                 });
                 this.initEditor();
