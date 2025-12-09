@@ -16,7 +16,7 @@ use axum::{
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,11 +24,32 @@ const ADMIN_DB: &str = "_system";
 const ADMIN_COLL: &str = "_admins";
 pub const API_KEYS_COLL: &str = "_api_keys";
 const DEFAULT_USER: &str = "admin";
-const DEFAULT_PASS: &str = "admin";
 
-// Secret for JWT signing - in production this should come from env
+// Secret for JWT signing - MUST be set via JWT_SECRET env var in production
 static JWT_SECRET: Lazy<String> = Lazy::new(|| {
-    std::env::var("JWT_SECRET").unwrap_or_else(|_| "solisoft-secret-key-change-me".to_string())
+    match std::env::var("JWT_SECRET") {
+        Ok(secret) => {
+            if secret.len() < 32 {
+                tracing::warn!("⚠️  JWT_SECRET is less than 32 characters - consider using a longer secret");
+            }
+            secret
+        }
+        Err(_) => {
+            // Generate a random secret for development - tokens will be invalid after restart
+            let mut key_bytes = [0u8; 32];
+            OsRng.fill_bytes(&mut key_bytes);
+            let generated = hex::encode(key_bytes);
+            tracing::warn!("╔══════════════════════════════════════════════════════════════════╗");
+            tracing::warn!("║  ⚠️  JWT_SECRET environment variable is not set!                 ║");
+            tracing::warn!("║  A random secret has been generated for this session.            ║");
+            tracing::warn!("║  All tokens will be INVALID after server restart.                ║");
+            tracing::warn!("║                                                                  ║");
+            tracing::warn!("║  For production, set JWT_SECRET to a secure 32+ character value: ║");
+            tracing::warn!("║    export JWT_SECRET=\"your-secure-random-secret-here\"            ║");
+            tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
+            generated
+        }
+    }
 });
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -74,6 +95,9 @@ impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
     pub fn init(storage: &StorageEngine) -> Result<(), DbError> {
+        // Force JWT_SECRET initialization to show warning at startup if not configured
+        let _ = JWT_SECRET.len();
+        
         let db = storage.get_database(ADMIN_DB)?;
         
         // Ensure _admins collection exists
@@ -91,12 +115,22 @@ impl AuthService {
         // Check if any admin exists
         let collection = db.get_collection(ADMIN_COLL)?;
         if collection.count() == 0 {
-            tracing::warn!("No admin users found. Creating default admin user.");
+            // Check for override password (for testing/development)
+            // If SOLIDB_ADMIN_PASSWORD is set, use it; otherwise generate random
+            let (password, is_override) = match std::env::var("SOLIDB_ADMIN_PASSWORD") {
+                Ok(pwd) if !pwd.is_empty() => (pwd, true),
+                _ => {
+                    // Generate a secure random password for production
+                    let mut password_bytes = [0u8; 16];
+                    OsRng.fill_bytes(&mut password_bytes);
+                    (hex::encode(password_bytes), false)
+                }
+            };
             
             let salt = SaltString::generate(&mut OsRng);
             let argon2 = Argon2::default();
             let password_hash = argon2
-                .hash_password(DEFAULT_PASS.as_bytes(), &salt)
+                .hash_password(password.as_bytes(), &salt)
                 .map_err(|e| DbError::InternalError(format!("Hashing error: {}", e)))?
                 .to_string();
 
@@ -110,7 +144,19 @@ impl AuthService {
 
             collection.insert(doc_value)?;
             
-            tracing::warn!("Default admin created. Username: '{}', Password: '{}'", DEFAULT_USER, DEFAULT_PASS);
+            if is_override {
+                tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");
+            } else {
+                tracing::warn!("╔══════════════════════════════════════════════════════════════════╗");
+                tracing::warn!("║              INITIAL ADMIN ACCOUNT CREATED                       ║");
+                tracing::warn!("╠══════════════════════════════════════════════════════════════════╣");
+                tracing::warn!("║  Username: admin                                                 ║");
+                tracing::warn!("║  Password: {}                             ║", password);
+                tracing::warn!("║                                                                  ║");
+                tracing::warn!("║  ⚠️  SAVE THIS PASSWORD! It will not be shown again.             ║");
+                tracing::warn!("║  Change it after first login via the API.                        ║");
+                tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
+            }
         }
 
         Ok(())

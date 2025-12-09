@@ -178,18 +178,21 @@ solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6
 solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
 ```
 
-### Cluster Mode
+#### Secure Cluster Authentication
+
+For production clusters, use a shared keyfile to authenticate nodes using **HMAC-SHA256** challenge-response:
 
 ```bash
-# Node 1 (initial node)
-solidb --data-dir ./data1 --port 6745 --replication-port 6746
+# Generate a keyfile (do this once, share with all nodes)
+openssl rand -base64 756 > solidb-keyfile
+chmod 400 solidb-keyfile
 
-# Node 2 (joins the cluster)
-solidb --data-dir ./data2 --port 6755 --replication-port 6756 --peer 127.0.0.1:6746
-
-# Node 3 (joins via any existing node)
-solidb --data-dir ./data3 --port 6765 --replication-port 6766 --peer 127.0.0.1:6746
+# Start nodes with keyfile
+solidb --data-dir ./data1 --port 6745 --keyfile ./solidb-keyfile
+solidb --data-dir ./data2 --port 6755 --peer 127.0.0.1:6746 --keyfile ./solidb-keyfile
 ```
+
+Nodes without the correct keyfile will be rejected from the cluster.
 
 ### Web Dashboard
 
@@ -205,15 +208,15 @@ For full documentation on the dashboard, see [www/README.md](www/README.md).
 
 ### Basic Usage
 
-> **Note**: The server automatically creates a `_system` database on startup. A default admin user (`admin`/`admin`) is also created. All API endpoints under `/_api/` require authentication.
+> **Note**: The server automatically creates a `_system` database on startup. A default admin user (`admin`) is also created with a **randomly generated password** that is displayed in the logs on first startup. Save this password! All API endpoints under `/_api/` require authentication.
 
 #### 1. Login (Get JWT Token)
 
 ```bash
-# Get authentication token
+# Get authentication token (use the password from server startup logs)
 curl -X POST http://localhost:6745/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
+  -d '{"username": "admin", "password": "YOUR_PASSWORD_FROM_LOGS"}'
 # Response: {"token": "eyJ..."}
 
 # Store token for subsequent requests
@@ -516,7 +519,7 @@ RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
 ```bash
 curl -X POST http://localhost:6745/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
+  -d '{"username": "admin", "password": "YOUR_PASSWORD_FROM_LOGS"}'
 ```
 
 **Response:**
@@ -559,9 +562,9 @@ curl -X DELETE http://localhost:6745/_api/auth/api-keys/<key-id> \
 ```
 
 **Notes:**
-- The default admin user (`admin`/`admin`) is created automatically on first startup
+- The default admin user is created on first startup with a **randomly generated password** shown in the server logs
 - JWT tokens expire after 24 hours; API keys never expire (unless revoked)
-- If the `_admins` collection is deleted, a default admin is recreated on next login attempt
+- If the `_admins` collection is deleted, a new admin with a new random password is created on next startup
 
 ### Databases
 

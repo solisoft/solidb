@@ -504,15 +504,18 @@ impl ReplicationService {
         Ok(())
     }
 
-    /// Compute authentication response using SHA256(challenge + keyfile)
+    /// Compute authentication response using HMAC-SHA256(keyfile, challenge)
+    /// Uses cryptographically secure HMAC instead of simple hashing
     fn compute_auth_response(challenge: &str, keyfile: &str) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
         
-        let mut hasher = DefaultHasher::new();
-        challenge.hash(&mut hasher);
-        keyfile.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+        type HmacSha256 = Hmac<Sha256>;
+        
+        let mut mac = HmacSha256::new_from_slice(keyfile.as_bytes())
+            .expect("HMAC can accept any key length");
+        mac.update(challenge.as_bytes());
+        hex::encode(mac.finalize().into_bytes())
     }
 
     /// Send full database sync to a new node

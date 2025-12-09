@@ -12,6 +12,9 @@ use tower::util::ServiceExt;
 
 /// Helper to create a test app
 fn create_test_app() -> (axum::Router, TempDir) {
+    // Set admin password for tests
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "admin");
+    
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
     storage.initialize().expect("Failed to initialize storage");

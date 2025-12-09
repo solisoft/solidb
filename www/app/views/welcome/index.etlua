@@ -52,7 +52,7 @@
       </div>
 
       <!-- Server Form -->
-      <div id="server-form-container" class="space-y-5 transition-all duration-300">
+      <form id="login-form" class="space-y-5 transition-all duration-300">
         <div class="space-y-4">
           <div>
             <label for="server-host" class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
@@ -151,7 +151,7 @@
           <span id="status-message" class="text-gray-300 leading-snug"></span>
         </div>
 
-        <button id="connect-btn" type="button" class="group w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all transform active:scale-[0.98]">
+        <button id="connect-btn" type="submit" class="group w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all transform active:scale-[0.98]">
           <span class="flex items-center">
             Connect Server
             <svg class="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -159,7 +159,7 @@
             </svg>
           </span>
         </button>
-      </div>
+      </form>
 
       <!-- Database Selection (Initially Hidden or Disabled) -->
       <div id="database-section" class="mt-6 pt-6 border-t border-gray-700/50 transition-all duration-300 opacity-50 pointer-events-none">
@@ -225,7 +225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const serverHost = document.getElementById('server-host');
   const serverPort = document.getElementById('server-port');
   const connectBtn = document.getElementById('connect-btn');
-  const serverFormContainer = document.getElementById('server-form-container');
+  const loginForm = document.getElementById('login-form');
 
   const dbSelect = document.getElementById('database-select');
   const dbSection = document.getElementById('database-section');
@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setUIConnectedState(config) {
     // Hide form, show success overlay
-    serverFormContainer.classList.add('hidden');
+    loginForm.classList.add('hidden');
     successOverlay.classList.remove('hidden');
     connectedServerText.textContent = `${config.host}:${config.port}`;
 
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setUIDisconnectedState() {
     // Show form, hide success overlay
-    serverFormContainer.classList.remove('hidden');
+    loginForm.classList.remove('hidden');
     successOverlay.classList.add('hidden');
 
     // Disable database section
@@ -404,7 +404,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setUIDisconnectedState();
   });
 
-  connectBtn.addEventListener('click', () => loginAndConnect());
+  // Handle form submit (Enter key or button click)
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    loginAndConnect();
+  });
 
   async function loginAndConnect(overrideConfig = null) {
     let host, port, username, password;
