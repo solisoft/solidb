@@ -11,28 +11,10 @@
           Installation
         </a>
 
-        <!-- Configuration -->
-        <a href="#configuration" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Configuration
-        </a>
-
-        <!-- Running -->
-        <a href="#running" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+        <!-- Basic Usage -->
+        <a href="#basic-usage" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Running the Server
-        </a>
-
-        <!-- CLI Options -->
-        <a href="#cli-options" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          CLI Options
-        </a>
-
-        <!-- Cluster Mode -->
-        <a href="#cluster-mode" class="group flex items-center px-2 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
-          Cluster Mode
+          Basic Usage
         </a>
 
         <!-- Next Steps -->

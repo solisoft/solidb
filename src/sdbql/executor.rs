@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
+use uuid::Uuid;
 
 use super::ast::*;
 use crate::cluster::{Operation, ReplicationService};
@@ -2969,6 +2970,26 @@ impl<'a> QueryExecutor<'a> {
                     Ok(s) => Ok(Value::String(s)),
                     Err(_) => Ok(Value::Null),
                 }
+            }
+
+            // UUIDV4()
+            "UUIDV4" => {
+                 if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "UUIDV4 requires 0 arguments".to_string(),
+                    ));
+                }
+                Ok(Value::String(Uuid::new_v4().to_string()))
+            }
+
+            // UUIDV7()
+            "UUIDV7" => {
+                 if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "UUIDV7 requires 0 arguments".to_string(),
+                    ));
+                }
+                Ok(Value::String(Uuid::now_v7().to_string()))
             }
 
              // TO_BOOL(value)

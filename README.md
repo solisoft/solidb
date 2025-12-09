@@ -787,6 +787,78 @@ Each match includes:
 - `score`: Relevance score (higher is better)
 - `matched`: Array of matched terms
 
+## Server-Side Lua Scripting
+
+Extend SoliDB with custom API endpoints written in Lua. Execute logic directly on the database server for maximum performance.
+
+### Management API
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| POST | `/_api/database/:db/scripts` | Register a new script |
+| GET | `/_api/database/:db/scripts` | List registered scripts |
+| PUT | `/_api/database/:db/scripts/:id` | Update a script |
+| DELETE | `/_api/database/:db/scripts/:id` | Delete a script |
+
+### Example: Registering a Script
+
+```bash
+curl -X POST http://localhost:6745/_api/database/_system/scripts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Greeting API",
+    "path": "greet",
+    "methods": ["GET"],
+    "code": "local name = request.query.name or \"World\"; return { message = \"Hello, \" .. name .. \"!\" }"
+  }'
+```
+
+This creates an endpoint at `/api/custom/_system/greet`.
+
+### Lua API Reference
+
+Scripts have access to the `db` and `request` objects.
+
+#### `db` Object
+
+- `db:collection(name)`: Get a collection handle.
+- `db:query(query, params)`: Execute an SDBQL query.
+- `db.log(message)`: Log to server console.
+
+#### `collection` Handle
+
+- `col:get(key)`: Get document by key.
+- `col:insert(doc)`: Insert document.
+- `col:update(key, doc)`: Update document.
+- `col:delete(key)`: Delete document.
+- `col:all()`: Get all documents.
+- `col:count()`: Get document count.
+
+#### `request` Object
+
+- `request.method`: HTTP method (GET, POST, etc).
+- `request.path`: Request path.
+- `request.query`: Query parameters table.
+- `request.params`: Path parameters table.
+- `request.body`: Parsed JSON body table.
+- `request.headers`: Headers table.
+
+### Example: CRUD Script
+
+```lua
+local users = db:collection("users")
+
+if request.method == "POST" then
+    if not request.body.email then
+        return { error = "Email required" }
+    end
+    return users:insert(request.body)
+else
+    return users:all()
+end
+```
+
 ## Architecture
 
 ```

@@ -34,6 +34,11 @@
           <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
           Indexes
         </a>
+        <!-- Lua Scripts -->
+        <a href="#scripts" class="group flex items-center px-2 py-2 text-sm font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(168,85,247,0.5)]"></span>
+          Lua Scripts
+        </a>
 
         <!-- Blobs -->
         <a href="#blobs" class="group flex items-center px-2 py-2 text-sm font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-all duration-200">

@@ -2297,10 +2297,11 @@ RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]</code></pre>
                 >ATTRIBUTES(doc, removeInternal?, sort?)</code
               >
               <p class="text-sm text-gray-400 mb-3">
-                Returns top-level attribute keys.
+                 Top-level attribute keys of the document.
               </p>
-              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATTRIBUTES(doc, true, true)</code></pre>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATTRIBUTES(doc, true)</code></pre>
             </div>
+
             <div
               class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
             >
@@ -2324,6 +2325,40 @@ RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]</code></pre>
                 Removes specified attributes.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UNSET(doc, "password")</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Miscellaneous Functions -->
+        <div class="mb-12" id="func-misc">
+          <h3 class="text-xl font-bold text-gray-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-indigo-500 rounded-full mr-3"></span>
+            Miscellaneous
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >UUIDV4()</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Generates a random v4 UUID.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV4() // "c4d3..."</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >UUIDV7()</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Generates a time-ordered v7 UUID.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV7() // "018..."</code></pre>
             </div>
           </div>
         </div>
