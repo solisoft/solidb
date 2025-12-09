@@ -354,22 +354,46 @@
             </h2>
           </div>
           <div class="p-8 space-y-6">
+             <!-- Workflow 1: Daily Backups -->
              <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-indigo-500/50 transition-colors">
-               <h3 class="text-indigo-400 font-bold mb-3">Environment Migration</h3>
+               <h3 class="text-indigo-400 font-bold mb-3">Daily Backups</h3>
                 <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
-                  <div class="text-gray-500"># Export production</div>
-                  <div>solidb-dump -H prod.db -d app -o prod.jsonl</div>
+                  <div class="text-gray-500"># Automated daily backup script</div>
+                  <div>DATE=$(date +%Y%m%d)</div>
+                  <div>solidb-dump -d production -o "backups/prod-${DATE}.jsonl"</div>
+                  <div>gzip "backups/prod-${DATE}.jsonl"</div>
+                </div>
+             </div>
+
+             <!-- Workflow 2: Environment Migration -->
+             <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-purple-500/50 transition-colors">
+               <h3 class="text-purple-400 font-bold mb-3">Environment Migration</h3>
+                <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
+                  <div class="text-gray-500"># Export from production</div>
+                  <div>solidb-dump -H prod.example.com -d mydb -o prod-export.jsonl</div>
                   <div class="text-gray-500 mt-2"># Import to staging</div>
-                  <div>solidb-restore -i prod.jsonl -H staging.db --create-database --drop</div>
+                  <div>solidb-restore -i prod-export.jsonl -H staging.local --create-database --drop</div>
                 </div>
              </div>
              
+             <!-- Workflow 3: Clone Collection -->
+             <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-blue-500/50 transition-colors">
+               <h3 class="text-blue-400 font-bold mb-3">Clone Collection</h3>
+                <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
+                  <div class="text-gray-500"># Dump specific collection</div>
+                  <div>solidb-dump -d mydb -c users -o users.jsonl</div>
+                  <div class="text-gray-500 mt-2"># Restore as new collection</div>
+                  <div>solidb-restore -i users.jsonl --collection users_backup</div>
+                </div>
+             </div>
+
+             <!-- Workflow 4: Selective Restore -->
              <div class="bg-black/20 rounded-xl p-5 border border-white/5 hover:border-green-500/50 transition-colors">
                <h3 class="text-green-400 font-bold mb-3">Selective Restore</h3>
                <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10 space-y-1">
                  <div class="text-gray-500"># Filter with jq and restore</div>
-                 <div>cat backup.jsonl | jq -c 'select(.type=="user")' > users.jsonl</div>
-                 <div>solidb-restore -i users.jsonl</div>
+                 <div>cat backup.jsonl | jq -c 'select(.status == "active")' > active-only.jsonl</div>
+                 <div>solidb-restore -i active-only.jsonl --create-database</div>
                </div>
              </div>
           </div>
