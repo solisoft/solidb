@@ -539,13 +539,13 @@
         </div>
       </section>
 
-      <!-- AQL Queries Section -->
+      <!-- SDBQL Queries Section -->
       <section id="queries" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
               <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-               AQL Queries
+               SDBQL Queries
             </h2>
           </div>
           <div class="divide-y divide-white/5">
@@ -554,7 +554,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/database/:db/cursor</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Execute an AQL query.</p>
+              <p class="text-sm text-gray-400 mb-4">Execute an SDBQL query.</p>
 
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
@@ -572,7 +572,7 @@
                        <tr>
                          <td class="p-3 text-fuchsia-400 font-mono">query</td>
                          <td class="p-3 font-mono">string</td>
-                         <td class="p-3">The AQL query string.</td>
+                         <td class="p-3">The SDBQL query string.</td>
                          <td class="p-3 text-white">Yes</td>
                        </tr>
                        <tr>
@@ -636,7 +636,7 @@
                        <tr>
                          <td class="p-3 text-fuchsia-400 font-mono">query</td>
                          <td class="p-3 font-mono">string</td>
-                         <td class="p-3">The AQL query to explain.</td>
+                         <td class="p-3">The SDBQL query to explain.</td>
                          <td class="p-3 text-white">Yes</td>
                        </tr>
                         <tr>

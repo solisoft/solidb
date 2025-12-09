@@ -1,6 +1,6 @@
-# SoliDB: AQL-Compatible JSON Document Database
+# SoliDB: Multi-Documents Database with live query and blob supports
 
-A lightweight, high-performance database server written in Rust that implements a subset of ArangoDB's AQL (ArangoDB Query Language) for JSON document storage.
+A lightweight, high-performance database server written in Rust.
 
 https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 
@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 🚀 **Fast & Efficient**: Built with Rust for maximum performance
 - 📄 **JSON Document Storage**: Store and query JSON documents with ease
 - 🗃️ **Blob Storage**: Native support for storing and retrieving binary files
-- 🔍 **AQL Query Language**: Familiar query syntax inspired by ArangoDB
+- 🔍 **SDBQL Query Language**: Familiar query syntax inspired by ArangoDB
 - 🌐 **HTTP REST API**: Simple and intuitive API endpoints
 - 💾 **RocksDB Storage**: Production-grade persistence with automatic crash recovery
 - 🔒 **Thread-Safe**: Concurrent request handling with Tokio
@@ -75,6 +75,7 @@ sudo apt-get install -y \
 ```
 
 **Required packages:**
+
 - `build-essential` - GCC compiler and build tools
 - `clang` & `libclang-dev` - Clang compiler (required by RocksDB)
 - `pkg-config` - Package configuration tool (required by openssl-sys)
@@ -82,6 +83,7 @@ sudo apt-get install -y \
 - `libzstd-dev` - Zstandard compression library (required by RocksDB)
 
 **Note**: Without these packages, compilation will fail with errors like:
+
 - `failed to run custom build command for zstd-sys` (missing libzstd-dev)
 - `failed to run custom build command for openssl-sys` (missing pkg-config or libssl-dev)
 
@@ -96,6 +98,7 @@ sudo pacman -S base-devel clang gcc pkg-config openssl zstd
 ```
 
 **Required packages:**
+
 - `base-devel` - Development tools (includes make, etc.)
 - `clang` - Clang compiler (required by RocksDB)
 - `gcc` - GCC C++ compiler and standard library (required for C++ compilation)
@@ -153,7 +156,6 @@ kill -9 $(cat ./solidb.pid)
 ```
 
 **Note**: The daemon mode uses PID file locking to prevent multiple instances from running simultaneously.
-
 
 ### Single Node Mode
 
@@ -251,7 +253,7 @@ curl -X POST http://localhost:6745/_api/database/_system/document/users \
   -d '{"name": "Charlie", "age": 35, "active": false}'
 ```
 
-#### 4. Query with AQL
+#### 4. Query with SDBQL
 
 ```bash
 # Get all users
@@ -277,7 +279,7 @@ curl -X POST http://localhost:6745/_api/database/_system/cursor \
 
 #### 4. Query with Bind Variables (Secure)
 
-**⚠️ Always use bind variables for user input to prevent AQL injection!**
+**⚠️ Always use bind variables for user input to prevent SDBQL injection!**
 
 ```bash
 # Safe parameterized query
@@ -303,7 +305,7 @@ curl -X POST http://localhost:6745/_api/database/_system/cursor \
   }'
 ```
 
-## AQL Query Syntax
+## SDBQL Query Syntax
 
 ### Supported Clauses
 
@@ -402,7 +404,7 @@ SoliDB supports native graph traversals and shortest path algorithms.
 
 **Keywords**: `OUTBOUND`, `INBOUND`, `ANY`, `SHORTEST_PATH`, `GRAPH` (reserved)
 
-```aql
+```lua
 -- Basic Traversal
 -- FOR vertex[, edge] IN [min..max] DIRECTION startVertex edgeCollection
 
@@ -438,7 +440,7 @@ FOR v IN SHORTEST_PATH "users/alice" TO "users/charlie" OUTBOUND follows
 
 ### Aggregation Functions
 
-```aql
+```lua
 -- Basic aggregations (operate on arrays)
 SUM(array)          -- Sum of numeric values
 AVG(array)          -- Average of numeric values
@@ -469,7 +471,7 @@ FOR u IN users
 
 ### Array Functions
 
-```aql
+```lua
 -- Access functions
 FIRST(array)          -- First element
 LAST(array)           -- Last element
@@ -506,13 +508,13 @@ RETURN UNION(tags1, tags2)  -- ["rust", "database", "nosql"]
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/login` | Login and get JWT token |
-| PUT | `/_api/auth/password` | Change password (requires auth) |
-| POST | `/_api/auth/api-keys` | Create API key (for server-to-server) |
-| GET | `/_api/auth/api-keys` | List API keys |
-| DELETE | `/_api/auth/api-keys/:id` | Revoke an API key |
+| Method | Endpoint                  | Description                           |
+| ------ | ------------------------- | ------------------------------------- |
+| POST   | `/auth/login`             | Login and get JWT token               |
+| PUT    | `/_api/auth/password`     | Change password (requires auth)       |
+| POST   | `/_api/auth/api-keys`     | Create API key (for server-to-server) |
+| GET    | `/_api/auth/api-keys`     | List API keys                         |
+| DELETE | `/_api/auth/api-keys/:id` | Revoke an API key                     |
 
 #### Login
 
@@ -523,8 +525,9 @@ curl -X POST http://localhost:6745/auth/login \
 ```
 
 **Response:**
+
 ```json
-{"token": "eyJhbGciOiJIUzI1NiJ9..."}
+{ "token": "eyJhbGciOiJIUzI1NiJ9..." }
 ```
 
 #### Change Password
@@ -562,46 +565,47 @@ curl -X DELETE http://localhost:6745/_api/auth/api-keys/<key-id> \
 ```
 
 **Notes:**
+
 - The default admin user is created on first startup with a **randomly generated password** shown in the server logs
 - JWT tokens expire after 24 hours; API keys never expire (unless revoked)
 - If the `_admins` collection is deleted, a new admin with a new random password is created on next startup
 
 ### Databases
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database` | Create a database |
-| GET | `/_api/databases` | List all databases |
-| DELETE | `/_api/database/:name` | Delete a database |
+| Method | Endpoint               | Description        |
+| ------ | ---------------------- | ------------------ |
+| POST   | `/_api/database`       | Create a database  |
+| GET    | `/_api/databases`      | List all databases |
+| DELETE | `/_api/database/:name` | Delete a database  |
 
 **Note**: The `_system` database is created automatically and cannot be deleted.
 
 ### Collections
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database/:db/collection` | Create a collection |
-| GET | `/_api/database/:db/collection` | List all collections |
-| DELETE | `/_api/database/:db/collection/:name` | Delete a collection |
-| PUT | `/_api/database/:db/collection/:name/truncate` | Truncate a collection |
+| Method | Endpoint                                       | Description           |
+| ------ | ---------------------------------------------- | --------------------- |
+| POST   | `/_api/database/:db/collection`                | Create a collection   |
+| GET    | `/_api/database/:db/collection`                | List all collections  |
+| DELETE | `/_api/database/:db/collection/:name`          | Delete a collection   |
+| PUT    | `/_api/database/:db/collection/:name/truncate` | Truncate a collection |
 
 ### Documents
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database/:db/document/:collection` | Insert a document |
-| GET | `/_api/database/:db/document/:collection/:key` | Get a document |
-| PUT | `/_api/database/:db/document/:collection/:key` | Update a document |
+| Method | Endpoint                                       | Description       |
+| ------ | ---------------------------------------------- | ----------------- |
+| POST   | `/_api/database/:db/document/:collection`      | Insert a document |
+| GET    | `/_api/database/:db/document/:collection/:key` | Get a document    |
+| PUT    | `/_api/database/:db/document/:collection/:key` | Update a document |
 | DELETE | `/_api/database/:db/document/:collection/:key` | Delete a document |
 
 ### Queries
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database/:db/cursor` | Execute an AQL query |
-| POST | `/_api/database/:db/explain` | Explain/profile an AQL query |
-| PUT | `/_api/cursor/:id` | Get next batch from cursor |
-| DELETE | `/_api/cursor/:id` | Delete cursor |
+| Method | Endpoint                     | Description                    |
+| ------ | ---------------------------- | ------------------------------ |
+| POST   | `/_api/database/:db/cursor`  | Execute an SDBQL query         |
+| POST   | `/_api/database/:db/explain` | Explain/profile an SDBQL query |
+| PUT    | `/_api/cursor/:id`           | Get next batch from cursor     |
+| DELETE | `/_api/cursor/:id`           | Delete cursor                  |
 
 #### Explain Query
 
@@ -617,11 +621,11 @@ Returns timing (in microseconds) for each step, index usage analysis, and optimi
 
 ### Indexes
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database/:db/index/:collection` | Create an index |
-| GET | `/_api/database/:db/index/:collection` | List indexes on collection |
-| DELETE | `/_api/database/:db/index/:collection/:name` | Delete an index |
+| Method | Endpoint                                     | Description                |
+| ------ | -------------------------------------------- | -------------------------- |
+| POST   | `/_api/database/:db/index/:collection`       | Create an index            |
+| GET    | `/_api/database/:db/index/:collection`       | List indexes on collection |
+| DELETE | `/_api/database/:db/index/:collection/:name` | Delete an index            |
 
 #### Create Index Request
 
@@ -635,6 +639,7 @@ Returns timing (in microseconds) for each step, index usage analysis, and optimi
 ```
 
 **Index Types:**
+
 - `hash` - Fast equality lookups (`field == value`)
 - `persistent` - Range queries and sorting (`field > value`, `SORT field`)
 - `geo` - Geographic/spatial queries (near, within radius)
@@ -656,13 +661,13 @@ curl -X POST http://localhost:6745/_api/database/_system/cursor \
 
 ### Geo Indexes
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/_api/database/:db/geo/:collection` | Create a geo index |
-| GET | `/_api/database/:db/geo/:collection` | List geo indexes |
-| DELETE | `/_api/database/:db/geo/:collection/:name` | Delete a geo index |
-| POST | `/_api/database/:db/geo/:collection/:field/near` | Find documents near a point |
-| POST | `/_api/database/:db/geo/:collection/:field/within` | Find documents within radius |
+| Method | Endpoint                                           | Description                  |
+| ------ | -------------------------------------------------- | ---------------------------- |
+| POST   | `/_api/database/:db/geo/:collection`               | Create a geo index           |
+| GET    | `/_api/database/:db/geo/:collection`               | List geo indexes             |
+| DELETE | `/_api/database/:db/geo/:collection/:name`         | Delete a geo index           |
+| POST   | `/_api/database/:db/geo/:collection/:field/near`   | Find documents near a point  |
+| POST   | `/_api/database/:db/geo/:collection/:field/within` | Find documents within radius |
 
 #### Create Geo Index Request
 
@@ -674,6 +679,7 @@ curl -X POST http://localhost:6745/_api/database/_system/cursor \
 ```
 
 The field should contain coordinates in one of these formats:
+
 - Object: `{"lat": 48.8584, "lon": 2.2945}`
 - Array (GeoJSON): `[2.2945, 48.8584]` (longitude, latitude)
 
@@ -695,9 +701,9 @@ curl -X POST http://localhost:6745/_api/database/_system/geo/places/location/wit
   -d '{"lat": 48.8584, "lon": 2.2945, "radius": 2000}'
 ```
 
-#### AQL Geo Functions
+#### SDBQL Geo Functions
 
-```aql
+```lua
 -- Calculate distance between two points (in meters)
 DISTANCE(lat1, lon1, lat2, lon2)
 
@@ -724,9 +730,9 @@ curl -X POST http://localhost:6745/_api/database/_system/index/articles \
   -d '{"name": "ft_title", "field": "title", "type": "fulltext"}'
 ```
 
-#### AQL Fulltext Functions
+#### SDBQL Fulltext Functions
 
-```aql
+```lua
 -- Search for documents matching a query with fuzzy matching
 -- FULLTEXT(collection, field, query, maxDistance?)
 LET matches = FULLTEXT("articles", "title", "rust programming")
@@ -758,9 +764,9 @@ FOR doc IN articles
   RETURN doc
 ```
 
-#### AQL Date Functions
+#### SDBQL Date Functions
 
-```aql
+```lua
 -- Get current timestamp in milliseconds
 DATE_NOW()
 
@@ -776,6 +782,7 @@ FOR doc IN events
 
 **Fulltext Search Response:**
 Each match includes:
+
 - `doc`: The full document
 - `score`: Relevance score (higher is better)
 - `matched`: Array of matched terms
@@ -790,7 +797,7 @@ Each match includes:
                   │
 ┌─────────────────▼───────────────────────┐
 │         Query Executor                  │
-│    (AQL Parser + Evaluator)             │
+│    (SDBQL Parser + Evaluator)             │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
@@ -804,7 +811,7 @@ Each match includes:
 - **Storage Engine**: Multi-database architecture with RocksDB backend
 - **Database Layer**: Isolated databases, each containing collections
 - **Collections**: Column families in RocksDB with naming format `{database}:{collection}`
-- **AQL Parser**: Lexer and parser for AQL query language
+- **SDBQL Parser**: Lexer and parser for SDBQL query language
 - **Query Executor**: Executes parsed queries with smart collection lookup
 - **HTTP Server**: REST API built with Axum and Tokio
 - **Indexes**: Hash, Persistent, Geo, and Fulltext indexes stored in RocksDB
@@ -841,7 +848,7 @@ Data is stored using **RocksDB**, a high-performance embedded key-value store de
 
 ## Web UI Dashboard
 
-SoliDB includes a web-based management interface for browsing databases, collections, documents, and running AQL queries.
+SoliDB includes a web-based management interface for browsing databases, collections, documents, and running SDBQL queries.
 
 ### Running the Dashboard
 
@@ -860,9 +867,9 @@ The dashboard will be available at `http://localhost:8080`.
 - 📊 **Database Browser**: View and manage all databases
 - 📁 **Collection Management**: Create, delete, and truncate collections
 - 📄 **Document Viewer**: Browse, search, and edit documents
-- 🔍 **AQL Query Editor**: Write and execute AQL queries with syntax highlighting
+- 🔍 **SDBQL Query Editor**: Write and execute SDBQL queries with syntax highlighting
 - 📈 **Cluster Status**: Monitor cluster health and replication lag (in cluster mode)
-- 📚 **Documentation**: Built-in API and AQL reference
+- 📚 **Documentation**: Built-in API and SDBQL reference
 
 ## Benchmarking
 
@@ -892,6 +899,7 @@ oha -n 10000 -c 8 -m POST \
 ```
 
 **Example Results:**
+
 ```
 Success rate:  100.00%
 Total:         168.65 ms
@@ -998,6 +1006,7 @@ curl http://localhost:6745/_api/cluster/status
 ```
 
 **Response:**
+
 ```json
 {
   "node_id": "node1",
@@ -1036,6 +1045,7 @@ curl http://localhost:6745/_api/cluster/status
 ### Replicated Operations
 
 All data mutations are replicated:
+
 - ✅ Insert document
 - ✅ Update document
 - ✅ Delete document
@@ -1058,13 +1068,13 @@ SoliDB includes multiple security features to protect against common attack vect
 
 ### Authentication & Authorization
 
-| Feature | Description |
-|---------|-------------|
-| **JWT Authentication** | All API endpoints require Bearer token authentication |
-| **Random Admin Password** | Default admin password is randomly generated on first startup (shown in logs) |
-| **Secure Password Hashing** | Passwords are hashed with Argon2id (memory-hard algorithm) |
-| **API Keys** | Alternative to JWT tokens for programmatic access |
-| **Rate Limiting** | Login attempts limited to **5 per 60 seconds** per IP to prevent brute force |
+| Feature                     | Description                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| **JWT Authentication**      | All API endpoints require Bearer token authentication                         |
+| **Random Admin Password**   | Default admin password is randomly generated on first startup (shown in logs) |
+| **Secure Password Hashing** | Passwords are hashed with Argon2id (memory-hard algorithm)                    |
+| **API Keys**                | Alternative to JWT tokens for programmatic access                             |
+| **Rate Limiting**           | Login attempts limited to **5 per 60 seconds** per IP to prevent brute force  |
 
 ### Production Configuration
 
@@ -1095,12 +1105,12 @@ Cluster nodes use **HMAC-SHA256** for mutual authentication.
 
 ### Built-in Protections
 
-| Protection | Description |
-|------------|-------------|
-| **Request Body Limits** | 10MB default (500MB for imports/blobs) to prevent memory exhaustion |
-| **Query Timeout** | 30-second timeout for AQL queries to prevent resource exhaustion |
-| **Header Injection Prevention** | Content-Disposition filenames are sanitized |
-| **Constant-Time Comparison** | API key validation uses timing-safe comparison |
+| Protection                      | Description                                                         |
+| ------------------------------- | ------------------------------------------------------------------- |
+| **Request Body Limits**         | 10MB default (500MB for imports/blobs) to prevent memory exhaustion |
+| **Query Timeout**               | 30-second timeout for SDBQL queries to prevent resource exhaustion  |
+| **Header Injection Prevention** | Content-Disposition filenames are sanitized                         |
+| **Constant-Time Comparison**    | API key validation uses timing-safe comparison                      |
 
 ### Security Recommendations
 
@@ -1114,7 +1124,6 @@ Cluster nodes use **HMAC-SHA256** for mutual authentication.
 
 This is an initial implementation focusing on core functionality. Current limitations:
 
-
 - No complex aggregations (GROUP BY, etc.)
 
 ## Future Enhancements
@@ -1125,7 +1134,7 @@ This is an initial implementation focusing on core functionality. Current limita
 - [x] ~~LET clauses & Subqueries~~ ✅ Implemented! (LET x = (FOR ... RETURN ...))
 - [x] ~~Built-in functions~~ ✅ Implemented! (LENGTH, ROUND, ABS, UPPER, LOWER, CONCAT, SUBSTRING, etc.)
 - [x] ~~RocksDB storage backend~~ ✅ Implemented! (crash recovery, compression, LSM tree)
-- [x] ~~Bind Variables~~ ✅ Implemented! (@variable for AQL injection prevention)
+- [x] ~~Bind Variables~~ ✅ Implemented! (@variable for SDBQL injection prevention)
 - [x] ~~Aggregation functions~~ ✅ (COUNT, SUM, AVG, etc.)
 - [x] ~~Multi-Database Architecture~~ ✅ Implemented! (isolated databases with collections)
 - [x] ~~Replication and clustering~~ ✅ Implemented! (peer-to-peer, LWW conflict resolution, HLC)
@@ -1149,16 +1158,18 @@ Connect to the WebSocket endpoint:
 `ws://localhost:6745/_api/ws/changefeed?token=<your-jwt-token>`
 
 Send a subscription message:
+
 ```json
 {
   "type": "subscribe",
   "collection": "users",
   "database": "_system", // Optional, defaults to finding collection globally
-  "key": "user_123"      // Optional, filter by specific document key
+  "key": "user_123" // Optional, filter by specific document key
 }
 ```
 
 Receive events:
+
 ```json
 {
   "type": "insert", // or "update", "delete"

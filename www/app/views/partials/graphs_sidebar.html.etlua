@@ -32,7 +32,7 @@
         <!-- Graph Queries -->
         <a href="#graph-queries" class="group flex items-center px-2 py-2 text-sm font-medium text-fuchsia-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-fuchsia-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(217,70,239,0.5)]"></span>
-          AQL Graph Queries
+          SDBQL Graph Queries
         </a>
 
         <!-- Patterns -->

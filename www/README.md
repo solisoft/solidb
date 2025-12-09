@@ -9,7 +9,7 @@ This dashboard provides a graphical user interface to manage your SoliDB instanc
 - **Monitor Cluster Status**: View the health and status of your SoliDB nodes.
 - **Manage Databases & Collections**: Create, delete, and configure databases and collections.
 - **Data Explorer**: View, edit, and delete documents.
-- **AQL Query Editor**: Run AQL queries with syntax highlighting and view results.
+- **SDBQL Query Editor**: Run SDBQL queries with syntax highlighting and view results.
 - **Visualizations**: View charts and statistics about your data.
 
 ## Technology Stack
@@ -34,15 +34,18 @@ npm install -g luaonbeans-cli
 ## Setup & Development
 
 1.  **Install Dependencies**:
+
     ```bash
     cd www
     npm install
     ```
 
 2.  **Run Development Server**:
+
     ```bash
     beans dev
     ```
+
     This will start the dashboard on `http://localhost:3000` (default port, check console output).
     It expects a generic SoliDB instance running on `http://localhost:6745`.
 

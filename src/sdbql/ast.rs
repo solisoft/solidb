@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-/// AST node for a complete AQL query
+/// AST node for a complete SDBQL query
 #[derive(Debug, Clone, PartialEq)]
 pub struct Query {
     /// LET clauses for variable bindings (executed first, before any FOR)

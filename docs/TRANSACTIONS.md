@@ -83,19 +83,22 @@ Start a new transaction.
 **Endpoint:** `POST /_api/database/{database}/transaction/begin`
 
 **Request Body:**
+
 ```json
 {
-  "isolationLevel": "read_committed"  // optional, default: "read_committed"
+  "isolationLevel": "read_committed" // optional, default: "read_committed"
 }
 ```
 
 **Isolation Levels:**
+
 - `read_uncommitted` - Lowest isolation (not recommended)
 - `read_committed` - Default, prevents dirty reads
 - `repeatable_read` - Prevents non-repeatable reads
 - `serializable` - Highest isolation, full serializability
 
 **Response:**
+
 ```json
 {
   "id": "tx:1234567890",
@@ -105,6 +108,7 @@ Start a new transaction.
 ```
 
 **Status Codes:**
+
 - `200 OK` - Transaction created successfully
 - `400 Bad Request` - Invalid isolation level
 - `500 Internal Server Error` - Server error
@@ -118,6 +122,7 @@ Commit all operations in a transaction atomically.
 **Endpoint:** `POST /_api/database/{database}/transaction/{transactionId}/commit`
 
 **Response:**
+
 ```json
 {
   "id": "tx:1234567890",
@@ -126,6 +131,7 @@ Commit all operations in a transaction atomically.
 ```
 
 **Status Codes:**
+
 - `200 OK` - Transaction committed successfully
 - `404 Not Found` - Transaction not found or expired
 - `409 Conflict` - Validation failed (e.g., constraint violation)
@@ -142,6 +148,7 @@ Abort a transaction and discard all operations.
 **Endpoint:** `POST /_api/database/{database}/transaction/{transactionId}/rollback`
 
 **Response:**
+
 ```json
 {
   "id": "tx:1234567890",
@@ -150,6 +157,7 @@ Abort a transaction and discard all operations.
 ```
 
 **Status Codes:**
+
 - `200 OK` - Transaction rolled back successfully
 - `404 Not Found` - Transaction not found or expired
 - `500 Internal Server Error` - Server error
@@ -163,6 +171,7 @@ Abort a transaction and discard all operations.
 **Endpoint:** `POST /_api/database/{database}/transaction/{transactionId}/document/{collection}`
 
 **Request Body:**
+
 ```json
 {
   "name": "Alice",
@@ -179,6 +188,7 @@ Abort a transaction and discard all operations.
 **Endpoint:** `PUT /_api/database/{database}/transaction/{transactionId}/document/{collection}/{key}`
 
 **Request Body:**
+
 ```json
 {
   "email": "newemail@example.com"
@@ -197,13 +207,14 @@ Abort a transaction and discard all operations.
 
 ---
 
-### Transactional AQL Queries
+### Transactional SDBQL Queries
 
-Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction.
+Execute SDBQL INSERT, UPDATE, and REMOVE statements within a transaction.
 
 **Endpoint:** `POST /_api/database/{database}/transaction/{transactionId}/query`
 
 **Request Body:**
+
 ```json
 {
   "query": "INSERT {name: 'Alice', email: 'alice@example.com'} INTO users",
@@ -212,6 +223,7 @@ Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction.
 ```
 
 **Supported Operations:**
+
 - `INSERT {document} INTO collection`
 - `UPDATE key WITH {changes} IN collection`
 - `REMOVE key IN collection`
@@ -220,6 +232,7 @@ Execute AQL INSERT, UPDATE, and REMOVE statements within a transaction.
 **Examples:**
 
 Simple INSERT:
+
 ```bash
 curl -X POST "http://localhost:6745/_api/database/_system/transaction/$TX_ID/query" \
   -H "Content-Type: application/json" \
@@ -227,18 +240,20 @@ curl -X POST "http://localhost:6745/_api/database/_system/transaction/$TX_ID/que
 ```
 
 WITH FOR loop (bulk operation):
+
 ```bash
 curl -X POST "http://localhost:6745/_api/database/_system/transaction/$TX_ID/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "FOR user IN users FILTER user.age > 30 INSERT user INTO senior_users"}'
 ```
+
 ```bash
 # Begin transaction
 TX_ID=$(curl -s -X POST http://localhost:6745/_api/database/_system/transaction/begin \
   -H "Content-Type: application/json" \
   -d '{}' | jq -r '.id')
 
-# Execute AQL INSERT
+# Execute SDBQL INSERT
 curl -X POST "http://localhost:6745/_api/database/_system/transaction/$TX_ID/query" \
   -H "Content-Type: application/json" \
   -d '{"query": "INSERT {name: \"Bob\", age: 25} INTO users"}'
@@ -248,6 +263,7 @@ curl -X POST "http://localhost:6745/_api/database/_system/transaction/$TX_ID/com
 ```
 
 **Response:**
+
 ```json
 {
   "result": [],
@@ -263,42 +279,47 @@ SoliDB supports four standard SQL isolation levels, providing different trade-of
 
 ### Overview Table
 
-| Level | Dirty Reads | Non-Repeatable Reads | Phantom Reads | Performance | Use Case |
-|-------|-------------|----------------------|---------------|-------------|----------|
-| Read Uncommitted | ✅ Possible | ✅ Possible | ✅ Possible | Fastest | Bulk imports, analytics |
-| Read Committed | ❌ No | ✅ Possible | ✅ Possible | **Default** | General purpose |
-| Repeatable Read | ❌ No | ❌ No | ✅ Possible | Slower | Reports, consistent views |
-| Serializable | ❌ No | ❌ No | ❌ No | Slowest | Financial, critical data |
+| Level            | Dirty Reads | Non-Repeatable Reads | Phantom Reads | Performance | Use Case                  |
+| ---------------- | ----------- | -------------------- | ------------- | ----------- | ------------------------- |
+| Read Uncommitted | ✅ Possible | ✅ Possible          | ✅ Possible   | Fastest     | Bulk imports, analytics   |
+| Read Committed   | ❌ No       | ✅ Possible          | ✅ Possible   | **Default** | General purpose           |
+| Repeatable Read  | ❌ No       | ❌ No                | ✅ Possible   | Slower      | Reports, consistent views |
+| Serializable     | ❌ No       | ❌ No                | ❌ No         | Slowest     | Financial, critical data  |
 
 ### Read Uncommitted
 
 **Isolation Level:** `read_uncommitted`
 
 **Characteristics:**
+
 - Lowest isolation level
 - Allows reading uncommitted changes from other transactions (dirty reads)
 - No read locks, minimal overhead
 - **⚠️ Not recommended for most use cases**
 
 **What Can Go Wrong:**
+
 ```
-Transaction A: INSERT {name: "Alice"} 
+Transaction A: INSERT {name: "Alice"}
 Transaction B: READ → sees "Alice" (uncommitted!)
 Transaction A: ROLLBACK
 Transaction B: Now has invalid data!
 ```
 
 **Performance:**
+
 - ~85-95 ops/s (similar to read_committed due to WAL fsync bottleneck)
 - No isolation guarantees = simpler lock management
 
 **When to Use:**
+
 - Bulk data imports where consistency doesn't matter
 - Analytics on non-critical data
 - Read-only queries on append-only data
 - When performance is absolutely critical and dirty reads are acceptable
 
 **Example:**
+
 ```bash
 curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
   -H "Content-Type: application/json" \
@@ -306,11 +327,14 @@ curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
 ```
 
 **Real-World Scenario:**
+
 ```javascript
 // Analytics dashboard showing "approximate" counts
 // Dirty reads are acceptable for real-time metrics
-const tx = await beginTransaction({isolationLevel: 'read_uncommitted'});
-const activeUsers = await query('FOR u IN users FILTER u.online == true RETURN COUNT(u)');
+const tx = await beginTransaction({ isolationLevel: "read_uncommitted" });
+const activeUsers = await query(
+  "FOR u IN users FILTER u.online == true RETURN COUNT(u)"
+);
 // Might be slightly off, but fast!
 ```
 
@@ -321,22 +345,25 @@ const activeUsers = await query('FOR u IN users FILTER u.online == true RETURN C
 **Isolation Level:** `read_committed`
 
 **Characteristics:**
+
 - Prevents dirty reads - only sees committed data
 - Each query sees a committed snapshot at query start
 - Good balance of consistency and performance
 - **Default level** - recommended for most use cases
 
 **What It Prevents:**
+
 - ✅ Dirty reads: Cannot read uncommitted changes
 - ❌ Non-repeatable reads: Same query may return different results
 - ❌ Phantom reads: Row count may change between queries
 
 **Example:**
+
 ```
 Time | Transaction A          | Transaction B
 -----|------------------------|------------------
 T1   | BEGIN                  | BEGIN
-T2   | SELECT * FROM users    | 
+T2   | SELECT * FROM users    |
      | → Returns 100 rows     |
 T3   |                        | INSERT new user
 T4   |                        | COMMIT
@@ -346,10 +373,12 @@ T6   | COMMIT                 |
 ```
 
 **Performance:**
+
 - ~90-95 ops/s
 - Negligible overhead vs read_uncommitted (both limited by WAL fsync)
 
 **When to Use:**
+
 - General application transactions
 - User registration/login
 - CRUD operations
@@ -357,6 +386,7 @@ T6   | COMMIT                 |
 - **Default choice unless you have specific needs**
 
 **Example:**
+
 ```bash
 # Explicitly set (though it's the default)
 curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
@@ -365,18 +395,21 @@ curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
 ```
 
 **Real-World Scenario:**
+
 ```javascript
 // User registration - prevent duplicate emails
 const tx = await beginTransaction(); // read_committed by default
 try {
-  const existing = await query('FOR u IN users FILTER u.email == @email RETURN u', 
-    {email: 'alice@example.com'});
-  
+  const existing = await query(
+    "FOR u IN users FILTER u.email == @email RETURN u",
+    { email: "alice@example.com" }
+  );
+
   if (existing.length > 0) {
-    throw new Error('Email already exists');
+    throw new Error("Email already exists");
   }
-  
-  await insert('users', {email: 'alice@example.com', name: 'Alice'});
+
+  await insert("users", { email: "alice@example.com", name: "Alice" });
   await commit(tx);
 } catch (e) {
   await rollback(tx);
@@ -390,17 +423,20 @@ try {
 **Isolation Level:** `repeatable_read`
 
 **Characteristics:**
+
 - Prevents dirty reads and non-repeatable reads
 - Consistent snapshot of data throughout the entire transaction
 - Same query always returns same results within transaction
 - Moderate performance impact
 
 **What It Prevents:**
+
 - ✅ Dirty reads: Cannot read uncommitted changes
 - ✅ Non-repeatable reads: Same row read returns same values
 - ❌ Phantom reads: New rows may appear in range queries
 
 **Example:**
+
 ```
 Time | Transaction A (repeatable_read) | Transaction B
 -----|----------------------------------|------------------
@@ -417,16 +453,19 @@ T7   | COMMIT                           |
 ```
 
 **Performance:**
+
 - ~80-90 ops/s (slightly slower due to snapshot management)
 - May require more memory for snapshot isolation
 
 **When to Use:**
+
 - Financial reports requiring consistent view
 - Data exports/backups
 - Complex multi-step calculations
 - When you need stable data throughout transaction
 
 **Example:**
+
 ```bash
 curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
   -H "Content-Type: application/json" \
@@ -434,17 +473,27 @@ curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
 ```
 
 **Real-World Scenario:**
+
 ```javascript
 // Financial report - must be internally consistent
-const tx = await beginTransaction({isolationLevel: 'repeatable_read'});
+const tx = await beginTransaction({ isolationLevel: "repeatable_read" });
 try {
   // These three queries must see the same data snapshot
-  const totalRevenue = await query('RETURN SUM(FOR o IN orders RETURN o.amount)');
-  const totalExpenses = await query('RETURN SUM(FOR e IN expenses RETURN e.amount)');
+  const totalRevenue = await query(
+    "RETURN SUM(FOR o IN orders RETURN o.amount)"
+  );
+  const totalExpenses = await query(
+    "RETURN SUM(FOR e IN expenses RETURN e.amount)"
+  );
   const profit = totalRevenue - totalExpenses;
-  
+
   // All calculations based on same consistent snapshot
-  await insert('reports', {date: new Date(), revenue: totalRevenue, expenses: totalExpenses, profit});
+  await insert("reports", {
+    date: new Date(),
+    revenue: totalRevenue,
+    expenses: totalExpenses,
+    profit,
+  });
   await commit(tx);
 } catch (e) {
   await rollback(tx);
@@ -458,17 +507,20 @@ try {
 **Isolation Level:** `serializable`
 
 **Characteristics:**
+
 - Highest isolation level
 - Full serializability guarantee - as if transactions ran sequentially
 - Prevents all anomalies including phantom reads
 - May have significant performance impact due to strict locking
 
 **What It Prevents:**
+
 - ✅ Dirty reads
-- ✅ Non-repeatable reads  
+- ✅ Non-repeatable reads
 - ✅ Phantom reads: Even new rows in range queries appear stable
 
 **Example:**
+
 ```
 Time | Transaction A (serializable) | Transaction B
 -----|------------------------------|------------------
@@ -483,11 +535,13 @@ T6   | COMMIT                       |
 ```
 
 **Performance:**
+
 - ~70-85 ops/s (slowest due to strict locking)
 - May cause transaction conflicts/retries
 - Increased latency for concurrent transactions
 
 **When to Use:**
+
 - **Financial transactions** (money transfers, payments)
 - Inventory management with stock levels
 - Booking systems (tickets, rooms, appointments)
@@ -495,6 +549,7 @@ T6   | COMMIT                       |
 - Critical business logic that must be atomic
 
 **Example:**
+
 ```bash
 curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
   -H "Content-Type: application/json" \
@@ -502,26 +557,36 @@ curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
 ```
 
 **Real-World Scenario:**
+
 ```javascript
 // Bank transfer - MUST be atomic and consistent
-const tx = await beginTransaction({isolationLevel: 'serializable'});
+const tx = await beginTransaction({ isolationLevel: "serializable" });
 try {
   // Check balance
-  const fromAccount = await get('accounts', fromAccountId);
+  const fromAccount = await get("accounts", fromAccountId);
   if (fromAccount.balance < amount) {
-    throw new Error('Insufficient funds');
+    throw new Error("Insufficient funds");
   }
-  
+
   // Debit source
-  await update('accounts', fromAccountId, {balance: fromAccount.balance - amount});
-  
-  // Credit destination  
-  const toAccount = await get('accounts', toAccountId);
-  await update('accounts', toAccountId, {balance: toAccount.balance + amount});
-  
+  await update("accounts", fromAccountId, {
+    balance: fromAccount.balance - amount,
+  });
+
+  // Credit destination
+  const toAccount = await get("accounts", toAccountId);
+  await update("accounts", toAccountId, {
+    balance: toAccount.balance + amount,
+  });
+
   // Log transaction
-  await insert('transfers', {from: fromAccountId, to: toAccountId, amount, date: new Date()});
-  
+  await insert("transfers", {
+    from: fromAccountId,
+    to: toAccountId,
+    amount,
+    date: new Date(),
+  });
+
   await commit(tx);
   // Either ALL operations succeed or NONE do
 } catch (e) {
@@ -549,9 +614,10 @@ Based on actual benchmarks (1000 transactions, single INSERT per transaction):
 ⭐ Default and recommended for most use cases
 ```
 
-**Key Insight:** The bottleneck for single-operation transactions is WAL fsync (~10ms), not isolation level! 
+**Key Insight:** The bottleneck for single-operation transactions is WAL fsync (~10ms), not isolation level!
 
 **To improve performance:**
+
 - ✅ Batch multiple operations in one transaction
 - ✅ Use lower isolation only if you understand the trade-offs
 - ✅ Consider application-level caching
@@ -577,17 +643,17 @@ Do you need absolute correctness? (money, inventory, bookings)
 
 **Quick Guide:**
 
-| Your Scenario | Recommended Level |
-|---------------|-------------------|
-| **Money transfers, payments** | `serializable` |
-| **Inventory/stock management** | `serializable` |
-| **User registration** | `read_committed` |
-| **Blog post creation** | `read_committed` |
-| **Financial reports** | `repeatable_read` |
-| **Data export** | `repeatable_read` |
-| **Analytics dashboard** | `read_uncommitted` |
-| **Bulk data import** | `read_uncommitted` |
-| **When in doubt** | `read_committed` ⭐ |
+| Your Scenario                  | Recommended Level   |
+| ------------------------------ | ------------------- |
+| **Money transfers, payments**  | `serializable`      |
+| **Inventory/stock management** | `serializable`      |
+| **User registration**          | `read_committed`    |
+| **Blog post creation**         | `read_committed`    |
+| **Financial reports**          | `repeatable_read`   |
+| **Data export**                | `repeatable_read`   |
+| **Analytics dashboard**        | `read_uncommitted`  |
+| **Bulk data import**           | `read_uncommitted`  |
+| **When in doubt**              | `read_committed` ⭐ |
 
 ---
 
@@ -598,6 +664,7 @@ Do you need absolute correctness? (money, inventory, bookings)
 Transactions hold resources. Keep them as short as possible:
 
 ✅ **Good:**
+
 ```bash
 # Begin
 POST /transaction/begin
@@ -606,6 +673,7 @@ POST /transaction/{id}/commit
 ```
 
 ❌ **Bad:**
+
 ```bash
 # Begin
 POST /transaction/begin
@@ -621,29 +689,29 @@ POST /transaction/begin
 Always be prepared to rollback on errors:
 
 ```javascript
-const txResponse = await fetch('/api/database/_system/transaction/begin', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({isolationLevel: 'read_committed'})
+const txResponse = await fetch("/api/database/_system/transaction/begin", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ isolationLevel: "read_committed" }),
 });
-const {id: txId} = await txResponse.json();
+const { id: txId } = await txResponse.json();
 
 try {
   // Perform operations
   await fetch(`/api/database/_system/transaction/${txId}/document/users`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name: 'Alice'})
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Alice" }),
   });
-  
+
   // Commit
   await fetch(`/api/database/_system/transaction/${txId}/commit`, {
-    method: 'POST'
+    method: "POST",
   });
 } catch (error) {
   // Rollback on error
   await fetch(`/api/database/_system/transaction/${txId}/rollback`, {
-    method: 'POST'
+    method: "POST",
   });
   throw error;
 }
@@ -655,12 +723,12 @@ try {
 
 Choose the isolation level based on your requirements:
 
-| Use Case | Recommended Level |
-|----------|------------------|
-| Financial transactions | `serializable` |
-| User registration | `read_committed` |
-| Analytics/Reporting | `repeatable_read` |
-| Bulk imports | `read_uncommitted` |
+| Use Case               | Recommended Level  |
+| ---------------------- | ------------------ |
+| Financial transactions | `serializable`     |
+| User registration      | `read_committed`   |
+| Analytics/Reporting    | `repeatable_read`  |
+| Bulk imports           | `read_uncommitted` |
 
 ---
 
@@ -672,8 +740,8 @@ Unique constraints are validated at commit time:
 try {
   await commitTransaction(txId);
 } catch (error) {
-  if (error.message.includes('Duplicate insert')) {
-    console.log('Document with this key already exists');
+  if (error.message.includes("Duplicate insert")) {
+    console.log("Document with this key already exists");
   }
 }
 ```
@@ -688,7 +756,7 @@ Transactions automatically abort after a timeout period (default: 60 seconds). C
 # Set a shorter timeout at the application level
 const TRANSACTION_TIMEOUT = 30000; // 30 seconds
 
-const timeoutPromise = new Promise((_, reject) => 
+const timeoutPromise = new Promise((_, reject) =>
   setTimeout(() => reject(new Error('Transaction timeout')), TRANSACTION_TIMEOUT)
 );
 
@@ -705,15 +773,18 @@ await Promise.race([
 ### Current Limitations
 
 1. **Single Database Scope**
+
    - Transactions are scoped to a single database
    - Cross-database transactions not supported
 
-2. **AQL Query Support**
-   - Transactional AQL supports INSERT/UPDATE/REMOVE with FOR loops
+2. **SDBQL Query Support**
+
+   - Transactional SDBQL supports INSERT/UPDATE/REMOVE with FOR loops
    - FILTER and LET clauses fully supported
    - Subqueries and advanced features not yet implemented
 
 3. **No Distributed Transactions**
+
    - Two-phase commit not implemented
    - Transactions are local to a single node
 
@@ -723,7 +794,7 @@ await Promise.race([
 
 ### Planned Features
 
-- ⏭️ Transactional AQL with subqueries and advanced expressions
+- ⏭️ Transactional SDBQL with subqueries and advanced expressions
 - ⏭️ MVCC for true snapshot isolation
 - ⏭️ Distributed transactions (two-phase commit)
 - ⏭️ Savepoints within transactions
@@ -822,6 +893,7 @@ fi
 Perform multiple operations in a single transaction rather than individual transactions:
 
 ✅ **Good (1 transaction):**
+
 ```bash
 BEGIN
 INSERT user1
@@ -831,6 +903,7 @@ COMMIT
 ```
 
 ❌ **Bad (3 transactions):**
+
 ```bash
 BEGIN, INSERT user1, COMMIT
 BEGIN, INSERT user2, COMMIT
@@ -856,12 +929,14 @@ curl -X POST http://localhost:6745/_api/database/_system/transaction/begin \
 For consistency, either use transactions for all operations or none:
 
 ✅ **Good:**
+
 ```bash
 # All operations in transaction
 BEGIN -> INSERT -> UPDATE -> COMMIT
 ```
 
 ❌ **Confusing:**
+
 ```bash
 # Mix of transactional and non-transactional
 INSERT (non-tx)
@@ -877,7 +952,8 @@ INSERT (non-tx)
 
 **Cause:** Transaction expired or was already committed/rolled back
 
-**Solution:** 
+**Solution:**
+
 - Complete transactions within the timeout period
 - Don't reuse transaction IDs
 - Check that you copied the correct transaction ID
@@ -889,6 +965,7 @@ INSERT (non-tx)
 **Cause:** Attempting to insert the same key twice in a transaction
 
 **Solution:**
+
 - Use unique keys for each insert
 - Or use update instead of insert for existing documents
 
@@ -899,6 +976,7 @@ INSERT (non-tx)
 **Cause:** Transaction system wasn't initialized on startup
 
 **Solution:**
+
 - The transaction manager initializes automatically on first use
 - If error persists, restart the server
 
@@ -906,19 +984,19 @@ INSERT (non-tx)
 
 ## FAQ
 
-**Q: Are transactions required?**  
+**Q: Are transactions required?**
 A: No, transactions are completely optional. Regular operations work without transactions and have zero performance overhead.
 
-**Q: What happens if my application crashes mid-transaction?**  
+**Q: What happens if my application crashes mid-transaction?**
 A: The transaction is automatically rolled back. Committed transactions are recovered from the WAL on restart.
 
-**Q: Can I have multiple active transactions?**  
+**Q: Can I have multiple active transactions?**
 A: Yes, each transaction has a unique ID and is independent.
 
-**Q: How long can a transaction stay open?**  
+**Q: How long can a transaction stay open?**
 A: By default, 60 seconds. After that, it's automatically aborted.
 
-**Q: Do transactions work in cluster mode?**  
+**Q: Do transactions work in cluster mode?**
 A: Currently, transactions are local to a single node. Distributed transactions are planned for a future release.
 
 ---

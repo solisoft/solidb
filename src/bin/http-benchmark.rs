@@ -51,7 +51,7 @@ fn main() {
     bench_insert(&client);
     bench_get_document(&client);
     bench_update_document(&client);
-    bench_aql_queries(&client);
+    bench_sdbql_queries(&client);
     bench_explain_query(&client);
     bench_delete_document(&client);
 
@@ -254,8 +254,8 @@ fn bench_update_document(client: &Client) {
     println!();
 }
 
-fn bench_aql_queries(client: &Client) {
-    println!("🔎 AQL QUERY BENCHMARKS");
+fn bench_sdbql_queries(client: &Client) {
+    println!("🔎 SDBQL QUERY BENCHMARKS");
     print_separator();
 
     let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
@@ -388,7 +388,7 @@ fn bench_transactions(client: &Client) {
             .expect("Begin transaction failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse transaction response");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
@@ -401,14 +401,14 @@ fn bench_transactions(client: &Client) {
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
         client.post(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"_key": format!("tx_user_{}", i), "name": format!("User {}", i)}))
             .send()
             .expect("Insert failed");
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
@@ -421,7 +421,7 @@ fn bench_transactions(client: &Client) {
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
         for i in 0..5 {
             client.post(&doc_url)
@@ -430,7 +430,7 @@ fn bench_transactions(client: &Client) {
                 .send()
                 .expect("Insert failed");
         }
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
@@ -443,58 +443,57 @@ fn bench_transactions(client: &Client) {
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
         client.put(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"updated": true, "timestamp": chrono::Utc::now().timestamp()}))
             .send()
             .expect("Update failed");
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX UPDATE (1 doc)", SMALL, start.elapsed());
 
-    // Benchmark: Transactional AQL INSERT - using header
+    // Benchmark: Transactional SDBQL INSERT - using header
     let start = Instant::now();
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
-        let query_url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
-        client.post(&query_url)
-            .header("X-Transaction-ID", tx_id)
-            .json(&json!({"query": format!("INSERT {{_key: 'aql_user_{}', name: 'AQL User {}'}} INTO bench_http", i, i)}))
+
+        let _ = client.post(&format!("{}/_api/database/{}/transaction/{}/execute-sdbql", SERVER_URL, DATABASE, tx_id))
+            .header("x-transaction-id", tx_id)
+            .json(&json!({"query": format!("INSERT {{_key: 'sdbql_user_{}', name: 'SDBQL User {}'}} INTO bench_http", i, i)}))
             .send()
-            .expect("AQL INSERT failed");
-        
+            .expect("SDBQL INSERT failed");
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
-    print_result("TX AQL INSERT (1 doc)", SMALL, start.elapsed());
+    print_result("TX SDBQL INSERT (1 doc)", SMALL, start.elapsed());
 
-    // Benchmark: Transactional AQL UPDATE with FOR loop - using header
+    // Benchmark: Transactional SDBQL UPDATE with FOR loop - using header
     let start = Instant::now();
     for _ in 0..100 {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let query_url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
         client.post(&query_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"query": "FOR u IN bench_http FILTER u.updated == true LIMIT 10 UPDATE u._key WITH {bulk_updated: true} IN bench_http"}))
             .send()
-            .expect("AQL UPDATE failed");
-        
+            .expect("SDBQL UPDATE failed");
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
-    print_result("TX AQL UPDATE (FOR loop)", 100, start.elapsed());
+    print_result("TX SDBQL UPDATE (FOR loop)", 100, start.elapsed());
 
     // Benchmark: Transaction ROLLBACK - using header
     let start = Instant::now();
@@ -503,14 +502,14 @@ fn bench_transactions(client: &Client) {
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
         client.post(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"_key": format!("rollback_user_{}", i), "name": "Should not persist"}))
             .send()
             .expect("Insert failed");
-        
+
         let rollback_url = format!("{}/_api/database/{}/transaction/{}/rollback", SERVER_URL, DATABASE, tx_id);
         client.post(&rollback_url).send().expect("Rollback failed");
     }
@@ -523,13 +522,13 @@ fn bench_transactions(client: &Client) {
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
         client.delete(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .send()
             .expect("Delete failed");
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
@@ -538,7 +537,7 @@ fn bench_transactions(client: &Client) {
     // Benchmark: read_uncommitted isolation level (faster but less safe) - using header
     println!("\n  ⚡ READ_UNCOMMITTED Isolation Level:");
     print_separator();
-    
+
     let start = Instant::now();
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
@@ -549,14 +548,14 @@ fn bench_transactions(client: &Client) {
             .expect("Begin failed");
         let tx: serde_json::Value = response.json().expect("Failed to parse");
         let tx_id = tx["id"].as_str().unwrap();
-        
+
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
         client.post(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"_key": format!("uncommitted_user_{}", i), "name": format!("User {}", i)}))
             .send()
             .expect("Insert failed");
-        
+
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
@@ -596,20 +595,19 @@ fn bench_concurrent() {
         start.elapsed(),
     );
 
-    // Concurrent AQL queries
+    // Concurrent SDBQL queries
     let start = Instant::now();
     (0..CONCURRENT_REQUESTS).into_par_iter().for_each(|_| {
         let client = Client::new();
-        let url = format!("{}/api/database/{}/cursor", SERVER_URL, DATABASE);
-        let query = json!({"query": "FOR u IN bench_http LIMIT 10 RETURN u"});
-        client
-            .post(&url)
+        let url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
+        let query = json!({"query": "FOR u IN bench_http LIMIT 5 RETURN u"});
+        client.post(&url)
             .json(&query)
             .send()
-            .expect("Concurrent query failed");
+            .expect("Concurrent SDBQL query failed");
     });
     print_result(
-        "AQL query (concurrent)",
+        "SDBQL query (concurrent)",
         CONCURRENT_REQUESTS,
         start.elapsed(),
     );

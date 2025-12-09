@@ -167,7 +167,7 @@ solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746</code></pre>
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
             <h3 class="text-lg font-bold text-white mb-2">Query Timeout</h3>
             <p class="text-gray-400 text-sm">
-              AQL queries have a strict <strong>30-second timeout</strong>. Long-running queries (e.g., infinite loops) are automatically terminated to free up server resources.
+              SDBQL queries have a strict <strong>30-second timeout</strong>. Long-running queries (e.g., infinite loops) are automatically terminated to free up server resources.
             </p>
           </div>
 

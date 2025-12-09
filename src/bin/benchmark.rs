@@ -24,7 +24,7 @@ fn main() {
     bench_update(&storage);
     bench_delete(&storage);
     bench_index_lookup(&storage);
-    bench_aql_queries(&storage);
+    bench_sdbql_queries(&storage);
     bench_range_queries(&storage);
 
     println!("\n✅ All benchmarks completed!");
@@ -291,8 +291,8 @@ fn bench_index_lookup(storage: &StorageEngine) {
     println!();
 }
 
-fn bench_aql_queries(storage: &StorageEngine) {
-    println!("🔎 AQL QUERY BENCHMARKS");
+fn bench_sdbql_queries(storage: &StorageEngine) {
+    println!("🔎 SDBQL QUERY BENCHMARKS");
     print_separator();
 
     // Simple FOR RETURN

@@ -755,7 +755,7 @@ impl ShardCoordinator {
     {
         // For simplicity in v1: execute locally only
         // Full scatter-gather would query all nodes in parallel
-        // TODO: Implement full scatter-gather for AQL queries
+        // TODO: Implement full scatter-gather for SDBQL queries
         
         // Check which shards are local and execute
         let mut results = Vec::new();

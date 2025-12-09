@@ -91,7 +91,7 @@
       
       <div class="flex items-center mb-3 relative z-10">
         <i class="fas fa-lightbulb text-yellow-400 mr-2"></i>
-        <h4 class="text-white font-semibold">AQL Pro Tip</h4>
+        <h4 class="text-white font-semibold">SDBQL Pro Tip</h4>
       </div>
       <p class="text-sm text-gray-300 mb-0 relative z-10 leading-relaxed">
         Use <code>RETURN MERGE(doc, { field: "value" })</code> to add fields to result documents without modifying them in the database.

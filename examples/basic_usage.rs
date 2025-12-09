@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     storage.save_collection("users")?;
     println!("✓ Saved collection to disk\n");
 
-    // Execute some AQL queries
+    // Execute some SDBQL queries
     use solidb::{parse, QueryExecutor};
 
     let executor = QueryExecutor::new(&storage);

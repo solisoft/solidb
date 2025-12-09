@@ -17,7 +17,7 @@ fn number_from_f64(f: f64) -> serde_json::Number {
 /// Execution context holding variable bindings
 type Context = HashMap<String, Value>;
 
-/// Bind variables for parameterized queries (prevents AQL injection)
+/// Bind variables for parameterized queries (prevents SDBQL injection)
 pub type BindVars = HashMap<String, Value>;
 
 /// Query execution plan with timing information
@@ -2607,7 +2607,7 @@ impl<'a> QueryExecutor<'a> {
                             // ArangoDB UNSET ignores non-string arguments for keys, so we just skip them
                             // but existing KEEP implementation errors. Let's error to be safe/consistent with KEEP for now or be lenient.
                             // Docs say: "All other arguments... are attribute names". If not string?
-                            // Usually AQL functions are permissive. But KEEP errors.
+                            // Usually SDBQL functions are permissive. But KEEP errors.
                             // Let's mirror KEEP behavior but maybe loosen it if needed.
                             // However, strictly following KEEP pattern:
                              return Err(DbError::ExecutionError(
@@ -4890,7 +4890,7 @@ impl<'a> QueryExecutor<'a> {
     ) -> Option<Vec<crate::storage::Document>> {
         // Normalize the value for index lookup
         // If it's a float that's actually an integer (e.g., 30.0), convert to integer
-        // This handles the case where AQL parses "30" as 30.0 but data has integer 30
+        // This handles the case where SDBQL parses "30" as 30.0 but data has integer 30
         let normalized_value = if let Value::Number(n) = &condition.value {
             if let Some(f) = n.as_f64() {
                 if f.fract() == 0.0 && f.is_finite() {

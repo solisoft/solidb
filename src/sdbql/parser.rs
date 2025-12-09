@@ -66,7 +66,7 @@ impl Parser {
         let mut for_clauses = Vec::new();
         let mut filter_clauses = Vec::new();
 
-        // Parse FOR, FILTER, INSERT, and additional LET clauses (they can be interleaved in AQL)
+        // Parse FOR, FILTER, INSERT, and additional LET clauses (they can be interleaved in SDBQL)
         loop {
             if matches!(self.current_token(), Token::For) {
                 // Try to parse as graph traversal first, fallback to regular FOR

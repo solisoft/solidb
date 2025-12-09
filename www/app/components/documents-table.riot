@@ -199,7 +199,7 @@
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
 
-          // First, get the total count using the stats endpoint (faster than AQL for large collections)
+          // First, get the total count using the stats endpoint (faster than SDBQL for large collections)
           const statsResponse = await authenticatedFetch(`${url}/collection/${this.props.collection}/stats`)
 
           if (!statsResponse.ok) {

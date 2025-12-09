@@ -10,7 +10,7 @@ use tower::ServiceExt;
 async fn create_test_server() -> (axum::Router, TempDir) {
     // Set admin password for tests
     std::env::set_var("SOLIDB_ADMIN_PASSWORD", "admin");
-    
+
     let temp_dir = TempDir::new().unwrap();
     let mut engine = StorageEngine::new(temp_dir.path()).unwrap();
     engine.initialize().unwrap();
@@ -35,7 +35,7 @@ async fn parse_json_response(response: axum::response::Response) -> Value {
 }
 
 #[tokio::test]
-async fn test_transactional_aql_simple_insert() {
+async fn test_transactional_dsbql_simple_insert() {
     let (app, _dir) = create_test_server().await;
 
     // 1. Begin transaction
@@ -45,14 +45,14 @@ async fn test_transactional_aql_simple_insert() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    
+
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute AQL INSERT with transaction header
+    // 2. Execute SDBQL INSERT with transaction header
     let request = Request::builder()
         .method("POST")
         .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
@@ -65,12 +65,12 @@ async fn test_transactional_aql_simple_insert() {
             .to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let aql_response: Value = parse_json_response(response).await;
-    assert_eq!(aql_response["result"][0]["mutationCount"], 1);
+
+    let dsbql_response: Value = parse_json_response(response).await;
+    assert_eq!(dsbql_response["result"][0]["mutationCount"], 1);
 
     // 3. Verify document not visible before commit
     let request = Request::builder()
@@ -81,7 +81,7 @@ async fn test_transactional_aql_simple_insert() {
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     assert_eq!(result["result"].as_array().unwrap().len(), 0);
@@ -92,7 +92,7 @@ async fn test_transactional_aql_simple_insert() {
         .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -105,7 +105,7 @@ async fn test_transactional_aql_simple_insert() {
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
         ))
         .unwrap();
-    
+
     let response = app.oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     let docs = result["result"].as_array().unwrap();
@@ -114,10 +114,10 @@ async fn test_transactional_aql_simple_insert() {
 }
 
 // NOTE: This test is commented out because it requires server restart for data consistency
-// The transactional AQL functionality works, but the test data setup has timing issues
+// The transactional SDBQL functionality works, but the test data setup has timing issues
 /*
 #[tokio::test]
-async fn test_transactional_aql_with_for_loop() {
+async fn test_transactional_dsbql_with_for_loop() {
     let (app, _dir) = create_test_server().await;
 
     // Insert test data first - insert 10 users directly
@@ -140,12 +140,12 @@ async fn test_transactional_aql_with_for_loop() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute AQL with FOR loop - copy users with age >= 60
+    // 2. Execute SDBQL with FOR loop - copy users with age >= 60
     let request = Request::builder()
         .method("POST")
         .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
@@ -157,12 +157,12 @@ async fn test_transactional_aql_with_for_loop() {
             .to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let aql_response: Value = parse_json_response(response).await;
-    let mutation_count = aql_response["mutationCount"].as_i64().unwrap();
+
+    let dsbql_response: Value = parse_json_response(response).await;
+    let mutation_count = dsbql_response["mutationCount"].as_i64().unwrap();
     // Users with age >= 60: 60, 70, 80, 90, 100 = 5 users
     assert_eq!(mutation_count, 5, "Expected 5 mutations, got {}", mutation_count);
 
@@ -172,7 +172,7 @@ async fn test_transactional_aql_with_for_loop() {
         .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -185,7 +185,7 @@ async fn test_transactional_aql_with_for_loop() {
             json!({"query": "FOR u IN backup RETURN u"}).to_string(),
         ))
         .unwrap();
-    
+
     let response = app.oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     assert_eq!(result["result"].as_array().unwrap().len(), 5);
@@ -193,7 +193,7 @@ async fn test_transactional_aql_with_for_loop() {
 */
 
 #[tokio::test]
-async fn test_transactional_aql_rollback() {
+async fn test_transactional_dsbql_rollback() {
     let (app, _dir) = create_test_server().await;
 
     // 1. Begin transaction
@@ -203,12 +203,12 @@ async fn test_transactional_aql_rollback() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute multiple AQL operations with header
+    // 2. Execute multiple SDBQL operations with header
     let request = Request::builder()
         .method("POST")
         .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
@@ -243,7 +243,7 @@ async fn test_transactional_aql_rollback() {
         .uri(&format!("/_api/database/testdb/transaction/{}/rollback", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -256,14 +256,14 @@ async fn test_transactional_aql_rollback() {
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
         ))
         .unwrap();
-    
+
     let response = app.oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     assert_eq!(result["result"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
-async fn test_transactional_aql_update() {
+async fn test_transactional_dsbql_update() {
     let (app, _dir) = create_test_server().await;
 
     // Insert initial document
@@ -285,12 +285,12 @@ async fn test_transactional_aql_update() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
 
-    // 2. Execute UPDATE via AQL with header
+    // 2. Execute UPDATE via SDBQL with header
     let request = Request::builder()
         .method("POST")
         .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
@@ -303,7 +303,7 @@ async fn test_transactional_aql_update() {
             .to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
@@ -321,7 +321,7 @@ async fn test_transactional_aql_update() {
         .uri("/_api/database/testdb/document/users/user1").header("Authorization", "Basic YWRtaW46YWRtaW4=")
         .body(Body::empty())
         .unwrap();
-    
+
     let response = app.oneshot(request).await.unwrap();
     let doc: Value = parse_json_response(response).await;
     assert_eq!(doc["age"].as_f64().unwrap() as i64, 30);
@@ -329,7 +329,7 @@ async fn test_transactional_aql_update() {
 }
 
 #[tokio::test]
-async fn test_transactional_aql_remove() {
+async fn test_transactional_dsbql_remove() {
     let (app, _dir) = create_test_server().await;
 
     // Insert initial documents
@@ -352,7 +352,7 @@ async fn test_transactional_aql_remove() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
@@ -370,11 +370,11 @@ async fn test_transactional_aql_remove() {
             .to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
-    let aql_response: Value = parse_json_response(response).await;
+    let dsbql_response: Value = parse_json_response(response).await;
     // Should remove users with age > 30 (40, 50 = 2 users)
-    assert_eq!(aql_response["result"][0]["mutationCount"], 2);
+    assert_eq!(dsbql_response["result"][0]["mutationCount"], 2);
 
     // 3. Commit
     let request = Request::builder()
@@ -393,17 +393,17 @@ async fn test_transactional_aql_remove() {
             json!({"query": "FOR u IN users RETURN u"}).to_string(),
         ))
         .unwrap();
-    
+
     let response = app.oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     assert_eq!(result["result"].as_array().unwrap().len(), 3);
 }
 
 // NOTE: This test is commented out because it requires server restart for data consistency
-// The transactional AQL functionality works, but the test data setup has timing issues
+// The transactional SDBQL functionality works, but the test data setup has timing issues
 /*
 #[tokio::test]
-async fn test_transactional_aql_complex_query() {
+async fn test_transactional_dsbql_complex_query() {
     let (app, _dir) = create_test_server().await;
 
     // Insert test data - 20 users, even ones are active
@@ -426,7 +426,7 @@ async fn test_transactional_aql_complex_query() {
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
     let tx_response: Value = parse_json_response(response).await;
     let tx_id = tx_response["id"].as_str().unwrap();
@@ -443,10 +443,10 @@ async fn test_transactional_aql_complex_query() {
             .to_string(),
         ))
         .unwrap();
-    
+
     let response = app.clone().oneshot(request).await.unwrap();
-    let aql_response: Value = parse_json_response(response).await;
-    let mutation_count = aql_response["mutationCount"].as_i64().unwrap();
+    let dsbql_response: Value = parse_json_response(response).await;
+    let mutation_count = dsbql_response["mutationCount"].as_i64().unwrap();
     // Active users with age >= 10: 10, 12, 14, 16, 18, 20 = 6 users
     assert_eq!(mutation_count, 6, "Expected 6 mutations, got {}", mutation_count);
 
@@ -467,7 +467,7 @@ async fn test_transactional_aql_complex_query() {
             json!({"query": "FOR u IN backup FILTER u.backed_up == true RETURN u"}).to_string(),
         ))
         .unwrap();
-   
+
     let response = app.oneshot(request).await.unwrap();
     let result: Value = parse_json_response(response).await;
     let result_len = result["result"].as_array().unwrap().len();

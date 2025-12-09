@@ -201,22 +201,24 @@ pub async fn delete_document_tx(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// Transactional AQL execution
+// Transactional SDBQL execution
+
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
-pub struct ExecuteAqlTransactionalRequest {
+pub struct ExecuteSdbqlTransactionalRequest {
     pub query: String,
     #[serde(default)]
     pub bind_vars: std::collections::HashMap<String, Value>,
 }
 
-pub async fn execute_aql_transactional(
-    State(state): State<AppState>,
+pub async fn execute_transactional_sdbql(
+    State(state): State<Arc<AppState>>,
     Path((db_name, tx_id_str)): Path<(String, String)>,
-    Json(req): Json<ExecuteAqlTransactionalRequest>,
+    Json(req): Json<ExecuteSdbqlTransactionalRequest>,
 ) -> Result<Json<Value>, DbError> {
-    use crate::aql::{parse, QueryExecutor};
-    use crate::aql::ast::BodyClause;
+    use crate::sdbql::{parse, QueryExecutor};
+    use crate::sdbql::ast::BodyClause;
     
     // Parse transaction ID
     let tx_id_value: u64 = tx_id_str
@@ -234,10 +236,10 @@ pub async fn execute_aql_transactional(
     let mut tx = tx_arc.write().unwrap();
     let wal = tx_manager.wal();
     
-    // Parse AQL query
+    // Parse SDBQL query
     let query = parse(&req.query)?;
     
-    // For transactional AQL, we need to intercept mutations (INSERT/UPDATE/REMOVE)
+    // For transactional SDBQL, we need to intercept mutations (INSERT/UPDATE/REMOVE)
     // and execute them transactionally. For now, we support queries with a single mutation operation.
     
     // Check if query contains mutation operations

@@ -15,7 +15,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose};
 
-use crate::aql::{parse, BodyClause, Query, QueryExecutor};
+use crate::sdbql::{parse, BodyClause, Query, QueryExecutor};
 use crate::cluster::{Operation, ReplicationService};
 use crate::error::DbError;
 
@@ -1388,8 +1388,8 @@ pub async fn execute_query(
 ) -> Result<Json<ExecuteQueryResponse>, DbError> {
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
-        // Execute transactional AQL query
-        use crate::aql::ast::BodyClause;
+        // Execute transactional SDBQL query
+        use crate::sdbql::ast::BodyClause;
         
         let query = parse(&req.query)?;
         
@@ -1696,7 +1696,7 @@ pub async fn explain_query(
     Path(db_name): Path<String>,
     headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
-) -> Result<Json<crate::aql::QueryExplain>, DbError> {
+) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
     let query = parse(&req.query)?;
 
     // explain() is fast - no need for spawn_blocking

@@ -1,4 +1,4 @@
-use solidb::aql::{Query, LetClause, Expression, ReturnClause, QueryExecutor};
+use solidb::sdbql::{Query, LetClause, Expression, ReturnClause, QueryExecutor};
 use solidb::storage::StorageEngine;
 use serde_json::{json, Value};
 use tempfile::tempdir;

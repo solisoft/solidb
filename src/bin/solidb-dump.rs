@@ -211,7 +211,7 @@ async fn dump_collection_jsonl(
             pb.inc(chunk.len() as u64 / 100); // Rough approximation for doc count? No, just spinning
         }
     } else {
-        // Standard AQL dump for document/edge collections
+        // Standard SDBQL dump for document/edge collections
         let query = format!("FOR doc IN {} RETURN doc", collection);
         let query_url = format!("{}/_api/database/{}/cursor", base_url, database);
         

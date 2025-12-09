@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::HashMap;
+use indicatif::{ProgressBar, ProgressStyle};
 
 
 #[derive(Parser, Debug)]
@@ -94,7 +95,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read Input file
     let file = File::open(&args.input)?;
-    let mut reader = BufReader::new(file);
+    let metadata = file.metadata()?;
+    let total_size = metadata.len();
+    
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .unwrap()
+        .progress_chars("#>-"));
+        
+    let mut reader = BufReader::new(pb.wrap_read(file));
 
     // Peek to detect format
     // JSON Array: Starts with '['
@@ -132,10 +142,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut current_batch: Vec<Value> = Vec::new();
+    // Use Vec<u8> to avoid re-serialization
+    let mut current_batch: Vec<Vec<u8>> = Vec::new();
     let mut current_batch_size = 0;
-    let max_batch_count = 2000;
-    let max_batch_size = 5 * 1024 * 1024; // 5MB
+    let mut current_batch_meta: Option<(String, String)> = None;
+    let max_batch_count = 20000;
+    let max_batch_size = 25 * 1024 * 1024; // 25MB
 
     // We need to track collections to create them first?
     // If we stream, we might encounter a doc for Collection A, then B, then A.
@@ -157,26 +169,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Let's simplify: Only JSONL supports streaming. A Blob dump IS JSONL.
     
     // Check format first
+    // Note: format variable was already set by detection logic above (lines 110-133)
+    
+    if format == "csv" {
+        let mut csv_reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(reader);
 
-    let mut is_json_array = false;
-    if reader.fill_buf()?.len() > 0 {
-       if reader.fill_buf()?[0] == b'[' {
-            is_json_array = true;
-       }
-    }
-
-    if is_json_array && format != "jsonl" {
+        for result in csv_reader.deserialize() {
+             let record: HashMap<String, Value> = match result {
+                 Ok(r) => r,
+                 Err(e) => {
+                     eprintln!("Failed to parse CSV record: {}", e);
+                     total_failed += 1;
+                     continue;
+                 }
+             };
+             
+             let doc = serde_json::to_value(record)?;
+             process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                &mut current_batch_meta,
+                max_batch_count, max_batch_size, &mut initialized_collections, 
+                &mut total_imported, &mut total_failed).await?;
+        }
+    } else if format == "sql" {
+        eprintln!("Error: SQL restore is not yet fully implemented. Please convert to CSV or JSONL.");
+        return Ok(());
+    } else if format == "json_array" {
         eprintln!("Warning: JSON Array format loads all data into memory. Not recommended for large restores.");
         let all_documents: Vec<Value> = serde_json::from_reader(reader)?;
-        // Process all at once (filtering by coll/db) - reuse the batch logic effectively?
-        // Or just map to the stream logic.
         for doc in all_documents {
             process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                &mut current_batch_meta,
                 max_batch_count, max_batch_size, &mut initialized_collections, 
                 &mut total_imported, &mut total_failed).await?;
         }
     } else {
-        // Assume JSONL or compatible text stream
+        // Assume JSONL
         eprintln!("Restoring using streaming mode (JSONL)...");
         for line_res in reader.lines() {
              let line = line_res?;
@@ -185,6 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              match serde_json::from_str::<Value>(&line) {
                  Ok(doc) => {
                       process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                        &mut current_batch_meta,
                         max_batch_count, max_batch_size, &mut initialized_collections, 
                         &mut total_imported, &mut total_failed).await?;
                  },
@@ -198,8 +228,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Flush remaining
     if !current_batch.is_empty() {
-        flush_batch(&mut current_batch, &mut current_batch_size, &client, &base_url, 
-            &mut total_imported, &mut total_failed).await?;
+        if let Some((db, coll)) = &current_batch_meta {
+             flush_batch(&mut current_batch, &mut current_batch_size, &client, &base_url, 
+                db, coll,
+                &mut total_imported, &mut total_failed).await?;
+        }
     }
 
     eprintln!("✓ Restore completed");
@@ -216,8 +249,9 @@ async fn process_doc(
     args: &Args,
     client: &reqwest::Client,
     base_url: &str,
-    batch: &mut Vec<Value>,
+    batch: &mut Vec<Vec<u8>>,
     batch_size: &mut usize,
+    batch_meta: &mut Option<(String, String)>,
     max_count: usize,
     max_size: usize,
     initialized_cols: &mut HashMap<String, bool>,
@@ -244,76 +278,58 @@ async fn process_doc(
             create_database_if_not_exists(client, base_url, &db).await?;
         }
         
-        // Try create Collection
-        // Check if we have shard config in this doc?
-        // In the dump, the first doc usually has _shardConfig if it's metadata?
-        // Actually, in our dump format, every doc has _shardConfig replicated? 
-        // No, current dump logic adds it to every doc! (See solidb-dump modification)
-        // Wait, line 240 of solidb-dump: `doc_with_meta["_shardConfig"] = shard_config`.
         let shard_config = doc.get("_shardConfig");
         ensure_collection_exists(client, base_url, &db, &coll, shard_config, args.drop).await?;
         
         initialized_cols.insert(key.clone(), true);
     }
     
-    // Add to batch
-    // Check if batch is homogenious? 
-    // The batch import API is `/_api/database/:db/collection/:coll/import`
-    // So we can ONLY batch items for the SAME collection!
-    // If the stream switches collection, we MUST flush.
-    
-    let last_coll_key = if !batch.is_empty() {
-        let first = &batch[0];
-        let d = first.get("_database").and_then(|s| s.as_str()).unwrap_or("");
-        let c = first.get("_collection").and_then(|s| s.as_str()).unwrap_or("");
-        Some(format!("{}/{}", d, c))
-    } else {
-        None
-    };
-
-    if let Some(last_key) = last_coll_key {
-        if last_key != key {
+    // Check batch consistency
+    if let Some((curr_db, curr_coll)) = batch_meta {
+        if curr_db != &db || curr_coll != &coll {
             // Flush because collection changed
-            flush_batch(batch, batch_size, client, base_url, total_imported, total_failed).await?;
+            flush_batch(batch, batch_size, client, base_url, curr_db, curr_coll, total_imported, total_failed).await?;
+            *batch_meta = None;
         }
     }
 
-    // Add doc to batch
-    let doc_str = serde_json::to_string(&doc)?;
-    *batch_size += doc_str.len();
-    batch.push(doc);
+    if batch_meta.is_none() {
+        *batch_meta = Some((db.clone(), coll.clone()));
+    }
+
+    // Add doc to batch (Pre-serialize to avoid double serialization)
+    let doc_bytes = serde_json::to_vec(&doc)?;
+    *batch_size += doc_bytes.len();
+    batch.push(doc_bytes);
 
     // Flush if full
     if batch.len() >= max_count || *batch_size >= max_size {
-         flush_batch(batch, batch_size, client, base_url, total_imported, total_failed).await?;
+         if let Some((curr_db, curr_coll)) = batch_meta {
+            flush_batch(batch, batch_size, client, base_url, curr_db, curr_coll, total_imported, total_failed).await?;
+         }
     }
 
     Ok(())
 }
 
 async fn flush_batch(
-    batch: &mut Vec<Value>,
+    batch: &mut Vec<Vec<u8>>,
     batch_size: &mut usize,
     client: &reqwest::Client,
     base_url: &str,
+    db: &str,
+    coll: &str,
     total_imported: &mut u64,
     total_failed: &mut u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if batch.is_empty() { return Ok(()); }
 
-    let first = &batch[0];
-    // These unwraps should be safe because we verified them in process_doc
-    let db = first.get("_database").and_then(|s| s.as_str()).unwrap();
-    let coll = first.get("_collection").and_then(|s| s.as_str()).unwrap();
-
     let url = format!("{}/_api/database/{}/collection/{}/import", base_url, db, coll);
     
-    eprintln!("  Importing batch of {} items to {}/{} ({} bytes)", batch.len(), db, coll, batch_size);
-
-    // Create JSONL payload
-    let mut jsonl_data = Vec::with_capacity(*batch_size);
-    for doc in batch.iter() {
-        serde_json::to_writer(&mut jsonl_data, doc)?;
+    // Create JSONL payload from pre-serialized bytes
+    let mut jsonl_data = Vec::with_capacity(*batch_size + batch.len()); // + newlines
+    for doc_bytes in batch.iter() {
+        jsonl_data.extend_from_slice(doc_bytes);
         jsonl_data.push(b'\n');
     }
 

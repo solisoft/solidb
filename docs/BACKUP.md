@@ -1,6 +1,7 @@
 # SoliDB Backup & Restore Tools
 
 SoliDB provides two command-line utilities for backing up and restoring your data:
+
 - **`solidb-dump`** - Export databases and collections to JSON
 - **`solidb-restore`** - Import data from JSON dumps
 
@@ -26,33 +27,37 @@ solidb-dump [OPTIONS] --database <DATABASE>
 
 ### Options
 
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--database <DATABASE>` | `-d` | Database name (required) | |
-| `--collection <COLLECTION>` | `-c` | Collection name (optional, dumps all if not specified) | |
-| `--output <FILE>` | `-o` | Output file (optional, writes to stdout if not specified) | |
-| `--host <HOST>` | `-H` | Database host | `localhost` |
-| `--port <PORT>` | `-P` | Database port | `6745` |
-| `--pretty` | | Pretty-print JSON output | |
+| Option                      | Short | Description                                               | Default     |
+| --------------------------- | ----- | --------------------------------------------------------- | ----------- |
+| `--database <DATABASE>`     | `-d`  | Database name (required)                                  |             |
+| `--collection <COLLECTION>` | `-c`  | Collection name (optional, dumps all if not specified)    |             |
+| `--output <FILE>`           | `-o`  | Output file (optional, writes to stdout if not specified) |             |
+| `--host <HOST>`             | `-H`  | Database host                                             | `localhost` |
+| `--port <PORT>`             | `-P`  | Database port                                             | `6745`      |
+| `--pretty`                  |       | Pretty-print JSON output                                  |             |
 
 ### Examples
 
 **Dump entire database to file:**
+
 ```bash
 solidb-dump -d mydb -o backup.json --pretty
 ```
 
 **Dump single collection:**
+
 ```bash
 solidb-dump -d mydb -c users -o users.json
 ```
 
 **Dump to stdout (for piping):**
+
 ```bash
 solidb-dump -d mydb -c users | gzip > users.json.gz
 ```
 
 **Dump from remote server:**
+
 ```bash
 solidb-dump -H prod-server.com -P 6745 -d mydb -o production-backup.json
 ```
@@ -82,6 +87,7 @@ The dump file is a JSON object with the following structure:
 ```
 
 **Notes:**
+
 - `shardConfig` is `null` for non-sharded collections
 - All document metadata (`_id`, `_key`, `_rev`) is preserved
 - Documents are exported in arbitrary order
@@ -100,39 +106,44 @@ solidb-restore [OPTIONS] --input <FILE>
 
 ### Options
 
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--input <FILE>` | `-i` | Input JSON dump file (required) | |
-| `--host <HOST>` | `-H` | Target database host | `localhost` |
-| `--port <PORT>` | `-P` | Target database port | `6745` |
-| `--database <DATABASE>` | | Override database name | Uses name from dump |
-| `--collection <COLLECTION>` | | Override collection name (single collection only) | Uses name from dump |
-| `--create-database` | | Create database if it doesn't exist | |
-| `--drop` | | Drop existing collection before restore | |
+| Option                      | Short | Description                                       | Default             |
+| --------------------------- | ----- | ------------------------------------------------- | ------------------- |
+| `--input <FILE>`            | `-i`  | Input JSON dump file (required)                   |                     |
+| `--host <HOST>`             | `-H`  | Target database host                              | `localhost`         |
+| `--port <PORT>`             | `-P`  | Target database port                              | `6745`              |
+| `--database <DATABASE>`     |       | Override database name                            | Uses name from dump |
+| `--collection <COLLECTION>` |       | Override collection name (single collection only) | Uses name from dump |
+| `--create-database`         |       | Create database if it doesn't exist               |                     |
+| `--drop`                    |       | Drop existing collection before restore           |                     |
 
 ### Examples
 
 **Restore from backup:**
+
 ```bash
 solidb-restore -i backup.json --create-database
 ```
 
 **Restore to different database:**
+
 ```bash
 solidb-restore -i backup.json --database newdb --create-database
 ```
 
 **Restore and replace existing collection:**
+
 ```bash
 solidb-restore -i users.json --drop
 ```
 
 **Restore single collection with new name:**
+
 ```bash
 solidb-restore -i users.json --collection users_copy
 ```
 
 **Restore to different server:**
+
 ```bash
 solidb-restore -i backup.json -H staging.local -P 6745 --create-database
 ```
@@ -142,7 +153,7 @@ solidb-restore -i backup.json -H staging.local -P 6745 --create-database
 - **Database Creation**: Use `--create-database` to automatically create the target database if it doesn't exist
 - **Collection Creation**: Collections are created automatically during restore
 - **Shard Configuration**: Sharding settings are preserved from the dump
-- **Existing Data**: 
+- **Existing Data**:
   - Without `--drop`: Attempts to insert documents (may fail on duplicate keys)
   - With `--drop`: Deletes existing collection first, then recreates
 
@@ -258,20 +269,24 @@ solidb-restore -i migration.json --create-database
 ## Troubleshooting
 
 **"Failed to list collections"**
+
 - Verify database name is correct
 - Check server is running and accessible
 - Verify permissions/authentication if enabled
 
 **"Collection not found"**
+
 - Database or collection doesn't exist
 - Check spelling and case-sensitivity
 
 **"Failed to insert document"**
+
 - Duplicate key conflicts (use `--drop` flag)
 - Schema validation errors
 - Disk space issues
 
 **Large restore takes too long**
+
 - Normal for large datasets (inserts are sequential)
 - Consider splitting dump into multiple files
 - Future versions may support parallel restore
@@ -294,4 +309,4 @@ solidb-restore -i migration.json --create-database
 
 - [Sharding Documentation](./SHARDING.md)
 - [API Reference](./API.md)
-- [AQL Query Language](./AQL.md)
+- [SDBQL Query Language](./SDBQL.md)

@@ -1,5 +1,5 @@
-//! AQL Parser and Query Executor Tests
-//! Tests for the AQL query language implementation
+//! SDBQL Parser and Query Executor Tests
+//! Tests for the SDBQL query language implementation
 
 use serde_json::json;
 use solidb::{parse, BindVars, QueryExecutor, StorageEngine};
@@ -565,7 +565,7 @@ fn test_execute_concat_separator_function() {
     collection
         .insert(json!({
             "_key": "1",
-            "tags": ["rust", "database", "aql"]
+            "tags": ["rust", "database", "sdbql"]
         }))
         .unwrap();
 
@@ -574,7 +574,7 @@ fn test_execute_concat_separator_function() {
     let results = executor.execute(&query).unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], json!("rust, database, aql"));
+    assert_eq!(results[0], json!("rust, database, sdbql"));
 }
 
 #[test]
@@ -1124,7 +1124,7 @@ fn test_array_access_from_document() {
     collection
         .insert(json!({
             "_key": "1",
-            "tags": ["rust", "database", "aql"]
+            "tags": ["rust", "database", "sdbql"]
         }))
         .unwrap();
 
@@ -1291,7 +1291,7 @@ fn test_bind_variable_prevents_injection() {
     let results = executor.execute(&query).unwrap();
 
     // Should return empty because no user has this exact name
-    // (the malicious payload is treated as a literal string, not AQL code)
+    // (the malicious payload is treated as a literal string, not SDBQL code)
     assert_eq!(results.len(), 0);
 }
 
@@ -1756,11 +1756,11 @@ fn test_levenshtein_empty_string() {
 }
 
 #[test]
-fn test_fulltext_aql_function() {
+fn test_fulltext_sdbql_function() {
     let (storage, _dir) = create_test_storage();
     setup_articles_collection(&storage);
 
-    // Use FULLTEXT function in AQL - need to iterate over result
+    // Use FULLTEXT function in SDBQL - need to iterate over result
     let query = parse(
         r#"
         LET matches = FULLTEXT("articles", "title", "rust")
@@ -4952,7 +4952,7 @@ fn test_execute_date_dayofyear_function() {
     let (storage, _dir) = create_test_storage();
     setup_users_collection(&storage);
 
-    // 2024-02-01T00:00:00Z = 1706745600000 ms 
+    // 2024-02-01T00:00:00Z = 1706745600000 ms
     let query = parse("RETURN DATE_DAYOFYEAR(1706745600000)").unwrap();
     let executor = QueryExecutor::new(&storage);
     let results = executor.execute(&query).unwrap();

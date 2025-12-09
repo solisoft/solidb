@@ -1,4 +1,4 @@
-pub mod aql;
+pub mod sdbql;
 pub mod cluster;
 pub mod error;
 pub mod server;
@@ -6,7 +6,7 @@ pub mod sharding;
 pub mod storage;
 pub mod transaction;
 
-pub use aql::{parse, BindVars, QueryExecutor, QueryExplain};
+pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};
 pub use server::create_router;
 pub use storage::{

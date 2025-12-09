@@ -1,236 +1,358 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
   <div class="mb-8">
-    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
-      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
       Back to Documentation
     </a>
   </div>
 
   <div class="grid grid-cols-12 gap-8 lg:gap-12">
-    
     <!-- Sidebar Partial -->
     <%- Partial("architecture_sidebar") %>
 
     <!-- Main Content -->
     <div class="col-span-12 lg:col-span-9 space-y-12">
       <!-- Header Section -->
-       <div class="relative">
-        <div class="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg blur opacity-25"></div>
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg blur opacity-25"
+        ></div>
         <div class="relative">
-          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 mb-4 tracking-tight">System Architecture</h1>
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 mb-4 tracking-tight"
+          >
+            System Architecture
+          </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            A deep dive into the internals of SoliDB, built with Rust for performance and safety.
+            A deep dive into the internals of SoliDB, built with Rust for
+            performance and safety.
           </p>
         </div>
       </div>
 
       <!-- Introduction Section -->
-        <section id="introduction" class="scroll-mt-24">
-          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
-                <i class="fas fa-layer-group text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Overview</h2>
+      <section id="introduction" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]"
+            >
+              <i class="fas fa-layer-group text-sm"></i>
             </div>
-            
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              SoliDB is a high-performance, distributed, multi-model database. It features a layered architecture that separates network handling, query processing, clustering logic, and storage.
-            </p>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-                 <div class="text-indigo-400 font-bold mb-1">API Layer</div>
-                 <p class="text-xs text-gray-500">Axum & Tokio</p>
-              </div>
-              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-                 <div class="text-blue-400 font-bold mb-1">Cluster Layer</div>
-                 <p class="text-xs text-gray-500">Sharding & Raft</p>
-              </div>
-              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-                 <div class="text-purple-400 font-bold mb-1">Logic Layer</div>
-                 <p class="text-xs text-gray-500">AQL Engine</p>
-              </div>
-              <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-                 <div class="text-pink-400 font-bold mb-1">Storage Layer</div>
-                 <p class="text-xs text-gray-500">RocksDB</p>
-              </div>
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB is a high-performance, distributed, multi-model database. It
+            features a layered architecture that separates network handling,
+            query processing, clustering logic, and storage.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div
+              class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center"
+            >
+              <div class="text-indigo-400 font-bold mb-1">API Layer</div>
+              <p class="text-xs text-gray-500">Axum & Tokio</p>
+            </div>
+            <div
+              class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center"
+            >
+              <div class="text-blue-400 font-bold mb-1">Cluster Layer</div>
+              <p class="text-xs text-gray-500">Sharding & Raft</p>
+            </div>
+            <div
+              class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center"
+            >
+              <div class="text-purple-400 font-bold mb-1">Logic Layer</div>
+              <p class="text-xs text-gray-500">SDBQL Engine</p>
+            </div>
+            <div
+              class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center"
+            >
+              <div class="text-pink-400 font-bold mb-1">Storage Layer</div>
+              <p class="text-xs text-gray-500">RocksDB</p>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
       <!-- Tech Stack Section -->
-        <section id="tech-stack" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-                <i class="fas fa-code text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Technology Stack</h2>
+      <section id="tech-stack" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+            >
+              <i class="fas fa-code text-sm"></i>
             </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fab fa-rust text-orange-500 mr-2"></i> Core</h3>
-                <ul class="space-y-2 text-sm text-gray-400">
-                  <li><strong class="text-gray-300">Rust:</strong> Memory safety and performance without garbage collection.</li>
-                  <li><strong class="text-gray-300">Tokio:</strong> Asynchronous runtime for handling high concurrency.</li>
-                </ul>
+            <h2 class="text-2xl font-bold text-white">Technology Stack</h2>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fab fa-rust text-orange-500 mr-2"></i> Core
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li>
+                  <strong class="text-gray-300">Rust:</strong> Memory safety and
+                  performance without garbage collection.
+                </li>
+                <li>
+                  <strong class="text-gray-300">Tokio:</strong> Asynchronous
+                  runtime for handling high concurrency.
+                </li>
+              </ul>
+            </div>
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-hdd text-green-500 mr-2"></i> Storage
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li>
+                  <strong class="text-gray-300">RocksDB:</strong> Embedded
+                  key-value store optimized for fast storage.
+                </li>
+                <li>
+                  <strong class="text-gray-300">Sled:</strong> Experimental
+                  support for pure-Rust storage engine.
+                </li>
+              </ul>
+            </div>
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-network-wired text-purple-500 mr-2"></i>
+                Networking
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li>
+                  <strong class="text-gray-300">Axum:</strong> Ergonomic and
+                  modular web framework.
+                </li>
+                <li>
+                  <strong class="text-gray-300">Reqwest:</strong> HTTP client
+                  for cluster communication.
+                </li>
+              </ul>
+            </div>
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-project-diagram text-yellow-500 mr-2"></i>
+                Tools
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li>
+                  <strong class="text-gray-300">Clap:</strong> Command-line
+                  argument parser.
+                </li>
+                <li>
+                  <strong class="text-gray-300">Serde:</strong> Serialization
+                  framework for JSON handling.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Project Structure Section -->
+      <section id="project-structure" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"
+            >
+              <i class="fas fa-folder-open text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Project Structure</h2>
+          </div>
+
+          <div
+            class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden font-mono text-sm"
+          >
+            <div
+              class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500"
+            >
+              src/
+            </div>
+            <div class="p-4 space-y-2">
+              <div class="flex">
+                <span class="text-indigo-400 w-32">api/</span>
+                <span class="text-gray-500"
+                  ># API route handlers and definitions</span
+                >
               </div>
-              <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-hdd text-green-500 mr-2"></i> Storage</h3>
-                 <ul class="space-y-2 text-sm text-gray-400">
-                  <li><strong class="text-gray-300">RocksDB:</strong> Embedded key-value store optimized for fast storage.</li>
-                  <li><strong class="text-gray-300">Sled:</strong> Experimental support for pure-Rust storage engine.</li>
-                </ul>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">sdbql/</span>
+                <span class="text-gray-500"
+                  ># Query parser, optimizer, and execution engine</span
+                >
               </div>
-               <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-network-wired text-purple-500 mr-2"></i> Networking</h3>
-                 <ul class="space-y-2 text-sm text-gray-400">
-                  <li><strong class="text-gray-300">Axum:</strong> Ergonomic and modular web framework.</li>
-                  <li><strong class="text-gray-300">Reqwest:</strong> HTTP client for cluster communication.</li>
-                </ul>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">cluster/</span>
+                <span class="text-gray-500"
+                  ># Node discovery and replication logic</span
+                >
               </div>
-               <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-                <h3 class="text-white font-semibold mb-3 flex items-center"><i class="fas fa-project-diagram text-yellow-500 mr-2"></i> Tools</h3>
-                 <ul class="space-y-2 text-sm text-gray-400">
-                  <li><strong class="text-gray-300">Clap:</strong> Command-line argument parser.</li>
-                  <li><strong class="text-gray-300">Serde:</strong> Serialization framework for JSON handling.</li>
-                </ul>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">sharding/</span>
+                <span class="text-gray-500"
+                  ># Consistent hashing and shard management</span
+                >
+              </div>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">storage/</span>
+                <span class="text-gray-500"
+                  ># RocksDB wrapper and collection management</span
+                >
+              </div>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">server/</span>
+                <span class="text-gray-500"
+                  ># HTTP server startup and configuration</span
+                >
+              </div>
+              <div class="flex">
+                <span class="text-indigo-400 w-32">main.rs</span>
+                <span class="text-gray-500"># Application entry point</span>
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Project Structure Section -->
-        <section id="project-structure" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
-                <i class="fas fa-folder-open text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Project Structure</h2>
+      <!-- Storage Layer Section -->
+      <section id="storage-layer" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]"
+            >
+              <i class="fas fa-hdd text-sm"></i>
             </div>
-            
-            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
-              <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500">
-                src/
-              </div>
-              <div class="p-4 space-y-2">
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">api/</span>
-                  <span class="text-gray-500"># API route handlers and definitions</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">aql/</span>
-                  <span class="text-gray-500"># Query parser, optimizer, and execution engine</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">cluster/</span>
-                  <span class="text-gray-500"># Node discovery and replication logic</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">sharding/</span>
-                  <span class="text-gray-500"># Consistent hashing and shard management</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">storage/</span>
-                  <span class="text-gray-500"># RocksDB wrapper and collection management</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">server/</span>
-                  <span class="text-gray-500"># HTTP server startup and configuration</span>
-                </div>
-                 <div class="flex">
-                  <span class="text-indigo-400 w-32">main.rs</span>
-                  <span class="text-gray-500"># Application entry point</span>
-                </div>
-              </div>
+            <h2 class="text-2xl font-bold text-white">Storage Layer</h2>
+          </div>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            The storage layer is an abstraction over RocksDB. It handles
+            document serialization, index management, and atomic operations.
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-yellow-400 font-bold mb-2">Documents</h4>
+              <p class="text-xs text-gray-400">
+                Stored as JSON bytes. Key format:
+                <code class="bg-white/10 px-1 rounded">collection/key</code>.
+              </p>
+            </div>
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
+              <h4 class="text-yellow-400 font-bold mb-2">Indexes</h4>
+              <p class="text-xs text-gray-400">
+                Secondary indexes stored in separate column families for
+                efficient lookups.
+              </p>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- Storage Layer Section -->
-        <section id="storage-layer" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]">
-                <i class="fas fa-hdd text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Storage Layer</h2>
+      <!-- SDBQL Engine Section -->
+      <section id="sdbql-engine" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]"
+            >
+              <i class="fas fa-terminal text-sm"></i>
             </div>
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              The storage layer is an abstraction over RocksDB. It handles document serialization, index management, and atomic operations.
-            </p>
-             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
-                 <h4 class="text-yellow-400 font-bold mb-2">Documents</h4>
-                 <p class="text-xs text-gray-400">Stored as JSON bytes. Key format: <code class="bg-white/10 px-1 rounded">collection/key</code>.</p>
-               </div>
-               <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5">
-                 <h4 class="text-yellow-400 font-bold mb-2">Indexes</h4>
-                 <p class="text-xs text-gray-400">Secondary indexes stored in separate column families for efficient lookups.</p>
-               </div>
-             </div>
+            <h2 class="text-2xl font-bold text-white">SDBQL Engine</h2>
           </div>
-        </section>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            The SDBQL (SoliDB Query Language) engine parses query strings into
+            an Abstract Syntax Tree (AST), optimizes the execution plan, and
+            executes it against the storage layer.
+          </p>
+          <div
+            class="bg-gray-900 rounded-xl border border-white/10 p-4 font-mono text-xs text-gray-400 flex justify-between items-center overflow-x-auto"
+          >
+            <div>Query String</div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div>Lexer/Parser</div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-purple-400">AST</div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div>Optimizer</div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-green-400">Execution Plan</div>
+          </div>
+        </div>
+      </section>
 
-        <!-- AQL Engine Section -->
-        <section id="aql-engine" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
-                <i class="fas fa-terminal text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">AQL Engine</h2>
+      <!-- Server & API Section -->
+      <section id="server-api" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+            >
+              <i class="fas fa-server text-sm"></i>
             </div>
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              The AQL (ArangoDB Query Language) engine parses query strings into an Abstract Syntax Tree (AST), optimizes the execution plan, and executes it against the storage layer.
-            </p>
-             <div class="bg-gray-900 rounded-xl border border-white/10 p-4 font-mono text-xs text-gray-400 flex justify-between items-center overflow-x-auto">
-               <div>Query String</div>
-               <i class="fas fa-arrow-right text-gray-600"></i>
-               <div>Lexer/Parser</div>
-               <i class="fas fa-arrow-right text-gray-600"></i>
-               <div class="text-purple-400">AST</div>
-                <i class="fas fa-arrow-right text-gray-600"></i>
-               <div>Optimizer</div>
-                <i class="fas fa-arrow-right text-gray-600"></i>
-               <div class="text-green-400">Execution Plan</div>
-             </div>
+            <h2 class="text-2xl font-bold text-white">Server & API</h2>
           </div>
-        </section>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Built on Axum, the server handles HTTP requests, authentication
+            middleware, and routing to appropriate handlers.
+          </p>
+        </div>
+      </section>
 
-       <!-- Server & API Section -->
-        <section id="server-api" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                <i class="fas fa-server text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Server & API</h2>
+      <!-- Cluster & Replication Section -->
+      <section id="cluster-replication" class="scroll-mt-24">
+        <div
+          class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors"
+        >
+          <div class="flex items-center mb-6">
+            <div
+              class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
+            >
+              <i class="fas fa-network-wired text-sm"></i>
             </div>
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              Built on Axum, the server handles HTTP requests, authentication middleware, and routing to appropriate handlers.
-            </p>
+            <h2 class="text-2xl font-bold text-white">Cluster & Replication</h2>
           </div>
-        </section>
-
-        <!-- Cluster & Replication Section -->
-        <section id="cluster-replication" class="scroll-mt-24">
-           <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
-            <div class="flex items-center mb-6">
-              <div class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
-                <i class="fas fa-network-wired text-sm"></i>
-              </div>
-              <h2 class="text-2xl font-bold text-white">Cluster & Replication</h2>
-            </div>
-            <p class="text-gray-300 mb-6 leading-relaxed">
-              Nodes form a mesh network. Data is replicated updates are propagated to peers. The system uses a leader-follower model for sharded collections.
-            </p>
-          </div>
-        </section>
-
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Nodes form a mesh network. Data is replicated updates are propagated
+            to peers. The system uses a leader-follower model for sharded
+            collections.
+          </p>
+        </div>
+      </section>
     </div>
   </div>
 </div>
