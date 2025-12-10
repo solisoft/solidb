@@ -466,6 +466,10 @@ impl ReplicationService {
                 break;
             }
 
+            if line.trim().is_empty() {
+                continue;
+            }
+
             let message: ReplicationMessage = match serde_json::from_str(&line) {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -1227,6 +1231,10 @@ impl ReplicationService {
                             break;
                         }
                         Ok(_) => {
+                            if line.trim().is_empty() {
+                                line.clear();
+                                continue;
+                            }
                             if let Ok(message) = serde_json::from_str::<ReplicationMessage>(&line) {
                                 if let Some(response) = self.handle_message(message, peer_addr).await {
                                     writer.write_all(&response.to_bytes()).await?;
@@ -1554,8 +1562,9 @@ impl ReplicationService {
         document_data: Option<&[u8]>,
         prev_rev: Option<&str>,
     ) -> u64 {
-        // Skip replication logging in single-node mode
-        if !self.config.is_cluster_mode() {
+        // Skip replication logging only if we are not in cluster mode AND have no connected peers
+        // This handles the case of the first node (which has no configured peers) but later accepts connections
+        if !self.config.is_cluster_mode() && self.peer_states.read().unwrap().is_empty() {
             return 0;
         }
 
@@ -1594,7 +1603,8 @@ impl ReplicationService {
         chunk_index: u32,
         data: Vec<u8>,
     ) -> u64 {
-        if !self.config.is_cluster_mode() {
+        // Skip replication logging only if we are not in cluster mode AND have no connected peers
+        if !self.config.is_cluster_mode() && self.peer_states.read().unwrap().is_empty() {
             return 0;
         }
 

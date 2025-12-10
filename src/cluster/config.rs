@@ -49,6 +49,17 @@ impl ClusterConfig {
             }
         });
 
+        // Trim peer addresses and strip protocol prefixes to handle copy-pasted URLs
+        let peers = peers.into_iter().map(|p| {
+            let mut s = p.trim().to_string();
+            if s.starts_with("http://") {
+                s = s[7..].to_string();
+            } else if s.starts_with("https://") {
+                s = s[8..].to_string();
+            }
+            s
+        }).collect();
+
         Self {
             node_id,
             peers,

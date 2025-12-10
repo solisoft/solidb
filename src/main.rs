@@ -186,7 +186,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     });
 
     // Create router with replication service
-    let app = create_router(storage, Some(replication_service));
+    let app = create_router(storage, Some(replication_service), args.port);
 
     // Start server with graceful shutdown
     let addr = format!("0.0.0.0:{}", args.port);

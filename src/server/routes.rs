@@ -14,7 +14,7 @@ use crate::cluster::ReplicationService;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 
-pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>) -> Router {
+pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>, api_port: u16) -> Router {
     // Initialize Auth (create default admin if needed)
     tracing::info!("Initializing authentication...");
     if let Err(e) = crate::server::auth::AuthService::init(&storage, replication.as_ref()) {
@@ -26,23 +26,41 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
     // Initialize ShardCoordinator if in cluster mode
     let shard_coordinator = if let Some(config) = storage.cluster_config() {
         if config.is_cluster_mode() {
-            // Get this node's API address (http port = replication port - 1)
-            let my_api_port = config.replication_port - 1;
-            let my_api_addr = format!("localhost:{}", my_api_port);
+            // Get this node's API address
+            let my_api_addr = format!("localhost:{}", api_port);
             
-            // Convert replication addresses (port 6746) to HTTP API addresses (port 6745)
+            // Calculate port offset (replication_port - api_port)
+            // This handles custom port configurations (e.g. API 6745, Repl 7745 -> gap 1000)
+            // We assume all nodes in the cluster use the same port offset convention.
+            let port_offset = if config.replication_port >= api_port {
+                (config.replication_port - api_port) as i32
+            } else {
+                -((api_port - config.replication_port) as i32)
+            };
+
+            tracing::info!("[CLUSTER] Port configuration: API={}, Replication={}, Offset={}", 
+                api_port, config.replication_port, port_offset);
+            
+            // Convert replication addresses to HTTP API addresses
             // The peers list contains replication addresses, but ShardCoordinator needs API addresses
-            let mut node_addresses: Vec<String> = config.peers.iter().map(|peer| {
-                // Parse the peer address and convert to API port
-                // Replication ports are typically API port + 1
+            let mut node_addresses: Vec<String> = config.peers.iter().filter_map(|peer| {
+                // Parse the peer address and convert to API port using dynamic offset
+                let peer = peer.trim();
+                
                 if let Some(port_start) = peer.rfind(':') {
                     let host = &peer[..port_start];
                     if let Ok(repl_port) = peer[port_start+1..].parse::<u16>() {
-                        let api_port = repl_port - 1; // API port is typically one less
-                        return format!("{}:{}", host, api_port);
+                        // Apply offset to get API port
+                        let peer_api_port = (repl_port as i32 - port_offset) as u16;
+                        return Some(format!("{}:{}", host, peer_api_port));
                     }
                 }
-                peer.clone() // Fallback: use as-is
+                
+                // If we can't parse the port to derive the API port, we should NOT include this peer
+                // in the ShardCoordinator's health check list as that would likely use the
+                // replication port for HTTP requests, causing "Invalid message" errors on the peer.
+                tracing::warn!("Could not derive API port for peer '{}', skipping for health checks", peer);
+                None
             }).collect();
             
             // Add self to node_addresses if not already present
