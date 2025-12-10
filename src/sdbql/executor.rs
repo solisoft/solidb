@@ -1135,29 +1135,51 @@ impl<'a> QueryExecutor<'a> {
         let mut all_docs: Vec<Value> = Vec::new();
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        // Use a runtime for async HTTP calls
-
+        // For sharded queries with LIMIT, we need to fetch up to `limit` docs from EACH node
+        // because we don't know which nodes have which documents
+        // This is a simple approach - more sophisticated would be to fetch in parallel and stop early
 
         for (idx, node_addr) in all_nodes.iter().enumerate() {
+            // Stop early if we have enough docs
+            if let Some(n) = limit {
+                if all_docs.len() >= n {
+                    break;
+                }
+            }
+
             if idx == my_node_index {
-                // Query local node directly
+                // Query local node directly - pass limit for efficiency
                 let collection = self.get_collection(collection_name)?;
-                for doc in collection.scan(None) {
+                for doc in collection.scan(limit) {
                     let key = doc.key.clone();
                     if seen_keys.insert(key) {
                         all_docs.push(doc.to_value());
+                        // Early exit if we have enough
+                        if let Some(n) = limit {
+                            if all_docs.len() >= n {
+                                break;
+                            }
+                        }
                     }
                 }
             } else {
-                // Query remote node via HTTP
+                // Query remote node via HTTP - include LIMIT in query
                 let url = format!(
                     "http://{}/_api/database/{}/cursor",
                     node_addr, db_name
                 );
-                let query = format!(
-                    "FOR doc IN {} RETURN doc",
-                    collection_name
-                );
+                // Include LIMIT in remote query to avoid fetching all docs
+                let query = if let Some(n) = limit {
+                    format!(
+                        "FOR doc IN {} LIMIT {} RETURN doc",
+                        collection_name, n
+                    )
+                } else {
+                    format!(
+                        "FOR doc IN {} RETURN doc",
+                        collection_name
+                    )
+                };
 
                 // Use block_in_place to run blocking HTTP client in async context
                 let body_result = tokio::task::block_in_place(|| {
@@ -1184,6 +1206,12 @@ impl<'a> QueryExecutor<'a> {
                             if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
                                 if seen_keys.insert(key.to_string()) {
                                     all_docs.push(doc.clone());
+                                    // Early exit if we have enough
+                                    if let Some(n) = limit {
+                                        if all_docs.len() >= n {
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1192,7 +1220,7 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Apply limit if specified
+        // Final truncation to ensure exact limit
         if let Some(n) = limit {
             all_docs.truncate(n);
         }
