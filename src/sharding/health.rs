@@ -14,6 +14,8 @@ pub struct NodeStatus {
     pub last_check: Instant,
     pub last_success: Option<Instant>,
     pub consecutive_failures: u32,
+    /// Has this node ever passed a health check? Used to prevent removal during startup.
+    pub was_ever_healthy: bool,
 }
 
 impl Default for NodeStatus {
@@ -21,8 +23,9 @@ impl Default for NodeStatus {
         Self {
             is_healthy: true, // Assume healthy until proven otherwise
             last_check: Instant::now(),
-            last_success: Some(Instant::now()),
+            last_success: None, // No success yet - never been checked
             consecutive_failures: 0,
+            was_ever_healthy: false, // Will be true after first successful check
         }
     }
 }
@@ -77,6 +80,7 @@ impl NodeHealth {
             status.last_check = Instant::now();
             status.last_success = Some(Instant::now());
             status.consecutive_failures = 0;
+            status.was_ever_healthy = true; // Mark as verified healthy
         }
     }
 
@@ -108,6 +112,16 @@ impl NodeHealth {
         if !nodes.contains_key(node_addr) {
             nodes.insert(node_addr.to_string(), NodeStatus::default());
         }
+    }
+
+    /// Check if a node was ever healthy (passed at least one health check)
+    pub fn was_ever_healthy(&self, node_addr: &str) -> bool {
+        self.nodes
+            .read()
+            .unwrap()
+            .get(node_addr)
+            .map(|s| s.was_ever_healthy)
+            .unwrap_or(false)
     }
 
     /// Remove a node from the health tracker

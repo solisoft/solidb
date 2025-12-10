@@ -1,0 +1,126 @@
+<sharding-dashboard>
+    <div class="mt-8 bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
+        <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+            <div>
+                <h3 class="text-lg font-medium text-white">Sharding & Replication Dashboard</h3>
+                <p class="mt-1 text-sm text-gray-400">Shard distribution with document counts</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick={ loadStats } class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Refresh">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div if={ state.loading } class="flex justify-center items-center py-12">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+            <span class="ml-3 text-gray-400">Loading cluster stats...</span>
+        </div>
+
+        <div if={ !state.loading && state.collections.length===0 } class="text-center py-12">
+            <p class="text-gray-500">No sharded collections found.</p>
+        </div>
+
+        <div if={ !state.loading && state.collections.length> 0 } class="p-6 space-y-6">
+            <div each={ coll in state.collections } class="bg-gray-750 rounded-lg p-4 border border-gray-600">
+                <!-- Collection Header -->
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h4 class="text-white font-medium">{ coll.name }</h4>
+                        <p class="text-xs text-gray-400">
+                            { coll.document_count } docs total • { coll.sharding.num_shards } shards • RF {
+                            coll.sharding.replication_factor }
+                        </p>
+                    </div>
+                    <span class="px-2 py-1 text-xs rounded bg-green-900/30 text-green-400">
+                        { coll.cluster.total_nodes } nodes
+                    </span>
+                </div>
+
+                <!-- Shard Table -->
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-400 text-xs uppercase">
+                            <th class="pb-2 pr-4">Shard</th>
+                            <th class="pb-2 pr-4">Documents</th>
+                            <th class="pb-2">Nodes (Primary + Replicas)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-700">
+                        <tr each={ shard in (coll.cluster.shards || []) } class="text-gray-300">
+                            <td class="py-2 pr-4">
+                                <span class="px-2 py-0.5 rounded bg-indigo-900/50 text-indigo-300 font-mono">
+                                    #{ shard.shard_id }
+                                </span>
+                            </td>
+                            <td class="py-2 pr-4 font-medium">
+                                { shard.document_count.toLocaleString() }
+                            </td>
+                            <td class="py-2">
+                                <div class="flex flex-wrap gap-1">
+                                    <span each={ (node, idx) in shard.nodes }
+                                        class="px-1.5 py-0.5 rounded text-xs { idx === 0 ? 'bg-blue-900/50 text-blue-300 border border-blue-700/50' : 'bg-gray-700 text-gray-400' }"
+                                        title={ idx===0 ? 'Primary' : 'Replica' }>
+                                        { node.split(':')[1] || node }
+                                    </span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        import { getApiUrl, authenticatedFetch } from '/api-config.js'
+
+        export default {
+            state: {
+                collections: [],
+                loading: true,
+                error: null
+            },
+
+            onMounted() {
+                this.loadStats()
+            },
+
+            async loadStats() {
+                this.update({ loading: true })
+                try {
+                    const url = `${getApiUrl()}/database/${this.props.db}`
+                    const response = await authenticatedFetch(`${url}/collection`)
+                    const data = await response.json()
+
+                    let collections = data.collections || []
+                    collections = collections.filter(c => c.name !== '_scripts' && !c.name.startsWith('_'))
+
+                    // Fetch stats for each collection in parallel
+                    const statsPromises = collections.map(c =>
+                        authenticatedFetch(`${url}/collection/${c.name}/stats`)
+                            .then(res => res.json())
+                            .then(stats => ({ ...c, ...stats }))
+                            .catch(err => null)
+                    )
+
+                    const statsResults = await Promise.all(statsPromises)
+
+                    // Filter for sharded collections only
+                    const shardedCollections = statsResults
+                        .filter(c => c && c.sharding && c.sharding.enabled)
+                        .sort((a, b) => a.name.localeCompare(b.name))
+
+                    this.update({ collections: shardedCollections, loading: false })
+                } catch (error) {
+                    console.error('Failed to load sharding stats:', error)
+                    this.update({ error: error.message, loading: false })
+                }
+            }
+        }
+    </script>
+</sharding-dashboard>

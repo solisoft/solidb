@@ -42,8 +42,8 @@ impl Default for CollectionShardConfig {
 pub struct ShardCoordinator {
     storage: Arc<StorageEngine>,
     http_client: Client,
-    /// This node's index in the cluster (0-based)
-    node_index: usize,
+    /// This node's HTTP address
+    my_address: String,
     /// All node HTTP addresses (including self)
     node_addresses: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
     /// Node health tracker for failover
@@ -53,10 +53,18 @@ pub struct ShardCoordinator {
 }
 
 impl ShardCoordinator {
+    /// Normalize address to handle localhost/0.0.0.0/127.0.0.1 aliasing
+    fn normalize_address(addr: &str) -> String {
+        let normalized = addr
+            .replace("localhost:", "127.0.0.1:")
+            .replace("0.0.0.0:", "127.0.0.1:");
+        normalized
+    }
+    
     /// Create a new shard coordinator
     pub fn new(
         storage: Arc<StorageEngine>,
-        node_index: usize,
+        my_address: String,
         node_addresses: Vec<String>,
     ) -> Self {
         let http_client = Client::builder()
@@ -64,11 +72,15 @@ impl ShardCoordinator {
             .build()
             .expect("Failed to create HTTP client");
 
+        let normalized_addresses: Vec<String> = node_addresses.into_iter()
+            .map(|a| Self::normalize_address(&a))
+            .collect();
+
         Self {
             storage,
             http_client,
-            node_index,
-            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(node_addresses)),
+            my_address: Self::normalize_address(&my_address),
+            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(normalized_addresses)),
             health: None,
             replication_queue: super::replication_queue::ReplicationQueue::new(),
         }
@@ -77,7 +89,7 @@ impl ShardCoordinator {
     /// Create a new shard coordinator with health tracking enabled
     pub fn with_health_tracking(
         storage: Arc<StorageEngine>,
-        node_index: usize,
+        my_address: String,
         node_addresses: Vec<String>,
         failure_threshold: u32,
     ) -> Self {
@@ -86,17 +98,22 @@ impl ShardCoordinator {
             .build()
             .expect("Failed to create HTTP client");
 
-        let health = super::health::NodeHealth::new(node_addresses.clone(), failure_threshold);
+        let normalized_addresses: Vec<String> = node_addresses.iter()
+            .map(|a| Self::normalize_address(a))
+            .collect();
+
+        let health = super::health::NodeHealth::new(normalized_addresses.clone(), failure_threshold);
 
         Self {
             storage,
             http_client,
-            node_index,
-            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(node_addresses)),
+            my_address: Self::normalize_address(&my_address),
+            node_addresses: std::sync::Arc::new(std::sync::RwLock::new(normalized_addresses)),
             health: Some(health),
             replication_queue: super::replication_queue::ReplicationQueue::new(),
         }
     }
+
 
     /// Get health tracker (for starting background health checker)
     pub fn health_tracker(&self) -> Option<&super::health::NodeHealth> {
@@ -138,7 +155,8 @@ impl ShardCoordinator {
     /// Check if this node is responsible for the shard
     pub fn is_local(&self, shard_id: u16) -> bool {
         let addresses = self.node_addresses.read().unwrap();
-        ShardRouter::is_shard_local(shard_id, self.node_index, addresses.len())
+        let my_index = addresses.iter().position(|a| a == &self.my_address).unwrap_or(0);
+        ShardRouter::is_shard_local(shard_id, my_index, addresses.len())
     }
 
     /// Get address of node responsible for shard
@@ -159,7 +177,10 @@ impl ShardCoordinator {
 
     /// Get this node's index in the cluster
     pub fn get_node_index(&self) -> usize {
-        self.node_index
+        self.node_addresses.read().unwrap()
+            .iter()
+            .position(|a| a == &self.my_address)
+            .unwrap_or(0)
     }
 
     /// Add a new node to the cluster and trigger rebalancing for auto-sharded collections
@@ -222,7 +243,7 @@ impl ShardCoordinator {
 
         tracing::info!(
             "[SHARD] key={}, shard={}, replicas={:?}, my_index={}",
-            key, shard_id, replica_nodes, self.node_index
+            key, shard_id, replica_nodes, self.get_node_index()
         );
 
         // If RF=1 or single node, use original logic
@@ -240,8 +261,7 @@ impl ShardCoordinator {
         // Replicated write: write to all replicas
         let mut primary_result: Option<Document> = None;
         let mut errors: Vec<String> = Vec::new();
-        let my_addr = self.node_addresses.read().unwrap().get(self.node_index)
-            .map(|s| s.clone());
+        let my_addr = Some(self.my_address.clone());
 
         for node_addr in &replica_nodes {
             if Some(node_addr.to_string()) == my_addr {
@@ -341,7 +361,77 @@ impl ShardCoordinator {
         };
 
         if should_rebalance {
-            // Trigger data migration
+            // 1. Remove from _system._config to prevent re-discovery
+            let db = self.storage.get_database("_system")?;
+            if let Ok(collection) = db.get_collection("_config") {
+                 // Try to remove from persistent config
+                 // We need to support various formats (API vs Repl address)
+                 // But _sys._config stores REPLICATION addresses (e.g. 900x)
+                 // node_addr is API address (e.g. 800x).
+                 // We need to infer the replication address or just delete by matching host?
+                 // Simple hack: Load doc, filter out any peer that maps to this API address?
+                 // Or just assume single node per host in test?
+                 // Better: We calculated offset in refresh_nodes. We can reverse it?
+                 // But we don't store offset easily.
+                 
+                 // Let's try to find it in the doc by matching.
+                 if let Ok(mut doc) = collection.get("cluster_peers") {
+                     if let Some(mut peers_arr) = doc.data.get("peers").and_then(|v| v.as_array()).cloned() {
+                         // Filter out the removed node
+                         // We need to be careful with port mapping.
+                         // But wait, if we remove it from memory, we should remove it from storage.
+                         // Let's rely on string matching or try to locate it.
+                         
+                         // The storage has 127.0.0.1:9001. We have 127.0.0.1:8001.
+                         // We need to match the HOST and port-offset.
+                         // But we don't have the offset handy here? 
+                         // Check refresh_nodes_from_storage logic again (it derives offset).
+                         // We can re-derive it.
+                         
+                         let my_api_port = self.my_address.split(':').last()
+                             .and_then(|p| p.parse::<u16>().ok())
+                             .unwrap_or(0);
+                             
+                         let config = self.storage.cluster_config();
+                         let offset = if let Some(conf) = config {
+                             (conf.replication_port as i32) - (my_api_port as i32)
+                         } else {
+                             1000 // Default assumption
+                         };
+                         
+                         let new_peers: Vec<Value> = peers_arr.iter().filter(|p| {
+                             if let Some(p_str) = p.as_str() {
+                                 // Convert replication addr p_str to API addr
+                                 if let Some(port_start) = p_str.rfind(':') {
+                                     let host = &p_str[..port_start];
+                                     if let Ok(repl_port) = p_str[port_start+1..].parse::<u16>() {
+                                         let api_port = (repl_port as i32 - offset) as u16;
+                                         let api_addr = format!("{}:{}", host, api_port);
+                                         let normalized = Self::normalize_address(&api_addr);
+                                         
+                                         // Compare with removed node_addr
+                                          return normalized != node_addr && api_addr != node_addr;
+                                     }
+                                 }
+                             }
+                             true // Keep if parsing fails
+                         }).cloned().collect();
+                         
+                         if new_peers.len() != peers_arr.len() {
+                             if let Value::Object(ref mut map) = doc.data {
+                                 map.insert("peers".to_string(), Value::Array(new_peers));
+                             }
+                             if let Err(e) = collection.update("cluster_peers", doc.data) {
+                                  tracing::error!("Failed to persist node removal to _config: {}", e);
+                             } else {
+                                  tracing::info!("Persisted removal of {} from _system._config", node_addr);
+                             }
+                         }
+                     }
+                 }
+            }
+            
+            // 2. Trigger data migration
             self.rebalance().await?;
         }
         Ok(())
@@ -377,7 +467,7 @@ impl ShardCoordinator {
                         let replicas = self.get_replicas(&key, &config);
                         
                         // Check if I am responsible for this doc (either primary or replica)
-                        let my_addr_opt = self.node_addresses.read().unwrap().get(self.node_index).cloned();
+                        let my_addr_opt = Some(self.my_address.clone());
                         
                         if let Some(my_addr) = my_addr_opt {
                             for target in replicas {
@@ -423,9 +513,13 @@ impl ShardCoordinator {
             node_addr, db_name, coll_name
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .post(&url)
             .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
             .json(doc)
             .send()
             .await
@@ -459,9 +553,13 @@ impl ShardCoordinator {
             addr, db_name, coll_name
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .post(&url)
             .header("X-Shard-Direct", "true") // Prevent re-routing
+            .basic_auth("admin", Some(&admin_pass))
             .json(&doc)
             .send()
             .await
@@ -513,8 +611,7 @@ impl ShardCoordinator {
         }
 
         // Try each replica in order until one succeeds (failover)
-        let my_addr = self.node_addresses.read().unwrap().get(self.node_index)
-            .map(|s| s.clone());
+        let my_addr = Some(self.my_address.clone());
         let mut last_error: Option<DbError> = None;
 
         for node_addr in &replica_nodes {
@@ -572,9 +669,13 @@ impl ShardCoordinator {
             node_addr, db_name, coll_name, key
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .get(&url)
             .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
             .send()
             .await
             .map_err(|e| DbError::InternalError(format!("Forward failed: {}", e)))?;
@@ -609,9 +710,13 @@ impl ShardCoordinator {
             addr, db_name, coll_name, key
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .get(&url)
             .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
             .send()
             .await
             .map_err(|e| DbError::InternalError(format!("Forward failed: {}", e)))?;
@@ -668,9 +773,13 @@ impl ShardCoordinator {
             addr, db_name, coll_name, key
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .put(&url)
             .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
             .json(&changes)
             .send()
             .await
@@ -724,9 +833,13 @@ impl ShardCoordinator {
             addr, db_name, coll_name, key
         );
 
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
         let response = self.http_client
             .delete(&url)
             .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
             .send()
             .await
             .map_err(|e| DbError::InternalError(format!("Forward failed: {}", e)))?;
@@ -801,18 +914,25 @@ impl ShardCoordinator {
     /// Start background tasks (health check + recovery monitor)
     pub fn start_background_tasks(self: Arc<Self>) {
         if let Some(health) = &self.health {
-            // 1. Start health checker
+            // 1. Start health checker (runs in background, don't await)
             let health_clone = health.clone();
             tokio::spawn(async move {
-                let _ = health_clone.start_health_checker(Duration::from_secs(5)).await;
+                // This spawns the health check loop and immediately returns a JoinHandle
+                // We ignore the handle - the loop runs forever in a separate task
+                health_clone.start_health_checker(Duration::from_secs(2));
             });
 
-            // 2. Start recovery and rebalance monitor
+            // 2. Start recovery, rebalance monitor, and node list refresh
             let self_clone = self.clone();
             tokio::spawn(async move {
                 let mut ticker = tokio::time::interval(Duration::from_secs(5));
                 loop {
                     ticker.tick().await;
+
+                    // REFRESH NODES: Sync node list from _system._config
+                    if let Err(e) = self_clone.refresh_nodes_from_storage() {
+                        tracing::warn!("Failed to refresh node list from storage: {}", e);
+                    }
                     
                     // Check all known nodes
                     // We need a snapshot of nodes checking health
@@ -842,16 +962,103 @@ impl ShardCoordinator {
                         // Ideally we'd have a separate "DEAD" state.
                         // For this task, let's treat `!is_healthy` as trigger.
                         
-                        if !self_clone.is_node_healthy(&node) {
-                             // Check if we already removed it? 
-                             // We are iterating `nodes` copy. If it's in list, it's active.
-                             // Trigger removal.
-                             let _ = self_clone.remove_node(&node).await;
+                        // DISABLED: Aggressive node removal was destroying clusters during warmup.
+                        // Nodes marked unhealthy before a single health check passed were being removed.
+                        // TODO: Implement proper dead-node detection with longer grace period.
+                        // Only remove nodes that:
+                        // 1. Are not ourselves (prevent suicide)
+                        // 2. Were previously healthy (prevents removing during startup)
+                        // 3. Are currently unhealthy (have failed threshold checks)
+                        if node != self_clone.my_address {
+                            if let Some(ref health) = self_clone.health {
+                                let was_healthy = health.was_ever_healthy(&node);
+                                let is_unhealthy = !self_clone.is_node_healthy(&node);
+                                
+                                if was_healthy && is_unhealthy {
+                                    tracing::warn!("Node {} failed health checks, initiating removal", node);
+                                    let _ = self_clone.remove_node(&node).await;
+                                }
+                            }
                         }
                     }
                 }
             });
         }
+    }
+
+    /// Refresh node list from the persistent _system._config collection
+    /// This ensures all nodes have a full view of the cluster, even if they started with a partial peer list
+    fn refresh_nodes_from_storage(&self) -> DbResult<()> {
+        let db = self.storage.get_database("_system")?;
+        let collection = db.get_collection("_config")
+             .map_err(|_| DbError::CollectionNotFound("_config".to_string()))?; // Quiet fail if not exists
+             
+        if let Ok(doc) = collection.get("cluster_peers") {
+            if let Some(peers_arr) = doc.data.get("peers").and_then(|v| v.as_array()) {
+                let mut new_addresses = Vec::new();
+                
+                // Get config for port offset calculation
+                // Note: We need to derive API ports from replication addresses
+                // We can infer the offset from our own configuration
+                let config = self.storage.cluster_config().ok_or(DbError::InternalError("No cluster config".to_string()))?;
+                
+                // Parse my API port from my_address
+                let my_api_port = self.my_address.split(':').last()
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .ok_or(DbError::InternalError("Invalid my_address format".to_string()))?;
+                
+                // Calculate offset: offset = repl_port - api_port
+                // e.g. repl=7745, api=6745 -> offset=1000
+                let port_offset = (config.replication_port as i32) - (my_api_port as i32);
+                
+                for peer_val in peers_arr {
+                    if let Some(peer_addr) = peer_val.as_str() {
+                         // Convert replication address to API address
+                         if let Some(port_start) = peer_addr.rfind(':') {
+                             let host = &peer_addr[..port_start];
+                             
+                             if let Ok(repl_port) = peer_addr[port_start+1..].parse::<u16>() {
+                                 let api_port = (repl_port as i32 - port_offset) as u16;
+                                 let api_addr = format!("{}:{}", host, api_port);
+                                 // Normalize the address before adding
+                                 let normalized = Self::normalize_address(&api_addr);
+                                 new_addresses.push(normalized.clone());
+                                 tracing::debug!("Found peer from storage: {} -> API {}", peer_addr, normalized);
+                             }
+                         }
+                    }
+                }
+                
+                // Add self if missing (should be there, but safety first)
+                if !new_addresses.contains(&self.my_address) {
+                    new_addresses.push(self.my_address.clone());
+                }
+                
+                new_addresses.sort();
+                
+                // Update if changed
+                let mut current = self.node_addresses.write().unwrap();
+                if *current != new_addresses {
+                    tracing::info!("Updating cluster node list: {:?} -> {:?}", *current, new_addresses);
+                    *current = new_addresses;
+                    
+                    // Update health tracker if present
+                    if let Some(ref health) = self.health {
+                        // TODO: efficiently update health tracker nodes
+                        // For now we rely on add_node calls... but we are doing full refresh here.
+                        // Actually NodeHealth doesn't support bulk replace easily.
+                        // But we can just iterate and add any new ones.
+                        // Removing old ones is trickier with current API.
+                        // Since new nodes are main case, let's just add new ones.
+                        for addr in current.iter() {
+                             health.add_node(addr);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     /// Scan all shards across all nodes (scatter-gather query)
@@ -878,39 +1085,61 @@ impl ShardCoordinator {
                 .ok_or_else(|| DbError::InternalError(format!("No node for shard {}", shard_id)))?;
 
             // Check if this is local or remote
-            let my_addr = nodes.get(self.node_index).map(|s| s.as_str());
+            let my_addr = Some(self.my_address.as_str());
+            
+            tracing::debug!("[SCAN] Shard {}: node={}, me={:?}", shard_id, node_addr, my_addr);
             
             if Some(*node_addr) == my_addr {
                 // Local scan - query directly from storage
+                tracing::debug!("[SCAN] Shard {} is LOCAL", shard_id);
                 if let Ok(db) = self.storage.get_database(db_name) {
                     if let Ok(collection) = db.get_collection(coll_name) {
                         // For local shard, we need to scan only documents belonging to this shard
                         // For now, scan all and filter (TODO: optimize with shard-local index)
                         let docs = collection.scan(None);
+                        let mut count = 0;
                         for doc in docs {
                             // Check if document belongs to this shard
                             let doc_shard = ShardRouter::route(&doc.key, config.num_shards);
                             if doc_shard == shard_id {
                                 all_documents.push(doc);
+                                count += 1;
                             }
                         }
+                        tracing::debug!("[SCAN] Shard {} local scan found {} docs", shard_id, count);
                     }
                 }
             } else {
                 // Remote scan - query via HTTP
-                let url = format!("{}/database/{}/shard-scan/{}/{}",
+                let url = format!("http://{}/database/{}/shard-scan/{}/{}",
                     node_addr, db_name, coll_name, shard_id);
                 
-                if let Ok(response) = self.http_client
+                tracing::debug!("[SCAN] Shard {} is REMOTE: {}", shard_id, url);
+                
+                // Get admin password from env var for inter-node auth
+                let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+                
+                match self.http_client
                     .get(&url)
                     .header("X-Shard-Direct", "true")
+                    .basic_auth("admin", Some(&admin_pass))
                     .send()
                     .await
                 {
-                    if response.status().is_success() {
-                        if let Ok(docs) = response.json::<Vec<Document>>().await {
-                            all_documents.extend(docs);
+                    Ok(response) => {
+                         if response.status().is_success() {
+                            if let Ok(docs) = response.json::<Vec<Document>>().await {
+                                tracing::debug!("[SCAN] Remote scan got {} docs", docs.len());
+                                all_documents.extend(docs);
+                            } else {
+                                tracing::warn!("[SCAN] Failed to parse remote docs");
+                            }
+                        } else {
+                            tracing::warn!("[SCAN] Remote scan failed: status {}", response.status());
                         }
+                    },
+                    Err(e) => {
+                         tracing::warn!("[SCAN] Remote scan error: {}", e);
                     }
                 }
             }
@@ -923,8 +1152,9 @@ impl ShardCoordinator {
 impl std::fmt::Debug for ShardCoordinator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ShardCoordinator")
-            .field("node_index", &self.node_index)
+            .field("my_address", &self.my_address)
             .field("node_addresses", &self.node_addresses)
             .finish()
     }
+
 }

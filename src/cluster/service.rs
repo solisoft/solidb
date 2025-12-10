@@ -11,6 +11,18 @@ use super::hlc::HlcGenerator;
 use super::{ClusterConfig, Operation, PersistentReplicationLog, ReplicationEntry};
 use crate::StorageEngine;
 
+/// Metadata for creating a collection (replicated via document_data)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCollectionMetadata {
+    #[serde(default = "default_collection_type")]
+    pub collection_type: String,
+    pub shard_config: Option<crate::sharding::coordinator::CollectionShardConfig>,
+}
+
+fn default_collection_type() -> String {
+    "document".to_string()
+}
+
 /// Messages exchanged between nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReplicationMessage {
@@ -211,6 +223,11 @@ impl ReplicationService {
         }
     }
 
+    /// Returns the number of connected peers
+    pub fn peer_count(&self) -> usize {
+        self.peer_states.read().unwrap().len()
+    }
+
     /// Load saved peer addresses from _system._config collection
     fn load_saved_peers(storage: &StorageEngine) -> Vec<String> {
         if let Ok(db) = storage.get_database("_system") {
@@ -237,13 +254,12 @@ impl ReplicationService {
 
     /// Save peer addresses to _system._config collection
     fn save_peers(&self) {
-        let peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
-
-        tracing::debug!(
-            "[PEER] Saving {} peers to _system._config: {:?}",
-            peers.len(),
-            peers
-        );
+        let mut peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
+        
+        // ALWAYS include ourselves in the peer list
+        if !peers.contains(&self.config.replication_addr()) {
+            peers.push(self.config.replication_addr());
+        }
 
         if let Ok(db) = self.storage.get_database("_system") {
             // Create _config collection if it doesn't exist
@@ -256,6 +272,27 @@ impl ReplicationService {
             }
 
             if let Ok(config_coll) = db.get_collection("_config") {
+                // Read existing peers first to merge (Union)
+                if let Ok(doc) = config_coll.get(Self::PEERS_CONFIG_KEY) {
+                    if let Some(existing_peers) = doc.data.get("peers").and_then(|v| v.as_array()) {
+                        for p in existing_peers {
+                            if let Some(s) = p.as_str() {
+                                if !peers.contains(&s.to_string()) {
+                                    peers.push(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                peers.sort();
+
+                tracing::debug!(
+                    "[PEER] Saving {} peers to _system._config: {:?}",
+                    peers.len(),
+                    peers
+                );
+
                 let peer_doc = serde_json::json!({
                     "_key": Self::PEERS_CONFIG_KEY,
                     "peers": peers
@@ -271,11 +308,63 @@ impl ReplicationService {
                 } else if let Err(e) = config_coll.insert(peer_doc) {
                     tracing::warn!("[PEER] Failed to save peers: {}", e);
                 } else {
-                    tracing::debug!("[PEER] Saved peers to _system._config");
+                    tracing::debug!("[PEER] Created saved peers in _system._config");
                 }
             }
         } else {
             tracing::warn!("[PEER] Failed to get _system database for saving peers");
+        }
+    }
+
+    /// Refresh peers from _system._config collection (called periodically)
+    /// This allows nodes to discover other peers that joined the cluster after startup
+    async fn refresh_peers_from_storage(&self) {
+        let saved_peers = Self::load_saved_peers(&self.storage);
+        
+        // Find new peers that we don't know about yet
+        let mut new_peers = Vec::new();
+        {
+            let peer_states = self.peer_states.read().unwrap();
+            for peer in saved_peers {
+                // Skip if already known or if it's our own address
+                if peer_states.contains_key(&peer) || peer == self.config.replication_addr() {
+                    continue;
+                }
+                new_peers.push(peer);
+            }
+        }
+        
+        // Add new peers and spawn sync loops for them
+        if !new_peers.is_empty() {
+            tracing::info!("[PEER] Discovered {} new peers from _system._config", new_peers.len());
+            
+            for peer in new_peers {
+                tracing::info!("[PEER] Adding newly discovered peer: {}", peer);
+                
+                // Add to peer_states
+                {
+                    let mut peer_states = self.peer_states.write().unwrap();
+                    peer_states.insert(
+                        peer.clone(),
+                        PeerState {
+                            address: peer.clone(),
+                            node_id: None,
+                            last_seen: std::time::Instant::now(),
+                            last_sequence_sent: 0,
+                            last_sequence_acked: 0,
+                            last_sequence_received: 0,
+                            is_connected: false,
+                        },
+                    );
+                }
+                
+                // Spawn sync loop for this new peer
+                let service = self.clone();
+                let peer_addr = peer.clone();
+                tokio::spawn(async move {
+                    service.peer_sync_loop(peer_addr).await;
+                });
+            }
         }
     }
 
@@ -323,6 +412,16 @@ impl ReplicationService {
                 service.peer_sync_loop(peer).await;
             });
         }
+
+        // Spawn background task to periodically refresh peers from _system._config
+        let service_for_refresh = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                service_for_refresh.refresh_peers_from_storage().await;
+            }
+        });
 
         // Accept incoming connections
         loop {
@@ -1219,8 +1318,8 @@ impl ReplicationService {
         };
         writer.write_all(&sync_request.to_bytes()).await?;
 
-        // Sync loop
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        // Sync loop - use fast interval for quick initial sync, then slow down
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
 
         loop {
             tokio::select! {
@@ -1276,8 +1375,13 @@ impl ReplicationService {
                         .unwrap_or(0);
 
                     let our_seq = self.replication_log.current_sequence();
-                    let new_entries = self.replication_log.get_entries_after(last_sent);
-                    tracing::debug!("[SYNC] peer={}, our_seq={}, last_sent={}, entries_to_push={}",
+                    let all_entries = self.replication_log.get_entries_after(last_sent);
+                    
+                    // Batch the push - max 10000 entries per message to avoid memory/network issues
+                    let batch_size = 10000;
+                    let new_entries: Vec<_> = all_entries.into_iter().take(batch_size).collect();
+                    
+                    tracing::trace!("[SYNC] peer={}, our_seq={}, last_sent={}, entries_to_push={}",
                         peer_addr, our_seq, last_sent, new_entries.len());
                     if !new_entries.is_empty() {
                         tracing::debug!("[PUSH] Sending {} entries to {} (seq {} to {})",
@@ -1367,7 +1471,20 @@ impl ReplicationService {
             // Handle collection-level operations (don't need the collection to exist for delete)
             match &entry.operation {
                 Operation::CreateCollection => {
-                    if let Err(e) = db.create_collection(entry.collection.clone(), None) {
+                    // Check if we have metadata in document_data
+                    let (collection_type, shard_config) = if let Some(data) = &entry.document_data {
+                         match serde_json::from_slice::<CreateCollectionMetadata>(data) {
+                             Ok(meta) => (Some(meta.collection_type), meta.shard_config),
+                             Err(e) => {
+                                 tracing::warn!("[APPLY] Failed to deserialize collection metadata: {}", e);
+                                 (None, None)
+                             }
+                         }
+                    } else {
+                        (None, None)
+                    };
+
+                    if let Err(e) = db.create_collection(entry.collection.clone(), collection_type.clone()) {
                         tracing::debug!(
                             "[APPLY] Create collection {}/{} (may already exist): {}",
                             entry.database,
@@ -1376,10 +1493,24 @@ impl ReplicationService {
                         );
                     } else {
                         tracing::debug!(
-                            "[APPLY] Created collection {}/{}",
+                            "[APPLY] Created collection {}/{} (type: {:?})",
                             entry.database,
-                            entry.collection
+                            entry.collection,
+                            collection_type
                         );
+                        
+                        // Apply shard config if present
+                        if let Some(config) = shard_config {
+                            if let Ok(coll) = db.get_collection(&entry.collection) {
+                                if let Err(e) = coll.set_shard_config(&config) {
+                                    tracing::error!("[APPLY] Failed to set shard config for {}/{}: {}", 
+                                        entry.database, entry.collection, e);
+                                } else {
+                                     tracing::debug!("[APPLY] Applied shard config for {}/{}", 
+                                        entry.database, entry.collection);
+                                }
+                            }
+                        }
                     }
                     continue;
                 }

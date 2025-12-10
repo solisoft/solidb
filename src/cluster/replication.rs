@@ -163,8 +163,8 @@ impl PersistentReplicationLog {
             db: Arc::new(RwLock::new(db)),
             sequence: Arc::new(RwLock::new(sequence)),
             max_entries,
-            cache: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
-            cache_size: 1000,
+            cache: Arc::new(RwLock::new(VecDeque::with_capacity(100000))),
+            cache_size: 100000,
         };
 
         // Load recent entries into cache

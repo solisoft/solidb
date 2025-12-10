@@ -20,6 +20,9 @@
 
   <!-- Collections Table Component -->
   <collections-table db="<%= Params['db'] %>"></collections-table>
+
+  <!-- Sharding Dashboard Component -->
+  <sharding-dashboard db="<%= Params['db'] %>"></sharding-dashboard>
 </div>
 
 <!-- Collection Modal Component -->
@@ -33,11 +36,13 @@
   import CollectionsTable from '<%= PublicPath("/app/components/collections-table.riot.js") %>'
   import CollectionModal from '<%= PublicPath("/app/components/collection-modal.riot.js") %>'
   import CollectionSettingsModal from '<%= PublicPath("/app/components/collection-settings-modal.riot.js") %>'
+  import ShardingDashboard from '<%= PublicPath("/app/components/sharding-dashboard.riot.js") %>'
 
   // register the riot components
   riot.register('collections-table', CollectionsTable)
   riot.register('collection-modal', CollectionModal)
   riot.register('collection-settings-modal', CollectionSettingsModal)
+  riot.register('sharding-dashboard', ShardingDashboard)
 
   // Wait for DOM to be ready
   document.addEventListener('DOMContentLoaded', () => {
@@ -52,6 +57,11 @@
       }
     })[0]
 
+    // Mount dashboard
+    riot.mount('sharding-dashboard', {
+      db: "<%= Params['db'] %>"
+    })
+
     const modalComponent = riot.mount('collection-modal', {
       db: "<%= Params['db'] %>",
       onClose: () => {
@@ -60,6 +70,7 @@
       onCreated: () => {
         modalComponent[0].hide()
         tableComponent.loadCollections()
+        // Reload dashboard too if needed, though simpler to just let user refresh
       }
     })
 

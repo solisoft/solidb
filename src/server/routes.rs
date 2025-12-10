@@ -23,9 +23,12 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         tracing::info!("Authentication initialized successfully");
     }
 
-    // Initialize ShardCoordinator if in cluster mode
+    // Initialize ShardCoordinator if we have cluster config
     let shard_coordinator = if let Some(config) = storage.cluster_config() {
-        if config.is_cluster_mode() {
+        // We always initialize the coordinator even if peers list is initially empty.
+        // This allows a bootstrap node (started without --peers) to eventually become part of a cluster
+        // as other nodes join and update _system._config.
+        if true {
             // Get this node's API address
             let my_api_addr = format!("localhost:{}", api_port);
             
@@ -71,17 +74,12 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
             // Sort addresses for consistent ordering across all nodes
             node_addresses.sort();
             
-            // Find my index in the sorted list
-            let node_index = node_addresses.iter()
-                .position(|addr| addr == &my_api_addr)
-                .unwrap_or(0);
-            
-            tracing::info!("ShardCoordinator initialized: my_addr={}, node_index={}, nodes: {:?}", 
-                my_api_addr, node_index, node_addresses);
+            tracing::info!("ShardCoordinator initialized: my_addr={}, nodes: {:?}", 
+                my_api_addr, node_addresses);
             
             let coordinator = crate::sharding::ShardCoordinator::with_health_tracking(
                 Arc::new(storage.clone()),
-                node_index,
+                my_api_addr,
                 node_addresses,
                 3, // failure threshold
             );
@@ -89,7 +87,7 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
             let coord_arc = Arc::new(coordinator);
             coord_arc.clone().start_background_tasks();
             
-            Some((*coord_arc).clone())
+            Some(coord_arc)  // Store the Arc, not a clone of inner
         } else {
             None
         }
@@ -222,6 +220,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
     // Combine with public routes
     Router::new()
         .route("/auth/login", post(login_handler))
+        // Health check endpoint for cluster node monitoring (no auth required)
+        .route("/_api/health", get(health_check_handler))
         // WebSocket route (outside auth middleware - uses token in query param)
         .route("/_api/cluster/status/ws", get(cluster_status_ws))
         .route("/_api/ws/changefeed", get(ws_changefeed_handler))

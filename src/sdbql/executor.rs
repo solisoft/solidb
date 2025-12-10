@@ -103,7 +103,7 @@ pub struct QueryExecutor<'a> {
     // Flag to indicate if we should defer mutations for transactional execution
 
     // Shard coordinator for scatter-gather queries on sharded collections
-    shard_coordinator: Option<crate::sharding::ShardCoordinator>,
+    shard_coordinator: Option<std::sync::Arc<crate::sharding::ShardCoordinator>>,
 }
 
 /// Extracted filter condition for index optimization
@@ -200,7 +200,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Set shard coordinator for scatter-gather queries on sharded collections
-    pub fn with_shard_coordinator(mut self, coordinator: crate::sharding::ShardCoordinator) -> Self {
+    pub fn with_shard_coordinator(mut self, coordinator: std::sync::Arc<crate::sharding::ShardCoordinator>) -> Self {
         self.shard_coordinator = Some(coordinator);
         self
     }
@@ -1094,11 +1094,13 @@ impl<'a> QueryExecutor<'a> {
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&for_clause.collection)?;
 
-        // Check if collection is sharded and we have a coordinator
+        // Only scatter-gather for SHARDED collections (num_shards > 0)
+        // Non-sharded collections are fully replicated, so local scan is sufficient
         if let Some(shard_config) = collection.get_shard_config() {
             if shard_config.num_shards > 0 {
                 if let Some(ref coordinator) = self.shard_coordinator {
-                    // Scatter-gather: query all cluster nodes
+                    tracing::debug!("[SDBQL] Using scatter-gather for sharded collection {} ({} shards)", 
+                        for_clause.collection, shard_config.num_shards);
                     return self.scatter_gather_docs(
                         &for_clause.collection,
                         coordinator,
@@ -1108,7 +1110,7 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Not sharded or no coordinator: local scan
+        // Not sharded: local scan is sufficient (data is replicated to all nodes)
         Ok(collection
             .scan(limit)
             .into_iter()
@@ -1129,6 +1131,8 @@ impl<'a> QueryExecutor<'a> {
         // Get all node addresses from coordinator
         let all_nodes = coordinator.get_node_addresses();
         let my_node_index = coordinator.get_node_index();
+        
+        tracing::debug!("[SCATTER-GATHER] Nodes at query time: {:?}, my_index={}", all_nodes, my_node_index);
 
         // Collect documents from all nodes
         let mut all_docs: Vec<Value> = Vec::new();
@@ -1158,20 +1162,31 @@ impl<'a> QueryExecutor<'a> {
                     collection_name
                 );
 
-                let client = reqwest::blocking::Client::new();
-                if let Ok(response) = client
-                    .post(&url)
-                    .header("X-Scatter-Gather", "true") // Prevent infinite recursion
-                    .json(&serde_json::json!({ "query": query }))
-                    .send()
-                {
-                    if let Ok(body) = response.json::<serde_json::Value>() {
-                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
-                            for doc in results {
-                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                                    if seen_keys.insert(key.to_string()) {
-                                        all_docs.push(doc.clone());
-                                    }
+                // Use block_in_place to run blocking HTTP client in async context
+                let body_result = tokio::task::block_in_place(|| {
+                    let client = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(10))
+                        .build()
+                        .ok()?;
+                    
+                    // Get admin password from env var for inter-node auth
+                    let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+                    
+                    let response = client
+                        .post(&url)
+                        .header("X-Scatter-Gather", "true") // Prevent infinite recursion
+                        .basic_auth("admin", Some(&admin_pass))
+                        .json(&serde_json::json!({ "query": query }))
+                        .send().ok()?;
+                    response.json::<serde_json::Value>().ok()
+                });
+
+                if let Some(body) = body_result {
+                    if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                        for doc in results {
+                            if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                                if seen_keys.insert(key.to_string()) {
+                                    all_docs.push(doc.clone());
                                 }
                             }
                         }

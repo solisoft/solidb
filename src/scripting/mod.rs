@@ -3,7 +3,7 @@
 //! This module provides embedded Lua scripting capabilities that allow users
 //! to create custom API endpoints with full access to database operations.
 
-use mlua::{Lua, Result as LuaResult, Value as LuaValue, IntoLua};
+use mlua::{Lua, Result as LuaResult, Value as LuaValue};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::collections::HashMap;

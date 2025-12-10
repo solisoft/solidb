@@ -61,7 +61,7 @@ pub struct AppState {
     pub storage: Arc<StorageEngine>,
     pub cursor_store: CursorStore,
     pub replication: Option<ReplicationService>,
-    pub shard_coordinator: Option<crate::sharding::ShardCoordinator>,
+    pub shard_coordinator: Option<std::sync::Arc<crate::sharding::ShardCoordinator>>,
     pub startup_time: std::time::Instant,
     pub request_counter: Arc<std::sync::atomic::AtomicU64>,
 }
@@ -579,6 +579,17 @@ impl IntoResponse for DbError {
     }
 }
 
+// ==================== Health Check Handler ====================
+
+/// Simple health check endpoint for cluster node monitoring
+/// Returns 200 OK if the node is alive and accepting requests
+pub async fn health_check_handler() -> Json<Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
 // ==================== Auth Handlers ====================
 
 pub async fn login_handler(
@@ -719,12 +730,26 @@ pub async fn create_collection(
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
+        // Create metadata for replication
+        let metadata = crate::cluster::service::CreateCollectionMetadata {
+            collection_type: req.collection_type.clone().unwrap_or_else(|| "document".to_string()),
+            shard_config: if let Some(num_shards) = req.num_shards {
+                Some(crate::sharding::coordinator::CollectionShardConfig {
+                    num_shards,
+                    shard_key: req.shard_key.clone().unwrap_or_else(|| "_key".to_string()),
+                    replication_factor: req.replication_factor.unwrap_or(1),
+                })
+            } else {
+                None
+            },
+        };
+
         repl.record_write(
             &db_name,
             &req.name,
             Operation::CreateCollection,
             "",
-            None,
+            serde_json::to_vec(&metadata).ok().as_deref(), // Pass metadata as document data
             None,
         );
     }
@@ -856,18 +881,152 @@ pub async fn get_collection_stats(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     let stats = collection.stats();
+    let collection_type = collection.get_type();
+    
+    // Get shard configuration
+    let shard_config = collection.get_shard_config();
+    let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
+    
+    // Build sharding stats
+    let sharding_stats = if let Some(config) = &shard_config {
+        serde_json::json!({
+            "enabled": is_sharded,
+            "num_shards": config.num_shards,
+            "shard_key": config.shard_key,
+            "replication_factor": config.replication_factor
+        })
+    } else {
+        serde_json::json!({
+            "enabled": false,
+            "num_shards": 0,
+            "shard_key": null,
+            "replication_factor": 1
+        })
+    };
+    
+    // Build cluster distribution info
+    let cluster_stats = if let Some(ref coordinator) = state.shard_coordinator {
+        let all_nodes = coordinator.get_node_addresses();
+        let total_nodes = all_nodes.len();
+        
+        // For sharded collections, calculate shard distribution with doc counts
+        let shard_distribution = if is_sharded {
+            let config = shard_config.as_ref().unwrap();
+            
+            // First, count documents per shard by scanning local docs
+            let mut shard_counts: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+            for doc in collection.scan(None) {
+                let shard_id = crate::sharding::router::ShardRouter::route(&doc.key, config.num_shards);
+                *shard_counts.entry(shard_id).or_insert(0) += 1;
+            }
+            
+            // Build shard-centric distribution
+            let mut shards_info: Vec<serde_json::Value> = Vec::new();
+            
+            for shard_id in 0..config.num_shards {
+                let mut nodes_for_shard: Vec<String> = Vec::new();
+                
+                if total_nodes > 0 {
+                    let primary_idx = (shard_id as usize) % total_nodes;
+                    let primary_node = all_nodes.get(primary_idx).cloned().unwrap_or_default();
+                    nodes_for_shard.push(primary_node);
+                    
+                    // Replica nodes
+                    for r in 1..config.replication_factor {
+                        let replica_idx = (primary_idx + r as usize) % total_nodes;
+                        if replica_idx != primary_idx {
+                            let replica_node = all_nodes.get(replica_idx).cloned().unwrap_or_default();
+                            nodes_for_shard.push(replica_node);
+                        }
+                    }
+                }
+                
+                let doc_count = *shard_counts.get(&shard_id).unwrap_or(&0);
+                
+                shards_info.push(serde_json::json!({
+                    "shard_id": shard_id,
+                    "nodes": nodes_for_shard,
+                    "document_count": doc_count
+                }));
+            }
+            
+            serde_json::to_value(shards_info).unwrap_or(serde_json::json!([]))
+        } else {
+            // Non-sharded: single "shard" with all docs
+            serde_json::json!([{
+                "shard_id": 0,
+                "nodes": all_nodes.clone(),
+                "document_count": stats.document_count
+            }])
+        };
+        
+        serde_json::json!({
+            "cluster_mode": true,
+            "total_nodes": total_nodes,
+            "nodes": all_nodes,
+            "shards": shard_distribution
+        })
+    } else if let Some(ref repl) = state.replication {
+        // Fallback: use ReplicationService to detect cluster mode
+        let peer_count = repl.peer_count();
+        let is_cluster = peer_count > 0;
+        
+        serde_json::json!({
+            "cluster_mode": is_cluster,
+            "total_nodes": peer_count + 1, // +1 for self
+            "nodes": [], // We don't have detailed node list without coordinator
+            "distribution": {},
+            "note": "Detailed distribution requires ShardCoordinator (start with --peer)"
+        })
+    } else {
+        serde_json::json!({
+            "cluster_mode": false,
+            "total_nodes": 1,
+            "nodes": [],
+            "distribution": {}
+        })
+    };
+
+    // Calculate local document count (documents stored on this node's shards)
+    // For non-sharded collections, local = total (all replicated)
+    // For sharded collections, only count documents whose shard is local to this node
+    let local_document_count = if is_sharded {
+        if let Some(ref coordinator) = state.shard_coordinator {
+            let config = shard_config.as_ref().unwrap();
+            // Count documents in local shards only
+            let mut local_count = 0usize;
+            for doc in collection.scan(None) {
+                let key = doc.key.clone();
+                let shard_id = crate::sharding::router::ShardRouter::route(&key, config.num_shards);
+                if coordinator.is_local(shard_id) {
+                    local_count += 1;
+                }
+            }
+            local_count
+        } else {
+            // No coordinator, fall back to total count
+            stats.document_count
+        }
+    } else {
+        // Non-sharded: local = total
+        stats.document_count
+    };
 
     Ok(Json(serde_json::json!({
         "database": db_name,
         "collection": coll_name,
+        "type": collection_type,
         "document_count": stats.document_count,
+        "local_document_count": local_document_count,
         "disk_usage": {
             "sst_files_size": stats.disk_usage.sst_files_size,
             "live_data_size": stats.disk_usage.live_data_size,
             "num_sst_files": stats.disk_usage.num_sst_files,
             "memtable_size": stats.disk_usage.memtable_size,
             "total_size": stats.disk_usage.sst_files_size + stats.disk_usage.memtable_size
-        }
+        },
+        "sharding": sharding_stats,
+        "cluster": cluster_stats
     })))
 }
 
