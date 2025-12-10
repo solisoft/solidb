@@ -952,22 +952,27 @@ impl ReplicationService {
                     );
                 }
 
-                self.apply_entries(&entries).await;
+                // Only acknowledge and update sequence if application was successful
+                if self.apply_entries(&entries).await {
+                    if let Some(last) = entries.last() {
+                        // Update our tracking of what we've received FROM this peer
+                        self.update_peer_received(from_addr, last.sequence);
 
-                if let Some(last) = entries.last() {
-                    // Update our tracking of what we've received FROM this peer (their sequence numbers)
-                    self.update_peer_received(from_addr, last.sequence);
-
-                    tracing::debug!(
-                        "[ACK] Sending Ack to {} for sequence {}",
-                        from_addr,
-                        last.sequence
-                    );
-                    Some(ReplicationMessage::Ack {
-                        from_node: self.config.node_id.clone(),
-                        up_to_sequence: last.sequence,
-                    })
+                        tracing::debug!(
+                            "[ACK] Sending Ack to {} for sequence {}",
+                            from_addr,
+                            last.sequence
+                        );
+                        Some(ReplicationMessage::Ack {
+                            from_node: self.config.node_id.clone(),
+                            up_to_sequence: last.sequence,
+                        })
+                    } else {
+                        None
+                    }
                 } else {
+                    tracing::warn!("[REPL] Batch application failed/partial, not advancing sequence for {}", from_addr);
+                    // Do not send Ack, allowing peer (or our next pull) to retry
                     None
                 }
             }
@@ -1462,10 +1467,12 @@ impl ReplicationService {
     }
 
     /// Apply received entries using Last-Write-Wins conflict resolution
-    async fn apply_entries(&self, entries: &[ReplicationEntry]) {
+    /// Apply received entries using Last-Write-Wins conflict resolution
+    /// Returns true if all applicable entries were applied successfully
+    async fn apply_entries(&self, entries: &[ReplicationEntry]) -> bool {
         // Early return for empty input (common case, no need to log)
         if entries.is_empty() {
-            return;
+            return true;
         }
 
         use std::collections::HashMap;
@@ -1481,7 +1488,7 @@ impl ReplicationService {
 
         if entries_to_apply.is_empty() {
             tracing::debug!("[APPLY] All {} entries already applied, skipping", entries.len());
-            return;
+            return true;
         }
 
         if entries.len() != entries_to_apply.len() {
@@ -1493,17 +1500,21 @@ impl ReplicationService {
         let mut batches: HashMap<(String, String), Vec<(String, serde_json::Value)>> = HashMap::new();
         let mut other_entries: Vec<&ReplicationEntry> = Vec::new();
 
-        // Track highest sequence per origin for updates after apply
+        // Track highest sequence per origin for legitimate updates
         let mut max_sequences: HashMap<String, u64> = HashMap::new();
+
+        // Helper to update max sequence if operation is successful
+        let mut mark_successful = |node_id: &str, sequence: u64| {
+            let current = max_sequences.get(node_id).copied().unwrap_or(0);
+            if sequence > current {
+                max_sequences.insert(node_id.to_string(), sequence);
+            }
+        };
 
         for entry in &entries_to_apply {
             self.hlc_generator.receive(&entry.hlc);
 
-            // Track max sequence per origin
-            let current_max = max_sequences.get(&entry.node_id).copied().unwrap_or(0);
-            if entry.sequence > current_max {
-                max_sequences.insert(entry.node_id.clone(), entry.sequence);
-            }
+            // Note: We delay sequence tracking until successful application
 
             match &entry.operation {
                 Operation::Insert | Operation::Update => {
@@ -1527,9 +1538,11 @@ impl ReplicationService {
             }
         }
 
-        // Apply batched Insert/Update operations
+        // 1. Process Batches
+        let mut all_batches_success = true;
         for ((db_name, coll_name), docs) in batches {
             let count = docs.len();
+            let mut batch_success = false;
 
             // Ensure database exists
             if self.storage.get_database(&db_name).is_err() {
@@ -1544,18 +1557,45 @@ impl ReplicationService {
 
                 if let Ok(collection) = db.get_collection(&coll_name) {
                     match collection.upsert_batch(docs) {
-                        Ok(_) => tracing::info!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name),
-                        Err(e) => tracing::error!("[APPLY] Batch upsert failed for {}/{}: {}", db_name, coll_name, e),
+                        Ok(_) => {
+                            tracing::info!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name);
+                            batch_success = true;
+                        },
+                        Err(e) => {
+                            tracing::error!("[APPLY] Batch upsert failed for {}/{}: {}", db_name, coll_name, e);
+                            all_batches_success = false;
+                        },
                     }
                 } else {
                     tracing::error!("[APPLY] Failed to get collection {}/{} after creation", db_name, coll_name);
+                    all_batches_success = false;
                 }
+            } else {
+                 all_batches_success = false;
+            }
+            
+            // If batch succeeded, mark all entries in this batch as successful
+            if batch_success {
+                 for entry in &entries_to_apply {
+                     if entry.database == db_name && entry.collection == coll_name {
+                         match &entry.operation {
+                            Operation::Insert | Operation::Update => {
+                                if entry.document_data.is_some() {
+                                    mark_successful(&entry.node_id, entry.sequence);
+                                }
+                            }
+                            _ => {}
+                         }
+                     }
+                 }
             }
         }
 
-        // Process remaining non-batchable operations individually
+        let mut all_others_success = true;
+        // 2. Process remaining non-batchable operations individually
         for entry in other_entries {
-
+            let mut success = false;
+            
             // Handle database-level operations first (don't need collection)
             match &entry.operation {
                 Operation::CreateDatabase => {
@@ -1565,21 +1605,29 @@ impl ReplicationService {
                             entry.database,
                             e
                         );
+                        // Treat "already exists" as success for idempotency
+                        success = true;
                     } else {
                         tracing::debug!("[APPLY] Created database {}", entry.database);
+                        success = true;
                     }
-                    continue;
                 }
                 Operation::DeleteDatabase => {
                     match self.storage.delete_database(&entry.database) {
-                        Ok(_) => tracing::debug!("[APPLY] Deleted database {}", entry.database),
-                        Err(e) => tracing::debug!(
-                            "[APPLY] Delete database {} skipped: {}",
-                            entry.database,
-                            e
-                        ),
+                        Ok(_) => {
+                            tracing::debug!("[APPLY] Deleted database {}", entry.database);
+                            success = true;
+                        },
+                        Err(e) => {
+                            tracing::debug!(
+                                "[APPLY] Delete database {} skipped: {}",
+                                entry.database,
+                                e
+                            );
+                            // Treat "not found" as success for idempotency
+                            success = true;
+                        },
                     }
-                    continue;
                 }
                 _ => {} // Other operations need database/collection
             }
@@ -1592,21 +1640,21 @@ impl ReplicationService {
                     tracing::debug!("[APPLY] Auto-creating database: {}", entry.database);
                     if let Err(e) = self.storage.create_database(entry.database.clone()) {
                         tracing::error!(
-                            "[APPLY] Failed to create database {}: {}",
-                            entry.database,
-                            e
+                             "[APPLY] Failed to create database {}: {}",
+                             entry.database,
+                             e
                         );
                         continue;
                     }
                     match self.storage.get_database(&entry.database) {
                         Ok(db) => db,
                         Err(e) => {
-                            tracing::error!(
-                                "[APPLY] Database {} still not found after creation: {}",
-                                entry.database,
-                                e
-                            );
-                            continue;
+                             tracing::error!(
+                                 "[APPLY] Database {} still not found after creation: {}",
+                                 entry.database,
+                                 e
+                             );
+                             continue;
                         }
                     }
                 }
@@ -1823,6 +1871,11 @@ impl ReplicationService {
                     }
                 }
             }
+            if success {
+                mark_successful(&entry.node_id, entry.sequence);
+            } else {
+                all_others_success = false;
+            }
         }
 
         // Update origin_sequences with the highest sequences we applied
@@ -1835,6 +1888,11 @@ impl ReplicationService {
                 }
             }
         }
+        
+        // Return true only if everything succeeded
+        // Note: partial success will update origin_sequences (dedup) for good entries,
+        // but returning false here forces the peer to retry the whole batch (good for consistency).
+        all_batches_success && all_others_success
     }
 
     /// Record a write operation in the replication log
