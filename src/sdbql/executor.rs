@@ -389,21 +389,22 @@ impl<'a> QueryExecutor<'a> {
                 count
             );
 
-            std::thread::spawn(move || {
-                let start = std::time::Instant::now();
-                repl.record_batch(
-                    &db,
-                    &collection,
-                    operation,
-                    mutations,
-                );
-                let elapsed = start.elapsed();
-                tracing::debug!(
-                    "INSERT: Async replication logging of {} docs completed in {:?}",
-                    count,
-                    elapsed
-                );
-            });
+            // Execute replication logging synchronously to provide backpressure
+            // and avoid thread explosion/OS resource exhaustion during massive bulk inserts.
+            // RocksDB writes are fast enough that this shouldn't be a major bottleneck.
+            let start = std::time::Instant::now();
+            repl.record_batch(
+                &db,
+                &collection,
+                operation,
+                mutations,
+            );
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                "INSERT: Replication logging of {} docs completed in {:?}",
+                count,
+                elapsed
+            );
         }
     }
 

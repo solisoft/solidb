@@ -5,9 +5,6 @@ set -e
 export JWT_SECRET="test-secret-for-3node-repl-500k"
 export SOLIDB_ADMIN_PASSWORD="admin"
 
-# Increase file descriptor limit for heavy concurrency test
-ulimit -n 10240
-
 # Cleanup any previous run
 pkill -f "solidb" || true
 rm -rf tmp/repl3_n1 tmp/repl3_n2 tmp/repl3_n3

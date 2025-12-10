@@ -258,7 +258,7 @@ impl ReplicationService {
     /// Save peer addresses to _system._config collection
     fn save_peers(&self) {
         let mut peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
-        
+
         // ALWAYS include ourselves in the peer list
         if !peers.contains(&self.config.replication_addr()) {
             peers.push(self.config.replication_addr());
@@ -287,7 +287,7 @@ impl ReplicationService {
                         }
                     }
                 }
-                
+
                 peers.sort();
 
                 tracing::debug!(
@@ -323,7 +323,7 @@ impl ReplicationService {
     /// This allows nodes to discover other peers that joined the cluster after startup
     async fn refresh_peers_from_storage(&self) {
         let saved_peers = Self::load_saved_peers(&self.storage);
-        
+
         // Find new peers that we don't know about yet
         let mut new_peers = Vec::new();
         {
@@ -336,14 +336,14 @@ impl ReplicationService {
                 new_peers.push(peer);
             }
         }
-        
+
         // Add new peers and spawn sync loops for them
         if !new_peers.is_empty() {
             tracing::info!("[PEER] Discovered {} new peers from _system._config", new_peers.len());
-            
+
             for peer in new_peers {
                 tracing::info!("[PEER] Adding newly discovered peer: {}", peer);
-                
+
                 // Add to peer_states
                 {
                     let mut peer_states = self.peer_states.write().unwrap();
@@ -360,7 +360,7 @@ impl ReplicationService {
                         },
                     );
                 }
-                
+
                 // Spawn sync loop for this new peer
                 let service = self.clone();
                 let peer_addr = peer.clone();
@@ -491,7 +491,7 @@ impl ReplicationService {
             // Generate a random challenge
             let challenge = uuid::Uuid::new_v4().to_string();
             tracing::debug!("[AUTH] Sending challenge to {}", addr);
-            
+
             let challenge_msg = ReplicationMessage::AuthChallenge {
                 challenge: challenge.clone(),
             };
@@ -503,7 +503,7 @@ impl ReplicationService {
                 Duration::from_secs(10),
                 reader.read_line(&mut line)
             ).await??;
-            
+
             if bytes_read == 0 {
                 tracing::warn!("[AUTH] Connection closed during auth from {}", addr);
                 return Ok(());
@@ -615,9 +615,9 @@ impl ReplicationService {
     fn compute_auth_response(challenge: &str, keyfile: &str) -> String {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
-        
+
         type HmacSha256 = Hmac<Sha256>;
-        
+
         let mut mac = HmacSha256::new_from_slice(keyfile.as_bytes())
             .expect("HMAC can accept any key length");
         mac.update(challenge.as_bytes());
@@ -848,11 +848,11 @@ impl ReplicationService {
                 let _ = from_node; // Used for logging
 
                 // Use limited batch size to prevent massive responses
-                let batch_size = 20000;
+                let batch_size = 5000;
                 let entries = self.replication_log.get_entries_after_limit(after_sequence, Some(batch_size));
                 let current_seq = self.replication_log.current_sequence();
 
-                tracing::info!("[SYNC-REQ] From {} requesting entries after seq {}. Sending {} entries (our seq: {}, limit: {})",
+                tracing::debug!("[SYNC-REQ] From {} requesting entries after seq {}. Sending {} entries (our seq: {}, limit: {})",
                     from_node, after_sequence, entries.len(), current_seq, batch_size);
 
                 Some(ReplicationMessage::SyncResponse {
@@ -1212,24 +1212,24 @@ impl ReplicationService {
                 // Check if this is an auth challenge
                 if let Ok(ReplicationMessage::AuthChallenge { challenge }) = serde_json::from_str(&line) {
                     tracing::debug!("[AUTH] Received challenge from {}", peer_addr);
-                    
+
                     // We need a keyfile to respond
                     if let Some(ref keyfile) = self.config.keyfile {
                         let response = Self::compute_auth_response(&challenge, keyfile);
                         let auth_response = ReplicationMessage::AuthResponse { response };
                         writer.write_all(&auth_response.to_bytes()).await?;
-                        
+
                         // Wait for auth result
                         line.clear();
                         let bytes_read = tokio::time::timeout(
                             Duration::from_secs(10),
                             reader.read_line(&mut line)
                         ).await??;
-                        
+
                         if bytes_read == 0 {
                             anyhow::bail!("Connection closed during authentication");
                         }
-                        
+
                         if let Ok(ReplicationMessage::AuthResult { success, message }) = serde_json::from_str(&line) {
                             if success {
                                 tracing::debug!("[AUTH] Authentication successful with {}", peer_addr);
@@ -1333,7 +1333,7 @@ impl ReplicationService {
             tokio::select! {
                 _ = interval.tick() => {
                     tracing::trace!("[SYNC] Interval tick for peer {}", peer_addr);
-                    
+
                     // Send heartbeat every 1s
                     if last_ping.elapsed() >= Duration::from_secs(1) {
                         let ping = ReplicationMessage::Ping {
@@ -1366,12 +1366,12 @@ impl ReplicationService {
                             .get(peer_addr)
                             .map(|p| p.last_sequence_received)
                             .unwrap_or(0);
-                        
+
                         let sync_request = ReplicationMessage::SyncRequest {
                             from_node: self.config.node_id.clone(),
                             after_sequence: last_received,
                         };
-                        
+
                         if let Err(e) = writer.write_all(&sync_request.to_bytes()).await {
                             tracing::error!("[SYNC] Write error sending sync request to {}: {}", peer_addr, e);
                             break;
@@ -1386,17 +1386,18 @@ impl ReplicationService {
                         .unwrap_or(0);
 
                     let our_seq = self.replication_log.current_sequence();
-                    
-                    // Use moderate batch size (20k) - large enough for speed, small enough to avoid memory issues
-                    let batch_size = 20000;
+
+                    // Use smaller batch size (5k) to avoid holding the lock for too long
+                    // This prevents starvation of the writer (synchronous insert logging)
+                    let batch_size = 5000;
                     let new_entries = self.replication_log.get_entries_after_limit(last_sent, Some(batch_size));
-                    
+
                     tracing::trace!("[SYNC] peer={}, our_seq={}, last_sent={}, entries_to_push={}",
                         peer_addr, our_seq, last_sent, new_entries.len());
                     if !new_entries.is_empty() {
                         let first_seq = new_entries.first().map(|e| e.sequence).unwrap_or(0);
                         let last_seq_in_batch = new_entries.last().map(|e| e.sequence).unwrap_or(0);
-                        
+
                         // Log progress at INFO level for visibility during large syncs
                         tracing::info!("[PUSH] Sending {} entries to {} (seq {}-{}, total_pending={})",
                             new_entries.len(), peer_addr, first_seq, last_seq_in_batch,
@@ -1421,7 +1422,7 @@ impl ReplicationService {
                         }
                     }
                 }
-                
+
                 result = reader.read_line(&mut line) => {
                     match result {
                         Ok(0) => {
@@ -1466,9 +1467,9 @@ impl ReplicationService {
         if entries.is_empty() {
             return;
         }
-        
+
         use std::collections::HashMap;
-        
+
         // DEDUPLICATION: Filter out entries we've already applied (by origin node_id + sequence)
         let entries_to_apply: Vec<&ReplicationEntry> = {
             let origin_seqs = self.origin_sequences.read().unwrap();
@@ -1477,33 +1478,33 @@ impl ReplicationService {
                 e.sequence > last_applied
             }).collect()
         };
-        
+
         if entries_to_apply.is_empty() {
             tracing::debug!("[APPLY] All {} entries already applied, skipping", entries.len());
             return;
         }
-        
+
         if entries.len() != entries_to_apply.len() {
-            tracing::debug!("[APPLY] Filtered {} duplicate entries, applying {}", 
+            tracing::debug!("[APPLY] Filtered {} duplicate entries, applying {}",
                 entries.len() - entries_to_apply.len(), entries_to_apply.len());
         }
-        
+
         // FAST PATH: Batch all Insert/Update operations by collection
         let mut batches: HashMap<(String, String), Vec<(String, serde_json::Value)>> = HashMap::new();
         let mut other_entries: Vec<&ReplicationEntry> = Vec::new();
-        
+
         // Track highest sequence per origin for updates after apply
         let mut max_sequences: HashMap<String, u64> = HashMap::new();
-        
+
         for entry in &entries_to_apply {
             self.hlc_generator.receive(&entry.hlc);
-            
+
             // Track max sequence per origin
             let current_max = max_sequences.get(&entry.node_id).copied().unwrap_or(0);
             if entry.sequence > current_max {
                 max_sequences.insert(entry.node_id.clone(), entry.sequence);
             }
-            
+
             match &entry.operation {
                 Operation::Insert | Operation::Update => {
                     if let Some(data) = &entry.document_data {
@@ -1525,22 +1526,22 @@ impl ReplicationService {
                 _ => other_entries.push(entry),
             }
         }
-        
+
         // Apply batched Insert/Update operations
         for ((db_name, coll_name), docs) in batches {
             let count = docs.len();
-            
+
             // Ensure database exists
             if self.storage.get_database(&db_name).is_err() {
                 let _ = self.storage.create_database(db_name.clone());
             }
-            
+
             // Get or create collection
             if let Ok(db) = self.storage.get_database(&db_name) {
                 if db.get_collection(&coll_name).is_err() {
                     let _ = db.create_collection(coll_name.clone(), None);
                 }
-                
+
                 if let Ok(collection) = db.get_collection(&coll_name) {
                     match collection.upsert_batch(docs) {
                         Ok(_) => tracing::info!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name),
@@ -1551,7 +1552,7 @@ impl ReplicationService {
                 }
             }
         }
-        
+
         // Process remaining non-batchable operations individually
         for entry in other_entries {
 
@@ -1641,15 +1642,15 @@ impl ReplicationService {
                             entry.collection,
                             collection_type
                         );
-                        
+
                         // Apply shard config if present
                         if let Some(config) = shard_config {
                             if let Ok(coll) = db.get_collection(&entry.collection) {
                                 if let Err(e) = coll.set_shard_config(&config) {
-                                    tracing::error!("[APPLY] Failed to set shard config for {}/{}: {}", 
+                                    tracing::error!("[APPLY] Failed to set shard config for {}/{}: {}",
                                         entry.database, entry.collection, e);
                                 } else {
-                                     tracing::debug!("[APPLY] Applied shard config for {}/{}", 
+                                     tracing::debug!("[APPLY] Applied shard config for {}/{}",
                                         entry.database, entry.collection);
                                 }
                             }
@@ -1797,11 +1798,11 @@ impl ReplicationService {
                 | Operation::DeleteDatabase => {
                     unreachable!("Should have been handled earlier");
                 }
-                
+
                 Operation::PutBlobChunk => {
                    if let (Some(idx), Some(data)) = (entry.chunk_index, &entry.document_data) {
 
-                        
+
                         // We need to use the data directly, but we borrow it from entry struct?
                         // entry.document_data is Option<Vec<u8>>.
                         // We can access it.
@@ -1809,13 +1810,13 @@ impl ReplicationService {
                              if let Err(e) = col.put_blob_chunk(&entry.document_key, idx, data) {
                                   tracing::error!("Failed to replicate blob chunk: {}", e);
                              } else {
-                                  tracing::debug!("[APPLY] Applied blob chunk {} for {}/{}", 
+                                  tracing::debug!("[APPLY] Applied blob chunk {} for {}/{}",
                                        idx, entry.database, entry.document_key);
                              }
                         }
                    }
                 }
-                
+
                 Operation::DeleteBlob => {
                     if let Ok(col) = db.get_collection(&entry.collection) {
                          let _ = col.delete_blob_data(&entry.document_key);
@@ -1823,7 +1824,7 @@ impl ReplicationService {
                 }
             }
         }
-        
+
         // Update origin_sequences with the highest sequences we applied
         if !max_sequences.is_empty() {
             let mut origin_seqs = self.origin_sequences.write().unwrap();
@@ -1895,7 +1896,7 @@ impl ReplicationService {
         // Always record to replication log if we are running the ReplicationService
     // We need to store history even if we represent a single-node cluster (bootstrap node)
     // so that other nodes can join later and sync from us.
-    
+
     // tracing::info!("[REPL-LOG] Recording batch of {} docs (cluster: {}, peers: {})", documents.len(), is_cluster, peer_count);
 
 
@@ -1920,7 +1921,7 @@ impl ReplicationService {
             .collect();
 
         let last_seq = self.replication_log.append_batch(entries);
-        
+
         tracing::info!(
             "[REPL-LOG] Recorded batch of {} {:?} operations for {}/{} (end seq: {}, current_seq: {})",
             count,
@@ -1930,7 +1931,7 @@ impl ReplicationService {
             last_seq,
             self.replication_log.current_sequence()
         );
-        
+
         last_seq
     }
 
@@ -1949,7 +1950,7 @@ impl ReplicationService {
         }
 
         let hlc = self.hlc_generator.now();
-        
+
         let entry = ReplicationEntry::new_blob_chunk(
             0,
             self.config.node_id.clone(),
@@ -2019,7 +2020,7 @@ impl ReplicationService {
             state.last_sequence_sent = sequence;
         } else {
             // Log warning if peer not found - this would cause duplicate sends
-            tracing::warn!("[PEER] Cannot update last_sent - peer '{}' not found in states. Known peers: {:?}", 
+            tracing::warn!("[PEER] Cannot update last_sent - peer '{}' not found in states. Known peers: {:?}",
                 peer, peers.keys().collect::<Vec<_>>());
         }
     }
@@ -2027,12 +2028,12 @@ impl ReplicationService {
     /// Update the highest sequence we've received FROM this peer (for sync requests)
     fn update_peer_received(&self, peer_addr: &str, sequence: u64) {
         let mut peers = self.peer_states.write().unwrap();
-        
+
         // Try to find the peer by node_id first, then by address (like update_peer_acked)
         let found = peers.values_mut().find(|p| {
             p.node_id.as_deref() == Some(peer_addr) || p.address == peer_addr
         });
-        
+
         if let Some(state) = found {
             if state.last_sequence_received < sequence {
                 tracing::info!(
