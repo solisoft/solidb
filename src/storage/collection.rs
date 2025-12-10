@@ -1128,6 +1128,27 @@ impl Collection {
         self.doc_count.load(Ordering::Relaxed)
     }
 
+    /// Recount documents from actual RocksDB data (slow but accurate)
+    /// Returns the actual count and updates the cached count
+    pub fn recount_documents(&self) -> usize {
+        let db_guard = self.db.read().unwrap();
+        if let Some(cf) = db_guard.cf_handle(&self.name) {
+            let prefix = DOC_PREFIX.as_bytes();
+            let actual_count = db_guard
+                .prefix_iterator_cf(cf, prefix)
+                .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
+                .count();
+            
+            // Update the cached count to match reality
+            self.doc_count.store(actual_count, Ordering::Relaxed);
+            self.count_dirty.store(true, Ordering::Relaxed);
+            
+            actual_count
+        } else {
+            0
+        }
+    }
+
     /// Increment document count (called on insert) - atomic, no disk I/O
     fn increment_count(&self) {
         self.doc_count.fetch_add(1, Ordering::Relaxed);

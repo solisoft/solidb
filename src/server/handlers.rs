@@ -874,6 +874,28 @@ pub async fn compact_collection(
     })))
 }
 
+/// Recount documents from actual RocksDB data (bypasses cache)
+/// Useful for debugging replication consistency
+pub async fn recount_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    
+    let cached_count = collection.count();
+    let actual_count = collection.recount_documents();
+
+    Ok(Json(serde_json::json!({
+        "database": db_name,
+        "collection": coll_name,
+        "cached_count": cached_count,
+        "actual_count": actual_count,
+        "match": cached_count == actual_count,
+        "status": "recounted"
+    })))
+}
+
 pub async fn get_collection_stats(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,

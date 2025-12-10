@@ -126,6 +126,10 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
             put(compact_collection),
         )
         .route(
+            "/_api/database/{db}/collection/{name}/recount",
+            put(recount_collection),
+        )
+        .route(
             "/_api/database/{db}/collection/{name}/stats",
             get(get_collection_stats),
         )
