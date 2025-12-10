@@ -1462,10 +1462,14 @@ pub async fn update_document(
     State(state): State<AppState>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
     headers: HeaderMap,
-    Json(data): Json<Value>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    Json(mut data): Json<Value>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
+
+    // Check for upsert query param
+    let upsert = params.get("upsert").map(|v| v == "true").unwrap_or(false);
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
@@ -1498,7 +1502,18 @@ pub async fn update_document(
         }
     }
 
-    let doc = collection.update(&key, data)?;
+    // Try update, or insert if upsert=true and document not found
+    let doc = match collection.update(&key, data.clone()) {
+        Ok(doc) => doc,
+        Err(DbError::DocumentNotFound(_)) if upsert => {
+            // Ensure _key is set for insert
+            if let Value::Object(ref mut obj) = data {
+                obj.insert("_key".to_string(), Value::String(key.clone()));
+            }
+            collection.insert(data)?
+        }
+        Err(e) => return Err(e),
+    };
 
     // Record to replication log
     if let Some(ref repl) = state.replication {
@@ -2405,7 +2420,7 @@ async fn handle_cluster_ws(mut socket: axum::extract::ws::WebSocket, state: AppS
                     Err(_) => continue,
                 };
                 
-                if socket.send(Message::Text(json)).await.is_err() {
+                if socket.send(Message::Text(json.into())).await.is_err() {
                     break; // Client disconnected
                 }
             }
@@ -2585,7 +2600,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             let _ = socket.send(Message::Text(serde_json::json!({
                                 "type": "subscribed",
                                 "collection": req.collection
-                            }).to_string())).await;
+                            }).to_string().into())).await;
 
                             // Subscribe to local broadcast channel
                             let mut local_rx = collection.change_sender.subscribe();
@@ -2686,7 +2701,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                         }
                                         
                                         if let Ok(json) = serde_json::to_string(&event) {
-                                            if socket.send(Message::Text(json)).await.is_err() {
+                                            if socket.send(Message::Text(json.into())).await.is_err() {
                                                 break;
                                             }
                                         }
@@ -2705,14 +2720,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         Err(_) => {
                              let _ = socket.send(Message::Text(serde_json::json!({
                                  "error": "Collection not found"
-                             }).to_string())).await;
+                             }).to_string().into())).await;
                         }
                     }
                 }
                 _ => {
                     let _ = socket.send(Message::Text(serde_json::json!({
                         "error": "Invalid subscription request"
-                    }).to_string())).await;
+                    }).to_string().into())).await;
                 }
             }
         }

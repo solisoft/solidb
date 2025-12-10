@@ -376,7 +376,7 @@ impl ShardCoordinator {
                  
                  // Let's try to find it in the doc by matching.
                  if let Ok(mut doc) = collection.get("cluster_peers") {
-                     if let Some(mut peers_arr) = doc.data.get("peers").and_then(|v| v.as_array()).cloned() {
+                     if let Some(peers_arr) = doc.data.get("peers").and_then(|v| v.as_array()).cloned() {
                          // Filter out the removed node
                          // We need to be careful with port mapping.
                          // But wait, if we remove it from memory, we should remove it from storage.
@@ -482,8 +482,8 @@ impl ShardCoordinator {
                                     // To avoid storm: Only send if I am the FIRST available node in the replica list?
                                     // (Primary responsibility).
                                     
-                                    // For prototype: Just send.
-                                    match self.forward_insert_to_node(
+                                    // For prototype: Just send (using upsert for idempotency).
+                                    match self.forward_upsert_to_node(
                                         &target, &db_name, &coll_name, &doc.to_value()
                                     ).await {
                                         Ok(_) => {}, // Success
@@ -533,6 +533,48 @@ impl ShardCoordinator {
             let error: Value = response.json().await.unwrap_or(Value::Null);
             Err(DbError::InternalError(
                 error["error"].as_str().unwrap_or("Remote insert failed").to_string()
+            ))
+        }
+    }
+
+    /// Forward upsert (insert or update) to a specific node - idempotent for rebalancing
+    async fn forward_upsert_to_node(
+        &self,
+        node_addr: &str,
+        db_name: &str,
+        coll_name: &str,
+        doc: &Value,
+    ) -> DbResult<Document> {
+        // Extract _key from document for PUT endpoint
+        let key = doc.get("_key")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| DbError::InternalError("Document missing _key".to_string()))?;
+
+        let url = format!(
+            "http://{}/_api/database/{}/document/{}/{}?upsert=true",
+            node_addr, db_name, coll_name, key
+        );
+
+        // Get admin password from env var for inter-node auth
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
+        let response = self.http_client
+            .put(&url)
+            .header("X-Shard-Direct", "true")
+            .basic_auth("admin", Some(&admin_pass))
+            .json(doc)
+            .send()
+            .await
+            .map_err(|e| DbError::InternalError(format!("Forward failed: {}", e)))?;
+
+        if response.status().is_success() {
+            let result: Document = response.json().await
+                .map_err(|e| DbError::InternalError(format!("Parse response: {}", e)))?;
+            Ok(result)
+        } else {
+            let error: Value = response.json().await.unwrap_or(Value::Null);
+            Err(DbError::InternalError(
+                error["error"].as_str().unwrap_or("Remote upsert failed").to_string()
             ))
         }
     }
@@ -931,7 +973,8 @@ impl ShardCoordinator {
 
                     // REFRESH NODES: Sync node list from _system._config
                     if let Err(e) = self_clone.refresh_nodes_from_storage() {
-                        tracing::warn!("Failed to refresh node list from storage: {}", e);
+                        // This is expected on first startup before any sharded collections are created
+                        tracing::debug!("Failed to refresh node list from storage: {}", e);
                     }
                     
                     // Check all known nodes

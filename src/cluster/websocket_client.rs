@@ -32,7 +32,7 @@ impl ClusterWebsocketClient {
 
         tracing::debug!("[CLUSTER-WS] Connecting to {}", url);
 
-        let (ws_stream, _) = connect_async(url).await?;
+        let (ws_stream, _) = connect_async(url.as_str()).await?;
         let (mut write, mut read) = ws_stream.split();
 
         // Send subscription message
@@ -42,7 +42,7 @@ impl ClusterWebsocketClient {
             "collection": collection
         });
 
-        write.send(Message::Text(subscribe_msg.to_string())).await?;
+        write.send(Message::Text(subscribe_msg.to_string().into())).await?;
 
         // Return a stream that parses messages
         let stream = async_stream::try_stream! {

@@ -146,6 +146,13 @@ impl StorageEngine {
             self.create_database("_system".to_string())?;
         }
 
+        // Ensure _config collection exists in _system (for cluster peer discovery)
+        if let Ok(system_db) = self.get_database("_system") {
+            if system_db.get_collection("_config").is_err() {
+                let _ = system_db.create_collection("_config".to_string(), None);
+            }
+        }
+
         // Recalculate document counts for all collections
         // This ensures counts are accurate after crashes or unclean shutdowns
         self.recalculate_all_counts();

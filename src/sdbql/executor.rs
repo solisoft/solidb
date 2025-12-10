@@ -391,16 +391,12 @@ impl<'a> QueryExecutor<'a> {
 
             std::thread::spawn(move || {
                 let start = std::time::Instant::now();
-                for (key, doc_bytes) in mutations {
-                    repl.record_write(
-                        &db,
-                        &collection,
-                        operation.clone(),
-                        &key,
-                        Some(&doc_bytes),
-                        None,
-                    );
-                }
+                repl.record_batch(
+                    &db,
+                    &collection,
+                    operation,
+                    mutations,
+                );
                 let elapsed = start.elapsed();
                 tracing::debug!(
                     "INSERT: Async replication logging of {} docs completed in {:?}",

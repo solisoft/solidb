@@ -49,6 +49,9 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Load .env file if present (before parsing CLI args)
+    let _ = dotenvy::dotenv();
+
     let args = Args::parse();
 
     // Handle daemonization before starting async runtime

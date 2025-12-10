@@ -411,6 +411,76 @@ impl Collection {
         Ok(inserted_docs)
     }
 
+    /// Batch upsert (insert or update) multiple documents - optimized for replication
+    /// Uses RocksDB WriteBatch for optimal performance
+    /// Skips index updates for speed - caller should rebuild indexes if needed
+    pub fn upsert_batch(&self, documents: Vec<(String, Value)>) -> DbResult<usize> {
+        use rocksdb::WriteBatch;
+
+        if documents.is_empty() {
+            return Ok(0);
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let mut batch = WriteBatch::default();
+        let mut insert_count = 0;
+
+        for (key, mut data) in documents {
+            // Ensure _key is set
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("_key".to_string(), Value::String(key.clone()));
+            }
+
+            // Check if document exists to determine insert vs update
+            let exists = db.get_cf(cf, Self::doc_key(&key)).ok().flatten().is_some();
+            
+            let doc = if exists {
+                // Update existing document
+                if let Ok(bytes) = db.get_cf(cf, Self::doc_key(&key)) {
+                    if let Some(bytes) = bytes {
+                        if let Ok(mut existing) = serde_json::from_slice::<Document>(&bytes) {
+                            existing.update(data);
+                            existing
+                        } else {
+                            Document::with_key(&self.name, key.clone(), data)
+                        }
+                    } else {
+                        Document::with_key(&self.name, key.clone(), data)
+                    }
+                } else {
+                    Document::with_key(&self.name, key.clone(), data)
+                }
+            } else {
+                Document::with_key(&self.name, key.clone(), data)
+            };
+
+            if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
+                batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+                if !exists {
+                    insert_count += 1;
+                }
+            }
+        }
+
+        let count = batch.len();
+        
+        // Write all documents in one batch operation
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
+
+        // Update document count (only for new inserts)
+        if insert_count > 0 {
+            self.doc_count.fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
+            self.count_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        Ok(count)
+    }
+
     /// Index only the provided documents (for incremental indexing after batch insert)
     pub fn index_documents(&self, docs: &[Document]) -> DbResult<usize> {
         use rocksdb::WriteBatch;

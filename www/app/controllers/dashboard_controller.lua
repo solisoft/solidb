@@ -37,6 +37,10 @@ local app = {
     Page("dashboard/scripts", "app")
   end,
 
+  sharding = function()
+    Page("dashboard/sharding", "app")
+  end,
+
   apikeys = function()
     Page("dashboard/apikeys", "app")
   end

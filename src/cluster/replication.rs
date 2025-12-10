@@ -163,8 +163,8 @@ impl PersistentReplicationLog {
             db: Arc::new(RwLock::new(db)),
             sequence: Arc::new(RwLock::new(sequence)),
             max_entries,
-            cache: Arc::new(RwLock::new(VecDeque::with_capacity(100000))),
-            cache_size: 100000,
+            cache: Arc::new(RwLock::new(VecDeque::with_capacity(10000))),
+            cache_size: 10000, // Keep cache small to avoid memory bloat with large imports
         };
 
         // Load recent entries into cache
@@ -243,6 +243,56 @@ impl PersistentReplicationLog {
         *seq
     }
 
+    /// Append a batch of entries to the log atomically
+    pub fn append_batch(&self, entries: Vec<ReplicationEntry>) -> u64 {
+        if entries.is_empty() {
+            return self.current_sequence();
+        }
+
+        let mut seq = self.sequence.write().unwrap();
+        let db = self.db.write().unwrap();
+        let mut cache = self.cache.write().unwrap();
+        let mut batch = rocksdb::WriteBatch::default();
+
+        let count = entries.len();
+
+        for (_i, mut entry) in entries.into_iter().enumerate() {
+            *seq += 1;
+            entry.sequence = *seq;
+            entry.node_id = self.node_id.clone();
+
+            let key = format!("repl:{:020}", *seq);
+            let value = entry.to_bytes();
+            batch.put(key.as_bytes(), &value);
+
+            // Add to cache (skip very large entries to save memory)
+            let entry_size = entry.document_data.as_ref().map(|d| d.len()).unwrap_or(0);
+            if entry_size < 10_000 { // Only cache entries smaller than 10KB
+                cache.push_back(entry);
+            }
+        }
+
+        // Update sequence on disk
+        batch.put(REPL_SEQ_KEY, seq.to_string().as_bytes());
+
+        // Write the batch atomically
+        if let Err(e) = db.write(batch) {
+             tracing::error!("[REPL-LOG] Failed to persist batch of {} entries: {}", count, e);
+        }
+
+        while cache.len() > self.cache_size {
+            cache.pop_front();
+        }
+
+        // Trim old entries if needed (check only once per batch)
+        if *seq > self.max_entries as u64 {
+            let trim_before = *seq - self.max_entries as u64;
+            self.trim_before(trim_before, &db);
+        }
+
+        *seq
+    }
+
     fn trim_before(&self, before_sequence: u64, db: &DB) {
         let prefix = format!("repl:{:020}", 0);
         let end_key = format!("repl:{:020}", before_sequence);
@@ -271,22 +321,15 @@ impl PersistentReplicationLog {
         }
     }
 
-    /// Get entries after a given sequence number
+    /// Get entries after a given sequence number (with optional limit)
     pub fn get_entries_after(&self, after_sequence: u64) -> Vec<ReplicationEntry> {
-        // Try cache first
-        {
-            let cache = self.cache.read().unwrap();
-            if let Some(first) = cache.front() {
-                if first.sequence <= after_sequence + 1 {
-                    // Cache has what we need
-                    return cache
-                        .iter()
-                        .filter(|e| e.sequence > after_sequence)
-                        .cloned()
-                        .collect();
-                }
-            }
-        }
+        self.get_entries_after_limit(after_sequence, None)
+    }
+
+    /// Get entries after a given sequence number with a limit
+    pub fn get_entries_after_limit(&self, after_sequence: u64, limit: Option<usize>) -> Vec<ReplicationEntry> {
+        // Always read from disk for correctness - cache may have gaps due to size filtering
+        // This is safer and disk reads with limits are efficient
 
         // Fall back to disk
         let db = self.db.read().unwrap();
@@ -297,7 +340,12 @@ impl PersistentReplicationLog {
         ));
 
         let mut entries = Vec::new();
+        let max_entries = limit.unwrap_or(usize::MAX);
+        
         for item in iter {
+            if entries.len() >= max_entries {
+                break;
+            }
             if let Ok((key, value)) = item {
                 if !key.starts_with(REPL_LOG_PREFIX) || key.as_ref() == REPL_SEQ_KEY {
                     continue;
@@ -371,6 +419,25 @@ impl ReplicationLog {
         // Trim old entries if we exceed max
         while entries.len() > self.max_entries {
             entries.pop_front();
+        }
+
+        *seq
+    }
+
+    /// Append a batch of entries (in-memory version)
+    pub fn append_batch(&self, entries: Vec<ReplicationEntry>) -> u64 {
+        let mut seq = self.sequence.write().unwrap();
+        let mut log_entries = self.entries.write().unwrap();
+
+        for mut entry in entries {
+            *seq += 1;
+            entry.sequence = *seq;
+            entry.node_id = self.node_id.clone();
+            log_entries.push_back(entry);
+        }
+
+        while log_entries.len() > self.max_entries {
+            log_entries.pop_front();
         }
 
         *seq

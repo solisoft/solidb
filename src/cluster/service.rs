@@ -155,6 +155,8 @@ pub struct ReplicationService {
     hlc_generator: Arc<HlcGenerator>,
     peer_states: Arc<RwLock<HashMap<String, PeerState>>>,
     shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
+    /// Track highest applied sequence per origin node_id to deduplicate multi-path entries
+    origin_sequences: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl ReplicationService {
@@ -220,6 +222,7 @@ impl ReplicationService {
             hlc_generator,
             peer_states: Arc::new(RwLock::new(peer_states)),
             shutdown_tx: Arc::new(RwLock::new(None)),
+            origin_sequences: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -844,11 +847,13 @@ impl ReplicationService {
                 // Note: Peer registration is handled in Ping handler with proper replication address
                 let _ = from_node; // Used for logging
 
-                let entries = self.replication_log.get_entries_after(after_sequence);
+                // Use limited batch size to prevent massive responses
+                let batch_size = 20000;
+                let entries = self.replication_log.get_entries_after_limit(after_sequence, Some(batch_size));
                 let current_seq = self.replication_log.current_sequence();
 
-                tracing::debug!("[SYNC-REQ] From {} requesting entries after seq {}. Sending {} entries (our seq: {})",
-                    from_node, after_sequence, entries.len(), current_seq);
+                tracing::info!("[SYNC-REQ] From {} requesting entries after seq {}. Sending {} entries (our seq: {}, limit: {})",
+                    from_node, after_sequence, entries.len(), current_seq, batch_size);
 
                 Some(ReplicationMessage::SyncResponse {
                     from_node: self.config.node_id.clone(),
@@ -1318,11 +1323,105 @@ impl ReplicationService {
         };
         writer.write_all(&sync_request.to_bytes()).await?;
 
-        // Sync loop - use fast interval for quick initial sync, then slow down
+        // Sync loop - use moderate interval to avoid flooding
         let mut interval = tokio::time::interval(Duration::from_millis(100));
+        let mut last_ping = std::time::Instant::now();
+        let mut sync_pending_since: Option<std::time::Instant> = None;
 
         loop {
+            // Remove biased select to prevent starvation of the reader
             tokio::select! {
+                _ = interval.tick() => {
+                    tracing::trace!("[SYNC] Interval tick for peer {}", peer_addr);
+                    
+                    // Send heartbeat every 1s
+                    if last_ping.elapsed() >= Duration::from_secs(1) {
+                        let ping = ReplicationMessage::Ping {
+                            from_node: self.config.node_id.clone(),
+                            replication_addr: Some(self.config.replication_addr()),
+                        };
+                        if let Err(e) = writer.write_all(&ping.to_bytes()).await {
+                            tracing::error!("[SYNC] Write error sending ping to {}: {}", peer_addr, e);
+                            break;
+                        }
+                        last_ping = std::time::Instant::now();
+                    }
+
+                    // Request new entries from peer (PULL)
+                    // Only if we don't have a pending request (or it timed out)
+                    let should_send_sync = if let Some(since) = sync_pending_since {
+                        if since.elapsed() > Duration::from_secs(30) {
+                            tracing::warn!("[SYNC] Request to {} timed out, retrying", peer_addr);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        true
+                    };
+
+                    if should_send_sync {
+                        // Use last_sequence_received (what we've received from them)
+                        let last_received = self.peer_states.read().unwrap()
+                            .get(peer_addr)
+                            .map(|p| p.last_sequence_received)
+                            .unwrap_or(0);
+                        
+                        let sync_request = ReplicationMessage::SyncRequest {
+                            from_node: self.config.node_id.clone(),
+                            after_sequence: last_received,
+                        };
+                        
+                        if let Err(e) = writer.write_all(&sync_request.to_bytes()).await {
+                            tracing::error!("[SYNC] Write error sending sync request to {}: {}", peer_addr, e);
+                            break;
+                        }
+                        sync_pending_since = Some(std::time::Instant::now());
+                    }
+
+                    // Push any new entries to peer (PUSH)
+                    let last_sent = self.peer_states.read().unwrap()
+                        .get(peer_addr)
+                        .map(|p| p.last_sequence_sent)
+                        .unwrap_or(0);
+
+                    let our_seq = self.replication_log.current_sequence();
+                    
+                    // Use moderate batch size (20k) - large enough for speed, small enough to avoid memory issues
+                    let batch_size = 20000;
+                    let new_entries = self.replication_log.get_entries_after_limit(last_sent, Some(batch_size));
+                    
+                    tracing::trace!("[SYNC] peer={}, our_seq={}, last_sent={}, entries_to_push={}",
+                        peer_addr, our_seq, last_sent, new_entries.len());
+                    if !new_entries.is_empty() {
+                        let first_seq = new_entries.first().map(|e| e.sequence).unwrap_or(0);
+                        let last_seq_in_batch = new_entries.last().map(|e| e.sequence).unwrap_or(0);
+                        
+                        // Log progress at INFO level for visibility during large syncs
+                        tracing::info!("[PUSH] Sending {} entries to {} (seq {}-{}, total_pending={})",
+                            new_entries.len(), peer_addr, first_seq, last_seq_in_batch,
+                            our_seq.saturating_sub(last_sent));
+
+                        let push = ReplicationMessage::PushEntries {
+                            from_node: self.config.node_id.clone(),
+                            entries: new_entries.clone(),
+                        };
+                        if let Err(e) = writer.write_all(&push.to_bytes()).await {
+                            tracing::error!("[PUSH] Write error to {}: {}", peer_addr, e);
+                            break; // Exit loop to trigger reconnect
+                        }
+                        if let Err(e) = writer.flush().await {
+                            tracing::error!("[PUSH] Flush error to {}: {}", peer_addr, e);
+                            break; // Exit loop to trigger reconnect
+                        }
+
+                        if let Some(last) = new_entries.last() {
+                            tracing::info!("[PUSH] Updating last_sent for {} to {}", peer_addr, last.sequence);
+                            self.update_peer_sent(peer_addr, last.sequence);
+                        }
+                    }
+                }
+                
                 result = reader.read_line(&mut line) => {
                     match result {
                         Ok(0) => {
@@ -1335,8 +1434,16 @@ impl ReplicationService {
                                 continue;
                             }
                             if let Ok(message) = serde_json::from_str::<ReplicationMessage>(&line) {
+                                // If we received a SyncResponse, clear the pending flag
+                                if matches!(message, ReplicationMessage::SyncResponse { .. }) {
+                                    sync_pending_since = None;
+                                }
+
                                 if let Some(response) = self.handle_message(message, peer_addr).await {
-                                    writer.write_all(&response.to_bytes()).await?;
+                                    if let Err(e) = writer.write_all(&response.to_bytes()).await {
+                                        tracing::error!("[SYNC] Write error sending response to {}: {}", peer_addr, e);
+                                        break;
+                                    }
                                 }
                             }
                             line.clear();
@@ -1344,59 +1451,6 @@ impl ReplicationService {
                         Err(e) => {
                             tracing::error!("[SYNC] Read error from {}: {}", peer_addr, e);
                             break;
-                        }
-                    }
-                }
-                _ = interval.tick() => {
-                    tracing::debug!("[SYNC] Interval tick for peer {}", peer_addr);
-                    // Send heartbeat with our replication address for discovery
-                    let ping = ReplicationMessage::Ping {
-                        from_node: self.config.node_id.clone(),
-                        replication_addr: Some(self.config.replication_addr()),
-                    };
-                    writer.write_all(&ping.to_bytes()).await?;
-
-                    // Request new entries from peer (PULL)
-                    // Use last_sequence_received (what we've received from them)
-                    let last_received = self.peer_states.read().unwrap()
-                        .get(peer_addr)
-                        .map(|p| p.last_sequence_received)
-                        .unwrap_or(0);
-                    let sync_request = ReplicationMessage::SyncRequest {
-                        from_node: self.config.node_id.clone(),
-                        after_sequence: last_received,
-                    };
-                    writer.write_all(&sync_request.to_bytes()).await?;
-
-                    // Push any new entries to peer (PUSH)
-                    let last_sent = self.peer_states.read().unwrap()
-                        .get(peer_addr)
-                        .map(|p| p.last_sequence_sent)
-                        .unwrap_or(0);
-
-                    let our_seq = self.replication_log.current_sequence();
-                    let all_entries = self.replication_log.get_entries_after(last_sent);
-                    
-                    // Batch the push - max 10000 entries per message to avoid memory/network issues
-                    let batch_size = 10000;
-                    let new_entries: Vec<_> = all_entries.into_iter().take(batch_size).collect();
-                    
-                    tracing::trace!("[SYNC] peer={}, our_seq={}, last_sent={}, entries_to_push={}",
-                        peer_addr, our_seq, last_sent, new_entries.len());
-                    if !new_entries.is_empty() {
-                        tracing::debug!("[PUSH] Sending {} entries to {} (seq {} to {})",
-                            new_entries.len(), peer_addr,
-                            new_entries.first().map(|e| e.sequence).unwrap_or(0),
-                            new_entries.last().map(|e| e.sequence).unwrap_or(0));
-
-                        let push = ReplicationMessage::PushEntries {
-                            from_node: self.config.node_id.clone(),
-                            entries: new_entries.clone(),
-                        };
-                        writer.write_all(&push.to_bytes()).await?;
-
-                        if let Some(last) = new_entries.last() {
-                            self.update_peer_sent(peer_addr, last.sequence);
                         }
                     }
                 }
@@ -1408,9 +1462,98 @@ impl ReplicationService {
 
     /// Apply received entries using Last-Write-Wins conflict resolution
     async fn apply_entries(&self, entries: &[ReplicationEntry]) {
-        for entry in entries {
-            // Update our HLC based on received timestamp
+        // Early return for empty input (common case, no need to log)
+        if entries.is_empty() {
+            return;
+        }
+        
+        use std::collections::HashMap;
+        
+        // DEDUPLICATION: Filter out entries we've already applied (by origin node_id + sequence)
+        let entries_to_apply: Vec<&ReplicationEntry> = {
+            let origin_seqs = self.origin_sequences.read().unwrap();
+            entries.iter().filter(|e| {
+                let last_applied = origin_seqs.get(&e.node_id).copied().unwrap_or(0);
+                e.sequence > last_applied
+            }).collect()
+        };
+        
+        if entries_to_apply.is_empty() {
+            tracing::debug!("[APPLY] All {} entries already applied, skipping", entries.len());
+            return;
+        }
+        
+        if entries.len() != entries_to_apply.len() {
+            tracing::debug!("[APPLY] Filtered {} duplicate entries, applying {}", 
+                entries.len() - entries_to_apply.len(), entries_to_apply.len());
+        }
+        
+        // FAST PATH: Batch all Insert/Update operations by collection
+        let mut batches: HashMap<(String, String), Vec<(String, serde_json::Value)>> = HashMap::new();
+        let mut other_entries: Vec<&ReplicationEntry> = Vec::new();
+        
+        // Track highest sequence per origin for updates after apply
+        let mut max_sequences: HashMap<String, u64> = HashMap::new();
+        
+        for entry in &entries_to_apply {
             self.hlc_generator.receive(&entry.hlc);
+            
+            // Track max sequence per origin
+            let current_max = max_sequences.get(&entry.node_id).copied().unwrap_or(0);
+            if entry.sequence > current_max {
+                max_sequences.insert(entry.node_id.clone(), entry.sequence);
+            }
+            
+            match &entry.operation {
+                Operation::Insert | Operation::Update => {
+                    if let Some(data) = &entry.document_data {
+                        if let Ok(mut doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
+                            // Strip system fields except _key
+                            if let Some(obj) = doc_value.as_object_mut() {
+                                obj.remove("_id");
+                                obj.remove("_rev");
+                                obj.remove("_created_at");
+                                obj.remove("_updated_at");
+                            }
+                            let key = (entry.database.clone(), entry.collection.clone());
+                            batches.entry(key).or_default().push((entry.document_key.clone(), doc_value));
+                            continue;
+                        }
+                    }
+                    other_entries.push(entry);
+                }
+                _ => other_entries.push(entry),
+            }
+        }
+        
+        // Apply batched Insert/Update operations
+        for ((db_name, coll_name), docs) in batches {
+            let count = docs.len();
+            
+            // Ensure database exists
+            if self.storage.get_database(&db_name).is_err() {
+                let _ = self.storage.create_database(db_name.clone());
+            }
+            
+            // Get or create collection
+            if let Ok(db) = self.storage.get_database(&db_name) {
+                if db.get_collection(&coll_name).is_err() {
+                    let _ = db.create_collection(coll_name.clone(), None);
+                }
+                
+                if let Ok(collection) = db.get_collection(&coll_name) {
+                    match collection.upsert_batch(docs) {
+                        Ok(_) => tracing::info!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name),
+                        Err(e) => tracing::error!("[APPLY] Batch upsert failed for {}/{}: {}", db_name, coll_name, e),
+                    }
+                } else {
+                    tracing::error!("[APPLY] Failed to get collection {}/{} after creation", db_name, coll_name);
+                }
+            }
+        }
+        
+        // Process remaining non-batchable operations individually
+        for entry in other_entries {
 
             // Handle database-level operations first (don't need collection)
             match &entry.operation {
@@ -1597,7 +1740,7 @@ impl ReplicationService {
 
                             match result {
                                 Ok(doc) => {
-                                    tracing::info!(
+                                    tracing::debug!(
                                         "[APPLY] {} {}/{}/{}",
                                         if entry.operation == Operation::Insert {
                                             "Inserted"
@@ -1680,6 +1823,17 @@ impl ReplicationService {
                 }
             }
         }
+        
+        // Update origin_sequences with the highest sequences we applied
+        if !max_sequences.is_empty() {
+            let mut origin_seqs = self.origin_sequences.write().unwrap();
+            for (node_id, max_seq) in max_sequences {
+                let current = origin_seqs.get(&node_id).copied().unwrap_or(0);
+                if max_seq > current {
+                    origin_seqs.insert(node_id, max_seq);
+                }
+            }
+        }
     }
 
     /// Record a write operation in the replication log
@@ -1723,6 +1877,61 @@ impl ReplicationService {
             seq
         );
         seq
+    }
+
+    /// Record a batch of write operations in the replication log
+    pub fn record_batch(
+        &self,
+        database: &str,
+        collection: &str,
+        operation: Operation,
+        documents: Vec<(String, Vec<u8>)>,
+    ) -> u64 {
+
+        // Skip replication logging only if we are not in cluster mode AND have no connected peers
+        let is_cluster = self.config.is_cluster_mode();
+        let peer_count = self.peer_states.read().unwrap().len();
+
+        // Always record to replication log if we are running the ReplicationService
+    // We need to store history even if we represent a single-node cluster (bootstrap node)
+    // so that other nodes can join later and sync from us.
+    
+    // tracing::info!("[REPL-LOG] Recording batch of {} docs (cluster: {}, peers: {})", documents.len(), is_cluster, peer_count);
+
+
+        let hlc = self.hlc_generator.now();
+        let count = documents.len();
+
+        let entries: Vec<ReplicationEntry> = documents
+            .into_iter()
+            .map(|(key, data)| {
+                ReplicationEntry::new(
+                    0, // Will be set by append_batch
+                    self.config.node_id.clone(),
+                    hlc.clone(), // Reuse same timestamp for the batch (simulates transaction)
+                    database.to_string(),
+                    collection.to_string(),
+                    operation.clone(),
+                    key,
+                    Some(data),
+                    None,
+                )
+            })
+            .collect();
+
+        let last_seq = self.replication_log.append_batch(entries);
+        
+        tracing::info!(
+            "[REPL-LOG] Recorded batch of {} {:?} operations for {}/{} (end seq: {}, current_seq: {})",
+            count,
+            operation,
+            database,
+            collection,
+            last_seq,
+            self.replication_log.current_sequence()
+        );
+        
+        last_seq
     }
 
     /// Record a blob chunk in the replication log
@@ -1804,17 +2013,29 @@ impl ReplicationService {
     }
 
     fn update_peer_sent(&self, peer: &str, sequence: u64) {
-        if let Some(state) = self.peer_states.write().unwrap().get_mut(peer) {
+        let mut peers = self.peer_states.write().unwrap();
+        if let Some(state) = peers.get_mut(peer) {
+            tracing::debug!("[PEER] Updating last_sent for {}: {} -> {}", peer, state.last_sequence_sent, sequence);
             state.last_sequence_sent = sequence;
+        } else {
+            // Log warning if peer not found - this would cause duplicate sends
+            tracing::warn!("[PEER] Cannot update last_sent - peer '{}' not found in states. Known peers: {:?}", 
+                peer, peers.keys().collect::<Vec<_>>());
         }
     }
 
     /// Update the highest sequence we've received FROM this peer (for sync requests)
     fn update_peer_received(&self, peer_addr: &str, sequence: u64) {
         let mut peers = self.peer_states.write().unwrap();
-        if let Some(state) = peers.get_mut(peer_addr) {
+        
+        // Try to find the peer by node_id first, then by address (like update_peer_acked)
+        let found = peers.values_mut().find(|p| {
+            p.node_id.as_deref() == Some(peer_addr) || p.address == peer_addr
+        });
+        
+        if let Some(state) = found {
             if state.last_sequence_received < sequence {
-                tracing::debug!(
+                tracing::info!(
                     "[RECV] Updating peer {} received sequence: {} -> {}",
                     state.address,
                     state.last_sequence_received,
@@ -1822,6 +2043,11 @@ impl ReplicationService {
                 );
                 state.last_sequence_received = sequence;
             }
+        } else {
+            tracing::warn!(
+                "[RECV] Could not find peer with node_id or address: '{}'. Known peers: {:?}",
+                peer_addr, peers.keys().collect::<Vec<_>>()
+            );
         }
     }
 
@@ -1983,6 +2209,7 @@ impl Clone for ReplicationService {
             hlc_generator: Arc::clone(&self.hlc_generator),
             peer_states: Arc::clone(&self.peer_states),
             shutdown_tx: Arc::clone(&self.shutdown_tx),
+            origin_sequences: Arc::clone(&self.origin_sequences),
         }
     }
 }

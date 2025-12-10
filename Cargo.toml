@@ -9,23 +9,23 @@ default-run = "solidb"
 tokio = { version = "1.35", features = ["full"] }
 
 # HTTP server
-axum = { version = "0.7", features = ["multipart", "ws"] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["trace", "cors"] }
+axum = { version = "0.8.7", features = ["multipart", "ws"] }
+tower = { version = "0.5.2", features = ["util"] }
+tower-http = { version = "0.6.8", features = ["trace", "cors"] }
 async-stream = "0.3"
 
 # WebSocket Client (for global changefeed aggregation)
-tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 url = "2.4"
 
 # JSON serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-base64 = "0.21"
+base64 = "0.22"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
@@ -33,21 +33,22 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # CLI
 clap = { version = "4.4", features = ["derive"] }
+dotenvy = "0.15"
 
 # Utilities
 uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
 hostname = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.8"
+chrono-tz = "0.10"
 uuid7 = "1.0"
 regex = "1.10"
 
 # Storage
-rocksdb = "0.22"
+rocksdb = "0.24"
 
 # Authentication
 argon2 = "0.5"
-jsonwebtoken = "9.2"
+jsonwebtoken = "9.3"
 once_cell = "1.19"
 rand_core = { version = "0.6", features = ["std"] }
 hex = "0.4"
@@ -58,7 +59,7 @@ hmac = "0.12"
 tempfile = "3.10"
 
 # HTTP client (for benchmarks)
-reqwest = { version = "0.11", features = ["json", "blocking", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
 
 # FUSE filesystem (requires macFUSE on macOS)
 fuser = { version = "0.14", optional = true }
@@ -72,15 +73,15 @@ rayon = "1.8"
 csv = "1.4.0"
 
 # CLI UX
-indicatif = "0.17"
-colored = "2.0"
+indicatif = "0.18"
+colored = "3.0"
 
 # System info for stats
 sysinfo = "0.30"
 futures = { version = "0.3.31", features = ["std"] }
 
 # Embedded Lua scripting
-mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
+mlua = { version = "0.11.5", features = ["lua54", "vendored", "async", "serialize", "send"] }
 
 # Default binary
 [[bin]]
