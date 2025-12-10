@@ -157,6 +157,8 @@ pub struct ReplicationService {
     shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// Track highest applied sequence per origin node_id to deduplicate multi-path entries
     origin_sequences: Arc<RwLock<HashMap<String, u64>>>,
+    /// Mutex to serialize apply_entries calls and prevent concurrent duplicate application
+    apply_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl ReplicationService {
@@ -230,6 +232,7 @@ impl ReplicationService {
             peer_states: Arc::new(RwLock::new(peer_states)),
             shutdown_tx: Arc::new(RwLock::new(None)),
             origin_sequences: Arc::new(RwLock::new(origin_sequences)),
+            apply_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -1541,6 +1544,11 @@ impl ReplicationService {
             return true;
         }
 
+        // Acquire lock to serialize apply_entries calls
+        // This prevents race conditions where two concurrent calls both pass deduplication
+        // before either updates origin_sequences
+        let _apply_guard = self.apply_lock.lock().await;
+
         use std::collections::HashMap;
 
         // DEDUPLICATION: Filter out entries we've already applied (by origin node_id + sequence)
@@ -2349,6 +2357,7 @@ impl Clone for ReplicationService {
             peer_states: Arc::clone(&self.peer_states),
             shutdown_tx: Arc::clone(&self.shutdown_tx),
             origin_sequences: Arc::clone(&self.origin_sequences),
+            apply_lock: Arc::clone(&self.apply_lock),
         }
     }
 }
