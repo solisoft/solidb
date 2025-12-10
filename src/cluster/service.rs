@@ -1151,12 +1151,22 @@ impl ReplicationService {
                 from_node,
                 current_sequence,
             } => {
-                tracing::debug!("╔════════════════════════════════════════════════════════════╗");
-                tracing::debug!("║              FULL SYNC COMPLETE                            ║");
-                tracing::debug!("╠════════════════════════════════════════════════════════════╣");
-                tracing::debug!("║ From: {:<52} ║", from_node);
-                tracing::debug!("║ Their sequence: {:<42} ║", current_sequence);
-                tracing::debug!("╚════════════════════════════════════════════════════════════╝");
+                tracing::info!("╔════════════════════════════════════════════════════════════╗");
+                tracing::info!("║              FULL SYNC COMPLETE                            ║");
+                tracing::info!("╠════════════════════════════════════════════════════════════╣");
+                tracing::info!("║ From: {:<52} ║", from_node);
+                tracing::info!("║ Their sequence: {:<42} ║", current_sequence);
+                tracing::info!("╚════════════════════════════════════════════════════════════╝");
+                
+                // Update origin_sequences so we know where to start incremental sync from
+                // This is critical - without this, incremental sync will try to re-apply everything!
+                {
+                    let mut origin_seqs = self.origin_sequences.write().unwrap();
+                    origin_seqs.insert(from_node.clone(), current_sequence);
+                    tracing::info!("[FULL-SYNC] Updated origin_sequences[{}] = {}", from_node, current_sequence);
+                }
+                self.save_origin_sequences();
+                
                 None
             }
 
@@ -1333,9 +1343,13 @@ impl ReplicationService {
         let databases = self.storage.list_databases();
         let need_full_sync = our_sequence == 0 && databases.len() <= 1; // Only _system or empty
 
+        tracing::info!("[SYNC] Checking full sync: our_seq={}, databases={:?}, need_full_sync={}", 
+            our_sequence, databases, need_full_sync);
+
         if need_full_sync {
-            tracing::debug!("╔════════════════════════════════════════════════════════════╗");
-            tracing::debug!("║          REQUESTING FULL SYNC (NEW NODE)                   ║");
+            tracing::info!("╔════════════════════════════════════════════════════════════╗");
+            tracing::info!("║          REQUESTING FULL SYNC (NEW NODE)                   ║");
+            tracing::info!("╚════════════════════════════════════════════════════════════╝");
             tracing::debug!("╚════════════════════════════════════════════════════════════╝");
 
             let full_sync_request = ReplicationMessage::FullSyncRequest {
