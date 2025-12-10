@@ -316,6 +316,14 @@ impl PersistentReplicationLog {
             }
         }
 
+        if !to_delete.is_empty() {
+            tracing::warn!(
+                "[REPL-LOG] Trimming {} old entries (before seq {}). If peers fall behind, they may lose data!",
+                to_delete.len(),
+                before_sequence
+            );
+        }
+
         for key in to_delete {
             let _ = db.delete(&key);
         }

@@ -167,10 +167,12 @@ impl ReplicationService {
         let node_id = config.node_id.clone();
 
         // Create persistent replication log
+        // Keep 2 million entries to support large bulk operations without data loss
+        // At 5000 docs/batch, this supports ~10 million documents in flight
         let replication_log = PersistentReplicationLog::new(
             node_id.clone(),
             data_dir,
-            100000, // Keep last 100k entries
+            2_000_000, // Keep last 2M entries (was 100k - too small for bulk operations)
         )
         .expect("Failed to create replication log");
 
