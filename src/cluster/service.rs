@@ -162,6 +162,8 @@ pub struct ReplicationService {
 impl ReplicationService {
     /// Key used to store peer addresses in _system._config
     const PEERS_CONFIG_KEY: &'static str = "cluster_peers";
+    /// Key used to store origin sequences for deduplication in _system._config
+    const ORIGIN_SEQUENCES_KEY: &'static str = "origin_sequences";
 
     pub fn new(storage: StorageEngine, config: ClusterConfig, data_dir: &str) -> Self {
         let node_id = config.node_id.clone();
@@ -217,6 +219,9 @@ impl ReplicationService {
             );
         }
 
+        // Load previously saved origin sequences for deduplication
+        let origin_sequences = Self::load_origin_sequences(&storage);
+
         Self {
             storage,
             config,
@@ -224,7 +229,7 @@ impl ReplicationService {
             hlc_generator,
             peer_states: Arc::new(RwLock::new(peer_states)),
             shutdown_tx: Arc::new(RwLock::new(None)),
-            origin_sequences: Arc::new(RwLock::new(HashMap::new())),
+            origin_sequences: Arc::new(RwLock::new(origin_sequences)),
         }
     }
 
@@ -318,6 +323,65 @@ impl ReplicationService {
             }
         } else {
             tracing::warn!("[PEER] Failed to get _system database for saving peers");
+        }
+    }
+
+    /// Load origin sequences from _system._config collection
+    /// These track the highest sequence applied from each origin node for deduplication
+    fn load_origin_sequences(storage: &StorageEngine) -> HashMap<String, u64> {
+        if let Ok(db) = storage.get_database("_system") {
+            if let Ok(config_coll) = db.get_collection("_config") {
+                if let Ok(doc) = config_coll.get(Self::ORIGIN_SEQUENCES_KEY) {
+                    if let Some(seqs) = doc.data.get("sequences").and_then(|s| s.as_object()) {
+                        let loaded: HashMap<String, u64> = seqs
+                            .iter()
+                            .filter_map(|(k, v)| v.as_u64().map(|seq| (k.clone(), seq)))
+                            .collect();
+                        if !loaded.is_empty() {
+                            tracing::info!(
+                                "[REPL] Loaded origin sequences from _system._config: {:?}",
+                                loaded
+                            );
+                        }
+                        return loaded;
+                    }
+                }
+            }
+        }
+        HashMap::new()
+    }
+
+    /// Save origin sequences to _system._config collection
+    fn save_origin_sequences(&self) {
+        let sequences = self.origin_sequences.read().unwrap();
+        if sequences.is_empty() {
+            return;
+        }
+
+        if let Ok(db) = self.storage.get_database("_system") {
+            // Create _config collection if it doesn't exist
+            if db.get_collection("_config").is_err() {
+                if let Err(e) = db.create_collection("_config".to_string(), None) {
+                    tracing::warn!("[REPL] Failed to create _config collection: {}", e);
+                    return;
+                }
+            }
+
+            if let Ok(config_coll) = db.get_collection("_config") {
+                let seq_doc = serde_json::json!({
+                    "_key": Self::ORIGIN_SEQUENCES_KEY,
+                    "sequences": *sequences
+                });
+
+                // Try update first, then insert if not exists
+                if config_coll.get(Self::ORIGIN_SEQUENCES_KEY).is_ok() {
+                    if let Err(e) = config_coll.update(Self::ORIGIN_SEQUENCES_KEY, seq_doc) {
+                        tracing::warn!("[REPL] Failed to update origin sequences: {}", e);
+                    }
+                } else if let Err(e) = config_coll.insert(seq_doc) {
+                    tracing::warn!("[REPL] Failed to save origin sequences: {}", e);
+                }
+            }
         }
     }
 
@@ -1899,6 +1963,10 @@ impl ReplicationService {
                     origin_seqs.insert(node_id, max_seq);
                 }
             }
+            drop(origin_seqs); // Release lock before I/O
+            
+            // Persist to disk so we don't re-apply entries after restart
+            self.save_origin_sequences();
         }
         
         // Return true only if everything succeeded
