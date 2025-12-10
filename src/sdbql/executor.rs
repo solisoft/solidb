@@ -3367,6 +3367,20 @@ impl<'a> QueryExecutor<'a> {
                 ))
             }
 
+            // RANDOM() - random float between 0 and 1
+            "RANDOM" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError(
+                        "RANDOM takes no arguments".to_string(),
+                    ));
+                }
+                use rand::Rng;
+                let random_val: f64 = rand::thread_rng().gen();
+                Ok(Value::Number(
+                    number_from_f64(random_val),
+                ))
+            }
+
             // UPPER(string) - uppercase
             "UPPER" => {
                 if evaluated_args.len() != 1 {

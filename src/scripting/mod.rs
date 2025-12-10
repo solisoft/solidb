@@ -12,6 +12,15 @@ use crate::error::DbError;
 use crate::storage::StorageEngine;
 use crate::sdbql::{parse, QueryExecutor};
 
+// Crypto imports
+use sha2::Digest;
+use hmac::Mac;
+use base64::Engine;
+use rand::RngCore;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::password_hash::SaltString;
+use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+
 /// Context passed to Lua scripts containing request information
 #[derive(Debug, Clone)]
 pub struct ScriptContext {
@@ -438,6 +447,270 @@ impl ScriptEngine {
 
         globals.set("response", response)
             .map_err(|e| DbError::InternalError(format!("Failed to set response global: {}", e)))?;
+
+        // Create 'crypto' namespace
+        let crypto = lua.create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create crypto table: {}", e)))?;
+
+        // md5(data)
+        let md5_fn = lua.create_function(|_, data: mlua::String| {
+            let digest = md5::compute(&data.as_bytes());
+            Ok(format!("{:x}", digest))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create md5 function: {}", e)))?;
+        crypto.set("md5", md5_fn).map_err(|e| DbError::InternalError(format!("Failed to set md5: {}", e)))?;
+
+        // sha256(data)
+        let sha256_fn = lua.create_function(|_, data: mlua::String| {
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(&data.as_bytes());
+            Ok(hex::encode(hasher.finalize()))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create sha256 function: {}", e)))?;
+        crypto.set("sha256", sha256_fn).map_err(|e| DbError::InternalError(format!("Failed to set sha256: {}", e)))?;
+
+        // sha512(data)
+        let sha512_fn = lua.create_function(|_, data: mlua::String| {
+            let mut hasher = sha2::Sha512::new();
+            hasher.update(&data.as_bytes());
+            Ok(hex::encode(hasher.finalize()))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create sha512 function: {}", e)))?;
+        crypto.set("sha512", sha512_fn).map_err(|e| DbError::InternalError(format!("Failed to set sha512: {}", e)))?;
+
+        // hmac_sha256(key, data)
+        let hmac_sha256_fn = lua.create_function(|_, (key, data): (mlua::String, mlua::String)| {
+            type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+            let mut mac = HmacSha256::new_from_slice(&key.as_bytes())
+                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            mac.update(&data.as_bytes());
+            Ok(hex::encode(mac.finalize().into_bytes()))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create hmac_sha256 function: {}", e)))?;
+        crypto.set("hmac_sha256", hmac_sha256_fn).map_err(|e| DbError::InternalError(format!("Failed to set hmac_sha256: {}", e)))?;
+
+        // hmac_sha512(key, data)
+        let hmac_sha512_fn = lua.create_function(|_, (key, data): (mlua::String, mlua::String)| {
+            type HmacSha512 = hmac::Hmac<sha2::Sha512>;
+            let mut mac = HmacSha512::new_from_slice(&key.as_bytes())
+                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            mac.update(&data.as_bytes());
+            Ok(hex::encode(mac.finalize().into_bytes()))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create hmac_sha512 function: {}", e)))?;
+        crypto.set("hmac_sha512", hmac_sha512_fn).map_err(|e| DbError::InternalError(format!("Failed to set hmac_sha512: {}", e)))?;
+
+        // base64_encode(data)
+        let base64_encode_fn = lua.create_function(|_, data: mlua::String| {
+            Ok(base64::engine::general_purpose::STANDARD.encode(&data.as_bytes()))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create base64_encode function: {}", e)))?;
+        crypto.set("base64_encode", base64_encode_fn).map_err(|e| DbError::InternalError(format!("Failed to set base64_encode: {}", e)))?;
+
+        // base64_decode(data)
+        let base64_decode_fn = lua.create_function(|lua, data: String| {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(data)
+                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            lua.create_string(&bytes)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create base64_decode function: {}", e)))?;
+        crypto.set("base64_decode", base64_decode_fn).map_err(|e| DbError::InternalError(format!("Failed to set base64_decode: {}", e)))?;
+
+        // base32_encode(data)
+        let base32_encode_fn = lua.create_function(|_, data: mlua::String| {
+            let encoded = base32::encode(base32::Alphabet::RFC4648 { padding: true }, &data.as_bytes());
+            Ok(encoded)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create base32_encode function: {}", e)))?;
+        crypto.set("base32_encode", base32_encode_fn).map_err(|e| DbError::InternalError(format!("Failed to set base32_encode: {}", e)))?;
+
+        // base32_decode(data)
+        let base32_decode_fn = lua.create_function(|lua, data: String| {
+            let bytes = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &data)
+                .ok_or_else(|| mlua::Error::RuntimeError("Invalid base32".to_string()))?;
+            lua.create_string(&bytes)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create base32_decode function: {}", e)))?;
+        crypto.set("base32_decode", base32_decode_fn).map_err(|e| DbError::InternalError(format!("Failed to set base32_decode: {}", e)))?;
+
+        // hex_encode(data)
+        let hex_encode_fn = lua.create_function(|_, data: String| {
+            Ok(hex::encode(data))
+        }).map_err(|e| DbError::InternalError(format!("Failed to create hex_encode function: {}", e)))?;
+        crypto.set("hex_encode", hex_encode_fn).map_err(|e| DbError::InternalError(format!("Failed to set hex_encode: {}", e)))?;
+
+        // hex_decode(data)
+        let hex_decode_fn = lua.create_function(|lua, data: String| {
+            let bytes = hex::decode(data)
+                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            lua.create_string(&bytes)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create hex_decode function: {}", e)))?;
+        crypto.set("hex_decode", hex_decode_fn).map_err(|e| DbError::InternalError(format!("Failed to set hex_decode: {}", e)))?;
+
+        // uuid()
+        let uuid_fn = lua.create_function(|_, ()| {
+            Ok(uuid::Uuid::new_v4().to_string())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create uuid function: {}", e)))?;
+        crypto.set("uuid", uuid_fn).map_err(|e| DbError::InternalError(format!("Failed to set uuid: {}", e)))?;
+
+        // uuid_v7()
+        let uuid_v7_fn = lua.create_function(|_, ()| {
+            Ok(uuid::Uuid::now_v7().to_string())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create uuid_v7 function: {}", e)))?;
+        crypto.set("uuid_v7", uuid_v7_fn).map_err(|e| DbError::InternalError(format!("Failed to set uuid_v7: {}", e)))?;
+
+        // random_bytes(len)
+        let random_bytes_fn = lua.create_function(|lua, len: usize| {
+            let mut bytes = vec![0u8; len];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            lua.create_string(&bytes)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create random_bytes function: {}", e)))?;
+        crypto.set("random_bytes", random_bytes_fn).map_err(|e| DbError::InternalError(format!("Failed to set random_bytes: {}", e)))?;
+
+        // curve25519(secret, public_or_basepoint)
+        let curve25519_fn = lua.create_function(|lua, (secret, public): (mlua::String, mlua::String)| {
+             let secret_bytes = secret.as_bytes();
+             if secret_bytes.len() != 32 {
+                 return Err(mlua::Error::RuntimeError(format!("Secret must be 32 bytes, got {}", secret_bytes.len())));
+             }
+             let secret_slice: &[u8] = &secret_bytes;
+             let secret_arr: [u8; 32] = secret_slice.try_into().unwrap();
+             let secret_key = x25519_dalek::StaticSecret::from(secret_arr);
+
+             let public_bytes = public.as_bytes();
+             let public_slice: &[u8] = &public_bytes;
+             if public_slice.len() == 32 {
+                 // Shared secret calculation
+                 let public_arr: [u8; 32] = public_slice.try_into().unwrap();
+                 let public_key = x25519_dalek::PublicKey::from(public_arr);
+                 let shared_secret = secret_key.diffie_hellman(&public_key);
+                 lua.create_string(shared_secret.as_bytes())
+             } else {
+                 // Basepoint multiplication (Public Key generation)
+                 let public_key = x25519_dalek::PublicKey::from(&secret_key);
+                 lua.create_string(public_key.as_bytes())
+             }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create curve25519 function: {}", e)))?;
+        crypto.set("curve25519", curve25519_fn).map_err(|e| DbError::InternalError(format!("Failed to set curve25519: {}", e)))?;
+
+        // hash_password(password)
+        let hash_password_fn = lua.create_async_function(|_, password: String| async move {
+            tokio::task::spawn_blocking(move || {
+                let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
+                let argon2 = Argon2::default();
+                argon2.hash_password(password.as_bytes(), &salt)
+                    .map(|h| h.to_string())
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+            }).await.map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
+        }).map_err(|e| DbError::InternalError(format!("Failed to create hash_password function: {}", e)))?;
+        crypto.set("hash_password", hash_password_fn).map_err(|e| DbError::InternalError(format!("Failed to set hash_password: {}", e)))?;
+
+        // verify_password(hash, password)
+        let verify_password_fn = lua.create_async_function(|_, (hash, password): (String, String)| async move {
+            tokio::task::spawn_blocking(move || {
+                let parsed_hash = PasswordHash::new(&hash)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                Ok(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
+            }).await.map_err(|e| mlua::Error::RuntimeError(e.to_string()))?
+        }).map_err(|e| DbError::InternalError(format!("Failed to create verify_password function: {}", e)))?;
+        crypto.set("verify_password", verify_password_fn).map_err(|e| DbError::InternalError(format!("Failed to set verify_password: {}", e)))?;
+
+        // jwt_encode(claims, secret)
+        let jwt_encode_fn = lua.create_function(move |lua, (claims, secret): (LuaValue, String)| {
+            let json_claims = lua_to_json_value(lua, claims)?;
+            let token = encode(
+                &Header::default(),
+                &json_claims,
+                &EncodingKey::from_secret(secret.as_bytes()),
+            ).map_err(|e| mlua::Error::RuntimeError(format!("JWT encode error: {}", e)))?;
+            Ok(token)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create jwt_encode function: {}", e)))?;
+        crypto.set("jwt_encode", jwt_encode_fn).map_err(|e| DbError::InternalError(format!("Failed to set jwt_encode: {}", e)))?;
+
+        // jwt_decode(token, secret)
+        let jwt_decode_fn = lua.create_function(move |lua, (token, secret): (String, String)| {
+            let token_data = decode::<serde_json::Value>(
+                &token,
+                &DecodingKey::from_secret(secret.as_bytes()),
+                &Validation::default(),
+            ).map_err(|e| mlua::Error::RuntimeError(format!("JWT decode error: {}", e)))?;
+            
+            json_to_lua(lua, &token_data.claims)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create jwt_decode function: {}", e)))?;
+        crypto.set("jwt_decode", jwt_decode_fn).map_err(|e| DbError::InternalError(format!("Failed to set jwt_decode: {}", e)))?;
+
+        globals.set("crypto", crypto)
+            .map_err(|e| DbError::InternalError(format!("Failed to set crypto global: {}", e)))?;
+
+        // Create 'time' namespace
+        let time = lua.create_table().map_err(|e| DbError::InternalError(format!("Failed to create time table: {}", e)))?;
+
+        // time.now() -> float (seconds)
+        let now_fn = lua.create_function(|_, ()| {
+            let now = chrono::Utc::now();
+            let ts = now.timestamp() as f64 + now.timestamp_subsec_micros() as f64 / 1_000_000.0;
+            Ok(ts)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.now function: {}", e)))?;
+        time.set("now", now_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.now: {}", e)))?;
+
+        // time.now_ms() -> int (milliseconds)
+        let now_ms_fn = lua.create_function(|_, ()| {
+            Ok(chrono::Utc::now().timestamp_millis())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.now_ms function: {}", e)))?;
+        time.set("now_ms", now_ms_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.now_ms: {}", e)))?;
+
+        // time.iso() -> string
+        let iso_fn = lua.create_function(|_, ()| {
+            Ok(chrono::Utc::now().to_rfc3339())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.iso function: {}", e)))?;
+        time.set("iso", iso_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.iso: {}", e)))?;
+        
+        // time.sleep(ms) -> async
+        let sleep_fn = lua.create_async_function(|_, ms: u64| async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+            Ok(())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.sleep function: {}", e)))?;
+        time.set("sleep", sleep_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.sleep: {}", e)))?;
+
+        // time.format(ts, format) -> string
+        let format_fn = lua.create_function(|_, (ts, fmt): (f64, String)| {
+            let secs = ts.trunc() as i64;
+            let nsecs = (ts.fract() * 1_000_000_000.0) as u32;
+            let dt = chrono::DateTime::from_timestamp(secs, nsecs)
+                .ok_or(mlua::Error::RuntimeError("Invalid timestamp".into()))?;
+            Ok(dt.format(&fmt).to_string())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.format function: {}", e)))?;
+        time.set("format", format_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.format: {}", e)))?;
+
+        // time.parse(iso) -> float
+        let parse_fn = lua.create_function(|_, iso: String| {
+             let dt = chrono::DateTime::parse_from_rfc3339(&iso)
+                 .map_err(|e| mlua::Error::RuntimeError(format!("Parse error: {}", e)))?;
+             let ts = dt.timestamp() as f64 + dt.timestamp_subsec_micros() as f64 / 1_000_000.0;
+             Ok(ts)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.parse function: {}", e)))?;
+        time.set("parse", parse_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.parse: {}", e)))?;
+
+        // time.add(ts, value, unit) -> float
+        let add_fn = lua.create_function(|_, (ts, val, unit): (f64, f64, String)| {
+             let added_seconds = match unit.as_str() {
+                 "ms" => val / 1000.0,
+                 "s" => val,
+                 "m" => val * 60.0,
+                 "h" => val * 3600.0,
+                 "d" => val * 86400.0,
+                 _ => return Err(mlua::Error::RuntimeError(format!("Unknown unit: {}", unit))),
+             };
+             Ok(ts + added_seconds)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.add function: {}", e)))?;
+        time.set("add", add_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.add: {}", e)))?;
+
+        // time.subtract(ts, value, unit) -> float
+        let sub_fn = lua.create_function(|_, (ts, val, unit): (f64, f64, String)| {
+             let sub_seconds = match unit.as_str() {
+                 "ms" => val / 1000.0,
+                 "s" => val,
+                 "m" => val * 60.0,
+                 "h" => val * 3600.0,
+                 "d" => val * 86400.0,
+                 _ => return Err(mlua::Error::RuntimeError(format!("Unknown unit: {}", unit))),
+             };
+             Ok(ts - sub_seconds)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.subtract function: {}", e)))?;
+        time.set("subtract", sub_fn).map_err(|e| DbError::InternalError(format!("Failed to set time.subtract: {}", e)))?;
+
+        globals.set("time", time).map_err(|e| DbError::InternalError(format!("Failed to set time global: {}", e)))?;
 
         Ok(())
     }

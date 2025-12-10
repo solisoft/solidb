@@ -225,6 +225,28 @@
 
 
 
+            <!-- Collection Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Collection</h3>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:count()</span> <span class="text-gray-500">-&gt; int</span>
+                </li>
+              </ul>
+            </div>
+
             <!-- String Extensions -->
             <div>
               <h3 class="text-lg font-bold text-white mb-2 font-mono">String Extensions</h3>
@@ -247,27 +269,108 @@
               </ul>
             </div>
 
-            <!-- Collection Object -->
+            <!-- Crypto Functions -->
             <div>
-              <h3 class="text-lg font-bold text-white mb-2 font-mono">Collection</h3>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Crypto Functions</h3>
+              <p class="text-gray-400 text-sm mb-4">Cryptographic utilities exposed via the <code>crypto</code> global.</p>
               <ul class="space-y-3 font-mono text-sm text-gray-300">
                 <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">col:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                  <span class="text-purple-400">crypto.md5(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
                 </li>
                 <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">col:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <span class="text-purple-400">crypto.sha256(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.sha512(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hmac_sha256(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hmac_sha512(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">col:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <span class="text-purple-400">crypto.base64_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
-                  <span class="text-purple-400">col:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <span class="text-purple-400">crypto.base64_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
-                   <span class="text-purple-400">col:count()</span> <span class="text-gray-500">-&gt; int</span>
+                  <span class="text-purple-400">crypto.base32_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base32_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.uuid_v7()</span> <span class="text-gray-500">-&gt; string (v7)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.random_bytes(len)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.curve25519(secret, public)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Calculate X25519 shared secret or public key.
+                    <br><code>crypto.curve25519(secret, "\9")</code> -> public key
+                  </div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_encode(claims, secret)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_decode(token, secret)</span> <span class="text-gray-500">-&gt; table</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hash_password(pwd)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Hash password using Argon2 (Async/Non-blocking).</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.verify_password(hash, pwd)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Verify password (Async/Non-blocking).</div>
                 </li>
               </ul>
             </div>
+
+            <!-- Time Functions -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Time Functions</h3>
+              <p class="text-gray-400 text-sm mb-4">Time utilities via <code>time</code> global.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.now()</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.now_ms()</span> <span class="text-gray-500">-&gt; int (milliseconds)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.iso()</span> <span class="text-gray-500">-&gt; string (ISO 8601)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.sleep(ms)</span> <span class="text-gray-500">-&gt; nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Suspend execution for N ms (Non-blocking).</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.format(ts, format)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Format timestamp (e.g. "%Y-%m-%d %H:%M:%S").</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.parse(iso)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.add(ts, val, unit)</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Add unit ("ms", "s", "m", "h", "d") to timestamp.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.subtract(ts, val, unit)</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Subtract unit from timestamp.</div>
+                </li>
+              </ul>
+            </div>
+
+
 
             <!-- Request Object -->
              <div>
@@ -407,7 +510,10 @@
             <!-- Example 5 -->
              <div>
                <h3 class="text-lg font-bold text-white mb-3">5. HTTP Request (Webhook)</h3>
-               <p class="text-gray-400 text-sm mb-3">Send data to an external service using <code>solidb.fetch</code>.</p>
+               <p class="text-gray-400 text-sm mb-3">
+                 Send data to an external service using <code>solidb.fetch</code>. 
+                 This function is <strong class="text-purple-400">asynchronous and non-blocking</strong> — execution suspends until the response arrives, freeing up server resources.
+               </p>
                <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
                  <div class="p-4 font-mono text-sm text-gray-300">
 <pre class="language-lua"><span class="text-gray-500">-- Post data to an external API</span>
@@ -427,6 +533,40 @@
                  </div>
                </div>
             </div>
+
+             <!-- Example 6 -->
+              <div>
+                <h3 class="text-lg font-bold text-white mb-3">6. End-to-End Encryption with Curve25519</h3>
+                <p class="text-gray-400 text-sm mb-3">Establish a shared secret between two parties using Elliptic Curve Diffie-Hellman.</p>
+                <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+ <pre class="language-lua"><span class="text-gray-500">-- 1. Alice generates her keypair</span>
+ <span class="text-purple-400">local</span> alice_secret = crypto.random_bytes(32)
+ <span class="text-purple-400">local</span> alice_public = crypto.curve25519(alice_secret, <span class="text-green-400">"\9"</span>) <span class="text-gray-500">-- Generate public key</span>
+ 
+ <span class="text-gray-500">-- 2. Bob generates his keypair</span>
+ <span class="text-purple-400">local</span> bob_secret = crypto.random_bytes(32)
+ <span class="text-purple-400">local</span> bob_public = crypto.curve25519(bob_secret, <span class="text-green-400">"\9"</span>)
+ 
+ <span class="text-gray-500">-- 3. Calculate shared secret (Alice uses Bob's public key, Bob uses Alice's)</span>
+ <span class="text-purple-400">local</span> shared_secret_alice = crypto.curve25519(alice_secret, bob_public)
+ <span class="text-purple-400">local</span> shared_secret_bob = crypto.curve25519(bob_secret, alice_public)
+ 
+ <span class="text-gray-500">-- The shared secrets are identical</span>
+ <span class="text-purple-400">local</span> keys_match = (shared_secret_alice == shared_secret_bob)
+ 
+ <span class="text-gray-500">-- Derive a session key (e.g. for HMAC or encryption)</span>
+ <span class="text-purple-400">local</span> session_key = crypto.sha256(shared_secret_alice)
+ 
+ <span class="text-purple-400">return</span> {
+     alice_public_hex = crypto.hex_encode(alice_public),
+     bob_public_hex = crypto.hex_encode(bob_public),
+     keys_match = keys_match,
+     session_key_hex = session_key
+ }</pre>
+                  </div>
+                </div>
+             </div>
 
           </div>
         </div>

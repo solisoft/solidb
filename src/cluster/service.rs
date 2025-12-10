@@ -1157,7 +1157,7 @@ impl ReplicationService {
                 tracing::info!("║ From: {:<52} ║", from_node);
                 tracing::info!("║ Their sequence: {:<42} ║", current_sequence);
                 tracing::info!("╚════════════════════════════════════════════════════════════╝");
-                
+
                 // Update origin_sequences so we know where to start incremental sync from
                 // This is critical - without this, incremental sync will try to re-apply everything!
                 {
@@ -1166,7 +1166,7 @@ impl ReplicationService {
                     tracing::info!("[FULL-SYNC] Updated origin_sequences[{}] = {}", from_node, current_sequence);
                 }
                 self.save_origin_sequences();
-                
+
                 None
             }
 
@@ -1343,7 +1343,7 @@ impl ReplicationService {
         let databases = self.storage.list_databases();
         let need_full_sync = our_sequence == 0 && databases.len() <= 1; // Only _system or empty
 
-        tracing::info!("[SYNC] Checking full sync: our_seq={}, databases={:?}, need_full_sync={}", 
+        tracing::info!("[SYNC] Checking full sync: our_seq={}, databases={:?}, need_full_sync={}",
             our_sequence, databases, need_full_sync);
 
         if need_full_sync {
@@ -1568,13 +1568,13 @@ impl ReplicationService {
         // DEDUPLICATION: Filter out entries we've already applied (by origin node_id + sequence)
         let entries_to_apply: Vec<&ReplicationEntry> = {
             let origin_seqs = self.origin_sequences.read().unwrap();
-            
+
             // Log incoming range for debugging
             if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
                 tracing::info!("[APPLY] Received {} entries from {} (seq {}-{}), origin_seqs: {:?}",
                     entries.len(), first.node_id, first.sequence, last.sequence, *origin_seqs);
             }
-            
+
             entries.iter().filter(|e| {
                 let last_applied = origin_seqs.get(&e.node_id).copied().unwrap_or(0);
                 e.sequence > last_applied
@@ -1671,7 +1671,7 @@ impl ReplicationService {
             } else {
                  all_batches_success = false;
             }
-            
+
             // If batch succeeded, mark all entries in this batch as successful
             if batch_success {
                  for entry in &entries_to_apply {
@@ -1693,7 +1693,7 @@ impl ReplicationService {
         // 2. Process remaining non-batchable operations individually
         for entry in other_entries {
             let mut success = false;
-            
+
             // Handle database-level operations first (don't need collection)
             match &entry.operation {
                 Operation::CreateDatabase => {
@@ -1986,11 +1986,11 @@ impl ReplicationService {
                 }
             }
             drop(origin_seqs); // Release lock before I/O
-            
+
             // Persist to disk so we don't re-apply entries after restart
             self.save_origin_sequences();
         }
-        
+
         // Return true only if everything succeeded
         // Note: partial success will update origin_sequences (dedup) for good entries,
         // but returning false here forces the peer to retry the whole batch (good for consistency).
@@ -2051,7 +2051,6 @@ impl ReplicationService {
 
         // Skip replication logging only if we are not in cluster mode AND have no connected peers
         let is_cluster = self.config.is_cluster_mode();
-        let peer_count = self.peer_states.read().unwrap().len();
 
         // Always record to replication log if we are running the ReplicationService
     // We need to store history even if we represent a single-node cluster (bootstrap node)

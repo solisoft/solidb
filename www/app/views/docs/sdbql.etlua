@@ -1028,6 +1028,20 @@ FOR i IN nums
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) // 3.14</code></pre>
             </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >RANDOM()</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Returns a random float between 0 and 1.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM() // 0.54321...</code></pre>
+            </div>
           </div>
         </div>
 
