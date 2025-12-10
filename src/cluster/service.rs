@@ -1480,6 +1480,13 @@ impl ReplicationService {
         // DEDUPLICATION: Filter out entries we've already applied (by origin node_id + sequence)
         let entries_to_apply: Vec<&ReplicationEntry> = {
             let origin_seqs = self.origin_sequences.read().unwrap();
+            
+            // Log incoming range for debugging
+            if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
+                tracing::info!("[APPLY] Received {} entries from {} (seq {}-{}), origin_seqs: {:?}",
+                    entries.len(), first.node_id, first.sequence, last.sequence, *origin_seqs);
+            }
+            
             entries.iter().filter(|e| {
                 let last_applied = origin_seqs.get(&e.node_id).copied().unwrap_or(0);
                 e.sequence > last_applied
@@ -1487,13 +1494,16 @@ impl ReplicationService {
         };
 
         if entries_to_apply.is_empty() {
-            tracing::debug!("[APPLY] All {} entries already applied, skipping", entries.len());
+            tracing::warn!("[APPLY] All {} entries already applied (DEDUP), skipping", entries.len());
             return true;
         }
 
         if entries.len() != entries_to_apply.len() {
-            tracing::debug!("[APPLY] Filtered {} duplicate entries, applying {}",
-                entries.len() - entries_to_apply.len(), entries_to_apply.len());
+            if let (Some(first), Some(last)) = (entries_to_apply.first(), entries_to_apply.last()) {
+                tracing::warn!("[APPLY] Filtered {} duplicate entries, applying {} (seq {}-{})",
+                    entries.len() - entries_to_apply.len(), entries_to_apply.len(),
+                    first.sequence, last.sequence);
+            }
         }
 
         // FAST PATH: Batch all Insert/Update operations by collection
