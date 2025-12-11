@@ -1639,7 +1639,7 @@ impl ReplicationService {
         // 1. Process Batches
         let mut all_batches_success = true;
         for ((db_name, coll_name), docs) in batches {
-            let count = docs.len();
+            let original_count = docs.len();
             let mut batch_success = false;
 
             // Ensure database exists
@@ -1654,15 +1654,85 @@ impl ReplicationService {
                 }
 
                 if let Ok(collection) = db.get_collection(&coll_name) {
-                    match collection.upsert_batch(docs) {
-                        Ok(_) => {
-                            tracing::debug!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name);
-                            batch_success = true;
-                        },
-                        Err(e) => {
-                            tracing::error!("[APPLY] Batch upsert failed for {}/{}: {}", db_name, coll_name, e);
-                            all_batches_success = false;
-                        },
+                    // SHARD-AWARE FILTERING: For sharded collections, only apply documents
+                    // that belong to shards this node is a replica for.
+                    // This prevents over-replication where all nodes store all documents.
+                    let docs_to_apply = if let Some(shard_config) = collection.get_shard_config() {
+                        if shard_config.num_shards > 0 {
+                            // Get cluster peer list to determine our node index
+                            let peers = Self::load_saved_peers(&self.storage);
+                            let my_addr = self.config.replication_addr();
+                            
+                            // Build sorted node list to get consistent indices
+                            let mut all_nodes: Vec<String> = peers.clone();
+                            if !all_nodes.contains(&my_addr) {
+                                all_nodes.push(my_addr.clone());
+                            }
+                            all_nodes.sort();
+                            
+                            let num_nodes = all_nodes.len();
+                            let my_index = all_nodes.iter().position(|n| n == &my_addr);
+                            
+                            if let Some(my_idx) = my_index {
+                                // Filter to only docs where this node is a shard replica
+                                let filtered: Vec<(String, serde_json::Value)> = docs
+                                    .into_iter()
+                                    .filter(|(doc_key, _)| {
+                                        let shard_id = crate::sharding::router::ShardRouter::route(
+                                            doc_key,
+                                            shard_config.num_shards,
+                                        );
+                                        crate::sharding::router::ShardRouter::is_shard_replica(
+                                            shard_id,
+                                            my_idx,
+                                            shard_config.replication_factor,
+                                            num_nodes,
+                                        )
+                                    })
+                                    .collect();
+                                
+                                let skipped = original_count - filtered.len();
+                                if skipped > 0 {
+                                    tracing::debug!(
+                                        "[APPLY] Filtered {}/{} docs for sharded collection {}/{} (RF={}, my_idx={})",
+                                        skipped, original_count, db_name, coll_name, 
+                                        shard_config.replication_factor, my_idx
+                                    );
+                                }
+                                filtered
+                            } else {
+                                // Can't determine our index, apply all (fallback)
+                                tracing::warn!(
+                                    "[APPLY] Could not determine node index for shard filtering, applying all docs"
+                                );
+                                docs
+                            }
+                        } else {
+                            docs // Not effectively sharded
+                        }
+                    } else {
+                        docs // Not sharded - apply all
+                    };
+                    
+                    // Skip if no documents to apply after filtering
+                    if docs_to_apply.is_empty() {
+                        tracing::debug!(
+                            "[APPLY] No docs to apply for {}/{} after shard filtering",
+                            db_name, coll_name
+                        );
+                        batch_success = true; // Consider empty batch a success
+                    } else {
+                        let count = docs_to_apply.len();
+                        match collection.upsert_batch(docs_to_apply) {
+                            Ok(_) => {
+                                tracing::debug!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name);
+                                batch_success = true;
+                            },
+                            Err(e) => {
+                                tracing::error!("[APPLY] Batch upsert failed for {}/{}: {}", db_name, coll_name, e);
+                                all_batches_success = false;
+                            },
+                        }
                     }
                 } else {
                     tracing::error!("[APPLY] Failed to get collection {}/{} after creation", db_name, coll_name);
