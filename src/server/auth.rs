@@ -1,6 +1,5 @@
 use crate::error::DbError;
 use crate::storage::StorageEngine;
-use crate::cluster::Operation;
 use crate::replication::log::ReplicationLog;
 use crate::replication::protocol::{LogEntry, Operation as ReplOperation};
 

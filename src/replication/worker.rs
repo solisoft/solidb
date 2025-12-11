@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
-use tracing::{info, error};
 use super::log::ReplicationLog;
 use crate::cluster::transport::{Transport, ClusterMessage};
 

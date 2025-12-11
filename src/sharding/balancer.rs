@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use super::table::{ShardTable, ShardId};
 use crate::cluster::node::Node;
 

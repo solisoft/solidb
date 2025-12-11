@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tracing::{info, error};
 
-use super::node::{Node, NodeId};
+use super::node::Node;
 use super::state::{ClusterState, NodeStatus};
 use super::health::HealthMonitor;
 use super::transport::{Transport, ClusterMessage};

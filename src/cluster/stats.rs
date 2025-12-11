@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
-use tracing::{info, error};
+use tracing::error;
 use serde::{Serialize, Deserialize};
 use crate::storage::engine::StorageEngine;
 use crate::sharding::coordinator::ShardCoordinator;
