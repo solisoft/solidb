@@ -1395,10 +1395,82 @@ pub async fn import_collection(
                 
                 batch_docs.push(doc);
                 
-                if batch_docs.len() >= 10000 {
+                if batch_docs.len() >= 1000 {
+                    // Check if collection is sharded and we have a coordinator
+                    let shard_config = collection.get_shard_config();
+                    let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
+                    
+                    if is_sharded && state.shard_coordinator.is_some() {
+                        // Use ShardCoordinator for proper distribution
+                        let coordinator = state.shard_coordinator.as_ref().unwrap();
+                        let config = shard_config.unwrap();
+                        
+                        for doc in batch_docs.drain(..) {
+                            match coordinator.insert(&db_name, &coll_name, &config, doc).await {
+                                Ok(_) => success_count += 1,
+                                Err(e) => {
+                                    tracing::debug!("Sharded insert error (may be ok if replica): {}", e);
+                                    error_count += 1;
+                                }
+                            }
+                        }
+                    } else {
+                        // Non-sharded: use direct batch insert with replication
+                        match collection.insert_batch(batch_docs.clone()) {
+                            Ok(inserted) => {
+                                if let Err(e) = collection.index_documents(&inserted) {
+                                    tracing::error!("Failed to index batch: {}", e);
+                                }
+                                // Record each inserted document to replication log
+                                if let Some(ref repl) = state.replication {
+                                    for doc in &inserted {
+                                        let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+                                        repl.record_write(
+                                            &db_name,
+                                            &coll_name,
+                                            Operation::Insert,
+                                            &doc.key,
+                                            doc_bytes.as_deref(),
+                                            None,
+                                        );
+                                    }
+                                }
+                                success_count += inserted.len();
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to insert batch: {}", e);
+                                error_count += batch_docs.len();
+                            }
+                        }
+                        batch_docs.clear();
+                    }
+                }
+            }
+            // Insert remaining docs (same logic as before)
+            if !batch_docs.is_empty() {
+                // Check if collection is sharded and we have a coordinator
+                let shard_config = collection.get_shard_config();
+                let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
+                
+                if is_sharded && state.shard_coordinator.is_some() {
+                    // Use ShardCoordinator for proper distribution
+                    let coordinator = state.shard_coordinator.as_ref().unwrap();
+                    let config = shard_config.unwrap();
+                    
+                    for doc in batch_docs.drain(..) {
+                        match coordinator.insert(&db_name, &coll_name, &config, doc).await {
+                            Ok(_) => success_count += 1,
+                            Err(e) => {
+                                tracing::debug!("Sharded insert error (may be ok if replica): {}", e);
+                                error_count += 1;
+                            }
+                        }
+                    }
+                } else {
+                    // Non-sharded: use direct batch insert with replication
                     match collection.insert_batch(batch_docs.clone()) {
                         Ok(inserted) => {
-                            if let Err(e) = collection.index_documents(&inserted) {
+                             if let Err(e) = collection.index_documents(&inserted) {
                                 tracing::error!("Failed to index batch: {}", e);
                             }
                             // Record each inserted document to replication log
@@ -1421,36 +1493,6 @@ pub async fn import_collection(
                             tracing::error!("Failed to insert batch: {}", e);
                             error_count += batch_docs.len();
                         }
-                    }
-                    batch_docs.clear();
-                }
-            }
-            // Insert remaining docs (same logic as before)
-            if !batch_docs.is_empty() {
-                match collection.insert_batch(batch_docs.clone()) {
-                    Ok(inserted) => {
-                         if let Err(e) = collection.index_documents(&inserted) {
-                            tracing::error!("Failed to index batch: {}", e);
-                        }
-                        // Record each inserted document to replication log
-                        if let Some(ref repl) = state.replication {
-                            for doc in &inserted {
-                                let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
-                                repl.record_write(
-                                    &db_name,
-                                    &coll_name,
-                                    Operation::Insert,
-                                    &doc.key,
-                                    doc_bytes.as_deref(),
-                                    None,
-                                );
-                            }
-                        }
-                        success_count += inserted.len();
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to insert batch: {}", e);
-                        error_count += batch_docs.len();
                     }
                 }
             }
