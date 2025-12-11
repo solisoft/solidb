@@ -3,3 +3,4 @@
 *.pid
 *.log
 www/deploy.sh
+tmp

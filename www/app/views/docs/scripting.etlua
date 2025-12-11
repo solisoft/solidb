@@ -220,9 +220,39 @@
                   <span class="text-purple-400">db:query(query, params)</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
                   <div class="text-xs text-gray-500 mt-1">Execute an SDBQL query.</div>
                 </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:transaction(callback)</span> <span class="text-gray-500">-&gt; any</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Execute operations atomically within a transaction. The callback receives a <code>tx</code> context. 
+                    <strong class="text-green-400">Auto-commits</strong> on success, <strong class="text-red-400">auto-rollbacks</strong> on error.
+                  </div>
+                </li>
               </ul>
             </div>
 
+            <!-- Transactions -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Transactions</h3>
+              <p class="text-gray-400 text-sm mb-4">Inside a <code>db:transaction()</code> callback, use the <code>tx</code> object for atomic operations.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">tx:collection(name)</span> <span class="text-gray-500">-&gt; TxCollection</span>
+                  <div class="text-xs text-gray-500 mt-1">Get a transactional collection handle.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                </li>
+              </ul>
+            </div>
 
 
             <!-- Collection Object -->
@@ -564,6 +594,32 @@
      keys_match = keys_match,
      session_key_hex = session_key
  }</pre>
+                  </div>
+                </div>
+             </div>
+
+             <!-- Example 7 -->
+              <div>
+                <h3 class="text-lg font-bold text-white mb-3">7. Atomic Transactions</h3>
+                <p class="text-gray-400 text-sm mb-3">Perform multiple operations atomically with <strong class="text-green-400">auto-commit</strong> on success or <strong class="text-red-400">auto-rollback</strong> on error.</p>
+                <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Transfer credits between two accounts atomically</span>
+db:<span class="text-blue-400">transaction</span>(<span class="text-purple-400">function</span>(tx)
+    <span class="text-purple-400">local</span> accounts = tx:<span class="text-blue-400">collection</span>(<span class="text-green-400">"accounts"</span>)
+    
+    <span class="text-gray-500">-- Debit source account</span>
+    <span class="text-purple-400">local</span> source = accounts:<span class="text-blue-400">get</span>(<span class="text-green-400">"alice"</span>)
+    accounts:<span class="text-blue-400">update</span>(<span class="text-green-400">"alice"</span>, { balance = source.balance - <span class="text-yellow-300">100</span> })
+    
+    <span class="text-gray-500">-- Credit destination account</span>
+    <span class="text-purple-400">local</span> dest = accounts:<span class="text-blue-400">get</span>(<span class="text-green-400">"bob"</span>)
+    accounts:<span class="text-blue-400">update</span>(<span class="text-green-400">"bob"</span>, { balance = dest.balance + <span class="text-yellow-300">100</span> })
+    
+    <span class="text-gray-500">-- If any error occurs, all changes are rolled back</span>
+<span class="text-purple-400">end</span>)
+
+<span class="text-purple-400">return</span> { status = <span class="text-green-400">"Transfer complete!"</span> }</pre>
                   </div>
                 </div>
              </div>

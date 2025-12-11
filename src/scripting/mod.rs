@@ -379,7 +379,163 @@ impl ScriptEngine {
         db_handle.set("query", query_fn.clone())
             .map_err(|e| DbError::InternalError(format!("Failed to set query function: {}", e)))?;
 
+        // db:transaction(callback) -> auto-commit/rollback transaction
+        let storage_tx = self.storage.clone();
+        let db_tx = db_name.to_string();
+        let transaction_fn = lua.create_async_function(move |lua, (_, callback): (LuaValue, mlua::Function)| {
+            let storage = storage_tx.clone();
+            let db_name = db_tx.clone();
+            
+            async move {
+                // Initialize transaction manager if needed
+                storage.initialize_transactions()
+                    .map_err(|e| mlua::Error::external(e))?;
+                
+                // Get transaction manager and begin transaction
+                let tx_manager = storage.transaction_manager()
+                    .map_err(|e| mlua::Error::external(e))?;
+                
+                let tx_id = tx_manager.begin(crate::transaction::IsolationLevel::ReadCommitted)
+                    .map_err(|e| mlua::Error::external(e))?;
+                
+                // Create the transaction context table
+                let tx_handle = lua.create_table()?;
+                tx_handle.set("_tx_id", tx_id.to_string())?;
+                tx_handle.set("_db", db_name.clone())?;
+                
+                // tx:collection(name) -> transactional collection handle
+                let storage_coll = storage.clone();
+                let tx_manager_coll = tx_manager.clone();
+                let db_coll = db_name.clone();
+                let tx_id_coll = tx_id;
+                
+                let tx_collection_fn = lua.create_function(move |lua, (_, coll_name): (LuaValue, String)| {
+                    let storage = storage_coll.clone();
+                    let tx_manager = tx_manager_coll.clone();
+                    let db_name = db_coll.clone();
+                    let tx_id = tx_id_coll;
+                    
+                    // Create transactional collection handle
+                    let coll_handle = lua.create_table()?;
+                    coll_handle.set("_db", db_name.clone())?;
+                    coll_handle.set("_name", coll_name.clone())?;
+                    coll_handle.set("_tx_id", tx_id.to_string())?;
+                    
+                    // col:insert(doc) - transactional insert
+                    let storage_insert = storage.clone();
+                    let tx_mgr_insert = tx_manager.clone();
+                    let db_insert = db_name.clone();
+                    let coll_insert = coll_name.clone();
+                    let tx_id_insert = tx_id;
+                    let insert_fn = lua.create_function(move |lua, (_, doc): (LuaValue, LuaValue)| {
+                        let json_doc = lua_to_json_value(lua, doc)?;
+                        
+                        let full_coll_name = format!("{}:{}", db_insert, coll_insert);
+                        let collection = storage_insert.get_collection(&full_coll_name)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        let tx_arc = tx_mgr_insert.get(tx_id_insert)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        let mut tx = tx_arc.write().unwrap();
+                        let wal = tx_mgr_insert.wal();
+                        
+                        let inserted = collection.insert_tx(&mut tx, wal, json_doc)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        json_to_lua(lua, &inserted.to_value())
+                    })?;
+                    coll_handle.set("insert", insert_fn)?;
+                    
+                    // col:update(key, doc) - transactional update
+                    let storage_update = storage.clone();
+                    let tx_mgr_update = tx_manager.clone();
+                    let db_update = db_name.clone();
+                    let coll_update = coll_name.clone();
+                    let tx_id_update = tx_id;
+                    let update_fn = lua.create_function(move |lua, (_, key, doc): (LuaValue, String, LuaValue)| {
+                        let json_doc = lua_to_json_value(lua, doc)?;
+                        
+                        let full_coll_name = format!("{}:{}", db_update, coll_update);
+                        let collection = storage_update.get_collection(&full_coll_name)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        let tx_arc = tx_mgr_update.get(tx_id_update)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        let mut tx = tx_arc.write().unwrap();
+                        let wal = tx_mgr_update.wal();
+                        
+                        let updated = collection.update_tx(&mut tx, wal, &key, json_doc)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        json_to_lua(lua, &updated.to_value())
+                    })?;
+                    coll_handle.set("update", update_fn)?;
+                    
+                    // col:delete(key) - transactional delete
+                    let storage_delete = storage.clone();
+                    let tx_mgr_delete = tx_manager.clone();
+                    let db_delete = db_name.clone();
+                    let coll_delete = coll_name.clone();
+                    let tx_id_delete = tx_id;
+                    let delete_fn = lua.create_function(move |_, (_, key): (LuaValue, String)| {
+                        let full_coll_name = format!("{}:{}", db_delete, coll_delete);
+                        let collection = storage_delete.get_collection(&full_coll_name)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        let tx_arc = tx_mgr_delete.get(tx_id_delete)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        let mut tx = tx_arc.write().unwrap();
+                        let wal = tx_mgr_delete.wal();
+                        
+                        collection.delete_tx(&mut tx, wal, &key)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        Ok(true)
+                    })?;
+                    coll_handle.set("delete", delete_fn)?;
+                    
+                    // col:get(key) - read (non-transactional, just reads current state)
+                    let storage_get = storage.clone();
+                    let db_get = db_name.clone();
+                    let coll_get = coll_name.clone();
+                    let get_fn = lua.create_function(move |lua, (_, key): (LuaValue, String)| {
+                        let full_coll_name = format!("{}:{}", db_get, coll_get);
+                        let collection = storage_get.get_collection(&full_coll_name)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        
+                        match collection.get(&key) {
+                            Ok(doc) => json_to_lua(lua, &doc.to_value()),
+                            Err(crate::error::DbError::DocumentNotFound(_)) => Ok(LuaValue::Nil),
+                            Err(e) => Err(mlua::Error::external(e)),
+                        }
+                    })?;
+                    coll_handle.set("get", get_fn)?;
+                    
+                    Ok(LuaValue::Table(coll_handle))
+                })?;
+                tx_handle.set("collection", tx_collection_fn)?;
+                
+                // Execute the callback with the transaction context
+                let result = callback.call_async::<LuaValue>(LuaValue::Table(tx_handle)).await;
+                
+                match result {
+                    Ok(value) => {
+                        // Commit the transaction on success
+                        storage.commit_transaction(tx_id)
+                            .map_err(|e| mlua::Error::external(e))?;
+                        Ok(value)
+                    }
+                    Err(e) => {
+                        // Rollback on error
+                        let _ = storage.rollback_transaction(tx_id);
+                        Err(e)
+                    }
+                }
+            }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create transaction function: {}", e)))?;
 
+        db_handle.set("transaction", transaction_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set transaction function: {}", e)))?;
 
         globals.set("db", db_handle)
             .map_err(|e| DbError::InternalError(format!("Failed to set db global: {}", e)))?;
