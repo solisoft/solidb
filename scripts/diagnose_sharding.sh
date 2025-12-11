@@ -1,9 +1,7 @@
 #!/bin/bash
-# Diagnostic script to compare document counts on each node
-# for sharded vs unsharded collections
+# Fast parallel insertion test for sharding disk usage
 
 set -e
-
 export JWT_SECRET="test-secret-for-sharding-verification-12345"
 export SOLIDB_ADMIN_PASSWORD="admin"
 
@@ -14,7 +12,7 @@ rm -rf tmp/n1 tmp/n2 tmp/n3 || true
 mkdir -p tmp/n1 tmp/n2 tmp/n3
 
 echo "Compiling..."
-cargo build --quiet
+cargo build --quiet 2>/dev/null
 
 BIN=./target/debug/solidb
 
@@ -28,65 +26,75 @@ PID2=$!
 sleep 2
 $BIN --port 8003 --replication-port 9003 --peer 127.0.0.1:9001 --data-dir ./tmp/n3 > tmp/n3.log 2>&1 &
 PID3=$!
-sleep 10  # Wait for cluster formation
+sleep 10
 
 echo "Cluster PIDs: $PID1 $PID2 $PID3"
 
 # Create collections
-echo "Creating unsharded collection 'users'..."
 curl -s -u admin:admin -X POST http://localhost:8001/_api/database/_system/collection \
-  -H "Content-Type: application/json" \
-  -d '{"name": "users", "type": "document"}' | jq .
-
-echo "Creating sharded collection 'users2' (3 shards, RF=2)..."
+  -H "Content-Type: application/json" -d '{"name": "users"}' > /dev/null
 curl -s -u admin:admin -X POST http://localhost:8001/_api/database/_system/collection \
-  -H "Content-Type: application/json" \
-  -d '{"name": "users2", "type": "document", "numShards": 3, "replicationFactor": 2}' | jq .
+  -H "Content-Type: application/json" -d '{"name": "users2", "numShards": 3, "replicationFactor": 2}' > /dev/null
 
 sleep 2
 
-# Insert 9 documents to each collection (3 per shard)
-echo "Inserting 9 documents into 'users' (unsharded)..."
-for i in {1..9}; do
-  curl -s -u admin:admin -X POST "http://localhost:8001/_api/database/_system/document/users" \
+# Generate payload (100 bytes - shorter for cmdline)
+PAYLOAD=$(printf 'x%.0s' {1..100})
+
+# Insert 100 docs using parallel background jobs
+echo "Inserting 100 documents into 'users' (unsharded)..."
+for i in $(seq 1 100); do
+  curl -s -u admin:admin -X POST \
+    "http://localhost:8001/_api/database/_system/document/users" \
     -H "Content-Type: application/json" \
-    -d "{\"_key\": \"doc$i\", \"value\": \"test\"}" > /dev/null
+    -d "{\"_key\": \"doc$i\", \"value\": \"$PAYLOAD\"}" > /dev/null &
+  # Limit parallelism
+  if (( i % 20 == 0 )); then wait; fi
 done
+wait
 
-echo "Inserting 9 documents into 'users2' (sharded)..."
-for i in {1..9}; do
-  curl -s -u admin:admin -X POST "http://localhost:8001/_api/database/_system/document/users2" \
+echo "Inserting 100 documents into 'users2' (sharded RF=2)..."
+for i in $(seq 1 100); do
+  curl -s -u admin:admin -X POST \
+    "http://localhost:8001/_api/database/_system/document/users2" \
     -H "Content-Type: application/json" \
-    -d "{\"_key\": \"doc$i\", \"value\": \"test\"}" > /dev/null
+    -d "{\"_key\": \"doc$i\", \"value\": \"$PAYLOAD\"}" > /dev/null &
+  if (( i % 20 == 0 )); then wait; fi
 done
+wait
 
-sleep 5  # Wait for replication
-
-echo ""
-echo "============================================="
-echo "DOCUMENT COUNTS PER NODE (checking local storage)"
-echo "============================================="
-
-for PORT in 8001 8002 8003; do
-  echo ""
-  echo "--- Node on port $PORT ---"
-  echo "users (unsharded):"
-  curl -s -u admin:admin "http://localhost:$PORT/_api/database/_system/collections" | jq '.collections[] | select(.name == "users") | {name, count}'
-  echo "users2 (sharded RF=2):"
-  curl -s -u admin:admin "http://localhost:$PORT/_api/database/_system/collections" | jq '.collections[] | select(.name == "users2") | {name, count}'
-done
+sleep 10  # Wait for replication
 
 echo ""
 echo "============================================="
 echo "DISK USAGE PER NODE"
 echo "============================================="
-du -sh tmp/n1 tmp/n2 tmp/n3
+echo ""
+echo "Node 1 (coordinator):"
+du -sh tmp/n1
+echo ""
+echo "Node 2:"
+du -sh tmp/n2
+echo ""
+echo "Node 3:"
+du -sh tmp/n3
 
 # Cleanup
 kill $PID1 $PID2 $PID3 2>/dev/null || true
 
 echo ""
-echo "Expected behavior:"
-echo "- users (unsharded, replicated to all): 30 docs on EACH node"
-echo "- users2 (sharded, RF=2): ~20 docs per node (30*2/3)"
-echo "- Therefore: users should use MORE space per node than users2"
+echo "============================================="
+echo "EXPECTED BEHAVIOR:"
+echo "============================================="
+echo "With 100 docs each, ~500 bytes payload each:"
+echo ""
+echo "users (unsharded, replicated to ALL nodes):"
+echo "  - 100 docs on EACH node = 100 copies total on each node"
+echo "  - Per-node data: ~50KB + overhead"
+echo ""
+echo "users2 (sharded 3 shards, RF=2):"
+echo "  - Each doc on 2 of 3 nodes = ~66 docs per node"
+echo "  - Per-node data: ~33KB + overhead"
+echo ""
+echo "CONCLUSION: If sharding works correctly,"
+echo "users2 should use LESS space per node than users"

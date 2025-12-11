@@ -1487,7 +1487,7 @@ impl ReplicationService {
                         let last_seq_in_batch = new_entries.last().map(|e| e.sequence).unwrap_or(0);
 
                         // Log progress at INFO level for visibility during large syncs
-                        tracing::info!("[PUSH] Sending {} entries to {} (seq {}-{}, total_pending={})",
+                        tracing::debug!("[PUSH] Sending {} entries to {} (seq {}-{}, total_pending={})",
                             new_entries.len(), peer_addr, first_seq, last_seq_in_batch,
                             our_seq.saturating_sub(last_sent));
 
@@ -1505,7 +1505,7 @@ impl ReplicationService {
                         }
 
                         if let Some(last) = new_entries.last() {
-                            tracing::info!("[PUSH] Updating last_sent for {} to {}", peer_addr, last.sequence);
+                            tracing::debug!("[PUSH] Updating last_sent for {} to {}", peer_addr, last.sequence);
                             self.update_peer_sent(peer_addr, last.sequence);
                         }
                     }
@@ -1571,7 +1571,7 @@ impl ReplicationService {
 
             // Log incoming range for debugging
             if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
-                tracing::info!("[APPLY] Received {} entries from {} (seq {}-{}), origin_seqs: {:?}",
+                tracing::debug!("[APPLY] Received {} entries from {} (seq {}-{}), origin_seqs: {:?}",
                     entries.len(), first.node_id, first.sequence, last.sequence, *origin_seqs);
             }
 
@@ -1656,7 +1656,7 @@ impl ReplicationService {
                 if let Ok(collection) = db.get_collection(&coll_name) {
                     match collection.upsert_batch(docs) {
                         Ok(_) => {
-                            tracing::info!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name);
+                            tracing::debug!("[APPLY] Batch upserted {} docs to {}/{}", count, db_name, coll_name);
                             batch_success = true;
                         },
                         Err(e) => {
@@ -2081,7 +2081,7 @@ impl ReplicationService {
 
         let last_seq = self.replication_log.append_batch(entries);
 
-        tracing::info!(
+        tracing::debug!(
             "[REPL-LOG] Recorded batch of {} {:?} operations for {}/{} (end seq: {}, current_seq: {})",
             count,
             operation,
@@ -2195,7 +2195,7 @@ impl ReplicationService {
 
         if let Some(state) = found {
             if state.last_sequence_received < sequence {
-                tracing::info!(
+                tracing::debug!(
                     "[RECV] Updating peer {} received sequence: {} -> {}",
                     state.address,
                     state.last_sequence_received,
