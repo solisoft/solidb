@@ -899,11 +899,15 @@ pub async fn recount_collection(
 pub async fn get_collection_stats(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     let stats = collection.stats();
     let collection_type = collection.get_type();
+    
+    // Check if this is a local-only request (to prevent infinite recursion when aggregating)
+    let local_only = params.get("local").map(|v| v == "true").unwrap_or(false);
     
     // Get shard configuration
     let shard_config = collection.get_shard_config();
@@ -930,16 +934,64 @@ pub async fn get_collection_stats(
     let cluster_stats = if let Some(ref coordinator) = state.shard_coordinator {
         let all_nodes = coordinator.get_node_addresses();
         let total_nodes = all_nodes.len();
+        let my_address = coordinator.my_address();
         
         // For sharded collections, calculate shard distribution with doc counts
         let shard_distribution = if is_sharded {
             let config = shard_config.as_ref().unwrap();
             
-            // First, count documents per shard by scanning local docs
+            // Start with local doc counts
             let mut shard_counts: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
             for doc in collection.scan(None) {
                 let shard_id = crate::sharding::router::ShardRouter::route(&doc.key, config.num_shards);
                 *shard_counts.entry(shard_id).or_insert(0) += 1;
+            }
+            
+            // If not local_only, fetch counts from other nodes and aggregate
+            if !local_only && total_nodes > 1 {
+                let http_client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build()
+                    .unwrap_or_default();
+                    
+                let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+                
+                for node in &all_nodes {
+                    // Skip self
+                    if node == &my_address {
+                        continue;
+                    }
+                    
+                    // Fetch local stats from this node
+                    let url = format!(
+                        "http://{}/_api/database/{}/collection/{}/stats?local=true",
+                        node, db_name, coll_name
+                    );
+                    
+                    if let Ok(response) = http_client
+                        .get(&url)
+                        .basic_auth("admin", Some(&admin_pass))
+                        .send()
+                        .await
+                    {
+                        if let Ok(remote_stats) = response.json::<Value>().await {
+                            // Extract shard counts from remote response
+                            if let Some(cluster) = remote_stats.get("cluster") {
+                                if let Some(shards) = cluster.get("shards").and_then(|s| s.as_array()) {
+                                    for shard in shards {
+                                        if let (Some(shard_id), Some(count)) = (
+                                            shard.get("shard_id").and_then(|s| s.as_u64()),
+                                            shard.get("document_count").and_then(|c| c.as_u64())
+                                        ) {
+                                            // Add to our count (this aggregates across nodes)
+                                            *shard_counts.entry(shard_id as u16).or_insert(0) += count as usize;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             
             // Build shard-centric distribution
@@ -1325,6 +1377,20 @@ pub async fn import_collection(
                             if let Err(e) = collection.index_documents(&inserted) {
                                 tracing::error!("Failed to index batch: {}", e);
                             }
+                            // Record each inserted document to replication log
+                            if let Some(ref repl) = state.replication {
+                                for doc in &inserted {
+                                    let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+                                    repl.record_write(
+                                        &db_name,
+                                        &coll_name,
+                                        Operation::Insert,
+                                        &doc.key,
+                                        doc_bytes.as_deref(),
+                                        None,
+                                    );
+                                }
+                            }
                             success_count += inserted.len();
                         }
                         Err(e) => {
@@ -1341,6 +1407,20 @@ pub async fn import_collection(
                     Ok(inserted) => {
                          if let Err(e) = collection.index_documents(&inserted) {
                             tracing::error!("Failed to index batch: {}", e);
+                        }
+                        // Record each inserted document to replication log
+                        if let Some(ref repl) = state.replication {
+                            for doc in &inserted {
+                                let doc_bytes = serde_json::to_vec(&doc.to_value()).ok();
+                                repl.record_write(
+                                    &db_name,
+                                    &coll_name,
+                                    Operation::Insert,
+                                    &doc.key,
+                                    doc_bytes.as_deref(),
+                                    None,
+                                );
+                            }
                         }
                         success_count += inserted.len();
                     }

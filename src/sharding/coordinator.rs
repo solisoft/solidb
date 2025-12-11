@@ -175,6 +175,11 @@ impl ShardCoordinator {
         self.node_addresses.read().unwrap().clone()
     }
 
+    /// Get this node's address
+    pub fn my_address(&self) -> String {
+        self.my_address.clone()
+    }
+
     /// Get this node's index in the cluster
     pub fn get_node_index(&self) -> usize {
         self.node_addresses.read().unwrap()
