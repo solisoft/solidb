@@ -67,10 +67,11 @@ impl ShardCoordinator {
         my_address: String,
         node_addresses: Vec<String>,
     ) -> Self {
+        // Create HTTP client with reasonable timeout
         let http_client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_default();
 
         let normalized_addresses: Vec<String> = node_addresses.into_iter()
             .map(|a| Self::normalize_address(&a))
@@ -188,14 +189,21 @@ impl ShardCoordinator {
             .unwrap_or(0)
     }
 
+    /// Get usage of the async HTTP client
+    pub fn get_http_client(&self) -> &Client {
+        &self.http_client
+    }
+
     /// Add a new node to the cluster and trigger rebalancing for auto-sharded collections
     pub async fn add_node(&self, node_addr: &str) -> DbResult<()> {
         let should_rebalance = {
             let mut addresses = self.node_addresses.write().unwrap();
-            if !addresses.contains(&node_addr.to_string()) {
-                println!("Configuration Change: Adding node {} to cluster", node_addr);
-                addresses.push(node_addr.to_string());
-                addresses.sort(); // Maintain sorted order for consistent shard assignment across nodes
+            let normalized = Self::normalize_address(node_addr);
+            if !addresses.contains(&normalized) {
+                addresses.push(normalized.clone());
+                // Sort addresses to ensure consistent ring across cluster
+                addresses.sort();
+                tracing::info!("Added node {} to cluster (total: {})", normalized, addresses.len());
                 true
             } else {
                 false

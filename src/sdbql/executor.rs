@@ -1,4 +1,5 @@
 use chrono::Utc;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1127,48 +1128,33 @@ impl<'a> QueryExecutor<'a> {
 
         // Get all node addresses from coordinator
         let all_nodes = coordinator.get_node_addresses();
-        let my_node_index = coordinator.get_node_index();
+        let my_address = coordinator.my_address();
         
-        tracing::debug!("[SCATTER-GATHER] Nodes at query time: {:?}, my_index={}", all_nodes, my_node_index);
+        tracing::debug!("[SCATTER-GATHER] Nodes at query time: {:?}, my_address={}", all_nodes, my_address);
 
-        // Collect documents from all nodes
-        let mut all_docs: Vec<Value> = Vec::new();
-        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        // For sharded queries with LIMIT, we need to fetch up to `limit` docs from EACH node
-        // because we don't know which nodes have which documents
-        // This is a simple approach - more sophisticated would be to fetch in parallel and stop early
-
-        for (idx, node_addr) in all_nodes.iter().enumerate() {
-            // Stop early if we have enough docs
-            if let Some(n) = limit {
-                if all_docs.len() >= n {
-                    break;
-                }
-            }
-
-            if idx == my_node_index {
-                // Query local node directly - pass limit for efficiency
+        let handle = tokio::runtime::Handle::current();
+        
+        // Execute queries in parallel across all nodes
+        // This is significantly faster than sequential querying and uses a shared client
+        let results: Vec<DbResult<Vec<Value>>> = all_nodes.par_iter().map(|node_addr| {
+            if node_addr == &my_address {
+                 // Query local node directly - pass limit for efficiency
+                // Note: We create a new collection handle here which is cheap
                 let collection = self.get_collection(collection_name)?;
-                for doc in collection.scan(limit) {
-                    let key = doc.key.clone();
-                    if seen_keys.insert(key) {
-                        all_docs.push(doc.to_value());
-                        // Early exit if we have enough
-                        if let Some(n) = limit {
-                            if all_docs.len() >= n {
-                                break;
-                            }
-                        }
-                    }
-                }
+                Ok(collection
+                    .scan(limit)
+                    .into_iter()
+                    .map(|d| d.to_value())
+                    .collect())
             } else {
                 // Query remote node via HTTP - include LIMIT in query
                 let url = format!(
                     "http://{}/_api/database/{}/cursor",
                     node_addr, db_name
                 );
+                
                 // Include LIMIT in remote query to avoid fetching all docs
+                // Note: We use the shared async client from coordinator to reuse connections
                 let query = if let Some(n) = limit {
                     format!(
                         "FOR doc IN {} LIMIT {} RETURN doc",
@@ -1181,52 +1167,69 @@ impl<'a> QueryExecutor<'a> {
                     )
                 };
 
-                // Use block_in_place to run blocking HTTP client in async context
-                let body_result = tokio::task::block_in_place(|| {
-                    let client = reqwest::blocking::Client::builder()
-                        .timeout(std::time::Duration::from_secs(10))
-                        .build()
-                        .ok()?;
-                    
-                    // Get admin password from env var for inter-node auth
-                    let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
-                    
+                let client = coordinator.get_http_client();
+                let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+                
+                // Use handle.block_on to execute async request in rayon thread
+                let body_result: DbResult<serde_json::Value> = handle.block_on(async {
                     let response = client
                         .post(&url)
                         .header("X-Scatter-Gather", "true") // Prevent infinite recursion
                         .basic_auth("admin", Some(&admin_pass))
                         .json(&serde_json::json!({ "query": query }))
-                        .send().ok()?;
-                    response.json::<serde_json::Value>().ok()
+                        .send()
+                        .await
+                        .map_err(|e| DbError::NetworkError(format!("Failed to query remote node {}: {}", node_addr, e)))?;
+                        
+                    response.json()
+                        .await
+                        .map_err(|e| DbError::NetworkError(format!("Failed to parse response from {}: {}", node_addr, e)))
                 });
+                
+                let body = body_result?;
+                
+                let mut docs = Vec::new();
+                if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                    for doc in results {
+                        docs.push(doc.clone());
+                    }
+                }
+                Ok(docs)
+            }
+        }).collect();
 
-                if let Some(body) = body_result {
-                    if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
-                        for doc in results {
-                            if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                                if seen_keys.insert(key.to_string()) {
-                                    all_docs.push(doc.clone());
-                                    // Early exit if we have enough
-                                    if let Some(n) = limit {
-                                        if all_docs.len() >= n {
-                                            break;
-                                        }
-                                    }
-                                }
+        // Merge results and deduplicate
+        let mut all_docs: Vec<Value> = Vec::new();
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for result in results {
+            match result {
+                Ok(docs) => {
+                    for doc in docs {
+                        if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                            if seen_keys.insert(key.to_string()) {
+                                all_docs.push(doc);
                             }
                         }
                     }
                 }
+                Err(e) => {
+                    // Log error but continue with other results (best effort)
+                    tracing::warn!("[SCATTER-GATHER] Partial failure: {}", e);
+                }
+            }
+        }
+        
+        // Final sort/limit application would ideally happen here if we had order
+        // But for arbitrary iteration, we just apply the limit
+        if let Some(n) = limit {
+            if all_docs.len() > n {
+                all_docs.truncate(n);
             }
         }
 
-        // Final truncation to ensure exact limit
-        if let Some(n) = limit {
-            all_docs.truncate(n);
-        }
-
         tracing::info!(
-            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes",
+            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes (parallel)",
             collection_name, all_docs.len(), all_nodes.len()
         );
 

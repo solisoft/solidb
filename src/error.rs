@@ -35,6 +35,9 @@ pub enum DbError {
     #[error("Internal error: {0}")]
     InternalError(String),
 
+    #[error("Network error: {0}")]
+    NetworkError(String),
+
     // Transaction errors
     #[error("Transaction '{0}' not found")]
     TransactionNotFound(String),
