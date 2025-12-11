@@ -285,19 +285,8 @@ impl ReplicationService {
             }
 
             if let Ok(config_coll) = db.get_collection("_config") {
-                // Read existing peers first to merge (Union)
-                if let Ok(doc) = config_coll.get(Self::PEERS_CONFIG_KEY) {
-                    if let Some(existing_peers) = doc.data.get("peers").and_then(|v| v.as_array()) {
-                        for p in existing_peers {
-                            if let Some(s) = p.as_str() {
-                                if !peers.contains(&s.to_string()) {
-                                    peers.push(s.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-
+                // Don't merge with existing storage - replace completely
+                // This ensures removed peers stay removed
                 peers.sort();
 
                 tracing::debug!(

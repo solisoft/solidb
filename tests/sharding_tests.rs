@@ -19,7 +19,7 @@ fn test_shard_routing_distribution() {
         "http://n2:80".to_string(),
         "http://n3:80".to_string(),
     ];
-    let coordinator = ShardCoordinator::new(storage, 0, nodes);
+    let coordinator = ShardCoordinator::new(storage, "http://n1:80".to_string(), nodes);
     
     let config = CollectionShardConfig {
         num_shards: 16,
@@ -44,7 +44,7 @@ async fn test_topology_change_remove_node() {
     ];
     
     // Node 1 is self
-    let coordinator = ShardCoordinator::new(storage, 0, initial_nodes.clone());
+    let coordinator = ShardCoordinator::new(storage, "http://node1:8000".to_string(), initial_nodes.clone());
     
     let config = CollectionShardConfig {
         num_shards: 8,
@@ -90,7 +90,7 @@ async fn test_get_shard_address_failover() {
         "http://secondary:80".to_string(),
     ];
     // setup failure threshold
-    let coordinator = ShardCoordinator::with_health_tracking(storage, 0, nodes, 3);
+    let coordinator = ShardCoordinator::with_health_tracking(storage, "http://primary:80".to_string(), nodes, 3);
     
     // We don't need config for pure shard_address check via shard_id
     let shard_id: u16 = 0;

@@ -190,6 +190,7 @@ impl ShardCoordinator {
             if !addresses.contains(&node_addr.to_string()) {
                 println!("Configuration Change: Adding node {} to cluster", node_addr);
                 addresses.push(node_addr.to_string());
+                addresses.sort(); // Maintain sorted order for consistent shard assignment across nodes
                 true
             } else {
                 false
@@ -264,7 +265,15 @@ impl ShardCoordinator {
         let my_addr = Some(self.my_address.clone());
 
         for node_addr in &replica_nodes {
-            if Some(node_addr.to_string()) == my_addr {
+            // Skip unhealthy remote nodes to avoid unnecessary timeouts
+            // Always try local writes regardless of health status
+            let is_local = Some(node_addr.to_string()) == my_addr;
+            if !is_local && !self.is_node_healthy(node_addr) {
+                tracing::debug!("[SHARD] Skipping unhealthy node {} for insert", node_addr);
+                continue;
+            }
+
+            if is_local {
                 // Local insert
                 match self.storage.get_database(db_name)
                     .and_then(|db| db.get_collection(coll_name))
