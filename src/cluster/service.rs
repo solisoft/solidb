@@ -1651,17 +1651,17 @@ impl ReplicationService {
                             // Get cluster peer list to determine our node index
                             let peers = Self::load_saved_peers(&self.storage);
                             let my_addr = self.config.replication_addr();
-                            
+
                             // Build sorted node list to get consistent indices
                             let mut all_nodes: Vec<String> = peers.clone();
                             if !all_nodes.contains(&my_addr) {
                                 all_nodes.push(my_addr.clone());
                             }
                             all_nodes.sort();
-                            
+
                             let num_nodes = all_nodes.len();
                             let my_index = all_nodes.iter().position(|n| n == &my_addr);
-                            
+
                             if let Some(my_idx) = my_index {
                                 // Filter to only docs where this node is a shard replica
                                 let filtered: Vec<(String, serde_json::Value)> = docs
@@ -1679,12 +1679,12 @@ impl ReplicationService {
                                         )
                                     })
                                     .collect();
-                                
+
                                 let skipped = original_count - filtered.len();
                                 if skipped > 0 {
                                     tracing::debug!(
                                         "[APPLY] Filtered {}/{} docs for sharded collection {}/{} (RF={}, my_idx={})",
-                                        skipped, original_count, db_name, coll_name, 
+                                        skipped, original_count, db_name, coll_name,
                                         shard_config.replication_factor, my_idx
                                     );
                                 }
@@ -1702,7 +1702,7 @@ impl ReplicationService {
                     } else {
                         docs // Not sharded - apply all
                     };
-                    
+
                     // Skip if no documents to apply after filtering
                     if docs_to_apply.is_empty() {
                         tracing::debug!(
@@ -2109,13 +2109,13 @@ impl ReplicationService {
     ) -> u64 {
 
         // Skip replication logging only if we are not in cluster mode AND have no connected peers
-        let is_cluster = self.config.is_cluster_mode();
+        //let is_cluster = self.config.is_cluster_mode();
 
         // Always record to replication log if we are running the ReplicationService
-    // We need to store history even if we represent a single-node cluster (bootstrap node)
-    // so that other nodes can join later and sync from us.
+        // We need to store history even if we represent a single-node cluster (bootstrap node)
+        // so that other nodes can join later and sync from us.
 
-    // tracing::info!("[REPL-LOG] Recording batch of {} docs (cluster: {}, peers: {})", documents.len(), is_cluster, peer_count);
+        // tracing::info!("[REPL-LOG] Recording batch of {} docs (cluster: {}, peers: {})", documents.len(), is_cluster, peer_count);
 
 
         let hlc = self.hlc_generator.now();

@@ -332,6 +332,150 @@ impl ShardCoordinator {
         }
     }
 
+    /// Batch insert documents with sharding - groups by target node for efficiency
+    /// Returns (success_count, error_count)
+    pub async fn insert_batch(
+        &self,
+        db_name: &str,
+        coll_name: &str,
+        shard_config: &CollectionShardConfig,
+        docs: Vec<Value>,
+    ) -> DbResult<(usize, usize)> {
+        if docs.is_empty() {
+            return Ok((0, 0));
+        }
+
+        // Group documents by target nodes
+        let mut node_docs: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+        let addresses = self.node_addresses.read().unwrap().clone();
+        
+        for mut doc in docs {
+            // Get or generate key
+            let key = if let Some(k) = doc.get("_key").and_then(|v| v.as_str()) {
+                k.to_string()
+            } else {
+                let key = uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
+                if let Value::Object(ref mut obj) = doc {
+                    obj.insert("_key".to_string(), Value::String(key.clone()));
+                }
+                key
+            };
+
+            // Route to shard
+            let shard_id = ShardRouter::route(&key, shard_config.num_shards);
+            
+            // Get all replica nodes for this shard
+            let replica_nodes = ShardRouter::shard_to_nodes(
+                shard_id,
+                shard_config.replication_factor,
+                &addresses,
+            );
+
+            // Add document to all replica nodes' queues
+            for node in replica_nodes {
+                node_docs.entry(node.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(doc.clone());
+            }
+        }
+
+        let mut success_count = 0usize;
+        let mut error_count = 0usize;
+        let my_addr = self.my_address.clone();
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+
+        // Process each node's batch
+        for (node_addr, docs) in node_docs {
+            let batch_size = docs.len();
+            
+            if node_addr == my_addr {
+                // Local batch insert
+                match self.storage.get_database(db_name)
+                    .and_then(|db| db.get_collection(coll_name))
+                {
+                    Ok(coll) => {
+                        match coll.insert_batch(docs) {
+                            Ok(inserted) => {
+                                if let Err(e) = coll.index_documents(&inserted) {
+                                    tracing::error!("Failed to index batch: {}", e);
+                                }
+                                success_count += inserted.len();
+                            }
+                            Err(e) => {
+                                tracing::error!("[BATCH] Local batch insert failed: {}", e);
+                                error_count += batch_size;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("[BATCH] Failed to get collection: {}", e);
+                        error_count += batch_size;
+                    }
+                }
+            } else {
+                // Skip unhealthy nodes
+                if !self.is_node_healthy(&node_addr) {
+                    tracing::debug!("[BATCH] Skipping unhealthy node {}", node_addr);
+                    continue; // Don't count as error - replica will sync later
+                }
+
+                // Remote batch insert via import endpoint
+                let url = format!(
+                    "http://{}/_api/database/{}/collection/{}/import",
+                    node_addr, db_name, coll_name
+                );
+
+                // Convert docs to JSONL format
+                let jsonl: String = docs.iter()
+                    .filter_map(|d| serde_json::to_string(d).ok())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let client = reqwest::Client::new();
+                let form = reqwest::multipart::Form::new()
+                    .part("file", reqwest::multipart::Part::text(jsonl).file_name("batch.jsonl"));
+
+                match client
+                    .post(&url)
+                    .basic_auth("admin", Some(&admin_pass))
+                    .header("X-Shard-Direct", "true") // Mark as shard-directed to avoid re-routing
+                    .multipart(form)
+                    .timeout(std::time::Duration::from_secs(30))
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        // Parse response to get actual counts
+                        if let Ok(result) = resp.json::<serde_json::Value>().await {
+                            let imported = result.get("imported").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let failed = result.get("failed").and_then(|v| v.as_u64()).unwrap_or(0);
+                            success_count += imported as usize;
+                            error_count += failed as usize;
+                            self.mark_node_success(&node_addr);
+                        } else {
+                            success_count += batch_size;
+                            self.mark_node_success(&node_addr);
+                        }
+                    }
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        tracing::error!("[BATCH] Remote batch failed {}: {} - {}", node_addr, status, body);
+                        error_count += batch_size;
+                        self.mark_node_failure(&node_addr);
+                    }
+                    Err(e) => {
+                        tracing::error!("[BATCH] Remote batch failed {}: {}", node_addr, e);
+                        error_count += batch_size;
+                        self.mark_node_failure(&node_addr);
+                    }
+                }
+            }
+        }
+
+        Ok((success_count, error_count))
+    }
+
     /// Get the list of replica nodes for a given document key
     pub fn get_replicas(&self, key: &str, config: &CollectionShardConfig) -> Vec<String> {
         let shard_id = ShardRouter::route(key, config.num_shards);

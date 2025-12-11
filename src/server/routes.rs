@@ -29,8 +29,8 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
         // This allows a bootstrap node (started without --peers) to eventually become part of a cluster
         // as other nodes join and update _system._config.
         if true {
-            // Get this node's API address
-            let my_api_addr = format!("localhost:{}", api_port);
+            // Get this node's API address - use 127.0.0.1 for consistency with peer addresses
+            let my_api_addr = format!("127.0.0.1:{}", api_port);
             
             // Calculate port offset (replication_port - api_port)
             // This handles custom port configurations (e.g. API 6745, Repl 7745 -> gap 1000)

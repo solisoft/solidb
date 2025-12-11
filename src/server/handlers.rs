@@ -1400,18 +1400,26 @@ pub async fn import_collection(
                     let shard_config = collection.get_shard_config();
                     let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
                     
+                    tracing::info!("[IMPORT] Batch ready: shard_config={:?}, is_sharded={}, has_coordinator={}", 
+                        shard_config, is_sharded, state.shard_coordinator.is_some());
+                    
                     if is_sharded && state.shard_coordinator.is_some() {
-                        // Use ShardCoordinator for proper distribution
+                        // Use ShardCoordinator batch insert for proper distribution
                         let coordinator = state.shard_coordinator.as_ref().unwrap();
                         let config = shard_config.unwrap();
                         
-                        for doc in batch_docs.drain(..) {
-                            match coordinator.insert(&db_name, &coll_name, &config, doc).await {
-                                Ok(_) => success_count += 1,
-                                Err(e) => {
-                                    tracing::debug!("Sharded insert error (may be ok if replica): {}", e);
-                                    error_count += 1;
-                                }
+                        tracing::info!("[IMPORT] Using ShardCoordinator batch insert for {} docs", 
+                            batch_docs.len());
+                        
+                        let docs_to_insert: Vec<Value> = batch_docs.drain(..).collect();
+                        match coordinator.insert_batch(&db_name, &coll_name, &config, docs_to_insert).await {
+                            Ok((successes, failures)) => {
+                                success_count += successes;
+                                error_count += failures;
+                            }
+                            Err(e) => {
+                                tracing::error!("[IMPORT] Batch insert failed: {}", e);
+                                error_count += 1;
                             }
                         }
                     } else {
@@ -1453,17 +1461,19 @@ pub async fn import_collection(
                 let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
                 
                 if is_sharded && state.shard_coordinator.is_some() {
-                    // Use ShardCoordinator for proper distribution
+                    // Use ShardCoordinator batch insert for proper distribution
                     let coordinator = state.shard_coordinator.as_ref().unwrap();
                     let config = shard_config.unwrap();
                     
-                    for doc in batch_docs.drain(..) {
-                        match coordinator.insert(&db_name, &coll_name, &config, doc).await {
-                            Ok(_) => success_count += 1,
-                            Err(e) => {
-                                tracing::debug!("Sharded insert error (may be ok if replica): {}", e);
-                                error_count += 1;
-                            }
+                    let docs_to_insert: Vec<Value> = batch_docs.drain(..).collect();
+                    match coordinator.insert_batch(&db_name, &coll_name, &config, docs_to_insert).await {
+                        Ok((successes, failures)) => {
+                            success_count += successes;
+                            error_count += failures;
+                        }
+                        Err(e) => {
+                            tracing::error!("[IMPORT] Remaining batch insert failed: {}", e);
+                            error_count += 1;
                         }
                     }
                 } else {
