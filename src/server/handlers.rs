@@ -940,15 +940,22 @@ pub async fn get_collection_stats(
         let shard_distribution = if is_sharded {
             let config = shard_config.as_ref().unwrap();
             
-            // Start with local doc counts
-            let mut shard_counts: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+            // Calculate local doc counts per shard
+            let mut local_shard_counts: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
             for doc in collection.scan(None) {
                 let shard_id = crate::sharding::router::ShardRouter::route(&doc.key, config.num_shards);
-                *shard_counts.entry(shard_id).or_insert(0) += 1;
+                *local_shard_counts.entry(shard_id).or_insert(0) += 1;
             }
             
-            // If not local_only, fetch counts from other nodes and aggregate
-            if !local_only && total_nodes > 1 {
+            // For cluster-wide counts, we need to get counts from PRIMARY node only (to avoid double-counting with replicas)
+            // If local_only, just use local counts
+            let mut shard_counts: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+            
+            if local_only || total_nodes <= 1 {
+                // Just use local counts
+                shard_counts = local_shard_counts;
+            } else {
+                // For each shard, get count from its PRIMARY node
                 let http_client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(5))
                     .build()
@@ -956,40 +963,57 @@ pub async fn get_collection_stats(
                     
                 let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
                 
-                for node in &all_nodes {
-                    // Skip self
-                    if node == &my_address {
-                        continue;
-                    }
+                // Cache remote stats to avoid multiple requests to same node
+                let mut remote_stats_cache: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                
+                for shard_id in 0..config.num_shards {
+                    // Determine primary node for this shard
+                    let primary_idx = (shard_id as usize) % total_nodes;
+                    let primary_node = all_nodes.get(primary_idx).cloned().unwrap_or_default();
                     
-                    // Fetch local stats from this node
-                    let url = format!(
-                        "http://{}/_api/database/{}/collection/{}/stats?local=true",
-                        node, db_name, coll_name
-                    );
-                    
-                    if let Ok(response) = http_client
-                        .get(&url)
-                        .basic_auth("admin", Some(&admin_pass))
-                        .send()
-                        .await
-                    {
-                        if let Ok(remote_stats) = response.json::<Value>().await {
-                            // Extract shard counts from remote response
-                            if let Some(cluster) = remote_stats.get("cluster") {
-                                if let Some(shards) = cluster.get("shards").and_then(|s| s.as_array()) {
-                                    for shard in shards {
-                                        if let (Some(shard_id), Some(count)) = (
-                                            shard.get("shard_id").and_then(|s| s.as_u64()),
-                                            shard.get("document_count").and_then(|c| c.as_u64())
-                                        ) {
-                                            // Add to our count (this aggregates across nodes)
-                                            *shard_counts.entry(shard_id as u16).or_insert(0) += count as usize;
-                                        }
-                                    }
+                    if primary_node == my_address {
+                        // We are the primary - use our local count
+                        let count = *local_shard_counts.get(&shard_id).unwrap_or(&0);
+                        shard_counts.insert(shard_id, count);
+                    } else {
+                        // Fetch from primary node (or use cached result)
+                        if !remote_stats_cache.contains_key(&primary_node) {
+                            let url = format!(
+                                "http://{}/_api/database/{}/collection/{}/stats?local=true",
+                                primary_node, db_name, coll_name
+                            );
+                            
+                            if let Ok(response) = http_client
+                                .get(&url)
+                                .basic_auth("admin", Some(&admin_pass))
+                                .send()
+                                .await
+                            {
+                                if let Ok(stats) = response.json::<Value>().await {
+                                    remote_stats_cache.insert(primary_node.clone(), stats);
                                 }
                             }
                         }
+                        
+                        // Extract count for this shard from cached remote stats
+                        let count = if let Some(remote_stats) = remote_stats_cache.get(&primary_node) {
+                            remote_stats
+                                .get("cluster")
+                                .and_then(|c| c.get("shards"))
+                                .and_then(|s| s.as_array())
+                                .and_then(|shards| {
+                                    shards.iter().find(|s| {
+                                        s.get("shard_id").and_then(|id| id.as_u64()) == Some(shard_id as u64)
+                                    })
+                                })
+                                .and_then(|s| s.get("document_count"))
+                                .and_then(|c| c.as_u64())
+                                .unwrap_or(0) as usize
+                        } else {
+                            0
+                        };
+                        
+                        shard_counts.insert(shard_id, count);
                     }
                 }
             }
