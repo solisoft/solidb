@@ -19,19 +19,25 @@
 
   <!-- Cluster Table Component -->
   <cluster-table></cluster-table>
+  
+  <!-- Detailed Stats Component -->
+  <replication-stats-table></replication-stats-table>
 </div>
 
 <script type="module">
   // import the component JavaScript output generated via @riotjs/compiler
   import ClusterTable from '<%= PublicPath("/app/components/cluster-table.riot.js") %>'
+  import ReplicationStatsTable from '<%= PublicPath("/app/components/replication-stats-table.riot.js") %>'
 
   // register the riot components
   riot.register('cluster-table', ClusterTable)
+  riot.register('replication-stats-table', ReplicationStatsTable)
 
   // Wait for DOM to be ready
   document.addEventListener('DOMContentLoaded', () => {
     // Mount the components
     riot.mount('cluster-table')
+    riot.mount('replication-stats-table')
   })
 </script>
 

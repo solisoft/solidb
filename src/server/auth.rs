@@ -1,6 +1,9 @@
 use crate::error::DbError;
 use crate::storage::StorageEngine;
-use crate::cluster::{ReplicationService, Operation};
+use crate::cluster::Operation;
+use crate::replication::log::ReplicationLog;
+use crate::replication::protocol::{LogEntry, Operation as ReplOperation};
+
 
 use argon2::{
     password_hash::{
@@ -133,7 +136,8 @@ pub struct AuthService;
 impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
-    pub fn init(storage: &StorageEngine, replication: Option<&ReplicationService>) -> Result<(), DbError> {
+    pub fn init(storage: &StorageEngine, replication_log: Option<&ReplicationLog>) -> Result<(), DbError> {
+
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
         
@@ -209,16 +213,21 @@ impl AuthService {
                     collection.insert(doc_value.clone())?; // Clone for recording
                     
                     // Record write for replication
-                    if let Some(repl) = replication {
-                         let _ = repl.record_write(
-                             ADMIN_DB,
-                             ADMIN_COLL,
-                             Operation::Insert,
-                             DEFAULT_USER, // Document key is username ("admin")
-                             serde_json::to_vec(&doc_value).ok().as_deref(),
-                             None
-                         );
+                    if let Some(log) = replication_log {
+                         let entry = LogEntry {
+                             sequence: 0,
+                             node_id: "".to_string(), // implementation log fills this
+                             database: ADMIN_DB.to_string(),
+                             collection: ADMIN_COLL.to_string(),
+                             operation: ReplOperation::Insert,
+                             key: DEFAULT_USER.to_string(),
+                             data: serde_json::to_vec(&doc_value).ok(),
+                             timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                             origin_sequence: None,
+                         };
+                         let _ = log.append(entry);
                     }
+
                     
                     if is_override {
                         tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");

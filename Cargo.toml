@@ -3,6 +3,12 @@ name = "solidb"
 version = "0.1.0"
 edition = "2021"
 default-run = "solidb"
+description = "A lightweight, high-performance structured database server written in Rust."
+license-file = "LICENCE.md"
+repository = "https://github.com/solisoft/solidb"
+keywords = ["database", "nosql", "json", "rest-api", "rust"]
+categories = ["database", "web-programming::http-server"]
+include = ["src/**/*", "README.md", "LICENCE.md", "Cargo.toml", "www/**/*"]
 
 [dependencies]
 # Async runtime
@@ -13,8 +19,10 @@ axum = { version = "0.8.7", features = ["multipart", "ws"] }
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.8", features = ["trace", "cors"] }
 async-stream = "0.3"
+async-trait = "0.1"
 
 # WebSocket Client (for global changefeed aggregation)
+
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 url = "2.4"
 

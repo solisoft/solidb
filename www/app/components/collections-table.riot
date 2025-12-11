@@ -44,31 +44,35 @@
       <tbody class="bg-gray-800 divide-y divide-gray-700">
         <tr each={ collection in state.collections } class="hover:bg-gray-750 transition-colors">
           <td class="px-6 py-4 whitespace-nowrap">
-            <div class="flex items-center">
+            <a href="/database/{ props.db }/collection/{ collection.name }/documents" class="flex items-center group">
               <!-- Edge collection icon (link) -->
-              <svg if={ collection.type==='edge' } class="h-5 w-5 text-fuchsia-400 mr-2" fill="none"
+              <svg if={ collection.type==='edge' }
+                class="h-5 w-5 text-fuchsia-400 mr-2 group-hover:text-fuchsia-300 transition-colors" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               </svg>
               <!-- Blob collection icon (document) -->
-              <svg if={ collection.type==='blob' } class="h-5 w-5 text-amber-400 mr-2" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
+              <svg if={ collection.type==='blob' }
+                class="h-5 w-5 text-amber-400 mr-2 group-hover:text-amber-300 transition-colors" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <!-- Document collection icon (folder) -->
-              <svg if={ collection.type !=='edge' && collection.type !=='blob' } class="h-5 w-5 text-indigo-400 mr-2"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg if={ collection.type !=='edge' && collection.type !=='blob' }
+                class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-              <span class="text-sm font-medium text-gray-100">{ collection.name }</span>
+              <span class="text-sm font-medium text-gray-100 group-hover:text-indigo-300 transition-colors">{
+                collection.name }</span>
               <span if={ collection.type==='edge' }
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">Edge</span>
               <span if={ collection.type==='blob' }
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Blob</span>
-            </div>
+            </a>
           </td>
           <td class="px-6 py-4 whitespace-nowrap">
             <span class="text-sm text-gray-400">{ collection.count.toLocaleString() }</span>

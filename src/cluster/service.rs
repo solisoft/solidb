@@ -903,7 +903,11 @@ impl ReplicationService {
                 after_sequence,
             } => {
                 // Note: Peer registration is handled in Ping handler with proper replication address
-                let _ = from_node; // Used for logging
+                
+                // Update known state for this peer since they explicitly requested from this sequence
+                // This means they have everything up to `after_sequence`
+                self.update_peer_acked(from_addr, after_sequence);
+                self.update_peer_sent(from_addr, after_sequence);
 
                 // Use limited batch size to prevent massive responses
                 let batch_size = 5000;
@@ -912,6 +916,11 @@ impl ReplicationService {
 
                 tracing::debug!("[SYNC-REQ] From {} requesting entries after seq {}. Sending {} entries (our seq: {}, limit: {})",
                     from_node, after_sequence, entries.len(), current_seq, batch_size);
+
+                // If we're sending entries, update last_sent to avoid immediate re-sending in the push loop
+                if let Some(last) = entries.last() {
+                    self.update_peer_sent(from_addr, last.sequence);
+                }
 
                 Some(ReplicationMessage::SyncResponse {
                     from_node: self.config.node_id.clone(),
@@ -1649,7 +1658,15 @@ impl ReplicationService {
                     let docs_to_apply = if let Some(shard_config) = collection.get_shard_config() {
                         if shard_config.num_shards > 0 {
                             // Get cluster peer list to determine our node index
-                            let peers = Self::load_saved_peers(&self.storage);
+                            // Merge saved peers (config) and active connections (discovered)
+                            let mut peers = Self::load_saved_peers(&self.storage);
+                            let active_peers: Vec<String> = self.peer_states.read().unwrap().keys().cloned().collect();
+                            for addr in active_peers {
+                                if !peers.contains(&addr) {
+                                    peers.push(addr);
+                                }
+                            }
+                            
                             let my_addr = self.config.replication_addr();
 
                             // Build sorted node list to get consistent indices
@@ -1663,6 +1680,12 @@ impl ReplicationService {
                             let my_index = all_nodes.iter().position(|n| n == &my_addr);
 
                             if let Some(my_idx) = my_index {
+                                // Log shard filtering parameters for debugging
+                                tracing::info!(
+                                    "[APPLY-SHARD] num_nodes={}, my_idx={}, RF={}, num_shards={}, peers={:?}",
+                                    num_nodes, my_idx, shard_config.replication_factor, shard_config.num_shards, all_nodes
+                                );
+                                
                                 // Filter to only docs where this node is a shard replica
                                 let filtered: Vec<(String, serde_json::Value)> = docs
                                     .into_iter()

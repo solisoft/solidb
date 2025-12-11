@@ -1,0 +1,157 @@
+<replication-stats-table>
+    <div class="space-y-6 mt-8">
+        <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-100">Detailed Replication Stats (From _cluster_informations)
+                </h3>
+                <button onclick={ refreshStats }
+                    class="text-sm text-indigo-400 hover:text-indigo-300 flex items-center">
+                    <svg class="h-4 w-4 mr-1 { state.loading ? 'animate-spin' : '' }" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+
+            <div if={ state.loading && !state.stats.length } class="p-6 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto"></div>
+                <p class="mt-2 text-gray-400">Loading replication details...</p>
+            </div>
+
+            <div if={ state.error } class="p-6 text-center">
+                <p class="text-red-400">{ state.error }</p>
+            </div>
+
+            <div if={ !state.loading && state.stats.length===0 } class="p-6 text-center">
+                <p class="text-gray-400">No replication stats available yet.</p>
+            </div>
+
+            <div if={ state.stats.length> 0 } class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-600">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Database/Collection</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Shards</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Replication Factor</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Status</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Details</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-600">
+                        <tr each={ stat in state.stats } class="hover:bg-gray-700 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm font-medium text-gray-100">{ stat.database } / { stat.name }</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                { stat.shard_count }
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                { stat.replication_factor }
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span
+                                    class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full { stat.status === 'Ready' ? 'bg-green-900/30 text-green-400' : 'bg-amber-900/30 text-amber-400' }">
+                                    { stat.status }
+                                </span>
+                                <div if={ stat.actions && stat.actions.length> 0 } class="mt-1">
+                                    <span each={ action in stat.actions } class="text-xs text-amber-400 block">{ action
+                                        }</span>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-400">
+                                <div each={ shard in stat.shards } class="mb-1">
+                                    <span class="text-indigo-300 font-mono">Shard {shard.id}:</span>
+                                    <span class="text-gray-300">Pri: {shard.primary}</span>
+                                    <span if={ shard.replicas.length } class="text-gray-400"> | Rep:
+                                        {shard.replicas.join(', ')}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        import { getApiUrl, authenticatedFetch } from '/api-config.js'
+
+        export default {
+            state: {
+                stats: [],
+                loading: false,
+                error: null
+            },
+
+            onMounted() {
+                this.loadStats()
+                // Poll every 5s
+                this.interval = setInterval(() => this.loadStats(true), 5000)
+            },
+
+            onUnmounted() {
+                if (this.interval) clearInterval(this.interval)
+            },
+
+            async refreshStats() {
+                await this.loadStats()
+            },
+
+            async loadStats(silent = false) {
+                if (!silent) this.update({ loading: true })
+
+                try {
+                    // We read from _system/_cluster_informations (via generic collection API)
+                    // Note: DB name is _system, collection is _cluster_informations
+                    const url = getApiUrl()
+                    // We need to fetch documents. Assuming standard list API works.
+                    // Using AQL is safer if we want all.
+                    // Let's use AQL: FOR doc IN _cluster_informations RETURN doc
+                    const query = {
+                        query: "FOR doc IN _cluster_informations SORT doc.database, doc.name RETURN doc"
+                    }
+
+                    // We need to execute boolean query against _system db
+                    const dbUrl = `${url}/database/_system/query`
+
+                    const response = await authenticatedFetch(dbUrl, {
+                        method: 'POST',
+                        body: JSON.stringify(query)
+                    })
+
+                    if (!response.ok) {
+                        // Maybe collection doesn't exist yet?
+                        if (response.status === 404) {
+                            this.update({ stats: [], loading: false })
+                            return
+                        }
+                        throw new Error('Failed to fetch stats')
+                    }
+
+                    const data = await response.json()
+                    // Wrapped in result?
+                    const stats = data.result || []
+
+                    this.update({ stats, loading: false, error: null })
+
+                } catch (e) {
+                    console.error(e)
+                    // Silence error on poll if it was just transient
+                    if (!silent) this.update({ error: e.message, loading: false })
+                }
+            }
+        }
+    </script>
+</replication-stats-table>

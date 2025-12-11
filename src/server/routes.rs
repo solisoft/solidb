@@ -10,87 +10,52 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use super::handlers::*;
-use crate::cluster::ReplicationService;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
 
-pub fn create_router(storage: StorageEngine, replication: Option<ReplicationService>, api_port: u16) -> Router {
+pub fn create_router(
+    storage: StorageEngine,
+    cluster_manager: Option<Arc<crate::cluster::manager::ClusterManager>>,
+    replication_log: Option<Arc<crate::replication::log::ReplicationLog>>,
+    api_port: u16
+) -> Router {
     // Initialize Auth (create default admin if needed)
     tracing::info!("Initializing authentication...");
-    if let Err(e) = crate::server::auth::AuthService::init(&storage, replication.as_ref()) {
+    
+    // Auth init needs to know if we are in a cluster to maybe skip default admin creation
+    // The previous logic checked cluster_config.peers.
+    // New ClusterManager handles joining.
+    // For now we pass replication_log to auth init.
+    if let Err(e) = crate::server::auth::AuthService::init(&storage, replication_log.as_deref()) {
         tracing::error!("Failed to initialize authentication: {}", e);
     } else {
         tracing::info!("Authentication initialized successfully");
     }
 
-    // Initialize ShardCoordinator if we have cluster config
-    let shard_coordinator = if let Some(config) = storage.cluster_config() {
-        // We always initialize the coordinator even if peers list is initially empty.
-        // This allows a bootstrap node (started without --peers) to eventually become part of a cluster
-        // as other nodes join and update _system._config.
-        if true {
-            // Get this node's API address - use 127.0.0.1 for consistency with peer addresses
-            let my_api_addr = format!("127.0.0.1:{}", api_port);
-            
-            // Calculate port offset (replication_port - api_port)
-            // This handles custom port configurations (e.g. API 6745, Repl 7745 -> gap 1000)
-            // We assume all nodes in the cluster use the same port offset convention.
-            let port_offset = if config.replication_port >= api_port {
-                (config.replication_port - api_port) as i32
-            } else {
-                -((api_port - config.replication_port) as i32)
-            };
+    // Initialize _scripts collection in _system db
+    if let Ok(db) = storage.get_database("_system") {
+         if db.get_collection("_scripts").is_err() {
+             tracing::info!("Initializing _scripts collection...");
+             if let Err(e) = db.create_collection("_scripts".to_string(), None) {
+                 tracing::warn!("Failed to create _scripts collection (might exist): {}", e);
+             }
+         }
+    }
 
-            tracing::info!("[CLUSTER] Port configuration: API={}, Replication={}, Offset={}", 
-                api_port, config.replication_port, port_offset);
-            
-            // Convert replication addresses to HTTP API addresses
-            // The peers list contains replication addresses, but ShardCoordinator needs API addresses
-            let mut node_addresses: Vec<String> = config.peers.iter().filter_map(|peer| {
-                // Parse the peer address and convert to API port using dynamic offset
-                let peer = peer.trim();
-                
-                if let Some(port_start) = peer.rfind(':') {
-                    let host = &peer[..port_start];
-                    if let Ok(repl_port) = peer[port_start+1..].parse::<u16>() {
-                        // Apply offset to get API port
-                        let peer_api_port = (repl_port as i32 - port_offset) as u16;
-                        return Some(format!("{}:{}", host, peer_api_port));
-                    }
-                }
-                
-                // If we can't parse the port to derive the API port, we should NOT include this peer
-                // in the ShardCoordinator's health check list as that would likely use the
-                // replication port for HTTP requests, causing "Invalid message" errors on the peer.
-                tracing::warn!("Could not derive API port for peer '{}', skipping for health checks", peer);
-                None
-            }).collect();
-            
-            // Add self to node_addresses if not already present
-            if !node_addresses.contains(&my_api_addr) {
-                node_addresses.insert(0, my_api_addr.clone()); // Self is always first
-            }
-            
-            // Sort addresses for consistent ordering across all nodes
-            node_addresses.sort();
-            
-            tracing::info!("ShardCoordinator initialized: my_addr={}, nodes: {:?}", 
-                my_api_addr, node_addresses);
-            
-            let coordinator = crate::sharding::ShardCoordinator::with_health_tracking(
-                Arc::new(storage.clone()),
-                my_api_addr,
-                node_addresses,
-                3, // failure threshold
-            );
-            
-            let coord_arc = Arc::new(coordinator);
-            coord_arc.clone().start_background_tasks();
-            
-            Some(coord_arc)  // Store the Arc, not a clone of inner
-        } else {
-            None
-        }
+    // Initialize ShardCoordinator if we have a cluster manager
+    // In new architecture, ShardCoordinator is created OUTSIDE and passed in?
+    // Or we create it here if we have manager.
+    // Handlers expect ShardCoordinator in AppState (if we revert to putting it there).
+    // Let's create it here if cluster_manager is present.
+    // The previous code had complex logic to calculate port offsets etc.
+    // That logic should probably move to ClusterManager or main.rs.
+    // But for now, let's keep it simple: If we have a manager, we have sharding.
+    
+    let shard_coordinator = if let Some(ref manager) = cluster_manager {
+         Some(Arc::new(crate::sharding::ShardCoordinator::new(
+             Arc::new(storage.clone()),
+             manager.clone(),
+         )))
     } else {
         None
     };
@@ -98,11 +63,15 @@ pub fn create_router(storage: StorageEngine, replication: Option<ReplicationServ
     let state = AppState {
         storage: Arc::new(storage),
         cursor_store: CursorStore::new(Duration::from_secs(300)),
-        replication,
-        shard_coordinator,
+        cluster_manager,
+        replication_log,
+        // We need to restore shard_coordinator to AppState if we want handlers to use it without major refactor
+        // I'll assume I added it back to AppState definition in handlers.rs (I will double check)
+        shard_coordinator, 
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
+
 
     // Protected API routes
     let api_routes = Router::new()

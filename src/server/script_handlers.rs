@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use super::handlers::AppState;
 use crate::error::DbError;
 use crate::scripting::{Script, ScriptContext, ScriptEngine};
+use crate::replication::protocol::{Operation, LogEntry};
 
 /// System collection for storing scripts
 pub const SCRIPTS_COLLECTION: &str = "_scripts";
@@ -116,9 +117,25 @@ pub async fn create_script_handler(
     let doc_value = serde_json::to_value(&script)
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
 
-    collection.insert(doc_value)?;
+    collection.insert(doc_value.clone())?;
 
     tracing::info!("Lua script '{}' created for path '{}' in db '{}'", req.name, req.path, db_name);
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(), // Auto-filled
+            database: db_name.clone(),
+            collection: SCRIPTS_COLLECTION.to_string(),
+            operation: Operation::Insert,
+            key: id.clone(),
+            data: serde_json::to_vec(&doc_value).ok(),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
 
     Ok(Json(CreateScriptResponse {
         id,
@@ -216,9 +233,25 @@ pub async fn update_script_handler(
     let doc_value = serde_json::to_value(&script)
         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
 
-    collection.update(&script_id, doc_value)?;
+    collection.update(&script_id, doc_value.clone())?;
 
     tracing::info!("Lua script '{}' updated", script_id);
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: db_name.clone(),
+            collection: SCRIPTS_COLLECTION.to_string(),
+            operation: Operation::Update,
+            key: script_id.clone(),
+            data: serde_json::to_vec(&doc_value).ok(),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
 
     Ok(Json(script))
 }
@@ -234,6 +267,22 @@ pub async fn delete_script_handler(
     collection.delete(&script_id)?;
 
     tracing::info!("Lua script '{}' deleted", script_id);
+
+    // Record write for replication
+    if let Some(ref log) = state.replication_log {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: db_name.clone(),
+            collection: SCRIPTS_COLLECTION.to_string(),
+            operation: Operation::Delete,
+            key: script_id.clone(),
+            data: None,
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        let _ = log.append(entry);
+    }
 
     Ok(Json(DeleteScriptResponse { deleted: true }))
 }

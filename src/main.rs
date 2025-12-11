@@ -1,11 +1,12 @@
 use clap::Parser;
 use solidb::{
-    cluster::{ClusterConfig, ReplicationService},
+    cluster::ClusterConfig,
     create_router, StorageEngine,
 };
 use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tokio::io::AsyncReadExt;
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb")]
@@ -159,44 +160,174 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Build cluster configuration
-    let cluster_config = ClusterConfig::new(args.node_id, args.peers, args.replication_port, args.keyfile);
-    tracing::info!("Node ID: {}", cluster_config.node_id);
-    if cluster_config.keyfile.is_some() {
-        tracing::info!("Keyfile authentication enabled");
-    }
+    // 1. Setup Node Identity
+    let node_id = args.node_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let api_address = format!("127.0.0.1:{}", args.port); // Hostname resolution is complex, assuming loopback for now or args
+    // In production we'd want actual IP, but for now this matches existing logic assumption
+    let repl_address = format!("127.0.0.1:{}", args.replication_port);
 
-    // Initialize storage engine with cluster config
+    let local_node = solidb::cluster::node::Node::new(
+        node_id.clone(),
+        repl_address.clone(),
+        api_address.clone(),
+    );
+    tracing::info!("Node ID: {}", local_node.id);
+    tracing::info!("Replication Address: {}", local_node.address);
+    tracing::info!("API Address: {}", local_node.api_address);
+
+    // 2. Initialize Storage
+    // We construct ClusterConfig just for StorageEngine compatibility if needed, 
+    // but ideally StorageEngine shouldn't depend on ClusterConfig anymore?
+    // It uses it for _system._config.
+    // Let's create a dummy or minimal config.
+    let cluster_config = ClusterConfig::new(
+        Some(node_id.clone()),
+        args.peers.clone(),
+        args.replication_port,
+        args.keyfile.clone(),
+    );
+
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.initialize()?;
-    tracing::info!("Storage engine initialized with _system database");
+    tracing::info!("Storage engine initialized");
 
-    // Keep a reference for shutdown
     let storage_for_shutdown = Arc::new(storage.clone());
 
-    // Always start replication service (to accept incoming connections)
-    tracing::info!(
-        "Starting replication service on port {}",
-        cluster_config.replication_port
-    );
-    let replication_service =
-        ReplicationService::new(storage.clone(), cluster_config.clone(), &args.data_dir);
-    let service_handle = replication_service.clone();
+    // 3. Initialize Cluster Components (New Architecture)
+    
+    // Transport
+    let transport = Arc::new(solidb::cluster::transport::TcpTransport::new(repl_address.clone()));
+    
+    // Cluster State
+    let cluster_state = solidb::cluster::state::ClusterState::new(node_id.clone());
+    
+    // Cluster Manager
+    // Replication Log (Create BEFORE Manager)
+    let replication_log = Arc::new(solidb::replication::log::ReplicationLog::new(
+        &args.data_dir,
+        node_id.clone(),
+    ).map_err(|e| anyhow::anyhow!("Failed to init replication log: {}", e))?);
+
+    // Cluster Manager
+    let cluster_manager = Arc::new(solidb::cluster::manager::ClusterManager::new(
+        local_node.clone(),
+        cluster_state,
+        transport.clone(),
+        Some(replication_log.clone()),
+        Some(Arc::new(storage.clone())),
+    ));
+
+
+
+    // 4. Start Background Tasks
+    
+    // Cluster TCP Listener
+    let listener = transport.listen().await?;
+    let mgr_clone = cluster_manager.clone();
     tokio::spawn(async move {
-        if let Err(e) = service_handle.start().await {
-            tracing::error!("Replication service error: {}", e);
+        tracing::info!("Cluster listener started on {}", repl_address);
+        while let Ok((mut socket, addr)) = listener.accept().await {
+            let mgr = mgr_clone.clone();
+            tokio::spawn(async move {
+                // Simple one-shot message reading for now (connection per message)
+                // In production, we'd want persistent connections/framing.
+                let mut buf = Vec::new();
+                if let Ok(_) = socket.read_to_end(&mut buf).await {
+                    if let Ok(msg) = serde_json::from_slice(&buf) {
+                        mgr.handle_message(msg).await;
+                    } else {
+                        tracing::warn!("Failed to deserialize cluster message from {}", addr);
+                    }
+                }
+            });
         }
     });
 
-    // Create router with replication service
-    let app = create_router(storage, Some(replication_service), args.port);
+    // Start Manager (Heartbeats etc)
+    let mgr_clone2 = cluster_manager.clone();
+    tokio::spawn(async move {
+        mgr_clone2.start().await;
+    });
 
-    // Start server with graceful shutdown
+    // Start Shard Cleanup Service
+    let cleanup_config = solidb::sharding::cleanup::ShardCleanupConfig::default();
+    let cleanup_service = solidb::sharding::cleanup::ShardCleanup::new(
+        cleanup_config,
+        Arc::new(storage.clone()), 
+        cluster_manager.clone(),
+    );
+    tokio::spawn(async move {
+        cleanup_service.start().await;
+    });
+
+    // Start Stats Collector
+    let stats_storage = storage_for_shutdown.clone(); // Use the existing storage Arc
+    // Create actual ShardCoordinator instance for stats (and potentially for handlers to use later)
+    // For now we create a dedicated one or we could have created it earlier and passed it to AppState
+    let stats_coordinator = Arc::new(solidb::sharding::coordinator::ShardCoordinator::new(
+        stats_storage.clone(),
+        cluster_manager.clone(),
+    ));
+    
+    // STARTING STATS COLLECTOR
+    // Re-using storage Arc. 
+    let stats_collector = solidb::cluster::stats::ClusterStatsCollector::new(
+        stats_storage,
+        stats_coordinator,
+        cluster_manager.clone(),
+    );
+    tokio::spawn(async move {
+        stats_collector.start().await;
+    });
+
+    // Start Health Monitor to detect dead nodes
+    let health_config = solidb::cluster::health::HealthConfig::default();
+    let health_state = cluster_manager.state().clone();
+    let health_monitor = solidb::cluster::health::HealthMonitor::new(health_config, health_state);
+    tokio::spawn(async move {
+        health_monitor.start().await;
+    });
+
+    // Start Replication Worker
+    let worker_log = replication_log.clone();
+    let worker_transport = transport.clone();
+    let worker_mgr = cluster_manager.clone();
+    tokio::spawn(async move {
+        let worker = solidb::replication::worker::ReplicationWorker::new(worker_log, worker_transport, worker_mgr);
+        worker.start().await;
+    });
+
+    // Join Cluster if peers provided
+    if !args.peers.is_empty() {
+        let mgr_clone3 = cluster_manager.clone();
+        let seeds = args.peers.clone();
+        tokio::spawn(async move {
+            // Wait for server to start
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            for seed in seeds {
+                if let Err(e) = mgr_clone3.join_cluster(&seed).await {
+                    tracing::warn!("Failed to join cluster via seed {}: {}", seed, e);
+                } else {
+                    tracing::info!("Sent join request to {}", seed);
+                    break; // Only need one successful contact
+                }
+            }
+        });
+    }
+
+    // 5. Create Router
+    let app = create_router(
+        storage,
+        Some(cluster_manager),
+        Some(replication_log),
+        args.port
+    );
+
+    // 6. Start API Server
     let addr = format!("0.0.0.0:{}", args.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("Server listening on {}", addr);
 
-    // Handle shutdown signal
     let shutdown_storage = storage_for_shutdown.clone();
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(shutdown_storage))

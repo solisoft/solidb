@@ -7,6 +7,9 @@ pub mod storage;
 pub mod transaction;
 pub mod scripting;
 
+// New Architecture
+pub mod replication;
+
 pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};
 pub use server::create_router;

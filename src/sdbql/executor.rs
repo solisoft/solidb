@@ -1,5 +1,4 @@
 use chrono::Utc;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -7,7 +6,8 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use super::ast::*;
-use crate::cluster::{Operation, ReplicationService};
+use crate::replication::log::ReplicationLog;
+use crate::replication::protocol::{LogEntry, Operation};
 use crate::error::{DbError, DbResult};
 use crate::storage::{distance_meters, Collection, GeoPoint, StorageEngine};
 
@@ -99,8 +99,8 @@ pub struct ExecutionTiming {
 pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
-   database: Option<String>,
-    replication: Option<&'a ReplicationService>,
+    database: Option<String>,
+    replication: Option<&'a ReplicationLog>,
     // Flag to indicate if we should defer mutations for transactional execution
 
     // Shard coordinator for scatter-gather queries on sharded collections
@@ -195,7 +195,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Set replication service for logging mutations
-    pub fn with_replication(mut self, replication: &'a ReplicationService) -> Self {
+    pub fn with_replication(mut self, replication: &'a ReplicationLog) -> Self {
         self.replication = Some(replication);
         self
     }
@@ -354,11 +354,23 @@ impl<'a> QueryExecutor<'a> {
         data: Option<&Value>,
     ) {
         if let (Some(repl), Some(ref db)) = (&self.replication, &self.database) {
-            let doc_bytes = data.and_then(|v| serde_json::to_vec(v).ok());
-            repl.record_write(db, collection, operation, key, doc_bytes.as_deref(), None);
+            let entry = LogEntry {
+                sequence: 0,
+                node_id: "".to_string(),
+                database: db.clone(),
+                collection: collection.to_string(),
+                operation,
+                key: key.to_string(),
+                data: data.and_then(|v| serde_json::to_vec(v).ok()),
+                timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                origin_sequence: None,
+            };
+            let _ = repl.append(entry);
         }
     }
 
+    /// Log multiple mutations asynchronously in a background thread
+    /// Used for bulk INSERT operations to avoid blocking the response
     /// Log multiple mutations asynchronously in a background thread
     /// Used for bulk INSERT operations to avoid blocking the response
     fn log_mutations_async(
@@ -367,39 +379,39 @@ impl<'a> QueryExecutor<'a> {
         operation: Operation,
         docs: &[crate::storage::Document],
     ) {
-        // Clone the replication service if available (needs to be done before pattern matching)
+        // Clone the replication service if available
         let repl_clone = self.replication.map(|r| r.clone());
         let db_clone = self.database.clone();
 
         if let (Some(repl), Some(db)) = (repl_clone, db_clone) {
             let collection = collection.to_string();
-
-            // Serialize documents upfront to minimize work in the thread
-            let mutations: Vec<(String, Vec<u8>)> = docs
+            
+            // Serialize documents upfront
+            let entries: Vec<LogEntry> = docs
                 .iter()
-                .filter_map(|doc| {
-                    serde_json::to_vec(&doc.to_value())
-                        .ok()
-                        .map(|bytes| (doc.key.clone(), bytes))
+                .map(|doc| LogEntry {
+                    sequence: 0,
+                    node_id: "".to_string(),
+                    database: db.clone(),
+                    collection: collection.clone(),
+                    operation: operation.clone(), // Operation must be Clone (it's Copy usually?)
+                    key: doc.key.clone(),
+                    data: serde_json::to_vec(&doc.to_value()).ok(),
+                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                    origin_sequence: None,
                 })
                 .collect();
 
-            let count = mutations.len();
+            let count = entries.len();
             tracing::debug!(
                 "INSERT: Starting async replication logging for {} docs",
                 count
             );
 
-            // Execute replication logging synchronously to provide backpressure
-            // and avoid thread explosion/OS resource exhaustion during massive bulk inserts.
-            // RocksDB writes are fast enough that this shouldn't be a major bottleneck.
+            // Execute replication logging synchronously (RocksDB is fast)
+            // We use the cloned ReplicationLog reference which points to the same DB
             let start = std::time::Instant::now();
-            repl.record_batch(
-                &db,
-                &collection,
-                operation,
-                mutations,
-            );
+            let _ = repl.append_batch(entries);
             let elapsed = start.elapsed();
             tracing::debug!(
                 "INSERT: Replication logging of {} docs completed in {:?}",
@@ -1092,8 +1104,7 @@ impl<'a> QueryExecutor<'a> {
         // Otherwise it's a collection - use scan with limit for optimization
         let collection = self.get_collection(&for_clause.collection)?;
 
-        // Only scatter-gather for SHARDED collections (num_shards > 0)
-        // Non-sharded collections are fully replicated, so local scan is sufficient
+        // Use scatter-gather for sharded collections to get data from all nodes
         if let Some(shard_config) = collection.get_shard_config() {
             if shard_config.num_shards > 0 {
                 if let Some(ref coordinator) = self.shard_coordinator {
@@ -1108,7 +1119,7 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Not sharded: local scan is sufficient (data is replicated to all nodes)
+        // Local scan - for non-sharded collections or when no coordinator
         Ok(collection
             .scan(limit)
             .into_iter()
@@ -1117,6 +1128,8 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Scatter-gather query: fetch documents from all cluster nodes for sharded collection
+    /// NOTE: This is a synchronous function that blocks. For async scatter-gather,
+    /// use scatter_gather_docs_async and call it from an async context.
     fn scatter_gather_docs(
         &self,
         collection_name: &str,
@@ -1132,96 +1145,90 @@ impl<'a> QueryExecutor<'a> {
         
         tracing::debug!("[SCATTER-GATHER] Nodes at query time: {:?}, my_address={}", all_nodes, my_address);
 
-        let handle = tokio::runtime::Handle::current();
+        // Count remote nodes (excluding self)
+        let remote_nodes: Vec<_> = all_nodes.iter()
+            .filter(|addr| *addr != &my_address)
+            .collect();
         
-        // Execute queries in parallel across all nodes
-        // This is significantly faster than sequential querying and uses a shared client
-        let results: Vec<DbResult<Vec<Value>>> = all_nodes.par_iter().map(|node_addr| {
-            if node_addr == &my_address {
-                 // Query local node directly - pass limit for efficiency
-                // Note: We create a new collection handle here which is cheap
-                let collection = self.get_collection(collection_name)?;
-                Ok(collection
-                    .scan(limit)
-                    .into_iter()
-                    .map(|d| d.to_value())
-                    .collect())
-            } else {
-                // Query remote node via HTTP - include LIMIT in query
-                let url = format!(
-                    "http://{}/_api/database/{}/cursor",
-                    node_addr, db_name
-                );
-                
-                // Include LIMIT in remote query to avoid fetching all docs
-                // Note: We use the shared async client from coordinator to reuse connections
-                let query = if let Some(n) = limit {
-                    format!(
-                        "FOR doc IN {} LIMIT {} RETURN doc",
-                        collection_name, n
-                    )
-                } else {
-                    format!(
-                        "FOR doc IN {} RETURN doc",
-                        collection_name
-                    )
-                };
+        // Query local node first (no network needed)
+        let collection = self.get_collection(collection_name)?;
+        let local_docs: Vec<Value> = collection
+            .scan(limit)
+            .into_iter()
+            .map(|d| d.to_value())
+            .collect();
+        
+        // If no remote nodes, just return local docs (single node cluster)
+        if remote_nodes.is_empty() {
+            tracing::debug!("[SCATTER-GATHER] No remote nodes, returning {} local docs", local_docs.len());
+            return Ok(local_docs);
+        }
 
-                let client = coordinator.get_http_client();
-                let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
-                
-                // Use handle.block_on to execute async request in rayon thread
-                let body_result: DbResult<serde_json::Value> = handle.block_on(async {
-                    let response = client
-                        .post(&url)
-                        .header("X-Scatter-Gather", "true") // Prevent infinite recursion
-                        .basic_auth("admin", Some(&admin_pass))
-                        .json(&serde_json::json!({ "query": query }))
-                        .send()
-                        .await
-                        .map_err(|e| DbError::NetworkError(format!("Failed to query remote node {}: {}", node_addr, e)))?;
-                        
-                    response.json()
-                        .await
-                        .map_err(|e| DbError::NetworkError(format!("Failed to parse response from {}: {}", node_addr, e)))
-                });
-                
-                let body = body_result?;
-                
-                let mut docs = Vec::new();
-                if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
-                    for doc in results {
-                        docs.push(doc.clone());
-                    }
-                }
-                Ok(docs)
-            }
-        }).collect();
-
-        // Merge results and deduplicate
         let mut all_docs: Vec<Value> = Vec::new();
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        
+        for doc in local_docs {
+            if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                if seen_keys.insert(key.to_string()) {
+                    all_docs.push(doc);
+                }
+            }
+        }
+        
+        // Query remote nodes sequentially using blocking reqwest
+        // This avoids the deadlock caused by mixing rayon + tokio
+        // Use a short timeout to prevent hanging on unreachable nodes
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+        
+        for node_addr in &all_nodes {
+            if node_addr == &my_address {
+                continue; // Already queried local
+            }
+            
+            let url = format!(
+                "http://{}/_api/database/{}/cursor",
+                node_addr, db_name
+            );
+            
+            let query = if let Some(n) = limit {
+                format!("FOR doc IN {} LIMIT {} RETURN doc", collection_name, n)
+            } else {
+                format!("FOR doc IN {} RETURN doc", collection_name)
+            };
 
-        for result in results {
-            match result {
-                Ok(docs) => {
-                    for doc in docs {
-                        if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                            if seen_keys.insert(key.to_string()) {
-                                all_docs.push(doc);
+            let response = client
+                .post(&url)
+                .header("X-Scatter-Gather", "true") // Prevent infinite recursion
+                .basic_auth("admin", Some(&admin_pass))
+                .json(&serde_json::json!({ "query": query }))
+                .send();
+                
+            match response {
+                Ok(resp) => {
+                    if let Ok(body) = resp.json::<serde_json::Value>() {
+                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                            for doc in results {
+                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                                    if seen_keys.insert(key.to_string()) {
+                                        all_docs.push(doc.clone());
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    // Log error but continue with other results (best effort)
-                    tracing::warn!("[SCATTER-GATHER] Partial failure: {}", e);
+                    tracing::warn!("[SCATTER-GATHER] Failed to query node {}: {}", node_addr, e);
                 }
             }
         }
         
-        // Final sort/limit application would ideally happen here if we had order
-        // But for arbitrary iteration, we just apply the limit
+        // Apply final limit
         if let Some(n) = limit {
             if all_docs.len() > n {
                 all_docs.truncate(n);
@@ -1229,7 +1236,7 @@ impl<'a> QueryExecutor<'a> {
         }
 
         tracing::info!(
-            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes (parallel)",
+            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes",
             collection_name, all_docs.len(), all_nodes.len()
         );
 

@@ -41,27 +41,27 @@
   </div>
 
   <!-- Create Key Modal -->
-  <div id="createKeyModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen px-4">
-      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-      <div class="relative bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-md w-full p-6">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-white">Create API Key</h3>
-          <button id="closeCreateModal" class="text-gray-400 hover:text-white">
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-        <form id="createKeyForm" class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Key Name</label>
+  <div id="createKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
+    <!-- Backdrop overlay for click handling -->
+    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
+
+    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
+      
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center">
+        <h3 class="text-xl font-semibold text-white tracking-tight">Create API Key</h3>
+      </div>
+
+      <div class="p-6">
+        <form id="createKeyForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Key Name</label>
             <input type="text" id="keyName" required placeholder="e.g., backend-service, ci-pipeline" 
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500">
+              class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
           </div>
           <div class="flex justify-end gap-3 pt-2">
-            <button type="button" id="cancelCreate" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
-            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">Create Key</button>
+            <button type="button" id="cancelCreate" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Create Key</button>
           </div>
         </form>
       </div>
@@ -69,33 +69,36 @@
   </div>
 
   <!-- Show Key Modal (displays newly created key) -->
-  <div id="showKeyModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen px-4">
-      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-      <div class="relative bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-lg w-full p-6">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-white">API Key Created</h3>
-          <button id="closeShowModal" class="text-gray-400 hover:text-white">
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+  <div id="showKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
+    <!-- Backdrop overlay for click handling -->
+    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
+
+    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
+      
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center">
+        <h3 class="text-xl font-semibold text-white tracking-tight">API Key Created</h3>
+      </div>
+
+      <div class="p-6">
+        <div class="mb-4 px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-sm flex items-start">
+          <svg class="h-5 w-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div><strong>Important:</strong> Copy this key now. You won't be able to see it again!</div>
         </div>
-        <div class="mb-4 px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-sm">
-          <strong>Important:</strong> Copy this key now. You won't be able to see it again!
-        </div>
-        <div class="mb-4">
+        <div class="mb-6">
           <label class="block text-sm font-medium text-gray-300 mb-2">Your API Key</label>
           <div class="flex">
             <input type="text" id="createdKeyValue" readonly 
-              class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded-l-lg text-green-400 font-mono text-sm">
-            <button type="button" id="copyKeyBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-r-lg">
+              class="flex-1 px-3 py-2 bg-gray-950 border border-gray-700 rounded-l-lg text-green-400 font-mono text-sm focus:outline-none">
+            <button type="button" id="copyKeyBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-r-lg border-t border-b border-r border-indigo-600 font-medium transition-colors">
               Copy
             </button>
           </div>
         </div>
         <div class="flex justify-end">
-          <button type="button" id="doneShowModal" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg">Done</button>
+          <button type="button" id="doneShowModal" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors border border-gray-600">Done</button>
         </div>
       </div>
     </div>
@@ -107,6 +110,66 @@
 
   const config = getServerConfig();
   const baseUrl = config ? `${config.host}:${config.port}` : '';
+
+  // Modal Management
+  function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    
+    // Remove hidden class first
+    modal.classList.remove('hidden');
+
+    const content = modal.querySelector('.modal-content');
+    
+    // Animate in after a small delay to allow transition
+    setTimeout(() => {
+      modal.classList.remove('opacity-0');
+      if (content) {
+        content.classList.remove('scale-95', 'opacity-0');
+        content.classList.add('scale-100', 'opacity-100');
+      }
+    }, 10);
+  }
+
+  function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    const content = modal.querySelector('.modal-content');
+
+    // Animate out
+    modal.classList.add('opacity-0');
+    if (content) {
+      content.classList.remove('scale-100', 'opacity-100');
+      content.classList.add('scale-95', 'opacity-0');
+    }
+
+    // Hide after transition
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 300);
+  }
+
+  // Close modals on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (!document.getElementById('createKeyModal').classList.contains('hidden')) {
+        closeModal('createKeyModal');
+      }
+      if (!document.getElementById('showKeyModal').classList.contains('hidden')) {
+        closeModal('showKeyModal');
+      }
+    }
+  });
+
+  // Setup backdrop click handlers
+  document.querySelectorAll('.backdrop-click-handler').forEach(backdrop => {
+    backdrop.addEventListener('click', (e) => {
+      // Find parent modal
+      const modal = e.target.closest('[id$="Modal"]');
+      if (modal) closeModal(modal.id);
+    });
+  });
 
   async function loadApiKeys() {
     const tbody = document.getElementById('apiKeysTableBody');
@@ -138,7 +201,7 @@
           <td class="px-6 py-4 text-gray-400 text-sm">${new Date(key.created_at).toLocaleString()}</td>
           <td class="px-6 py-4 text-right">
             <button onclick="deleteKey('${key.id}', '${key.name}')" 
-              class="text-red-400 hover:text-red-300 transition-colors">
+              class="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded">
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
@@ -171,18 +234,13 @@
   document.addEventListener('DOMContentLoaded', () => {
     loadApiKeys();
 
-    // Create modal
-    const createModal = document.getElementById('createKeyModal');
-    const showModal = document.getElementById('showKeyModal');
-    
     document.getElementById('createKeyBtn').addEventListener('click', () => {
-      createModal.classList.remove('hidden');
       document.getElementById('keyName').value = '';
+      openModal('createKeyModal');
+      setTimeout(() => document.getElementById('keyName').focus(), 100);
     });
     
-    const closeCreate = () => createModal.classList.add('hidden');
-    document.getElementById('closeCreateModal').addEventListener('click', closeCreate);
-    document.getElementById('cancelCreate').addEventListener('click', closeCreate);
+    document.getElementById('cancelCreate').addEventListener('click', () => closeModal('createKeyModal'));
     
     document.getElementById('createKeyForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -198,12 +256,16 @@
         
         if (response.ok) {
           const data = await response.json();
-          closeCreate();
+          closeModal('createKeyModal');
           
           // Show the key
           document.getElementById('createdKeyValue').value = data.key;
-          showModal.classList.remove('hidden');
-          loadApiKeys();
+          
+          // Allow modal to close before opening next
+          setTimeout(() => {
+            openModal('showKeyModal');
+            loadApiKeys();
+          }, 300);
         } else {
           alert('Failed to create API key');
         }
@@ -213,17 +275,23 @@
       }
     });
     
-    // Show key modal
-    const closeShow = () => showModal.classList.add('hidden');
-    document.getElementById('closeShowModal').addEventListener('click', closeShow);
-    document.getElementById('doneShowModal').addEventListener('click', closeShow);
+    document.getElementById('doneShowModal').addEventListener('click', () => closeModal('showKeyModal'));
     
     document.getElementById('copyKeyBtn').addEventListener('click', () => {
       const input = document.getElementById('createdKeyValue');
       input.select();
       navigator.clipboard.writeText(input.value);
-      document.getElementById('copyKeyBtn').textContent = 'Copied!';
-      setTimeout(() => document.getElementById('copyKeyBtn').textContent = 'Copy', 2000);
+      const btn = document.getElementById('copyKeyBtn');
+      const originalText = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('bg-green-600', 'border-green-600', 'hover:bg-green-500');
+      btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+      
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.classList.remove('bg-green-600', 'border-green-600', 'hover:bg-green-500');
+        btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+      }, 2000);
     });
   });
 </script>

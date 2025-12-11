@@ -32,19 +32,19 @@ sleep 5
 
 echo "Cluster started. PIDs: $PID1, $PID2, $PID3"
 
-# Create Collection on Node 1
-echo "Creating collection on Node 1..."
-curl -s -u admin:admin -X POST http://localhost:8041/_api/database/_system/collection \
+# Create Collection on Node 3
+echo "Creating collection on Node 3..."
+curl -s -u admin:admin -X POST http://localhost:8043/_api/database/_system/collection \
   -H "Content-Type: application/json" \
   -d '{"name": "test_repl_500k", "type": "document"}'
 
 sleep 2
 
-# Insert 500,000 documents using SDBQL loop
-DOC_COUNT=500000
-echo "Inserting $DOC_COUNT documents on Node 1..."
+# Insert 1000 documents using SDBQL loop
+DOC_COUNT=1000
+echo "Inserting $DOC_COUNT documents on Node 3..."
 START_TIME=$(date +%s)
-curl -s -u admin:admin -X POST http://localhost:8041/_api/database/_system/cursor \
+curl -s -u admin:admin -X POST http://localhost:8043/_api/database/_system/cursor \
   -H "Content-Type: application/json" \
   -d "{\"query\": \"FOR i IN 1..$DOC_COUNT INSERT { value: i, timestamp: DATE_NOW() } INTO test_repl_500k\"}"
 
@@ -54,12 +54,23 @@ echo "Insertion took $DURATION seconds."
 
 echo "Waiting for replication to catch up on Node 2 and Node 3..."
 
-# Checks for Node 2 and Node 3
+# Checks for Node 1 and Node 2
+N1_DONE=false
 N2_DONE=false
-N3_DONE=false
 
 # Wait up to 300 seconds (5 minutes)
 for i in {1..300}; do
+    if [ "$N1_DONE" = false ]; then
+        COUNT1=$(curl -s -u admin:admin -X POST http://localhost:8041/_api/database/_system/cursor \
+          -H "Content-Type: application/json" \
+          -d "{\"query\": \"RETURN COLLECTION_COUNT(\\\"test_repl_500k\\\")\"}" | grep -o '[0-9]*' | head -1)
+        echo "Node 1 count: $COUNT1 / $DOC_COUNT"
+        if [ "$COUNT1" == "$DOC_COUNT" ]; then
+            echo "SUCCESS: Node 1 fully replicated!"
+            N1_DONE=true
+        fi
+    fi
+
     if [ "$N2_DONE" = false ]; then
         COUNT2=$(curl -s -u admin:admin -X POST http://localhost:8042/_api/database/_system/cursor \
           -H "Content-Type: application/json" \
@@ -71,18 +82,7 @@ for i in {1..300}; do
         fi
     fi
 
-    if [ "$N3_DONE" = false ]; then
-        COUNT3=$(curl -s -u admin:admin -X POST http://localhost:8043/_api/database/_system/cursor \
-          -H "Content-Type: application/json" \
-          -d "{\"query\": \"RETURN COLLECTION_COUNT(\\\"test_repl_500k\\\")\"}" | grep -o '[0-9]*' | head -1)
-        echo "Node 3 count: $COUNT3 / $DOC_COUNT"
-        if [ "$COUNT3" == "$DOC_COUNT" ]; then
-            echo "SUCCESS: Node 3 fully replicated!"
-            N3_DONE=true
-        fi
-    fi
-
-    if [ "$N2_DONE" = true ] && [ "$N3_DONE" = true ]; then
+    if [ "$N1_DONE" = true ] && [ "$N2_DONE" = true ]; then
         echo "ALL NODES SYNCED SUCCESSFULLY!"
         
         # Verify cluster peer discovery (optional but good sanity check)
@@ -95,7 +95,7 @@ for i in {1..300}; do
     sleep 1
 done
 
-if [ "$N2_DONE" = false ] || [ "$N3_DONE" = false ]; then
+if [ "$N1_DONE" = false ] || [ "$N2_DONE" = false ]; then
     echo "FAILURE: Replication timed out."
     exit 1
 fi

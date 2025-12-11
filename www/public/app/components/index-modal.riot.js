@@ -15,6 +15,20 @@ export default {
       unique: false
     },
 
+    onMounted() {
+      document.addEventListener('keydown', this.handleKeyDown)
+    },
+
+    onUnmounted() {
+      document.removeEventListener('keydown', this.handleKeyDown)
+    },
+
+    handleKeyDown(e) {
+      if (e.key === 'Escape' && this.state.visible) {
+        this.handleClose(e)
+      }
+    },
+
     show() {
       this.update({
         visible: true,
@@ -26,24 +40,61 @@ export default {
         type: 'hash',
         unique: false
       })
+
+      const backdrop = this.$('#modalBackdrop')
+      const content = this.$('#modalContent')
+
+      // Remove hidden class first
+      backdrop.classList.remove('hidden')
+
+      // Animate in after a small delay to allow transition
+      setTimeout(() => {
+        backdrop.classList.remove('opacity-0')
+        content.classList.remove('scale-95', 'opacity-0')
+        content.classList.add('scale-100', 'opacity-100')
+
+        // Focus first input
+        const firstInput = this.$('input[type="text"]')
+        if (firstInput) firstInput.focus()
+      }, 10)
     },
 
     hide() {
-      this.update({
-        visible: false,
-        error: null,
-        loading: false,
-        name: '',
-        field: '',
-        type: 'hash',
-        unique: false
-      })
+      const backdrop = this.$('#modalBackdrop')
+      const content = this.$('#modalContent')
+
+      // Animate out
+      backdrop.classList.add('opacity-0')
+      content.classList.remove('scale-100', 'opacity-100')
+      content.classList.add('scale-95', 'opacity-0')
+
+      // Hide after transition
+      setTimeout(() => {
+        this.update({
+          visible: false,
+          error: null,
+          loading: false,
+          name: '',
+          field: '',
+          type: 'hash',
+          unique: false
+        })
+        backdrop.classList.add('hidden')
+      }, 300)
     },
 
     handleBackdropClick(e) {
-      if (e.target === e.currentTarget) {
+      if (e.target.id === 'modalBackdrop' || e.target === e.currentTarget) {
         this.handleClose(e)
       }
+    },
+
+    handleNameInput(e) {
+      this.update({ name: e.target.value })
+    },
+
+    handleFieldInput(e) {
+      this.update({ field: e.target.value })
     },
 
     handleTypeChange(e) {
@@ -53,11 +104,15 @@ export default {
       this.update({ type, showUniqueOption: showUnique, unique: showUnique ? this.state.unique : false })
     },
 
+    handleUniqueChange(e) {
+      this.update({ unique: e.target.checked })
+    },
+
     handleClose(e) {
       if (e) e.preventDefault()
       this.hide()
       if (this.props.onClose) {
-        this.props.onClose()
+        setTimeout(() => this.props.onClose(), 300)
       }
     },
 
@@ -96,7 +151,7 @@ export default {
         if (response.ok) {
           this.hide()
           if (this.props.onCreated) {
-            this.props.onCreated()
+            setTimeout(() => this.props.onCreated(), 300)
           }
         } else {
           const error = await response.json()
@@ -114,189 +169,180 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr79="expr79" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
+    '<div expr55="expr55" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr56="expr56" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Index</h3></div><div class="p-6"><div expr57="expr57" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr59="expr59"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr60="expr60" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr61="expr61" type="text" required class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-500">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><div class="relative"><select expr62="expr62" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors appearance-none"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div><div expr63="expr63" class="mb-6"></div><div class="flex justify-end space-x-3 pt-2"><button expr65="expr65" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr66="expr66" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
     [
       {
+        redundantAttribute: 'expr55',
+        selector: '[expr55]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => _scope.handleBackdropClick
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr56',
+        selector: '[expr56]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => e => e.stopPropagation()
+          }
+        ]
+      },
+      {
         type: bindingTypes.IF,
-        evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr79',
-        selector: '[expr79]',
+        evaluate: _scope => _scope.state.error,
+        redundantAttribute: 'expr57',
+        selector: '[expr57]',
 
         template: template(
-          '<div expr80="expr80" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Create New Index</h3><div expr81="expr81" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr83="expr83"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr84="expr84" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none\n          focus:ring-2 focus:ring-indigo-500" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-400">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr85="expr85" type="text" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none\n          focus:ring-2 focus:ring-indigo-500" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-400">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><select expr86="expr86" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option></select></div><div expr87="expr87" class="mb-6"></div><div class="flex justify-end space-x-3"><button expr89="expr89" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button expr90="expr90" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"> </button></div></form></div>',
+          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr58="expr58" class="text-sm text-red-300"> </p></div>',
           [
             {
-              expressions: [
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'onclick',
-                  evaluate: _scope => _scope.handleBackdropClick
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr80',
-              selector: '[expr80]',
-
-              expressions: [
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'onclick',
-                  evaluate: _scope => e => e.stopPropagation()
-                }
-              ]
-            },
-            {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.error,
-              redundantAttribute: 'expr81',
-              selector: '[expr81]',
-
-              template: template(
-                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr82="expr82" class="text-sm text-red-300"> </p></div>',
-                [
-                  {
-                    redundantAttribute: 'expr82',
-                    selector: '[expr82]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.error
-                      }
-                    ]
-                  }
-                ]
-              )
-            },
-            {
-              redundantAttribute: 'expr83',
-              selector: '[expr83]',
-
-              expressions: [
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'onsubmit',
-                  evaluate: _scope => _scope.handleSubmit
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr84',
-              selector: '[expr84]',
-
-              expressions: [
-                {
-                  type: expressionTypes.VALUE,
-                  evaluate: _scope => _scope.state.name
-                },
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'oninput',
-                  evaluate: _scope => e => _scope.update({ name: e.target.value })
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr85',
-              selector: '[expr85]',
-
-              expressions: [
-                {
-                  type: expressionTypes.VALUE,
-                  evaluate: _scope => _scope.state.field
-                },
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'oninput',
-                  evaluate: _scope => e => _scope.update({ field: e.target.value })
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr86',
-              selector: '[expr86]',
-
-              expressions: [
-                {
-                  type: expressionTypes.VALUE,
-                  evaluate: _scope => _scope.state.type
-                },
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'onchange',
-                  evaluate: _scope => _scope.handleTypeChange
-                }
-              ]
-            },
-            {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.showUniqueOption,
-              redundantAttribute: 'expr87',
-              selector: '[expr87]',
-
-              template: template(
-                '<label class="flex items-center"><input expr88="expr88" type="checkbox" class="rounded bg-gray-700 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-800"/><span class="ml-2 text-sm text-gray-300">Unique index (enforce uniqueness)</span></label>',
-                [
-                  {
-                    redundantAttribute: 'expr88',
-                    selector: '[expr88]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.ATTRIBUTE,
-                        isBoolean: true,
-                        name: 'checked',
-                        evaluate: _scope => _scope.state.unique
-                      },
-                      {
-                        type: expressionTypes.EVENT,
-                        name: 'onchange',
-                        evaluate: _scope => e => _scope.update({ unique: e.target.checked })
-                      }
-                    ]
-                  }
-                ]
-              )
-            },
-            {
-              redundantAttribute: 'expr89',
-              selector: '[expr89]',
-
-              expressions: [
-                {
-                  type: expressionTypes.EVENT,
-                  name: 'onclick',
-                  evaluate: _scope => _scope.handleClose
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr90',
-              selector: '[expr90]',
+              redundantAttribute: 'expr58',
+              selector: '[expr58]',
 
               expressions: [
                 {
                   type: expressionTypes.TEXT,
                   childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    _scope.state.loading ? 'Creating...' : 'Create'
-                  ].join(
-                    ''
-                  )
-                },
-                {
-                  type: expressionTypes.ATTRIBUTE,
-                  isBoolean: true,
-                  name: 'disabled',
-                  evaluate: _scope => _scope.state.loading
+                  evaluate: _scope => _scope.state.error
                 }
               ]
             }
           ]
         )
+      },
+      {
+        redundantAttribute: 'expr59',
+        selector: '[expr59]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onsubmit',
+            evaluate: _scope => _scope.handleSubmit
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr60',
+        selector: '[expr60]',
+
+        expressions: [
+          {
+            type: expressionTypes.VALUE,
+            evaluate: _scope => _scope.state.name
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'oninput',
+            evaluate: _scope => _scope.handleNameInput
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr61',
+        selector: '[expr61]',
+
+        expressions: [
+          {
+            type: expressionTypes.VALUE,
+            evaluate: _scope => _scope.state.field
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'oninput',
+            evaluate: _scope => _scope.handleFieldInput
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr62',
+        selector: '[expr62]',
+
+        expressions: [
+          {
+            type: expressionTypes.VALUE,
+            evaluate: _scope => _scope.state.type
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'onchange',
+            evaluate: _scope => _scope.handleTypeChange
+          }
+        ]
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.showUniqueOption,
+        redundantAttribute: 'expr63',
+        selector: '[expr63]',
+
+        template: template(
+          '<label class="flex items-center cursor-pointer group"><input expr64="expr64" type="checkbox" class="rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500\n              focus:ring-offset-gray-900 group-hover:border-gray-500 transition-colors"/><span class="ml-2 text-sm text-gray-300 group-hover:text-white transition-colors">Unique index (enforce\n                uniqueness)</span></label>',
+          [
+            {
+              redundantAttribute: 'expr64',
+              selector: '[expr64]',
+
+              expressions: [
+                {
+                  type: expressionTypes.ATTRIBUTE,
+                  isBoolean: true,
+                  name: 'checked',
+                  evaluate: _scope => _scope.state.unique
+                },
+                {
+                  type: expressionTypes.EVENT,
+                  name: 'onchange',
+                  evaluate: _scope => _scope.handleUniqueChange
+                }
+              ]
+            }
+          ]
+        )
+      },
+      {
+        redundantAttribute: 'expr65',
+        selector: '[expr65]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => _scope.handleClose
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr66',
+        selector: '[expr66]',
+
+        expressions: [
+          {
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+
+            evaluate: _scope => [
+              _scope.state.loading ? 'Creating...' : 'Create Index'
+            ].join(
+              ''
+            )
+          },
+          {
+            type: expressionTypes.ATTRIBUTE,
+            isBoolean: true,
+            name: 'disabled',
+            evaluate: _scope => _scope.state.loading
+          }
+        ]
       }
     ]
   ),
