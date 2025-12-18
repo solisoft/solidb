@@ -4,7 +4,7 @@ use tempfile::TempDir;
 /// Create a test storage engine with transaction support
 fn create_test_engine() -> (StorageEngine, TempDir) {
     let temp_dir = TempDir::new().unwrap();
-    let mut engine = StorageEngine::new(temp_dir.path()).unwrap();
+    let engine = StorageEngine::new(temp_dir.path()).unwrap();
     engine.initialize().unwrap();
     engine.initialize_transactions().unwrap();
     
@@ -169,7 +169,7 @@ fn test_wal_recovery() {
     
     // Create engine, perform transaction, and commit
     {
-        let mut engine = StorageEngine::new(&path).unwrap();
+        let engine = StorageEngine::new(&path).unwrap();
         engine.initialize().unwrap();
         engine.initialize_transactions().unwrap();
         
@@ -194,7 +194,7 @@ fn test_wal_recovery() {
     
     // Reopen engine - should recover committed transaction
     {
-        let mut engine = StorageEngine::new(&path).unwrap();
+        let engine = StorageEngine::new(&path).unwrap();
         engine.initialize().unwrap();
         engine.initialize_transactions().unwrap();
         

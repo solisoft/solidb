@@ -1,0 +1,382 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 space-y-8">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-extrabold text-white flex items-center gap-3">
+        <span
+          class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400"
+          >Live Query</span
+        >
+      </h1>
+      <p class="mt-2 text-lg text-gray-400">Reactive SDBQL Execution</p>
+    </div>
+
+    <div
+      class="flex items-center space-x-4 bg-white/5 p-2 rounded-xl border border-white/5 backdrop-blur-sm"
+    >
+      <div
+        id="connection-status"
+        class="flex items-center px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm font-medium text-gray-400 transition-all duration-300"
+      >
+        <span class="w-2.5 h-2.5 rounded-full bg-gray-500 mr-2.5"></span>
+        Ready
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-250px)]">
+    <!-- Left Column: Query Editor -->
+    <div class="lg:col-span-1 flex flex-col gap-4">
+      <div
+        class="bg-gray-900/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-full"
+      >
+        <div
+          class="px-6 py-4 border-b border-white/5 bg-white/5 flex justify-between items-center"
+        >
+          <h3
+            class="text-xs font-semibold text-gray-400 uppercase tracking-widest"
+          >
+            SDBQL Query
+          </h3>
+        </div>
+        <div class="p-4 flex-1 flex flex-col gap-4">
+          <div
+            id="query-editor"
+            class="w-full h-full rounded-xl overflow-hidden border border-white/10 text-sm"
+          ></div>
+
+          <button
+            onclick="window.toggleLiveQuery()"
+            id="toggle-btn"
+            class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            Start Live Query
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Live Results -->
+    <div class="lg:col-span-2 relative group">
+      <div
+        class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-2xl opacity-20 group-hover:opacity-30 transition duration-500 blur"
+      ></div>
+      <div
+        class="relative bg-gray-900/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl h-full flex flex-col"
+      >
+        <div
+          class="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/5"
+        >
+          <div class="flex items-center gap-3">
+            <div class="flex space-x-1.5">
+              <div class="w-2.5 h-2.5 rounded-full bg-red-500/50"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/50"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-green-500/50"></div>
+            </div>
+            <h3
+              class="ml-2 text-xs font-semibold text-gray-400 uppercase tracking-widest"
+            >
+              Live Results
+            </h3>
+          </div>
+          <div
+            id="update-indicator"
+            class="text-xs text-indigo-400 font-mono opacity-0 transition-opacity duration-300"
+          >
+            Incoming Update...
+          </div>
+        </div>
+
+        <div
+          class="flex-1 relative bg-[#0d1117]/95"
+        >
+          <div id="results-editor" class="absolute inset-0"></div>
+
+          <div
+            id="loading-overlay"
+            class="z-10 absolute inset-0 bg-[#0d1117]/80 flex flex-col items-center justify-center hidden backdrop-blur-sm"
+          >
+            <div
+              class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mb-4"
+            ></div>
+            <p class="text-sm font-medium text-gray-400">Waiting for data...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Monaco Editor Loader -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
+<script type="module">
+  import { getAuthToken, getApiUrl } from '<%= PublicPath("/api-config.js") %>';
+
+  const dbName = "<%= Params.db or '_system' %>";
+  const toggleBtn = document.getElementById("toggle-btn");
+  const statusEl = document.getElementById("connection-status");
+  const loadingOverlay = document.getElementById("loading-overlay");
+  const updateIndicator = document.getElementById("update-indicator");
+
+  let editor;
+  let resultsEditor;
+  let ws = null;
+  let isRunning = false;
+
+  // Initialize Monaco Editor
+  require.config({
+    paths: {
+      vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs",
+    },
+  });
+
+  window.addEventListener("load", function () {
+    require(["vs/editor/editor.main"], function () {
+      editor = monaco.editor.create(document.getElementById("query-editor"), {
+        value: "FOR doc IN users\n  SORT doc._id DESC\n  LIMIT 3\n  RETURN doc",
+        language: "sql",
+        theme: "vs-dark",
+        automaticLayout: true,
+        minimap: { enabled: false },
+        fontSize: 14,
+        lineNumbers: "on",
+        roundedSelection: true,
+        scrollBeyondLastLine: false,
+        readOnly: false,
+        cursorStyle: "line",
+        wordWrap: "on",
+        tabSize: 2,
+      });
+
+      resultsEditor = monaco.editor.create(document.getElementById("results-editor"), {
+        value: "// Results will appear here...",
+        language: "json",
+        theme: "vs-dark",
+        automaticLayout: true,
+        minimap: { enabled: false },
+        fontSize: 14,
+        lineNumbers: "on", // Useful for large JSON
+        roundedSelection: true,
+        scrollBeyondLastLine: false,
+        readOnly: true,
+        domReadOnly: true, // Prevent keyboard popping up on mobile
+        cursorStyle: "line",
+        wordWrap: "on",
+        tabSize: 2,
+      });
+    });
+  });
+
+  function updateStatus(status) {
+    let colorClass, text, dotColor;
+    switch (status) {
+      case "connected":
+        colorClass = "bg-emerald-500/10 border-emerald-500/20 text-emerald-400";
+        dotColor = "bg-emerald-400 animate-pulse";
+        text = "Live";
+        break;
+      case "connecting":
+        colorClass = "bg-yellow-500/10 border-yellow-500/20 text-yellow-400";
+        dotColor = "bg-yellow-400 animate-pulse";
+        text = "Connecting...";
+        break;
+      case "disconnected":
+        colorClass = "bg-red-500/10 border-red-500/20 text-red-400";
+        dotColor = "bg-red-400";
+        text = "Disconnected";
+        break;
+      default:
+        colorClass = "bg-gray-800 border-gray-700 text-gray-400";
+        dotColor = "bg-gray-500";
+        text = "Ready";
+    }
+
+    statusEl.className = `flex items-center px-3 py-1 rounded-full border text-xs font-medium transition-colors ${colorClass}`;
+    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full mr-2 ${dotColor}"></span>${text}`;
+  }
+
+  function flashUpdate() {
+    updateIndicator.style.opacity = "1";
+    setTimeout(() => {
+      updateIndicator.style.opacity = "0";
+    }, 500);
+
+    const parent = document.getElementById("results-editor").parentElement;
+    parent.classList.add("bg-indigo-500/5");
+    setTimeout(() => parent.classList.remove("bg-indigo-500/5"), 200);
+  }
+
+  function connect(query) {
+    if (ws) {
+      ws.close();
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      if (resultsEditor) resultsEditor.setValue("// Error: Authentication missing");
+      return;
+    }
+
+    const apiUrl = getApiUrl();
+    const wsProtocol = apiUrl.startsWith("https") ? "wss:" : "ws:";
+    const wsHost = apiUrl.replace(/^https?:\/\//, "");
+    const wsUrl = `${wsProtocol}//${wsHost}/ws/changefeed?token=${token}`;
+
+    updateStatus("connecting");
+    loadingOverlay.classList.remove("hidden");
+
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log("Connected");
+      ws.send(
+        JSON.stringify({
+          type: "live_query",
+          database: dbName,
+          query: query,
+        })
+      );
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "subscribed") {
+          updateStatus("connected");
+          loadingOverlay.classList.add("hidden");
+          console.log("Subscribed to collections:", msg.collections);
+        } else if (msg.type === "query_result") {
+          flashUpdate();
+          loadingOverlay.classList.add("hidden");
+          if (resultsEditor) resultsEditor.setValue(JSON.stringify(msg.result, null, 2));
+        } else if (msg.error) {
+          updateStatus("disconnected");
+          loadingOverlay.classList.add("hidden");
+          if (resultsEditor) resultsEditor.setValue(`// Error: ${msg.error}`);
+          stopLiveQuery();
+        }
+      } catch (e) {
+        console.error("Parse error", e);
+      }
+    };
+
+    ws.onclose = () => {
+      if (isRunning) updateStatus("disconnected");
+    };
+
+    ws.onerror = (e) => {
+      console.error("WebSocket Error", e);
+      updateStatus("disconnected");
+    };
+  }
+
+  function startLiveQuery() {
+    if (!editor || !resultsEditor) return;
+    const query = editor.getValue().trim();
+    if (!query) return;
+
+    isRunning = true;
+    toggleBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
+        Stop Live Query
+      `;
+    toggleBtn.classList.remove(
+      "bg-indigo-600",
+      "hover:bg-indigo-500",
+      "shadow-indigo-500/20"
+    );
+    toggleBtn.classList.add(
+      "bg-red-600",
+      "hover:bg-red-500",
+      "shadow-red-500/20"
+    );
+
+    // Read-only mode in Monaco
+    editor.updateOptions({ readOnly: true });
+    document.getElementById("query-editor").style.opacity = "0.7";
+
+    connect(query);
+  }
+
+  function stopLiveQuery() {
+    isRunning = false;
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+
+    toggleBtn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        Start Live Query
+      `;
+    toggleBtn.classList.add(
+      "bg-indigo-600",
+      "hover:bg-indigo-500",
+      "shadow-indigo-500/20"
+    );
+    toggleBtn.classList.remove(
+      "bg-red-600",
+      "hover:bg-red-500",
+      "shadow-red-500/20"
+    );
+
+    if (editor) {
+      editor.updateOptions({ readOnly: false });
+      document.getElementById("query-editor").style.opacity = "1";
+    }
+
+    updateStatus("default");
+    loadingOverlay.classList.add("hidden");
+  }
+
+  window.toggleLiveQuery = function () {
+    if (isRunning) {
+      stopLiveQuery();
+    } else {
+      startLiveQuery();
+    }
+  };
+
+  // Cleanup
+  window.addEventListener("beforeunload", () => {
+    if (ws) ws.close();
+  });
+</script>
+
+<style>
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+</style>

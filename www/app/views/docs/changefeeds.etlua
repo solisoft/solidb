@@ -1,7 +1,22 @@
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
   <div class="mb-8">
-    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
-      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
       Back to Documentation
     </a>
   </div>
@@ -14,74 +29,186 @@
     <main class="col-span-12 lg:col-span-9 space-y-12">
       <!-- Hero Section -->
       <div class="relative">
-        <div class="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-lg blur opacity-25"></div>
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-lg blur opacity-25"
+        ></div>
         <div class="relative">
-          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 mb-4 tracking-tight">Real-time Changefeeds</h1>
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 mb-4 tracking-tight"
+          >
+            Real-time Changefeeds
+          </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Subscribe to live data changes using WebSockets. Build reactive, real-time applications that update instantly.
+            Subscribe to live data changes using WebSockets. Build reactive,
+            real-time applications that update instantly.
           </p>
         </div>
       </div>
 
       <!-- Overview Section -->
       <section id="overview" class="scroll-mt-24">
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              <svg
+                class="w-6 h-6 mr-3 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                ></path>
+              </svg>
               Overview
             </h2>
           </div>
-          
+
           <div class="p-8">
             <!-- Warning Alert (Ephemeral Nature) - integrated nicely -->
-            <div class="rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 p-6 mb-8 backdrop-blur-sm relative overflow-hidden group">
-              <div class="absolute inset-0 bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div
+              class="rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 p-6 mb-8 backdrop-blur-sm relative overflow-hidden group"
+            >
+              <div
+                class="absolute inset-0 bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+              ></div>
               <div class="flex relative z-10">
                 <div class="flex-shrink-0">
                   <div class="p-2 bg-amber-500/20 rounded-lg">
-                    <svg class="h-6 w-6 text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    <svg
+                      class="h-6 w-6 text-amber-400"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
                   </div>
                 </div>
                 <div class="ml-4">
-                  <h3 class="text-lg font-medium text-amber-200">Ephemeral Nature</h3>
+                  <h3 class="text-lg font-medium text-amber-200">
+                    Ephemeral Nature
+                  </h3>
                   <p class="mt-2 text-amber-200/80 text-sm leading-relaxed">
-                    Changefeeds are ephemeral streams. They do not provide historical data replay, only real-time events that occur while the connection is active.
+                    Changefeeds are ephemeral streams. They do not provide
+                    historical data replay, only real-time events that occur
+                    while the connection is active.
                   </p>
                 </div>
               </div>
             </div>
 
             <p class="text-gray-300 mb-6 leading-relaxed">
-              Changefeeds allow clients to open a WebSocket connection and receive JSON events whenever documents in a collection are inserted, updated, or deleted. This is ideal for:
+              Changefeeds allow clients to open a WebSocket connection and
+              receive JSON events whenever documents in a collection are
+              inserted, updated, or deleted. This is ideal for:
             </p>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              <div
+                class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50"
+              >
+                <div
+                  class="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400"
+                >
+                  <svg
+                    class="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
                 </div>
-                <span class="text-gray-200 font-medium">Real-time dashboards</span>
+                <span class="text-gray-200 font-medium"
+                  >Real-time dashboards</span
+                >
               </div>
-              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+              <div
+                class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50"
+              >
+                <div
+                  class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400"
+                >
+                  <svg
+                    class="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
                 </div>
-                <span class="text-gray-200 font-medium">Collaborative apps</span>
+                <span class="text-gray-200 font-medium"
+                  >Collaborative apps</span
+                >
               </div>
-              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              <div
+                class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50"
+              >
+                <div
+                  class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400"
+                >
+                  <svg
+                    class="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
+                  </svg>
                 </div>
-                <span class="text-gray-200 font-medium">Live Activity feeds</span>
+                <span class="text-gray-200 font-medium"
+                  >Live Activity feeds</span
+                >
               </div>
-              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center text-pink-400">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              <div
+                class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3 transition-colors hover:bg-gray-800/50"
+              >
+                <div
+                  class="flex-shrink-0 w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center text-pink-400"
+                >
+                  <svg
+                    class="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
                 </div>
-                <span class="text-gray-200 font-medium">Triggering workflows</span>
+                <span class="text-gray-200 font-medium"
+                  >Triggering workflows</span
+                >
               </div>
             </div>
           </div>
@@ -90,39 +217,65 @@
 
       <!-- Protocol Section -->
       <section id="protocol" class="scroll-mt-24">
-        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              <svg
+                class="w-6 h-6 mr-3 text-orange-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                ></path>
+              </svg>
               WebSocket Protocol
             </h2>
           </div>
-          
+
           <div class="p-8">
             <p class="text-gray-300 mb-6">
-              To start a changefeed, connect a WebSocket client to the following endpoint:
+              To start a changefeed, connect a WebSocket client to the following
+              endpoint:
             </p>
-            
-            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 overflow-x-auto text-emerald-400 mb-8 shadow-inner">
-               ws://host:port/_api/ws/changefeed
+
+            <div
+              class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 overflow-x-auto text-emerald-400 mb-8 shadow-inner"
+            >
+              ws://host:port/_api/ws/changefeed
             </div>
 
             <h3 class="text-xl font-bold text-white mb-4">Subscription</h3>
             <p class="text-gray-300 mb-6">
-              Once connected, send a JSON message to subscribe to a collection. You can optionally filter by a specific document key.
+              Once connected, send a JSON message to subscribe to a collection.
+              You can optionally filter by a specific document key.
             </p>
 
-             <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl mb-8">
-              <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
+            <div
+              class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl mb-8"
+            >
+              <div
+                class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between"
+              >
                 <div class="flex space-x-2">
                   <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
                   <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
                   <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
                 </div>
-                <span class="text-xs text-gray-500 font-mono">subscribe.json</span>
+                <span class="text-xs text-gray-500 font-mono"
+                  >subscribe.json</span
+                >
               </div>
               <div class="p-6">
-  <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+                <pre
+                  class="bg-transparent p-0 m-0"
+                ><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"subscribe"</span>,
     <span class="text-purple-400">"collection"</span>: <span class="text-green-400">"users"</span>,
     <span class="text-purple-400">"database"</span>: <span class="text-green-400">"_system"</span>, <span class="text-gray-500">// Optional: database name</span>
@@ -132,17 +285,28 @@
             </div>
 
             <h3 class="text-xl font-bold text-white mb-4">Event Types</h3>
-            <p class="text-gray-300 mb-6">The server streams events as they happen:</p>
-            
+            <p class="text-gray-300 mb-6">
+              The server streams events as they happen:
+            </p>
+
             <div class="space-y-6">
               <!-- Insert Event -->
-              <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg">
-                <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
-                  <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Insert Event</span>
+              <div
+                class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg"
+              >
+                <div
+                  class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between"
+                >
+                  <span
+                    class="text-xs font-bold text-emerald-400 uppercase tracking-wider"
+                    >Insert Event</span
+                  >
                   <span class="text-xs text-gray-500 font-mono">payload</span>
                 </div>
                 <div class="p-4">
-  <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+                  <pre
+                    class="bg-transparent p-0 m-0"
+                  ><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"insert"</span>,
     <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span>,
     <span class="text-purple-400">"data"</span>: { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">30</span> }
@@ -150,14 +314,23 @@
                 </div>
               </div>
 
-               <!-- Update Event -->
-               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg">
-                <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
-                  <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Update Event</span>
+              <!-- Update Event -->
+              <div
+                class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg"
+              >
+                <div
+                  class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between"
+                >
+                  <span
+                    class="text-xs font-bold text-blue-400 uppercase tracking-wider"
+                    >Update Event</span
+                  >
                   <span class="text-xs text-gray-500 font-mono">payload</span>
                 </div>
                 <div class="p-4">
-  <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+                  <pre
+                    class="bg-transparent p-0 m-0"
+                  ><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"update"</span>,
     <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span>,
     <span class="text-purple-400">"data"</span>: { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">31</span> },
@@ -166,14 +339,23 @@
                 </div>
               </div>
 
-               <!-- Delete Event -->
-               <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg">
-                <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
-                  <span class="text-xs font-bold text-red-400 uppercase tracking-wider">Delete Event</span>
+              <!-- Delete Event -->
+              <div
+                class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg"
+              >
+                <div
+                  class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between"
+                >
+                  <span
+                    class="text-xs font-bold text-red-400 uppercase tracking-wider"
+                    >Delete Event</span
+                  >
                   <span class="text-xs text-gray-500 font-mono">payload</span>
                 </div>
                 <div class="p-4">
-  <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+                  <pre
+                    class="bg-transparent p-0 m-0"
+                  ><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"delete"</span>,
     <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span>,
     <span class="text-purple-400">"old_data"</span>: { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">31</span> }
@@ -187,49 +369,72 @@
 
       <!-- Client Implementation -->
       <section id="implementation" class="scroll-mt-24">
-         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
-              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              <svg
+                class="w-6 h-6 mr-3 text-yellow-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                ></path>
+              </svg>
               Client Implementation
             </h2>
           </div>
-          
-          <div class="p-8">
-            <p class="text-gray-300 mb-6">Here is a robust JavaScript example using the browser's native <code>WebSocket</code> API:</p>
 
-            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl">
-              <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
-                 <div class="flex space-x-2">
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Here is a robust JavaScript example using the browser's native
+              <code>WebSocket</code> API:
+            </p>
+
+            <div
+              class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl"
+            >
+              <div
+                class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between"
+              >
+                <div class="flex space-x-2">
                   <div class="w-2 h-2 rounded-full bg-white/20"></div>
                   <div class="w-2 h-2 rounded-full bg-white/20"></div>
                 </div>
                 <span class="text-xs text-gray-500 font-mono">client.js</span>
               </div>
               <div class="p-6 overflow-x-auto">
-  <pre class="bg-transparent p-0 m-0"><code class="language-javascript text-sm text-gray-300"><span class="text-gray-500">// Connect to SoliDB Changefeed</span>
+                <pre
+                  class="bg-transparent p-0 m-0"
+                ><code class="language-javascript text-sm text-gray-300"><span class="text-gray-500">// Connect to SoliDB Changefeed</span>
   <span class="text-purple-400">const</span> token = <span class="text-green-400">'YOUR_JWT_TOKEN'</span>;
   <span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> <span class="text-yellow-200">WebSocket</span>(<span class="text-green-400">`ws://localhost:6745/_api/ws/changefeed?token=${token}`</span>);
-  
+
   ws.<span class="text-blue-400">onopen</span> = () => {
       <span class="text-yellow-200">console</span>.<span class="text-blue-400">log</span>(<span class="text-green-400">'Connected'</span>);
-      
+
       <span class="text-gray-500">// Subscribe to 'orders' collection</span>
       ws.<span class="text-blue-400">send</span>(<span class="text-yellow-200">JSON</span>.<span class="text-blue-400">stringify</span>({
           <span class="text-purple-400">type</span>: <span class="text-green-400">'subscribe'</span>,
           <span class="text-purple-400">collection</span>: <span class="text-green-400">'orders'</span>
       }));
   };
-  
+
   ws.<span class="text-blue-400">onmessage</span> = (event) => {
       <span class="text-purple-400">const</span> change = <span class="text-yellow-200">JSON</span>.<span class="text-blue-400">parse</span>(event.<span class="text-blue-400">data</span>);
-      
+
       <span class="text-purple-400">if</span> (change.<span class="text-blue-400">type</span> === <span class="text-green-400">'insert'</span>) {
           <span class="text-yellow-200">console</span>.<span class="text-blue-400">log</span>(<span class="text-green-400">'New Order:'</span>, change.<span class="text-blue-400">data</span>);
           <span class="text-blue-400">updateDashboard</span>(change.<span class="text-blue-400">data</span>);
       }
   };
-  
+
   ws.<span class="text-blue-400">onclose</span> = () => <span class="text-yellow-200">console</span>.<span class="text-blue-400">log</span>(<span class="text-green-400">'Disconnected'</span>);</code></pre>
               </div>
             </div>
@@ -241,27 +446,57 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <!-- Limitations -->
         <section id="limitations" class="scroll-mt-24 h-full">
-           <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl h-full">
+          <div
+            class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl h-full"
+          >
             <div class="p-6 border-b border-white/5 bg-white/5">
               <h2 class="text-xl font-bold text-white flex items-center">
-                <svg class="w-6 h-6 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <svg
+                  class="w-6 h-6 mr-3 text-red-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  ></path>
+                </svg>
                 Limitations
               </h2>
             </div>
             <div class="p-6">
               <ul class="space-y-6">
                 <li class="flex items-start">
-                  <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20">1</span>
+                  <span
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20"
+                    >1</span
+                  >
                   <div>
-                    <h4 class="text-white font-bold mb-1">At-most-once delivery</h4>
-                    <p class="text-sm text-gray-400">If the connection drops, events occurring during the disconnection are lost.</p>
+                    <h4 class="text-white font-bold mb-1">
+                      At-most-once delivery
+                    </h4>
+                    <p class="text-sm text-gray-400">
+                      If the connection drops, events occurring during the
+                      disconnection are lost.
+                    </p>
                   </div>
                 </li>
                 <li class="flex items-start">
-                   <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20">2</span>
+                  <span
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 mr-4 font-bold border border-red-500/20"
+                    >2</span
+                  >
                   <div>
-                    <h4 class="text-white font-bold mb-1">No ordering guarantees</h4>
-                    <p class="text-sm text-gray-400">Order is not strictly guaranteed in high-concurrency scenarios.</p>
+                    <h4 class="text-white font-bold mb-1">
+                      No ordering guarantees
+                    </h4>
+                    <p class="text-sm text-gray-400">
+                      Order is not strictly guaranteed in high-concurrency
+                      scenarios.
+                    </p>
                   </div>
                 </li>
               </ul>
@@ -271,31 +506,63 @@
 
         <!-- Performance -->
         <section id="performance" class="scroll-mt-24 h-full">
-           <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl h-full">
+          <div
+            class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl h-full"
+          >
             <div class="p-6 border-b border-white/5 bg-white/5">
               <h2 class="text-xl font-bold text-white flex items-center">
-                <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <svg
+                  class="w-6 h-6 mr-3 text-blue-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  ></path>
+                </svg>
                 Performance
               </h2>
             </div>
             <div class="p-6 space-y-4">
               <div class="bg-gray-800/30 rounded-lg p-4 border border-white/5">
-                <h4 class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide">Zero Blocking</h4>
-                <p class="text-sm text-gray-400">Write operations are not delayed by slow WebSocket clients.</p>
+                <h4
+                  class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide"
+                >
+                  Zero Blocking
+                </h4>
+                <p class="text-sm text-gray-400">
+                  Write operations are not delayed by slow WebSocket clients.
+                </p>
               </div>
               <div class="bg-gray-800/30 rounded-lg p-4 border border-white/5">
-                <h4 class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide">Low Overhead</h4>
-                <p class="text-sm text-gray-400">Negligible impact (&lt;1μs) when no clients are subscribed.</p>
+                <h4
+                  class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide"
+                >
+                  Low Overhead
+                </h4>
+                <p class="text-sm text-gray-400">
+                  Negligible impact (&lt;1μs) when no clients are subscribed.
+                </p>
               </div>
               <div class="bg-gray-800/30 rounded-lg p-4 border border-white/5">
-                <h4 class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide">Bounded Memory</h4>
-                <p class="text-sm text-gray-400">Buffers are capped. Slow clients will skip events rather than leak memory.</p>
+                <h4
+                  class="text-green-400 font-bold mb-1 text-sm uppercase tracking-wide"
+                >
+                  Bounded Memory
+                </h4>
+                <p class="text-sm text-gray-400">
+                  Buffers are capped. Slow clients will skip events rather than
+                  leak memory.
+                </p>
               </div>
             </div>
           </div>
         </section>
       </div>
-
     </main>
   </div>
 </div>

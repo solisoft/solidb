@@ -29,6 +29,10 @@ local app = {
     Page("dashboard/live", "app")
   end,
 
+  live_query = function(self)
+    Page("dashboard/live_query", "app")
+  end,
+
   cluster = function()
     Page("dashboard/cluster", "app")
   end,

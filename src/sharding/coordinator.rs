@@ -2803,6 +2803,17 @@ impl ShardCoordinator {
     ) -> Result<(), String> {
         let table = self.get_shard_table(database, collection)
              .ok_or_else(|| "Shard table not found".to_string())?;
+        
+        // Get collection type to propagate to shards
+        let collection_type = if let Ok(db) = self.storage.get_database(database) {
+             if let Ok(coll) = db.get_collection(collection) {
+                 Some(coll.get_type().to_string())
+             } else {
+                 None
+             }
+        } else {
+            None
+        };
 
         let client = reqwest::Client::new();
         let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
@@ -2846,8 +2857,8 @@ impl ShardCoordinator {
                       // Create Local
                       if let Ok(db) = self.storage.get_database(database) {
                            if db.get_collection(&phys_name).is_err() {
-                               tracing::info!("CREATE_SHARDS: Creating local physical shard {} on {}", phys_name, target_node);
-                               if let Err(e) = db.create_collection(phys_name.clone(), None) {
+                               tracing::info!("CREATE_SHARDS: Creating local physical shard {} on {} type={:?}", phys_name, target_node, collection_type);
+                               if let Err(e) = db.create_collection(phys_name.clone(), collection_type.clone()) {
                                    let msg = format!("Failed to create local shard {}: {}", phys_name, e);
                                    tracing::error!("{}", msg);
                                    // Continue to next target
@@ -2875,9 +2886,11 @@ impl ShardCoordinator {
                       if let Some(mgr) = &self.cluster_manager {
                            if let Some(addr) = mgr.get_node_api_address(target_node) {
                                 let url = format!("http://{}/_api/database/{}/collection", addr, database);
-                                let body = serde_json::json!({ "name": phys_name });
-
-                                tracing::info!("CREATE_SHARDS: Remote creating {} at {} (url={})", phys_name, addr, url);
+                               tracing::info!("CREATE_SHARDS: Remote creating {} at {} (url={}) type={:?}", phys_name, addr, url, collection_type);
+                                let body = serde_json::json!({ 
+                                    "name": phys_name,
+                                    "type": collection_type
+                                });
 
                                 match client.post(&url)
                                     .header("X-Shard-Direct", "true")

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 struct SolidbProcess {
     child: Child,
     port: u16,
-    repl_port: u16,
+    _repl_port: u16,
     data_dir: PathBuf,
 }
 
@@ -21,7 +21,7 @@ impl SolidbProcess {
         let temp_dir = tempfile::tempdir()?;
         let path = temp_dir.path().to_path_buf();
         // Prevent automatic cleanup by `temp_dir` drop, we own cleanup in SolidbProcess::drop
-        let _ = temp_dir.into_path();
+        let _ = temp_dir.keep();
 
         let data_dir = path.join(node_id);
         std::fs::create_dir_all(&data_dir)?;
@@ -63,7 +63,7 @@ impl SolidbProcess {
         Ok(Self {
             child,
             port,
-            repl_port,
+            _repl_port: repl_port,
             data_dir,
         })
     }

@@ -206,23 +206,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         // Assume JSONL
-        eprintln!("Restoring using streaming mode (JSONL)...");
-        for line_res in reader.lines() {
-             let line = line_res?;
-             if line.trim().is_empty() { continue; }
+        eprintln!("Restoring using streaming mode (JSONL/Mixed)...");
+        let mut buffer = Vec::new();
+        
+        loop {
+             let bytes_read = reader.read_until(b'\n', &mut buffer)?;
+             if bytes_read == 0 { break; }
              
-             match serde_json::from_str::<Value>(&line) {
+             // Check if line is empty or just whitespace
+             let line_slice = if buffer.ends_with(b"\n") { &buffer[..buffer.len()-1] } else { &buffer };
+             if line_slice.iter().all(|b| b.is_ascii_whitespace()) {
+                 buffer.clear();
+                 continue;
+             }
+             
+             // Try parse JSON
+             match serde_json::from_slice::<Value>(line_slice) {
                  Ok(doc) => {
-                      process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
-                        &mut current_batch_meta,
-                        max_batch_count, max_batch_size, &mut initialized_collections, 
-                        &mut total_imported, &mut total_failed).await?;
+                     // Check for Blob Chunk Header
+                     let is_blob_chunk = doc.get("_type")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t == "blob_chunk")
+                        .unwrap_or(false);
+
+                     if is_blob_chunk {
+                         if let Some(data_len) = doc.get("_data_length").and_then(|v| v.as_u64()) {
+                             // It is a binary chunk header.
+                             // 1. Process header (create db/coll, add to batch)
+                             // We treat the header as a "doc" but we need to handle the data following it immediately.
+                             
+                             // We need to read the data bytes
+                             let mut data_buffer = vec![0u8; data_len as usize];
+                             reader.read_exact(&mut data_buffer)?;
+                             
+                             // Read (and discard) trailing newline of data
+                             let mut newline_buf = [0u8; 1];
+                             if let Ok(_) = reader.read_exact(&mut newline_buf) {
+                                 if newline_buf[0] != b'\n' {
+                                     // Put it back? verify logic.
+                                     // My export emits \n after data.
+                                     // So we consume it.
+                                 }
+                             }
+
+                             process_blob_chunk(doc, data_buffer, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                                &mut current_batch_meta,
+                                max_batch_count, max_batch_size, &mut initialized_collections, 
+                                &mut total_imported, &mut total_failed).await?;
+                         } else {
+                             // Legacy chunk
+                             process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                                &mut current_batch_meta,
+                                max_batch_count, max_batch_size, &mut initialized_collections, 
+                                &mut total_imported, &mut total_failed).await?;
+                         }
+                     } else {
+                         process_doc(doc, &args, &client, &base_url, &mut current_batch, &mut current_batch_size, 
+                            &mut current_batch_meta,
+                            max_batch_count, max_batch_size, &mut initialized_collections, 
+                            &mut total_imported, &mut total_failed).await?;
+                     }
                  },
                  Err(e) => {
                      eprintln!("Failed to parse line: {}", e);
                      total_failed += 1;
                  }
              }
+             buffer.clear();
         }
     }
 
@@ -239,6 +289,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("  → {} items imported", total_imported.to_string().green());
     if total_failed > 0 {
         eprintln!("  → {} items failed", total_failed.to_string().red());
+    }
+
+    Ok(())
+}
+
+use std::io::Read; // Needed for read_exact
+
+async fn process_blob_chunk(
+    header_doc: Value,
+    data: Vec<u8>,
+    args: &Args,
+    client: &reqwest::Client,
+    base_url: &str,
+    batch: &mut Vec<Vec<u8>>,
+    batch_size: &mut usize,
+    batch_meta: &mut Option<(String, String)>,
+    max_count: usize,
+    max_size: usize,
+    initialized_cols: &mut HashMap<String, bool>,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Determine target DB and Collection from header
+    let db = header_doc.get("_database").and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| args.database.clone())
+            .ok_or("No database specified in chunk or args")?;
+
+    let coll = header_doc.get("_collection").and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| args.collection.clone())
+            .ok_or("No collection specified in chunk or args")?;
+
+    // Create DB/Collection if needed
+    let key = format!("{}/{}", db, coll);
+    if !initialized_cols.contains_key(&key) {
+        if args.create_database {
+            create_database_if_not_exists(client, base_url, &db).await?;
+        }
+        let shard_config = header_doc.get("_shardConfig");
+        let collection_type = header_doc.get("_collectionType").and_then(|v| v.as_str());
+        ensure_collection_exists(client, base_url, &db, &coll, shard_config, collection_type, args.drop).await?;
+        initialized_cols.insert(key.clone(), true);
+    }
+    
+    // Check batch consistency
+    if let Some((curr_db, curr_coll)) = batch_meta {
+        if curr_db != &db || curr_coll != &coll {
+            flush_batch(batch, batch_size, client, base_url, curr_db, curr_coll, total_imported, total_failed).await?;
+            *batch_meta = None;
+        }
+    }
+
+    if batch_meta.is_none() {
+        *batch_meta = Some((db.clone(), coll.clone()));
+    }
+
+    // Add Header
+    let header_bytes = serde_json::to_vec(&header_doc)?;
+    *batch_size += header_bytes.len();
+    batch.push(header_bytes);
+
+    // Add Data
+    *batch_size += data.len();
+    batch.push(data);
+
+    // Flush if full
+    if batch.len() >= max_count || *batch_size >= max_size {
+         if let Some((curr_db, curr_coll)) = batch_meta {
+            flush_batch(batch, batch_size, client, base_url, curr_db, curr_coll, total_imported, total_failed).await?;
+         }
     }
 
     Ok(())
@@ -279,7 +400,8 @@ async fn process_doc(
         }
         
         let shard_config = doc.get("_shardConfig");
-        ensure_collection_exists(client, base_url, &db, &coll, shard_config, args.drop).await?;
+        let collection_type = doc.get("_collectionType").and_then(|v| v.as_str());
+        ensure_collection_exists(client, base_url, &db, &coll, shard_config, collection_type, args.drop).await?;
         
         initialized_cols.insert(key.clone(), true);
     }
@@ -361,6 +483,7 @@ async fn ensure_collection_exists(
      database: &str,
      collection: &str,
      shard_config: Option<&Value>,
+     collection_type: Option<&str>,
      drop: bool
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Logic similar to restore_collection but handles single init
@@ -386,6 +509,10 @@ async fn ensure_collection_exists(
         if let Some(shard_key) = config.get("shard_key") {
             create_payload["shardKey"] = shard_key.clone();
         }
+    }
+
+    if let Some(ctype) = collection_type {
+        create_payload["type"] = serde_json::Value::String(ctype.to_string());
     }
     
     // Are we restoring a blob collection?

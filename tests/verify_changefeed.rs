@@ -1,6 +1,6 @@
 use solidb::storage::engine::StorageEngine;
-use solidb::storage::collection::{ChangeType, ChangeEvent};
-use std::sync::Arc;
+use solidb::storage::collection::ChangeType;
+
 use tempfile::TempDir;
 
 #[tokio::test]

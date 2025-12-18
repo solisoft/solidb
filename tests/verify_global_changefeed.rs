@@ -1,5 +1,5 @@
 use futures::{SinkExt, StreamExt};
-use std::sync::Arc;
+
 use tokio::net::TcpListener;
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 use solidb::storage::collection::{ChangeEvent, ChangeType};

@@ -2321,35 +2321,159 @@ pub async fn update_collection_properties(
 pub async fn export_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    _headers: HeaderMap,
 ) -> Result<Response, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-
-    let docs = collection.scan(None);
-
     let shard_config = collection.get_shard_config();
     let is_blob = collection.get_type() == "blob";
 
-    // Need to clone collection for the async block if we want to read chunks
-    // But Collection is just an Arc wrapper essentially, so it's cheap to clone?
-    // Wait, Collection struct has Arc<RwLock<DB>>, so cloning is cheap.
-    // However, we can't easily move it into the stream macro if it's not Send?
-    // It should be Send.
-    let collection_clone = if is_blob {
-        // We need to re-get collection inside the stream or clone it
-        // Re-getting is safest to avoid lifetime issues with 'stream!' macro capture
-        Some(state.storage.get_database(&db_name)?.get_collection(&coll_name)?)
-    } else {
-        None
-    };
+    // Prepare coordinator reference and secret for remote calls
+    let coordinator_opt = state.shard_coordinator.clone();
+    let cluster_manager_opt = state.cluster_manager.clone();
+    let secret_env = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    
+    // Capture necessary variables for the async stream
+    let db_name_clone = db_name.clone();
+    let coll_name_clone = coll_name.clone();
+    let collection_clone = collection.clone();
+    let state_storage = state.storage.clone();
 
     let stream = async_stream::stream! {
-        for doc in docs {
-            let mut val = doc.to_value();
+        let num_shards = shard_config.as_ref().map(|c| c.num_shards).unwrap_or(0);
+
+        if num_shards > 0 {
+            // SHARDED EXPORT: Iterate over all physical shards
+            // We need to determine where each shard is located
+            let shard_table = if let Some(coord) = &coordinator_opt {
+                coord.get_shard_table(&db_name_clone, &coll_name_clone)
+            } else {
+                None
+            };
+
+            let client = reqwest::Client::new();
+            let my_node_id = if let Some(mgr) = &cluster_manager_opt {
+                mgr.local_node_id()
+            } else {
+                "local".to_string()
+            };
+
+            for shard_id in 0..num_shards {
+                let physical_name = format!("{}_s{}", coll_name_clone, shard_id);
+                
+                // Determine primary node for this shard
+                let primary_node = if let Some(ref table) = shard_table {
+                    table.assignments.get(&shard_id).map(|a| a.primary_node.clone()).unwrap_or_else(|| "unknown".to_string())
+                } else {
+                     // Fallback: assume local if no table (standalone mode?) or simple modulo
+                     "local".to_string()
+                };
+
+                let is_local = primary_node == "local" || primary_node == my_node_id;
+
+                if is_local {
+                    // Export from LOCAL physical shard
+                    if let Ok(db) = state_storage.get_database(&db_name_clone) {
+                        if let Ok(phys_coll) = db.get_collection(&physical_name) {
+                             // Scan documents (load all into memory - current limitation)
+                             let docs = phys_coll.scan(None);
+                             
+                             for doc in docs {
+                                 // Yield document line
+                                 let mut val = doc.to_value();
+                                 if let Some(obj) = val.as_object_mut() {
+                                     if let Some(ref config) = shard_config {
+                                          obj.insert("_shardConfig".to_string(), serde_json::to_value(config).unwrap_or_default());
+                                     }
+                                 }
+                                 if let Ok(json) = serde_json::to_string(&val) {
+                                     yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", json)));
+                                 }
+
+                                 // Yield blob chunks if blob collection
+                                 if is_blob {
+                                     let key = &doc.key;
+                                     let mut chunk_index: u32 = 0;
+                                     loop {
+                                         match phys_coll.get_blob_chunk(key, chunk_index) {
+                                             Ok(Some(data)) => {
+                                                 let chunk_header = serde_json::json!({
+                                                     "_type": "blob_chunk",
+                                                     "_doc_key": key,
+                                                     "_chunk_index": chunk_index,
+                                                     "_data_length": data.len()
+                                                 });
+
+                                                 if let Ok(header_json) = serde_json::to_string(&chunk_header) {
+                                                     // Header line
+                                                     yield Ok(axum::body::Bytes::from(format!("{}\n", header_json)));
+                                                     // Binary data
+                                                     yield Ok(axum::body::Bytes::from(data));
+                                                     // Trailing newline delimiter
+                                                     yield Ok(axum::body::Bytes::from("\n"));
+                                                 }
+                                                 chunk_index += 1;
+                                             },
+                                             Ok(None) => break,
+                                             Err(e) => {
+                                                 tracing::error!("Failed to read blob chunk {} for {}: {}", chunk_index, key, e);
+                                                 break;
+                                             }
+                                         }
+                                     }
+                                 }
+                             }
+                        }
+                    }
+                } else {
+                    // Export from REMOTE physical shard
+                    if let Some(mgr) = &cluster_manager_opt {
+                        if let Some(addr) = mgr.get_node_api_address(&primary_node) {
+                            let url = format!("http://{}/_api/database/{}/collection/{}/export", addr, db_name_clone, physical_name);
+                            tracing::info!("Exporting remote shard {} from {}", physical_name, addr);
+
+                            let req = client.get(&url)
+                                .header("X-Shard-Direct", "true")
+                                .header("X-Cluster-Secret", &secret_env);
+                            
+                            // Stream the response
+                            match req.send().await {
+                                Ok(mut res) => {
+                                    if res.status().is_success() {
+                                        loop {
+                                            match res.chunk().await {
+                                                Ok(Some(bytes)) => yield Ok(bytes),
+                                                Ok(None) => break,
+                                                Err(e) => {
+                                                    tracing::error!("Error reading remote stream: {}", e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        tracing::error!("Remote export failed: {}", res.status());
+                                    }
+                                },
+                                Err(e) => tracing::error!("Remote request failed: {}", e),
+                            }
+                        }
+                    }
+                }
+            }
+
+        } else {
+            // NON-SHARDED: Existing logic (scan logical collection)
+            // Note: Logical collection matches physical for non-sharded
+            let docs = collection_clone.scan(None);
+            
+            for doc in docs {
+                let mut val = doc.to_value();
             if let Some(obj) = val.as_object_mut() {
                 if let Some(ref config) = shard_config {
                      obj.insert("_shardConfig".to_string(), serde_json::to_value(config).unwrap_or_default());
                 }
+                // Export collection type so restore knows how to create it
+                obj.insert("_collectionType".to_string(), Value::String(if is_blob { "blob".to_string() } else { "document".to_string() }));
             }
             if let Ok(json) = serde_json::to_string(&val) {
                 yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", json)));
@@ -2357,7 +2481,8 @@ pub async fn export_collection(
 
             // For blob collections, also export the blob chunks
             if is_blob {
-                if let Some(coll) = &collection_clone {
+                {
+                    let coll = &collection_clone;
                      let key = &doc.key;
                      // Iterate chunks until none found
                      let mut chunk_index: u32 = 0;
@@ -2365,17 +2490,21 @@ pub async fn export_collection(
                          match coll.get_blob_chunk(key, chunk_index) {
                              Ok(Some(data)) => {
                                  // Create a specific chunk document
-                                 // We use a special field _type: "blob_chunk" to distinguish during import
-                                 let chunk_doc = serde_json::json!({
+                                 let chunk_doc = serde_json::json!( {
                                      "_type": "blob_chunk",
+                                     "_collectionType": "blob", // redundant but helpful context
                                      "_doc_key": key,
                                      "_chunk_index": chunk_index,
-                                     "_blob_data": general_purpose::STANDARD.encode(&data)
+                                     "_data_length": data.len() // Required for binary reading
                                  });
 
                                  if let Ok(chunk_json) = serde_json::to_string(&chunk_doc) {
                                      yield Ok(axum::body::Bytes::from(format!("{}\n", chunk_json)));
                                  }
+                                 
+                                 yield Ok(axum::body::Bytes::from(data));
+                                 yield Ok(axum::body::Bytes::from("\n")); // Newline delimiter for binary
+                                 
                                  chunk_index += 1;
                              },
                              Ok(None) => break, // No more chunks
@@ -2386,6 +2515,7 @@ pub async fn export_collection(
                          }
                      }
                 }
+            }
             }
         }
     };
@@ -2405,151 +2535,212 @@ pub async fn import_collection(
     mut multipart: Multipart,
 ) -> Result<Json<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collection = match database.get_collection(&coll_name) {
-        Ok(c) => c,
-        Err(DbError::CollectionNotFound(_)) => {
-            tracing::info!("Auto-creating collection '{}' during import", coll_name);
-            match database.create_collection(coll_name.clone(), None) {
-                Ok(_) => database.get_collection(&coll_name)?,
-                Err(e) => return Err(e),
-            }
-        },
-        Err(e) => return Err(e),
-    };
+    let collection = database.get_collection(&coll_name).or_else(|_| {
+         // Auto-create
+         tracing::info!("Auto-creating collection '{}' during import", coll_name);
+         database.create_collection(coll_name.clone(), None)?;
+         database.get_collection(&coll_name)
+    })?;
 
-    let mut success_count = 0;
-    let mut error_count = 0;
+    // Check sharding config once
+    let shard_config = collection.get_shard_config();
+    let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
+    
+    let mut imported_count = 0;
+    let mut failed_count = 0;
 
     while let Some(field) = multipart.next_field().await.map_err(|e| DbError::BadRequest(e.to_string()))? {
         if field.name() == Some("file") {
-            let text = field.text().await.map_err(|e| DbError::BadRequest(e.to_string()))?;
+            let mut stream = field;
+            let mut buffer = Vec::new();
 
-            // Detect format
-            let first_char = text.trim().chars().next();
-
-            let docs: Vec<Value> = if first_char == Some('[') {
-                // JSON Array
-                serde_json::from_str(&text).map_err(|e| DbError::BadRequest(format!("Invalid JSON Array: {}", e)))?
-            } else if first_char == Some('{') {
-                // JSONL
-                text.lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .map(|l| serde_json::from_str(l))
-                    .collect::<Result<Vec<Value>, _>>()
-                    .map_err(|e| DbError::BadRequest(format!("Invalid JSONL: {}", e)))?
+            // Read first chunk to detect format
+            if let Some(Ok(first_chunk)) = stream.next().await {
+                buffer.extend_from_slice(&first_chunk);
             } else {
-                 // CSV (Basic inference)
-                 let mut reader = csv::Reader::from_reader(text.as_bytes());
-                 let headers = reader.headers().map_err(|e| DbError::BadRequest(e.to_string()))?.clone();
-                 let mut csv_docs = Vec::new();
+                continue; // Empty file
+            }
 
-                 for result in reader.records() {
-                     let record = result.map_err(|e| DbError::BadRequest(e.to_string()))?;
-                     let mut map = serde_json::Map::new();
-                     for (i, field) in record.iter().enumerate() {
-                         if i < headers.len() {
-                             // Try to infer numbers/bools
-                             let val = if let Ok(n) = field.parse::<i64>() {
-                                 Value::Number(n.into())
-                             } else if let Ok(f) = field.parse::<f64>() {
-                                 if let Some(n) = serde_json::Number::from_f64(f) {
-                                     Value::Number(n)
-                                 } else {
-                                     Value::String(field.to_string())
-                                 }
-                             } else if let Ok(b) = field.parse::<bool>() {
-                                 Value::Bool(b)
-                             } else {
-                                 Value::String(field.to_string())
-                             };
-                             map.insert(headers[i].to_string(), val);
-                         }
-                     }
-                     csv_docs.push(Value::Object(map));
-                 }
-                 csv_docs
-            };
+            let first_char = buffer.iter().find(|&&b| !b.is_ascii_whitespace()).copied().unwrap_or(b' ');
 
-            let mut batch_docs = Vec::with_capacity(10000);
+            if first_char == b'{' {
+                // Streaming Mode (JSONL / Mixed Binary)
+                let mut batch_docs: Vec<Value> = Vec::with_capacity(1000);
 
-            for mut doc in docs {
-                // Check if this is a blob chunk
-                let is_blob_chunk = doc.get("_type")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t == "blob_chunk")
-                    .unwrap_or(false);
+                loop {
+                    // Try to extract lines from buffer
+                    while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                        let line_bytes: Vec<u8> = buffer.drain(0..=newline_pos).collect();
+                        let line_slice = &line_bytes[..line_bytes.len()-1]; // Trim newline
 
-                if is_blob_chunk {
-                    // Handle blob chunk immediately (no batching for simplicity, or we could batch?)
-                    // Chunks must be processed individually using put_blob_chunk
-                    if let (Some(key), Some(index), Some(data_b64)) = (
-                        doc.get("_doc_key").and_then(|s| s.as_str()),
-                        doc.get("_chunk_index").and_then(|n| n.as_u64()),
-                        doc.get("_blob_data").and_then(|s| s.as_str())
-                    ) {
-                        if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
-                            match collection.put_blob_chunk(key, index as u32, &data) {
-                                Ok(_) => success_count += 1, // Count chunks as imported items? Or separate?
-                                Err(e) => {
-                                    tracing::error!("Failed to import blob chunk {} for {}: {}", index, key, e);
-                                    error_count += 1;
-                                }
-                            }
-                        } else {
-                             tracing::error!("Failed to decode base64 blob data");
-                             error_count += 1;
+                        if line_slice.iter().all(|b| b.is_ascii_whitespace()) {
+                            continue;
                         }
-                    } else {
-                        tracing::error!("Invalid blob chunk format");
-                        error_count += 1;
+
+                        // Try parsing JSON
+                        match serde_json::from_slice::<Value>(line_slice) {
+                            Ok(doc) => {
+                                // Check for Blob Chunk Header
+                                let is_blob_chunk = doc.get("_type")
+                                    .and_then(|t| t.as_str())
+                                    .map(|t| t == "blob_chunk")
+                                    .unwrap_or(false);
+
+                                if is_blob_chunk {
+                                    // Handle Binary Chunk
+                                    if let Some(data_len) = doc.get("_data_length").and_then(|v| v.as_u64()) {
+                                        let required_len = data_len as usize;
+                                        let total_required = required_len + 1; // +1 for trailing newline
+
+                                        // Ensure we have enough bytes
+                                        while buffer.len() < total_required {
+                                            match stream.next().await {
+                                                Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+                                                Some(Err(e)) => return Err(DbError::BadRequest(e.to_string())),
+                                                None => return Err(DbError::BadRequest("Unexpected EOF reading binary chunk".to_string())),
+                                            }
+                                        }
+
+                                        // Extract binary data
+                                        let chunk_data: Vec<u8> = buffer.drain(0..required_len).collect();
+                                        // Consume trailing newline
+                                        if !buffer.is_empty() && buffer[0] == b'\n' {
+                                            buffer.drain(0..1);
+                                        }
+
+                                        // Put chunk (Directly, chunks are not batched usually)
+                                        if let (Some(key), Some(index)) = (
+                                            doc.get("_doc_key").and_then(|s| s.as_str()),
+                                            doc.get("_chunk_index").and_then(|n| n.as_u64())
+                                        ) {
+                                            match collection.put_blob_chunk(key, index as u32, &chunk_data) {
+                                                Ok(_) => imported_count += 1,
+                                                Err(e) => {
+                                                    tracing::error!("Failed to import blob chunk: {}", e);
+                                                    failed_count += 1;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Legacy Base64 chunk or other format
+                                         if let (Some(key), Some(index), Some(data_b64)) = (
+                                            doc.get("_doc_key").and_then(|s| s.as_str()),
+                                            doc.get("_chunk_index").and_then(|n| n.as_u64()),
+                                            doc.get("_blob_data").and_then(|s| s.as_str())
+                                        ) {
+                                            if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
+                                                match collection.put_blob_chunk(key, index as u32, &data) {
+                                                    Ok(_) => imported_count += 1,
+                                                    Err(e) => {
+                                                        tracing::error!("Failed import blob chunk: {}", e);
+                                                        failed_count += 1;
+                                                    }
+                                                }
+                                            } else {
+                                                failed_count += 1;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Regular Document
+                                    // Remove metadata if present
+                                    let mut doc_to_insert = doc;
+                                    if let Some(obj) = doc_to_insert.as_object_mut() {
+                                        obj.remove("_database");
+                                        obj.remove("_collection");
+                                        obj.remove("_shardConfig");
+                                    }
+                                    batch_docs.push(doc_to_insert);
+
+                                    // Check batch size
+                                    if batch_docs.len() >= 1000 {
+                                        if is_sharded && state.shard_coordinator.is_some() {
+                                            let coordinator = state.shard_coordinator.as_ref().unwrap();
+                                            let config = shard_config.as_ref().unwrap();
+                                            let docs_to_insert: Vec<Value> = batch_docs.drain(..).collect();
+                                            match coordinator.insert_batch(&db_name, &coll_name, config, docs_to_insert).await {
+                                                Ok((successes, failures)) => {
+                                                    imported_count += successes;
+                                                    failed_count += failures;
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("[IMPORT] Batch insert failed: {}", e);
+                                                    failed_count += 1;
+                                                }
+                                            }
+                                        } else {
+                                            // Local batch insert
+                                            match collection.insert_batch(batch_docs.clone()) {
+                                                Ok(inserted) => {
+                                                    if let Err(e) = collection.index_documents(&inserted) {
+                                                        tracing::error!("Failed to index batch: {}", e);
+                                                    }
+                                                    // Replication log
+                                                    if let Some(ref log) = state.replication_log {
+                                                        for doc in &inserted {
+                                                            let entry = LogEntry {
+                                                                sequence: 0,
+                                                                node_id: "".to_string(),
+                                                                database: db_name.clone(),
+                                                                collection: coll_name.clone(),
+                                                                operation: Operation::Insert,
+                                                                key: doc.key.clone(),
+                                                                data: serde_json::to_vec(&doc.to_value()).ok(),
+                                                                timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                                                                origin_sequence: None,
+                                                            };
+                                                            let _ = log.append(entry);
+                                                        }
+                                                    }
+                                                    imported_count += inserted.len();
+                                                },
+                                                Err(e) => {
+                                                    tracing::error!("Failed to insert batch: {}", e);
+                                                    failed_count += batch_docs.len();
+                                                }
+                                            }
+                                            batch_docs.clear();
+                                        }
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                tracing::warn!("Failed to parse line as JSON: {}", e);
+                                failed_count += 1;
+                            }
+                        }
                     }
-                    continue;
+
+                    // Replenish buffer
+                    match stream.next().await {
+                        Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+                        Some(Err(e)) => return Err(DbError::BadRequest(e.to_string())),
+                        None => break, // EOF
+                    }
                 }
 
-                // Remove metadata if present
-                if let Some(obj) = doc.as_object_mut() {
-                    obj.remove("_database");
-                    obj.remove("_collection");
-                    obj.remove("_shardConfig");
-                }
-
-                batch_docs.push(doc);
-
-                if batch_docs.len() >= 1000 {
-                    // Check if collection is sharded and we have a coordinator
-                    let shard_config = collection.get_shard_config();
-                    let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
-
-                    tracing::info!("[IMPORT] Batch ready: shard_config={:?}, is_sharded={}, has_coordinator={}",
-                        shard_config, is_sharded, state.shard_coordinator.is_some());
-
+                // Flush remaining batch
+                if !batch_docs.is_empty() {
                     if is_sharded && state.shard_coordinator.is_some() {
-                        // Use ShardCoordinator batch insert for proper distribution
                         let coordinator = state.shard_coordinator.as_ref().unwrap();
-                        let config = shard_config.unwrap();
-
-                        tracing::info!("[IMPORT] Using ShardCoordinator batch insert for {} docs",
-                            batch_docs.len());
-
+                        let config = shard_config.as_ref().unwrap();
                         let docs_to_insert: Vec<Value> = batch_docs.drain(..).collect();
-                        match coordinator.insert_batch(&db_name, &coll_name, &config, docs_to_insert).await {
+                         match coordinator.insert_batch(&db_name, &coll_name, config, docs_to_insert).await {
                             Ok((successes, failures)) => {
-                                success_count += successes;
-                                error_count += failures;
+                                imported_count += successes;
+                                failed_count += failures;
                             }
                             Err(e) => {
-                                tracing::error!("[IMPORT] Batch insert failed: {}", e);
-                                error_count += 1;
+                                tracing::error!("[IMPORT] Remaining batch insert failed: {}", e);
+                                failed_count += 1;
                             }
                         }
                     } else {
-                        // Non-sharded: use direct batch insert with replication
-                        match collection.insert_batch(batch_docs.clone()) {
+                         match collection.insert_batch(batch_docs.clone()) {
                             Ok(inserted) => {
                                 if let Err(e) = collection.index_documents(&inserted) {
                                     tracing::error!("Failed to index batch: {}", e);
                                 }
-                                // Record each inserted document to replication log
                                 if let Some(ref log) = state.replication_log {
                                     for doc in &inserted {
                                         let entry = LogEntry {
@@ -2566,78 +2757,135 @@ pub async fn import_collection(
                                         let _ = log.append(entry);
                                     }
                                 }
-                                success_count += inserted.len();
-                            }
+                                imported_count += inserted.len();
+                            },
                             Err(e) => {
                                 tracing::error!("Failed to insert batch: {}", e);
-                                error_count += batch_docs.len();
+                                failed_count += batch_docs.len();
                             }
                         }
                         batch_docs.clear();
                     }
                 }
-            }
-            // Insert remaining docs (same logic as before)
-            if !batch_docs.is_empty() {
-                // Check if collection is sharded and we have a coordinator
-                let shard_config = collection.get_shard_config();
-                let is_sharded = shard_config.as_ref().map(|c| c.num_shards > 0).unwrap_or(false);
 
-                if is_sharded && state.shard_coordinator.is_some() {
-                    // Use ShardCoordinator batch insert for proper distribution
-                    let coordinator = state.shard_coordinator.as_ref().unwrap();
-                    let config = shard_config.unwrap();
+            } else {
+                // Legacy Mode (Read Full File for Array/CSV)
+                // Consume rest of stream into buffer
+                while let Some(chunk_res) = stream.next().await {
+                    let chunk = chunk_res.map_err(|e| DbError::BadRequest(e.to_string()))?;
+                    buffer.extend_from_slice(&chunk);
+                }
+                
+                let text = String::from_utf8(buffer).map_err(|e| DbError::BadRequest(format!("Invalid UTF-8: {}", e)))?;
 
-                    let docs_to_insert: Vec<Value> = batch_docs.drain(..).collect();
-                    match coordinator.insert_batch(&db_name, &coll_name, &config, docs_to_insert).await {
-                        Ok((successes, failures)) => {
-                            success_count += successes;
-                            error_count += failures;
-                        }
-                        Err(e) => {
-                            tracing::error!("[IMPORT] Remaining batch insert failed: {}", e);
-                            error_count += 1;
-                        }
-                    }
+                let docs: Vec<Value> = if first_char == b'[' {
+                    serde_json::from_str(&text).map_err(|e| DbError::BadRequest(format!("Invalid JSON Array: {}", e)))?
                 } else {
-                    // Non-sharded: use direct batch insert with replication
-                    match collection.insert_batch(batch_docs.clone()) {
-                        Ok(inserted) => {
-                             if let Err(e) = collection.index_documents(&inserted) {
-                                tracing::error!("Failed to index batch: {}", e);
-                            }
-                            // Record each inserted document to replication log
-                            if let Some(ref log) = state.replication_log {
-                                for doc in &inserted {
-                                    let entry = LogEntry {
-                                        sequence: 0,
-                                        node_id: "".to_string(),
-                                        database: db_name.clone(),
-                                        collection: coll_name.clone(),
-                                        operation: Operation::Insert,
-                                        key: doc.key.clone(),
-                                        data: serde_json::to_vec(&doc.to_value()).ok(),
-                                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                                        origin_sequence: None,
-                                    };
-                                    let _ = log.append(entry);
+                     // CSV
+                     let mut reader = csv::Reader::from_reader(text.as_bytes());
+                     let headers = reader.headers().map_err(|e| DbError::BadRequest(e.to_string()))?.clone();
+                     let mut csv_docs = Vec::new();
+
+                     for result in reader.records() {
+                         let record = result.map_err(|e| DbError::BadRequest(e.to_string()))?;
+                         let mut map = serde_json::Map::new();
+                         for (i, field) in record.iter().enumerate() {
+                             if i < headers.len() {
+                                 let val = if let Ok(n) = field.parse::<i64>() {
+                                     Value::Number(n.into())
+                                 } else if let Ok(f) = field.parse::<f64>() {
+                                     if let Some(n) = serde_json::Number::from_f64(f) {
+                                         Value::Number(n)
+                                     } else {
+                                         Value::String(field.to_string())
+                                     }
+                                 } else if let Ok(b) = field.parse::<bool>() {
+                                     Value::Bool(b)
+                                 } else {
+                                     Value::String(field.to_string())
+                                 };
+                                 map.insert(headers[i].to_string(), val);
+                             }
+                         }
+                         csv_docs.push(Value::Object(map));
+                     }
+                     csv_docs
+                };
+                
+                // Legacy batch insert fallback logic
+                let mut legacy_batch = Vec::with_capacity(1000);
+                for doc in docs {
+                    legacy_batch.push(doc);
+                    if legacy_batch.len() >= 1000 {
+                          if is_sharded && state.shard_coordinator.is_some() {
+                                let coordinator = state.shard_coordinator.as_ref().unwrap();
+                                let config = shard_config.as_ref().unwrap();
+                                let docs_to_insert: Vec<Value> = legacy_batch.drain(..).collect();
+                                match coordinator.insert_batch(&db_name, &coll_name, config, docs_to_insert).await {
+                                    Ok((s, f)) => { imported_count += s; failed_count += f; },
+                                    Err(_) => failed_count += 1,
                                 }
-                            }
-                            success_count += inserted.len();
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to insert batch: {}", e);
-                            error_count += batch_docs.len();
-                        }
+                          } else {
+                                match collection.insert_batch(legacy_batch.clone()) {
+                                    Ok(inserted) => {
+                                        if let Err(e) = collection.index_documents(&inserted) { tracing::error!("Idx error: {}",e); }
+                                         if let Some(ref log) = state.replication_log {
+                                            for doc in &inserted {
+                                                let entry = LogEntry {
+                                                    sequence: 0, node_id: "".to_string(), database: db_name.clone(), collection: coll_name.clone(),
+                                                    operation: Operation::Insert, key: doc.key.clone(), 
+                                                    data: serde_json::to_vec(&doc.to_value()).ok(), 
+                                                    timestamp: chrono::Utc::now().timestamp_millis() as u64, origin_sequence: None,
+                                                };
+                                                let _ = log.append(entry);
+                                            }
+                                        }
+                                        imported_count += inserted.len();
+                                    },
+                                    Err(_) => failed_count += legacy_batch.len(),
+                                }
+                                legacy_batch.clear();
+                          }
                     }
                 }
+                 if !legacy_batch.is_empty() {
+                      if is_sharded && state.shard_coordinator.is_some() {
+                            let coordinator = state.shard_coordinator.as_ref().unwrap();
+                            let config = shard_config.as_ref().unwrap();
+                            let docs_to_insert: Vec<Value> = legacy_batch.drain(..).collect();
+                            match coordinator.insert_batch(&db_name, &coll_name, config, docs_to_insert).await {
+                                Ok((s, f)) => { imported_count += s; failed_count += f; },
+                                Err(_) => failed_count += 1,
+                            }
+                      } else {
+                           match collection.insert_batch(legacy_batch.clone()) {
+                                Ok(inserted) => {
+                                     if let Err(e) = collection.index_documents(&inserted) { tracing::error!("Idx error: {}",e); }
+                                     if let Some(ref log) = state.replication_log {
+                                         for doc in &inserted {
+                                            let entry = LogEntry {
+                                                sequence: 0, node_id: "".to_string(), database: db_name.clone(), collection: coll_name.clone(),
+                                                operation: Operation::Insert, key: doc.key.clone(), 
+                                                data: serde_json::to_vec(&doc.to_value()).ok(), 
+                                                timestamp: chrono::Utc::now().timestamp_millis() as u64, origin_sequence: None,
+                                            };
+                                            let _ = log.append(entry);
+                                        }
+                                     }
+                                     imported_count += inserted.len();
+                                },
+                                Err(_) => failed_count += legacy_batch.len(),
+                           }
+                           legacy_batch.clear();
+                      }
+                 }
             }
         }
     }
 
     Ok(Json(serde_json::json!({
-        "imported": success_count,
-        "failed": error_count,
+        "imported": imported_count,
+        "failed": failed_count,
         "status": "completed"
     })))
 }
@@ -4430,10 +4678,12 @@ pub async fn cluster_reshard(
 pub struct ChangefeedRequest {
     #[serde(rename = "type")]
     pub type_: String,
-    pub collection: String,
+    pub collection: Option<String>,
     pub database: Option<String>,
     pub key: Option<String>,
     pub local: Option<bool>,
+    /// SDBQL query for live_query mode
+    pub query: Option<String>,
 }
 
 /// WebSocket handler for real-time changefeeds
@@ -4475,7 +4725,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             match serde_json::from_str::<ChangefeedRequest>(&text) {
                 Ok(req) if req.type_ == "subscribe" => {
                     let db_name = req.database.clone().unwrap_or("_system".to_string());
-                    let coll_name = req.collection.clone();
+                    
+                    let coll_name = match req.collection.clone() {
+                        Some(c) => c,
+                        None => {
+                            let _ = socket.send(Message::Text(serde_json::json!({
+                                "error": "Collection required for subscribe mode"
+                            }).to_string().into())).await;
+                            return;
+                        }
+                    };
 
                     // Try to get collection from specific database or fallback
                     let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
@@ -4485,7 +4744,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             // Send confirmation
                             let _ = socket.send(Message::Text(serde_json::json!({
                                 "type": "subscribed",
-                                "collection": req.collection
+                                "collection": coll_name
                             }).to_string().into())).await;
 
                             // Set up streams vector for aggregation
@@ -4630,7 +4889,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                             }
                                         }
 
-                                        if let Ok(json) = serde_json::to_string(&event) {
+                                        // Optimized payload: send only metadata, not full data
+                                        let payload = serde_json::json!({
+                                            "type": event.type_,
+                                            "key": event.key,
+                                            "id": format!("{}/{}", coll_name, event.key)
+                                        });
+
+                                        if let Ok(json) = serde_json::to_string(&payload) {
                                             if socket.send(Message::Text(json.into())).await.is_err() {
                                                 break;
                                             }
@@ -4654,11 +4920,199 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         }
                     }
                 }
+                Ok(req) if req.type_ == "live_query" => {
+                    if let Some(query_str) = req.query {
+                         let db_name = req.database.clone().unwrap_or("_system".to_string());
+                         
+                         // 1. Parse query to identify dependencies
+                         match crate::sdbql::parser::parse(&query_str) {
+                            Ok(query) => {
+                                // Extract all referenced collections from FOR clauses
+                                let mut dependencies = std::collections::HashSet::new();
+                                for clause in &query.for_clauses {
+                                    dependencies.insert(clause.collection.clone());
+                                }
+                                
+                                if dependencies.is_empty() {
+                                     let _ = socket.send(Message::Text(serde_json::json!({
+                                         "error": "Live query must reference at least one collection"
+                                     }).to_string().into())).await;
+                                     return;
+                                }
+
+                                // Send confirmation
+                                let _ = socket.send(Message::Text(serde_json::json!({
+                                    "type": "subscribed",
+                                    "mode": "live_query",
+                                    "collections": dependencies
+                                }).to_string().into())).await;
+
+                                // 2. Setup aggregated change channel
+                                let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
+
+                                // 3. Subscribe to ALL dependencies
+                                // We reuse the logic from standard changefeed but apply it to multiple collections
+                                for coll_name in &dependencies {
+                                    let coll_name = coll_name.clone(); // Clone for closure
+                                    
+                                    // Try to get collection
+                                    let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
+                                    
+                                    if let Ok(collection) = collection_result {
+                                        // A. Subscribe to local logical
+                                        let mut local_rx = collection.change_sender.subscribe();
+                                        let tx_local = tx.clone();
+                                        tokio::spawn(async move {
+                                            loop {
+                                                match local_rx.recv().await {
+                                                    Ok(event) => { if tx_local.send(event).await.is_err() { break; } },
+                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                                    Err(_) => break,
+                                                }
+                                            }
+                                        });
+
+                                        // B. Subscribe to local physical shards
+                                        if let Some(shard_config) = collection.get_shard_config() {
+                                            if shard_config.num_shards > 0 {
+                                                if let Ok(database) = state.storage.get_database(&db_name) {
+                                                    for shard_id in 0..shard_config.num_shards {
+                                                        let physical_name = format!("{}_s{}", coll_name, shard_id);
+                                                        if let Ok(physical_coll) = database.get_collection(&physical_name) {
+                                                            let mut shard_rx = physical_coll.change_sender.subscribe();
+                                                            let tx_shard = tx.clone();
+                                                            tokio::spawn(async move {
+                                                                loop {
+                                                                    match shard_rx.recv().await {
+                                                                        Ok(event) => { if tx_shard.send(event).await.is_err() { break; } },
+                                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                                                        Err(_) => break,
+                                                                    }
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // C. Subscribe to REMOTE nodes
+                                        let is_local_only = req.local.unwrap_or(false);
+                                        if !is_local_only {
+                                            if let Some(shard_config) = collection.get_shard_config() {
+                                                if let Some(coordinator) = &state.shard_coordinator {
+                                                    let my_addr = coordinator.my_address();
+                                                    let all_nodes = coordinator.get_collection_nodes(&shard_config);
+                                                    let mut remote_nodes = std::collections::HashSet::new();
+                                                    for node_addr in all_nodes {
+                                                        if node_addr != my_addr { remote_nodes.insert(node_addr); }
+                                                    }
+
+                                                    for node_addr in remote_nodes {
+                                                        let tx_remote = tx.clone();
+                                                        let db_remote = db_name.clone();
+                                                        let c_remote = coll_name.clone();
+                                                        let n_addr = node_addr.clone();
+                                                        
+                                                        tokio::spawn(async move {
+                                                            use crate::cluster::ClusterWebsocketClient;
+                                                            // For live query dependencies, we just need the events to trigger re-run
+                                                            // We subscribe to the collection changefeed on the remote node
+                                                            match ClusterWebsocketClient::connect(&n_addr, &db_remote, &c_remote, true).await {
+                                                                Ok(stream) => {
+                                                                    tokio::pin!(stream);
+                                                                    while let Some(result) = stream.next().await {
+                                                                        if let Ok(event) = result {
+                                                                            if tx_remote.send(event).await.is_err() { break; }
+                                                                        } else { break; }
+                                                                    }
+                                                                }
+                                                                Err(_) => {}
+                                                            }
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+// Helper for live query execution
+async fn execute_live_query_step(
+    socket: &mut WebSocket,
+    storage: std::sync::Arc<StorageEngine>,
+    query_str: String,
+    db_name: String,
+    shard_coordinator: Option<std::sync::Arc<crate::sharding::ShardCoordinator>>,
+) {
+    // Execute SDBQL
+    let exec_result = tokio::task::spawn_blocking(move || {
+        match crate::sdbql::parser::parse(&query_str) {
+            Ok(parsed) => {
+                let mut executor = crate::sdbql::executor::QueryExecutor::with_database(&storage, db_name);
+                if let Some(coord) = shard_coordinator {
+                    executor = executor.with_shard_coordinator(coord);
+                }
+                executor.execute(&parsed)
+            },
+            Err(e) => Err(crate::error::DbError::ParseError(e.to_string()))
+        }
+    }).await.unwrap();
+
+    match exec_result {
+        Ok(results) => {
+            let _ = socket.send(Message::Text(serde_json::json!({
+                "type": "query_result",
+                "result": results
+            }).to_string().into())).await;
+        },
+        Err(e) => {
+            let _ = socket.send(Message::Text(serde_json::json!({
+                "type": "error",
+                "error": e.to_string()
+            }).to_string().into())).await;
+        }
+    }
+}
+
+                                // 5. Initial Execution
+                                execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
+
+                                // 6. Reactive Loop
+                                loop {
+                                    tokio::select! {
+                                        Some(_) = rx.recv() => {
+                                            // On ANY change to ANY dependency, re-run query
+                                            execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
+                                        }
+                                        Some(msg) = socket.recv() => {
+                                            match msg {
+                                                Ok(Message::Close(_)) | Err(_) => break,
+                                                _ => {} 
+                                            }
+                                        }
+                                        else => break,
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                let _ = socket.send(Message::Text(serde_json::json!({
+                                    "error": format!("Invalid SDBQL query: {}", e)
+                                }).to_string().into())).await;
+                            }
+                         }
+                    } else {
+                         let _ = socket.send(Message::Text(serde_json::json!({
+                             "error": "Missing 'query' field for live_query"
+                         }).to_string().into())).await;
+                    }
+                }
                 _ => {
                     let _ = socket.send(Message::Text(serde_json::json!({
                         "error": "Invalid subscription request"
                     }).to_string().into())).await;
                 }
+
             }
         }
     }

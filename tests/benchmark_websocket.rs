@@ -1,5 +1,5 @@
 use solidb::storage::engine::StorageEngine;
-use std::sync::Arc;
+
 use tempfile::TempDir;
 use std::time::Instant;
 

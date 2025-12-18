@@ -1,0 +1,47 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 space-y-8">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Contents</h3>
+      
+      <nav class="space-y-1">
+        <!-- Live Queries -->
+        <a href="#live-queries" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Live Queries
+        </a>
+
+        <!-- Protocol -->
+        <a href="#protocol" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          WebSocket Protocol
+        </a>
+
+        <!-- Client Implementation -->
+        <a href="#implementation" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Client Implementation
+        </a>
+
+        <!-- Use Cases -->
+        <a href="#use-cases" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Use Cases
+        </a>
+      </nav>
+    </div>
+
+    <!-- Quick Tip Card -->
+    <div class="bg-gradient-to-br from-emerald-900/40 to-teal-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <div class="flex items-center mb-3 relative z-10">
+        <i class="fas fa-magic text-emerald-400 mr-2"></i>
+        <h4 class="text-white font-semibold">Reactive Data</h4>
+      </div>
+      <p class="text-sm text-gray-300 mb-0 relative z-10 leading-relaxed">
+        Live Queries maintain the current result set of an SDBQL query in real-time. The server re-evaluates the query whenever dependent data changes.
+      </p>
+    </div>
+  </div>
+</div>

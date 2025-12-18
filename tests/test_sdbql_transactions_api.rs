@@ -12,7 +12,7 @@ async fn create_test_server() -> (axum::Router, TempDir) {
     std::env::set_var("SOLIDB_ADMIN_PASSWORD", "admin");
 
     let temp_dir = TempDir::new().unwrap();
-    let mut engine = StorageEngine::new(temp_dir.path()).unwrap();
+    let engine = StorageEngine::new(temp_dir.path()).unwrap();
     engine.initialize().unwrap();
     engine.initialize_transactions().unwrap();
 

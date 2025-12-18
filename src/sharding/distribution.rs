@@ -6,7 +6,7 @@
 //! 2. Distinct placement of replicas (Anti-affinity with primary and other replicas).
 //! 3. Load balancing for replicas.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use crate::sharding::coordinator::ShardAssignment;
 
 /// Compute shard assignments based on available nodes and configuration
@@ -186,6 +186,7 @@ pub fn compute_assignments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_compute_assignments_basic() {
@@ -568,7 +569,7 @@ mod tests {
         let partial_assignments = compute_assignments(&partial_nodes, 2, 2, None).unwrap();
 
         // Now add a third shard with all 4 nodes available
-        let mut old_assignments = partial_assignments.clone();
+        let old_assignments = partial_assignments.clone();
         let final_assignments = compute_assignments(&nodes, 3, 2, Some(&old_assignments)).unwrap();
 
         let shard_2 = &final_assignments[&2];
@@ -621,7 +622,7 @@ mod tests {
     #[test]
     fn test_promotion_prefers_non_primary_replicas() {
         // Test that when promoting replicas to primary, prefer replicas that are not already primaries for other shards
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let _nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
 
         let mut old_assignments = HashMap::new();
         // Shard 0: Primary=A (healthy), Replica=D - this will be processed first
@@ -844,7 +845,7 @@ mod tests {
         // Just verify no node gets all assignments
         let a_count = primaries.iter().filter(|&&p| p == "A").count();
         let b_count = primaries.iter().filter(|&&p| p == "B").count();
-        let c_count = primaries.iter().filter(|&&p| p == "C").count();
+        let _c_count = primaries.iter().filter(|&&p| p == "C").count();
 
         assert!(a_count >= 1 && b_count >= 1, "Should distribute primaries across nodes");
     }

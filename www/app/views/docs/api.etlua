@@ -243,7 +243,30 @@
                    }
                  </div>
                </div>
+            <!-- GET /_api/database/:db/collection/:name/sharding -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/sharding</code>
+              </div>
+              <p class="text-sm text-gray-400">Get sharding details (nodes, shards, status).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "shards": [...],
+                     "nodes": [...]
+                   }
+                 </div>
+               </div>
             </div>
+
+            <!-- GET /_api/database/:db/collection/:name/status -->
 
             <!-- GET /_api/database/:db/collection/:name/stats -->
             <div class="p-6 hover:bg-white/5 transition-colors">
@@ -359,6 +382,50 @@
                  </div>
                </div>
             </div>
+
+             <!-- PUT /_api/database/:db/collection/:name/recount -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/recount</code>
+              </div>
+              <p class="text-sm text-gray-400">Recalculate collection document count.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "count": 1250,
+                     "status": "recounted"
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- POST /_api/database/:db/collection/:name/repair -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/repair</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Repair collection shards (fix metadata inconsistencies).</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "repaired",
+                     "details": "..."
+                   }
+                 </div>
+               </div>
+            </div>
             
             <!-- DELETE /_api/database/:db/collection/:name -->
             <div class="p-6 hover:bg-white/5 transition-colors">
@@ -392,9 +459,9 @@
                       <span class="text-emerald-400 font-bold">200 OK</span>
                       <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/x-ndjson</span>
                    </div>
-                   <span class="italic text-gray-500">// Stream of JSON objects (new-line delimited)</span>
-                   {"_key": "123", "name": "Alice"}
-                   {"_key": "456", "name": "Bob"}
+                    <span class="italic text-gray-500">// Stream of JSON objects (new-line delimited). For blob collections, includes binary chunks.</span>
+                   {"_key": "123", "name": "Alice", "_collectionType": "document"}
+                   {"_key": "456", "name": "Bob", "_collectionType": "document"}
                    ...
                  </div>
                </div>
@@ -413,6 +480,7 @@
                    <ul class="list-disc list-inside space-y-1 ml-2">
                      <li><strong class="text-gray-300">JSON Array</strong>: <code class="bg-gray-800 px-1 rounded">[{"name": "a"}, {"name": "b"}]</code></li>
                      <li><strong class="text-gray-300">JSONL</strong>: Newline-delimited JSON objects.</li>
+                     <li><strong class="text-gray-300">Mixed JSONL/Binary</strong>: For blob collections, streams JSON metadata followed immediately by raw binary data chunks.</li>
                      <li><strong class="text-gray-300">CSV</strong>: Comma-separated values (first row as headers).</li>
                    </ul>
                  </div>
@@ -1153,7 +1221,7 @@
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                 <code class="text-gray-300">/_api/blob/:db/:collection</code>
               </div>
-              <p class="text-sm text-gray-400 mb-4">Upload a blob.</p>
+              <p class="text-sm text-gray-400 mb-4">Upload a blob. <span class="text-gray-500 italic">The collection is automatically created if it does not exist.</span></p>
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 font-mono text-xs p-3 text-gray-400">
@@ -1168,10 +1236,12 @@
                       <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
                    </div>
                    {
-                     "_key": "blob_123",
-                     "filename": "image.jpg",
+                     "_key": "018e3ac7-8e... (auto-generated)",
+                     "name": "image.jpg",
+                     "type": "image/jpeg",
                      "size": 123456,
-                     "mime_type": "image/jpeg"
+                     "chunks": 1,
+                     "created": "2023-10-27T10:00:00Z"
                    }
                  </div>
                </div>
@@ -1375,7 +1445,7 @@
                    }
                  </div>
                </div>
-            </div>
+
               <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">
                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>

@@ -1,5 +1,8 @@
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use crate::sharding::coordinator::ShardAssignment;
+#[cfg(test)]
 use crate::sharding::distribution::compute_assignments;
 
 #[test]

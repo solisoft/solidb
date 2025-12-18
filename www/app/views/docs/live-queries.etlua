@@ -1,0 +1,284 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("live_queries_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Hero Section -->
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"
+        ></div>
+        <div class="relative">
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 mb-4 tracking-tight"
+          >
+            Live Queries
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Turn any SDBQL query into a real-time stream. Get instant updates whenever the result set changes.
+          </p>
+        </div>
+      </div>
+
+      <!-- Live Queries Overview -->
+      <section id="live-queries" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-emerald-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                ></path>
+              </svg>
+              Overview
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Live Queries go beyond simple changefeeds. Instead of just subscribing to raw collection events, 
+              you send a full SDBQL query. The server monitors all data accessed by that query and automatically 
+              re-runs and pushes the new results whenever <b>any</b> dependency changes.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3">
+                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <span class="text-gray-200 font-medium">Automatic Filter Updates</span>
+              </div>
+              <div class="bg-gray-800/30 border border-white/5 rounded-lg p-4 flex items-center space-x-3">
+                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </div>
+                <span class="text-gray-200 font-medium">Reactive Sorting & Limits</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Protocol Section -->
+      <section id="protocol" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-orange-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                ></path>
+              </svg>
+              WebSocket Protocol
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Connect to the same changefeed endpoint, but send a `live_query` message type:
+            </p>
+
+            <div
+              class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 overflow-x-auto text-emerald-400 mb-8 shadow-inner"
+            >
+              ws://host:port/_api/ws/changefeed
+            </div>
+
+            <h3 class="text-xl font-bold text-white mb-4">Request Payload</h3>
+            
+            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl mb-8">
+              <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
+                <span class="text-xs text-gray-500 font-mono">live_query.json</span>
+              </div>
+              <div class="p-6">
+                <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+    <span class="text-purple-400">"type"</span>: <span class="text-green-400">"live_query"</span>,
+    <span class="text-purple-400">"database"</span>: <span class="text-green-400">"_system"</span>,
+    <span class="text-purple-400">"query"</span>: <span class="text-green-400">"FOR user IN users FILTER user.age > 21 RETURN user"</span>
+  }</code></pre>
+              </div>
+            </div>
+
+            <h3 class="text-xl font-bold text-white mb-4">Response Events</h3>
+            <p class="text-gray-300 mb-6">
+              The server will immediately execute the query and send a `query_result` message. 
+              After that, it will re-send the same message whenever a change occurs in the underlying data.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-lg">
+              <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
+                <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Query Result</span>
+                <span class="text-xs text-gray-500 font-mono">FromServer</span>
+              </div>
+              <div class="p-4">
+                <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
+    <span class="text-purple-400">"type"</span>: <span class="text-green-400">"query_result"</span>,
+    <span class="text-purple-400">"result"</span>: [
+      { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">25</span> },
+      { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Bob"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">30</span> }
+    ]
+  }</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Client Implementation -->
+      <section id="implementation" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-yellow-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                ></path>
+              </svg>
+              Example Code
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Here is how to implement a Live Query React hook pattern in JavaScript:
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 shadow-2xl">
+              <div class="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
+                <span class="text-xs text-gray-500 font-mono">live-query-example.js</span>
+              </div>
+              <div class="p-6 overflow-x-auto">
+                <pre class="bg-transparent p-0 m-0"><code class="language-javascript text-sm text-gray-300"><span class="text-gray-500">// 1. Establish WebSocket Connection</span>
+<span class="text-purple-400">function</span> <span class="text-blue-400">startLiveQuery</span>(query, onUpdate) {
+    <span class="text-purple-400">const</span> token = <span class="text-green-400">'YOUR_JWT_TOKEN'</span>;
+    <span class="text-purple-400">const</span> ws = <span class="text-purple-400">new</span> <span class="text-yellow-200">WebSocket</span>(<span class="text-green-400">`ws://localhost:6745/_api/ws/changefeed?token=${token}`</span>);
+
+    ws.<span class="text-blue-400">onopen</span> = () => {
+        <span class="text-yellow-200">console</span>.<span class="text-blue-400">log</span>(<span class="text-green-400">'Connected'</span>);
+        <span class="text-gray-500">// 2. Send the Query</span>
+        ws.<span class="text-blue-400">send</span>(<span class="text-yellow-200">JSON</span>.<span class="text-blue-400">stringify</span>({
+            <span class="text-purple-400">type</span>: <span class="text-green-400">"live_query"</span>,
+            <span class="text-purple-400">database</span>: <span class="text-green-400">"_system"</span>,
+            <span class="text-purple-400">query</span>: query
+        }));
+    };
+
+    ws.<span class="text-blue-400">onmessage</span> = (event) => {
+        <span class="text-purple-400">const</span> msg = <span class="text-yellow-200">JSON</span>.<span class="text-blue-400">parse</span>(event.<span class="text-blue-400">data</span>);
+        
+        <span class="text-purple-400">if</span> (msg.<span class="text-blue-400">type</span> === <span class="text-green-400">"query_result"</span>) {
+            <span class="text-gray-500">// 3. Receive full updated result set</span>
+            <span class="text-blue-400">onUpdate</span>(msg.<span class="text-blue-400">result</span>);
+        }
+    };
+    
+    <span class="text-purple-400">return</span> ws;
+}
+
+<span class="text-gray-500">// Usage</span>
+<span class="text-purple-400">const</span> query = <span class="text-green-400">"FOR doc IN logs FILTER doc.level == 'ERROR' SORT doc.timestamp DESC LIMIT 5 RETURN doc"</span>;
+
+<span class="text-blue-400">startLiveQuery</span>(query, (results) => {
+    <span class="text-yellow-200">console</span>.<span class="text-blue-400">clear</span>();
+    <span class="text-yellow-200">console</span>.<span class="text-blue-400">log</span>(<span class="text-green-400">"Latest 5 Errors:"</span>);
+    <span class="text-yellow-200">console</span>.<span class="text-blue-400">table</span>(results);
+});</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Use Cases -->
+      <section id="use-cases" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+              </svg>
+              Best Use Cases
+            </h2>
+          </div>
+          <div class="p-8">
+             <div class="space-y-6">
+                 <div>
+                    <h3 class="text-lg font-medium text-white mb-2">Real-time Leaderboards</h3>
+                    <p class="text-gray-400 text-sm">Use <code>SORT score DESC LIMIT 10</code> to keep a leaderboard always up to date without polling.</p>
+                 </div>
+                 
+                 <div>
+                    <h3 class="text-lg font-medium text-white mb-2">Activity Feeds</h3>
+                    <p class="text-gray-400 text-sm">Filter by user ID and sort by time to show a user's latest actions instantly.</p>
+                 </div>
+                 
+                 <div>
+                    <h3 class="text-lg font-medium text-white mb-2">System Monitoring</h3>
+                    <p class="text-gray-400 text-sm">Query logs with specific severity levels and get alerted immediately when they appear.</p>
+                 </div>
+             </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

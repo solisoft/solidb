@@ -313,7 +313,9 @@
           <div class="p-8 space-y-8">
             <div>
               <h3 class="text-lg font-bold text-white mb-2">JSONL (Recommended)</h3>
-              <p class="text-gray-400 text-sm mb-3">One document per line. Supports metadata for full reconstruction.</p>
+                <p class="text-gray-300 mb-4">
+                  Restores a collection from a JSONL (or mixed JSONL/Binary) file. Automatically handles collection creation and data distribution.
+                </p>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs border border-white/10 text-gray-300">
                 {"_database":"mydb","_collection":"users","_id":"1","name":"Alice"}<br>
                 {"_database":"mydb","_collection":"users","_id":"2","name":"Bob"}

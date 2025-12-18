@@ -857,7 +857,7 @@ mod tests {
     struct MockBatchSender {
         pub sent_batches: Arc<Mutex<Vec<Vec<(String, Value)>>>>,
         pub should_fail: bool,
-        pub processed_keys: Vec<String>,
+        pub _processed_keys: Vec<String>,
     }
 
     #[async_trait]
@@ -917,7 +917,7 @@ mod tests {
         let sender = MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         };
 
         let old_assignments = HashMap::new();
@@ -975,7 +975,7 @@ mod tests {
         let sender = MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         };
 
         let old_assignments = HashMap::new();
@@ -1033,7 +1033,7 @@ mod tests {
         let sender = MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: true, // Simulate sender failure
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         };
 
         let old_assignments = HashMap::new();
@@ -1144,7 +1144,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1298,7 +1298,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1445,7 +1445,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1516,7 +1516,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1591,7 +1591,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1693,7 +1693,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1765,7 +1765,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: false,
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1844,7 +1844,7 @@ mod tests {
         let sender = Arc::new(MockBatchSender {
             sent_batches: Arc::new(Mutex::new(Vec::new())),
             should_fail: true,  // Always fail to test circuit breaker
-            processed_keys: Vec::new(),
+            _processed_keys: Vec::new(),
         });
 
         let coordinator = MigrationCoordinator::new(storage.clone());
@@ -1859,7 +1859,7 @@ mod tests {
 
         // This should complete quickly even with failures due to circuit breaker
         let start_time = std::time::Instant::now();
-        let result = coordinator.reshard_collection_robust(
+        let _result = coordinator.reshard_collection_robust(
             &*sender,
             "test_db",
             "test_coll",

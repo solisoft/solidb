@@ -136,13 +136,18 @@
                 <tbody class="divide-y divide-white/5">
                   <tr>
                     <td class="px-4 py-3 text-green-400 font-bold">GET</td>
-                    <td class="px-4 py-3 font-mono">/_api/cluster/health</td>
-                    <td class="px-4 py-3">Get cluster health status</td>
+                    <td class="px-4 py-3 font-mono">/_api/health</td>
+                    <td class="px-4 py-3">Get basic node health status</td>
                   </tr>
                   <tr>
                     <td class="px-4 py-3 text-green-400 font-bold">POST</td>
                     <td class="px-4 py-3 font-mono">/_api/cluster/rebalance</td>
                     <td class="px-4 py-3">Trigger shard rebalancing</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-blue-400 font-bold">GET</td>
+                    <td class="px-4 py-3 font-mono">/_api/database/:db/collection/:name/sharding</td>
+                    <td class="px-4 py-3">Get detailed sharding info (nodes, shards)</td>
                   </tr>
                 </tbody>
               </table>
