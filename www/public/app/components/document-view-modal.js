@@ -80,30 +80,30 @@ var documentViewModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr0="expr0" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr271="expr271" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.visible,
-    redundantAttribute: 'expr0',
-    selector: '[expr0]',
-    template: template('<div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-100">View Document</h3><button expr1="expr1" class="text-gray-400 hover:text-gray-300"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><pre expr2="expr2" class="bg-gray-900 p-4 rounded-md text-gray-100 font-mono text-sm overflow-x-auto"> </pre><div class="flex justify-end space-x-3 mt-4"><button expr3="expr3" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n          Close\n        </button><button expr4="expr4" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"></button><button expr6="expr6" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n          Edit\n        </button></div></div>', [{
-      redundantAttribute: 'expr1',
-      selector: '[expr1]',
+    redundantAttribute: 'expr271',
+    selector: '[expr271]',
+    template: template('<div class="bg-gray-800 rounded-lg p-6 max-w-3xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-100">View Document</h3><button expr272="expr272" class="text-gray-400 hover:text-gray-300"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><pre expr273="expr273" class="bg-gray-900 p-4 rounded-md text-gray-100 font-mono text-sm overflow-x-auto"> </pre><div class="flex justify-end space-x-3 mt-4"><button expr274="expr274" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n          Close\n        </button><button expr275="expr275" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"></button><button expr277="expr277" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n          Edit\n        </button></div></div>', [{
+      redundantAttribute: 'expr272',
+      selector: '[expr272]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleClose
       }]
     }, {
-      redundantAttribute: 'expr2',
-      selector: '[expr2]',
+      redundantAttribute: 'expr273',
+      selector: '[expr273]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.document ? JSON.stringify(_scope.state.document, null, 2) : ''
       }]
     }, {
-      redundantAttribute: 'expr3',
-      selector: '[expr3]',
+      redundantAttribute: 'expr274',
+      selector: '[expr274]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -112,9 +112,9 @@ var documentViewModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.isBlob,
-      redundantAttribute: 'expr4',
-      selector: '[expr4]',
-      template: template('<svg expr5="expr5" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
+      redundantAttribute: 'expr275',
+      selector: '[expr275]',
+      template: template('<svg expr276="expr276" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 1,
@@ -132,13 +132,13 @@ var documentViewModal = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.downloading,
-        redundantAttribute: 'expr5',
-        selector: '[expr5]',
+        redundantAttribute: 'expr276',
+        selector: '[expr276]',
         template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
       }])
     }, {
-      redundantAttribute: 'expr6',
-      selector: '[expr6]',
+      redundantAttribute: 'expr277',
+      selector: '[expr277]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',

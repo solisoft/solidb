@@ -7,3 +7,4 @@ pub mod script_handlers;
 
 pub use cursor_store::CursorStore;
 pub use routes::create_router;
+pub mod multiplex;

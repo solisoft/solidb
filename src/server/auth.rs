@@ -1,8 +1,7 @@
 use crate::error::DbError;
 use crate::storage::StorageEngine;
-use crate::replication::log::ReplicationLog;
-use crate::replication::protocol::{LogEntry, Operation as ReplOperation};
-
+use crate::sync::log::SyncLog;
+use crate::sync::{LogEntry, Operation};
 
 use argon2::{
     password_hash::{
@@ -17,7 +16,139 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+// Custom JWT implementation compatible with jsonwebtoken interface
+use base64::Engine;
+#[derive(Debug, Clone, Default)]
+pub struct Header {
+    pub alg: String,
+    pub typ: String,
+}
+
+impl Header {
+    pub fn default() -> Self {
+        Self {
+            alg: "HS256".to_string(),
+            typ: "JWT".to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Validation {
+    // Basic validation - can be extended as needed
+}
+
+impl Validation {
+    pub fn default() -> Self {
+        Self {}
+    }
+}
+
+#[derive(Debug)]
+pub struct EncodingKey(Vec<u8>);
+
+impl EncodingKey {
+    pub fn from_secret(secret: &[u8]) -> Self {
+        Self(secret.to_vec())
+    }
+}
+
+#[derive(Debug)]
+pub struct DecodingKey(Vec<u8>);
+
+impl DecodingKey {
+    pub fn from_secret(secret: &[u8]) -> Self {
+        Self(secret.to_vec())
+    }
+}
+
+pub type DecodeError = String;
+pub type EncodeError = String;
+
+pub fn encode<T: serde::Serialize>(
+    _header: &Header,
+    claims: &T,
+    key: &EncodingKey,
+) -> Result<String, EncodeError> {
+    // JWT Header: {"alg":"HS256","typ":"JWT"}
+    let header = r#"{"alg":"HS256","typ":"JWT"}"#;
+
+    // Base64url encode header
+    let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(header);
+
+    // Serialize and encode claims
+    let claims_json = serde_json::to_string(claims)
+        .map_err(|e| format!("JWT encode failed: {}", e))?;
+    let claims_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
+
+    // Create signing input
+    let signing_input = format!("{}.{}", header_b64, claims_b64);
+
+    // Sign with HMAC-SHA256
+    let signature = sign_hmac_sha256(&signing_input, &key.0)?;
+
+    // Combine into JWT format: header.claims.signature
+    Ok(format!("{}.{}.{}", header_b64, claims_b64, signature))
+}
+
+pub fn decode<T: serde::de::DeserializeOwned>(
+    token: &str,
+    key: &DecodingKey,
+    _validation: &Validation,
+) -> Result<TokenData<T>, DecodeError> {
+    // Split JWT into parts
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err("Invalid JWT format".to_string());
+    }
+
+    let (header_b64, claims_b64, signature_b64) = (parts[0], parts[1], parts[2]);
+
+    // Verify header (should be {"alg":"HS256","typ":"JWT"})
+    let header_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(header_b64)
+        .map_err(|_| "Invalid JWT header".to_string())?;
+    let header_str = String::from_utf8(header_bytes)
+        .map_err(|_| "Invalid JWT header encoding".to_string())?;
+
+    if !header_str.contains(r#""alg":"HS256""#) || !header_str.contains(r#""typ":"JWT""#) {
+        return Err("Unsupported JWT algorithm or type".to_string());
+    }
+
+    // Verify signature
+    let signing_input = format!("{}.{}", header_b64, claims_b64);
+    let expected_signature = sign_hmac_sha256(&signing_input, &key.0)?;
+
+    if expected_signature != signature_b64 {
+        return Err("Invalid JWT signature".to_string());
+    }
+
+    // Decode claims
+    let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims_b64)
+        .map_err(|_| "Invalid JWT claims".to_string())?;
+
+    let claims: T = serde_json::from_slice(&claims_bytes)
+        .map_err(|_| "Invalid JWT claims format".to_string())?;
+
+    Ok(TokenData { header: Header::default(), claims })
+}
+
+#[derive(Debug)]
+pub struct TokenData<T> {
+    pub header: Header,
+    pub claims: T,
+}
+
+fn sign_hmac_sha256(data: &str, secret: &[u8]) -> Result<String, EncodeError> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret)
+        .map_err(|e| format!("HMAC init failed: {}", e))?;
+    mac.update(data.as_bytes());
+
+    let result = mac.finalize();
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(result.into_bytes()))
+}
 use once_cell::sync::Lazy;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -31,22 +162,22 @@ const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// In-memory rate limiter for login attempts
 /// Tracks attempts per IP address with automatic cleanup
-static LOGIN_RATE_LIMITER: Lazy<RwLock<HashMap<String, Vec<Instant>>>> = 
+static LOGIN_RATE_LIMITER: Lazy<RwLock<HashMap<String, Vec<Instant>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Check if an IP is rate limited, return error if too many attempts
 pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
     let now = Instant::now();
     let window = std::time::Duration::from_secs(RATE_LIMIT_WINDOW_SECS);
-    
+
     let mut limiter = LOGIN_RATE_LIMITER.write().unwrap_or_else(|e| e.into_inner());
-    
+
     // Get or create entry for this IP
     let attempts = limiter.entry(ip.to_string()).or_insert_with(Vec::new);
-    
+
     // Remove old attempts outside the window
     attempts.retain(|t| now.duration_since(*t) < window);
-    
+
     // Check if rate limited
     if attempts.len() >= MAX_LOGIN_ATTEMPTS {
         return Err(crate::error::DbError::BadRequest(format!(
@@ -54,10 +185,10 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
             RATE_LIMIT_WINDOW_SECS
         )));
     }
-    
+
     // Record this attempt
     attempts.push(now);
-    
+
     Ok(())
 }
 
@@ -135,11 +266,11 @@ pub struct AuthService;
 impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
-    pub fn init(storage: &StorageEngine, replication_log: Option<&ReplicationLog>) -> Result<(), DbError> {
+    pub fn init(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
 
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
-        
+
         let db = storage.get_database(ADMIN_DB)?;
 
         // Check for cluster mode with peers (joining node)
@@ -148,13 +279,13 @@ impl AuthService {
         let is_joining_cluster = storage.cluster_config()
             .map(|c| !c.peers.is_empty())
             .unwrap_or(false);
-            
+
         let has_override_password = std::env::var("SOLIDB_ADMIN_PASSWORD")
             .map(|p| !p.is_empty())
             .unwrap_or(false);
 
         let should_skip_defaults = is_joining_cluster && !has_override_password;
-        
+
         // Ensure _admins collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ADMIN_COLL) {
             if should_skip_defaults {
@@ -164,7 +295,7 @@ impl AuthService {
                 db.create_collection(ADMIN_COLL.to_string(), None)?;
             }
         }
-        
+
         // Ensure _api_keys collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(API_KEYS_COLL) {
             if should_skip_defaults {
@@ -174,7 +305,7 @@ impl AuthService {
                 db.create_collection(API_KEYS_COLL.to_string(), None)?;
             }
         }
-        
+
         // Check if any admin exists
         // Use if let Ok to handle case where we skipped creation above
         if let Ok(collection) = db.get_collection(ADMIN_COLL) {
@@ -193,7 +324,7 @@ impl AuthService {
                             (hex::encode(password_bytes), false)
                         }
                     };
-                    
+
                     let salt = SaltString::generate(&mut OsRng);
                     let argon2 = Argon2::default();
                     let password_hash = argon2
@@ -210,7 +341,7 @@ impl AuthService {
                         .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
 
                     collection.insert(doc_value.clone())?; // Clone for recording
-                    
+
                     // Record write for replication
                     if let Some(log) = replication_log {
                          let entry = LogEntry {
@@ -218,7 +349,7 @@ impl AuthService {
                              node_id: "".to_string(), // implementation log fills this
                              database: ADMIN_DB.to_string(),
                              collection: ADMIN_COLL.to_string(),
-                             operation: ReplOperation::Insert,
+                             operation: Operation::Insert,
                              key: DEFAULT_USER.to_string(),
                              data: serde_json::to_vec(&doc_value).ok(),
                              timestamp: chrono::Utc::now().timestamp_millis() as u64,
@@ -227,7 +358,7 @@ impl AuthService {
                          let _ = log.append(entry);
                     }
 
-                    
+
                     if is_override {
                         tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");
                     } else {
@@ -290,14 +421,15 @@ impl AuthService {
         )
         .map_err(|e| DbError::InternalError(format!("Token creation failed: {}", e)))
     }
-    
+
     /// Validate JWT and return claims
-    pub fn validate_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    pub fn validate_token(token: &str) -> Result<Claims, DbError> {
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
             &Validation::default(),
-        )?;
+        ).map_err(|_| DbError::BadRequest("Invalid token".to_string()))?;
+
         Ok(token_data.claims)
     }
 
@@ -308,13 +440,13 @@ impl AuthService {
         let mut key_bytes = [0u8; 32];
         use rand_core::RngCore;
         OsRng.fill_bytes(&mut key_bytes);
-        
+
         // Format as sk_<hex>
         let raw_key = format!("sk_{}", hex::encode(key_bytes));
-        
+
         // Hash the key with SHA-256 (fast, secure for high-entropy keys)
         let key_hash = Self::hash_api_key(&raw_key);
-        
+
         (raw_key, key_hash)
     }
 
@@ -330,15 +462,15 @@ impl AuthService {
     pub fn validate_api_key(storage: &StorageEngine, raw_key: &str) -> Result<Claims, DbError> {
         let db = storage.get_database(ADMIN_DB)?;
         let collection = db.get_collection(API_KEYS_COLL)?;
-        
+
         // Hash the incoming key once
         let incoming_hash = Self::hash_api_key(raw_key);
-        
+
         // Iterate through all keys and compare hashes (O(n) but fast with SHA-256)
         for doc in collection.scan(None) {
             let api_key: ApiKey = serde_json::from_value(doc.to_value())
                 .map_err(|_| DbError::InternalError("Corrupted API key data".to_string()))?;
-            
+
             // Constant-time comparison to prevent timing attacks
             if constant_time_eq(incoming_hash.as_bytes(), api_key.key_hash.as_bytes()) {
                 // Return synthetic claims for the API key
@@ -348,7 +480,7 @@ impl AuthService {
                 });
             }
         }
-        
+
         Err(DbError::BadRequest("Invalid API key".to_string()))
     }
 }
@@ -364,14 +496,43 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// Axum Middleware for Authentication
 /// Supports both JWT (Authorization: Bearer <token>) and API keys (X-API-Key: <key>)
 pub async fn auth_middleware(
-    State(state): State<crate::server::handlers::AppState>, 
+    State(state): State<crate::server::handlers::AppState>,
     mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Allow internal cluster shard forwarding without auth
+    // SECURITY: Requires BOTH X-Shard-Direct/X-Scatter-Gather header AND valid X-Cluster-Secret
+    // The secret must match SOLIDB_CLUSTER_SECRET env var (generated at startup if not set)
+    let is_internal_cluster_request = req.headers().contains_key("X-Shard-Direct")
+        || req.headers().contains_key("X-Scatter-Gather");
+
+    if is_internal_cluster_request {
+        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let provided_secret = req.headers()
+            .get("X-Cluster-Secret")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+
+        // Only bypass if secrets match and secret is not empty
+        if !cluster_secret.is_empty() && constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes()) {
+            let claims = Claims {
+                sub: "cluster-internal".to_string(),
+                exp: usize::MAX,
+            };
+            req.extensions_mut().insert(claims);
+            return Ok(next.run(req).await);
+        } else {
+            tracing::warn!("CLUSTER AUTH FAILURE: Secret mismatch for internal request. Check SOLIDB_CLUSTER_SECRET env var on all nodes.");
+        }
+        // If secret doesn't match, fall through to normal auth
+        // This prevents external attackers from using X-Shard-Direct to bypass auth
+    }
+
+
     // First check for X-API-Key header
     if let Some(api_key) = req.headers()
         .get("X-API-Key")
-        .and_then(|h| h.to_str().ok()) 
+        .and_then(|h| h.to_str().ok())
     {
         match AuthService::validate_api_key(&state.storage, api_key) {
             Ok(claims) => {
@@ -399,7 +560,7 @@ pub async fn auth_middleware(
                 Err(_) => return Err(StatusCode::UNAUTHORIZED),
             }
         }
-        
+
         // Support: Authorization: Bearer <jwt>
         if header.starts_with("Bearer ") {
             let token = &header[7..];
@@ -411,7 +572,7 @@ pub async fn auth_middleware(
                 Err(_) => return Err(StatusCode::UNAUTHORIZED),
             }
         }
-        
+
         // Support: Authorization: Basic <base64(user:pass)>
         if header.starts_with("Basic ") {
             let encoded = &header[6..];

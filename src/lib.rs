@@ -2,13 +2,13 @@ pub mod sdbql;
 pub mod cluster;
 pub mod error;
 pub mod server;
-pub mod sharding;
 pub mod storage;
 pub mod transaction;
 pub mod scripting;
+pub mod sharding;
 
-// New Architecture
-pub mod replication;
+// Synchronization module (new architecture)
+pub mod sync;
 
 pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};

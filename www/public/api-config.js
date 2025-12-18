@@ -132,6 +132,11 @@ export async function authenticatedFetch(url, options = {}) {
     Authorization: `Bearer ${token}`,
   };
 
+  // Automatically add Content-Type for JSON bodies
+  if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   try {
     const response = await fetch(url, { ...options, headers });
 
@@ -146,6 +151,7 @@ export async function authenticatedFetch(url, options = {}) {
     throw e;
   }
 }
+
 
 /**
  * Get the list of recent/saved servers

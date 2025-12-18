@@ -173,6 +173,23 @@ impl Lexer {
         Err(DbError::ParseError("Unterminated string".to_string()))
     }
 
+    fn read_quoted_identifier(&mut self) -> DbResult<Token> {
+        self.advance(); // Skip opening backtick
+
+        let mut ident = String::new();
+
+        while let Some(ch) = self.current_char {
+            if ch == '`' {
+                self.advance(); // Skip closing backtick
+                return Ok(Token::Identifier(ident));
+            }
+            ident.push(ch);
+            self.advance();
+        }
+
+        Err(DbError::ParseError("Unterminated quoted identifier".to_string()))
+    }
+
     fn read_identifier(&mut self) -> Token {
         let mut ident = String::new();
 
@@ -253,6 +270,10 @@ impl Lexer {
 
             Some('"') | Some('\'') => {
                 return self.read_string();
+            }
+
+            Some('`') => {
+                return self.read_quoted_identifier();
             }
 
             Some(ch) if ch.is_alphabetic() || ch == '_' => {

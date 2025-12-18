@@ -45,7 +45,7 @@
               </div>
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <h3 class="text-teal-400 font-bold mb-2 flex items-center"><i class="fas fa-clone mr-2"></i> Replication</h3>
-                <p class="text-sm text-gray-400">Chunks are consistently hashed and replicated across the cluster for fault tolerance.</p>
+                <p class="text-sm text-gray-400">Chunks are consistently hashed and replicated across the cluster. SoliDB automates replication factors (min 2, max 10) for high availability.</p>
               </div>
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                  <h3 class="text-teal-400 font-bold mb-2 flex items-center"><i class="fas fa-file-alt mr-2"></i> Metadata</h3>

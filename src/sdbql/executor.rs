@@ -6,8 +6,9 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use super::ast::*;
-use crate::replication::log::ReplicationLog;
-use crate::replication::protocol::{LogEntry, Operation};
+use crate::sync::log::SyncLog;
+use crate::sync::protocol::Operation;
+use crate::sync::log::LogEntry;
 use crate::error::{DbError, DbResult};
 use crate::storage::{distance_meters, Collection, GeoPoint, StorageEngine};
 
@@ -100,7 +101,7 @@ pub struct QueryExecutor<'a> {
     storage: &'a StorageEngine,
     bind_vars: BindVars,
     database: Option<String>,
-    replication: Option<&'a ReplicationLog>,
+    replication: Option<&'a SyncLog>,
     // Flag to indicate if we should defer mutations for transactional execution
 
     // Shard coordinator for scatter-gather queries on sharded collections
@@ -194,8 +195,8 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// Set replication service for logging mutations
-    pub fn with_replication(mut self, replication: &'a ReplicationLog) -> Self {
+    /// Set sync log for logging mutations
+    pub fn with_replication(mut self, replication: &'a SyncLog) -> Self {
         self.replication = Some(replication);
         self
     }
@@ -275,6 +276,15 @@ impl<'a> QueryExecutor<'a> {
 
         // Get collection once
         let collection = self.get_collection(&insert_clause.collection)?;
+        
+        // Disable streaming bulk insert for sharded collections (fall back to generic path for routing)
+        if let Some(config) = collection.get_shard_config() {
+            if config.num_shards > 0 {
+                tracing::debug!("Streaming insert disabled for sharded collection: {}", insert_clause.collection);
+                return Ok(None);
+            }
+        }
+        
         let has_indexes = !collection.list_indexes().is_empty();
 
         let var_name = &for_clause.variable;
@@ -717,6 +727,41 @@ impl<'a> QueryExecutor<'a> {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&insert_clause.collection)?;
 
+                    // SHARDING SUPPORT - Use batch insert for performance
+                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                        if config.num_shards > 0 {
+                             tracing::info!("INSERT: Using ShardCoordinator BATCH for {} documents into {}", rows.len(), insert_clause.collection);
+                             
+                             // Evaluate all documents first
+                             let mut documents = Vec::with_capacity(rows.len());
+                             for ctx in &rows {
+                                 let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                                 documents.push(doc_value);
+                             }
+                             
+                             // Use batch insert via coordinator (groups by shard internally)
+                             let handle = tokio::runtime::Handle::current();
+                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                             let coll_name = insert_clause.collection.clone();
+                             let config = config.clone();
+                             let coord = coordinator.clone();
+                             
+                             let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                             
+                             handle.spawn(async move {
+                                 let res = coord.insert_batch(&db_name, &coll_name, &config, documents).await;
+                                 let _ = tx.send(res);
+                             });
+                             
+                             // Wait for batch result
+                             let result = rx.recv().map_err(|_| DbError::InternalError("Sharded batch insert failed".to_string()))??;
+                             tracing::debug!("INSERT: Sharded batch completed - {} success, {} failed", result.0, result.1);
+                             
+                             i += 1; // CRITICAL: Advance to next clause before continuing
+                             continue; // Skip standard insert logic
+                        }
+                    }
+
                     // For bulk inserts (>100 docs), use batch mode for maximum performance
                     let bulk_mode = rows.len() > 100;
                     let has_indexes = !collection.list_indexes().is_empty();
@@ -804,6 +849,45 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Update(update_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&update_clause.collection)?;
+                    
+                    // SHARDING SUPPORT
+                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                        if config.num_shards > 0 {
+                             tracing::debug!("UPDATE: Delegating to ShardCoordinator for {}", update_clause.collection);
+                             let handle = tokio::runtime::Handle::current();
+                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                             let coll_name = update_clause.collection.clone();
+                             let config = config.clone();
+                             
+                             for ctx in &rows {
+                                // Evaluate selector (Duplicated logic)
+                                let selector_value = self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+                                let key = match &selector_value {
+                                    Value::String(s) => s.clone(),
+                                    Value::Object(obj) => obj.get("_key").and_then(|v| v.as_str()).map(|s| s.to_string()).ok_or_else(|| DbError::ExecutionError("UPDATE: missing _key".to_string()))?,
+                                    _ => return Err(DbError::ExecutionError("UPDATE: invalid selector".to_string())),
+                                };
+                                let changes = self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+                                if !changes.is_object() { return Err(DbError::ExecutionError("UPDATE: changes must be object".to_string())); }
+                                
+                                let coord = coordinator.clone();
+                                let db = db_name.clone();
+                                let coll = coll_name.clone();
+                                let conf = config.clone();
+                                let k = key;
+                                let doc = changes;
+                                
+                                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                                handle.spawn(async move {
+                                      let res = coord.update(&db, &coll, &conf, &k, doc).await;
+                                      let _ = tx.send(res);
+                                });
+                                let _ = rx.recv().map_err(|_| DbError::InternalError("Sharded update task failed".to_string()))??;
+                             }
+                             i += 1; // CRITICAL: Advance to next clause
+                             continue;
+                        }
+                    }
 
                     // Update documents for each row context
                     for ctx in &rows {
@@ -852,6 +936,42 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Remove(remove_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&remove_clause.collection)?;
+                    
+                    // SHARDING SUPPORT
+                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                        if config.num_shards > 0 {
+                             tracing::debug!("REMOVE: Delegating to ShardCoordinator for {}", remove_clause.collection);
+                             let handle = tokio::runtime::Handle::current();
+                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                             let coll_name = remove_clause.collection.clone();
+                             let config = config.clone();
+                             
+                             for ctx in &rows {
+                                // Evaluate selector (Duplicated logic)
+                                let selector_value = self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+                                let key = match &selector_value {
+                                    Value::String(s) => s.clone(),
+                                    Value::Object(obj) => obj.get("_key").and_then(|v| v.as_str()).map(|s| s.to_string()).ok_or_else(|| DbError::ExecutionError("REMOVE: missing _key".to_string()))?,
+                                    _ => return Err(DbError::ExecutionError("REMOVE: invalid selector".to_string())),
+                                };
+                                
+                                let coord = coordinator.clone();
+                                let db = db_name.clone();
+                                let coll = coll_name.clone();
+                                let conf = config.clone();
+                                let k = key;
+                                
+                                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                                handle.spawn(async move {
+                                      let res = coord.delete(&db, &coll, &conf, &k).await;
+                                      let _ = tx.send(res);
+                                });
+                                let _ = rx.recv().map_err(|_| DbError::InternalError("Sharded remove task failed".to_string()))??;
+                             }
+                             i += 1; // CRITICAL: Advance to next clause
+                             continue;
+                        }
+                    }
 
                     // Remove documents for each row context
                     for ctx in &rows {
@@ -1128,8 +1248,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Scatter-gather query: fetch documents from all cluster nodes for sharded collection
-    /// NOTE: This is a synchronous function that blocks. For async scatter-gather,
-    /// use scatter_gather_docs_async and call it from an async context.
+    /// Queries each shard's primary node for the physical shard collection
     fn scatter_gather_docs(
         &self,
         collection_name: &str,
@@ -1139,91 +1258,99 @@ impl<'a> QueryExecutor<'a> {
         let db_name = self.database.as_ref()
             .ok_or_else(|| DbError::ExecutionError("No database context for scatter-gather".to_string()))?;
 
-        // Get all node addresses from coordinator
-        let all_nodes = coordinator.get_node_addresses();
-        let my_address = coordinator.my_address();
+        // Get shard table to know which node owns each shard
+        let Some(table) = coordinator.get_shard_table(db_name, collection_name) else {
+            tracing::debug!("[SCATTER-GATHER] No shard table found for {}, falling back to local scan", collection_name);
+            let collection = self.get_collection(collection_name)?;
+            return Ok(collection.scan(limit).into_iter().map(|d| d.to_value()).collect());
+        };
         
-        tracing::debug!("[SCATTER-GATHER] Nodes at query time: {:?}, my_address={}", all_nodes, my_address);
-
-        // Count remote nodes (excluding self)
-        let remote_nodes: Vec<_> = all_nodes.iter()
-            .filter(|addr| *addr != &my_address)
-            .collect();
-        
-        // Query local node first (no network needed)
-        let collection = self.get_collection(collection_name)?;
-        let local_docs: Vec<Value> = collection
-            .scan(limit)
-            .into_iter()
-            .map(|d| d.to_value())
-            .collect();
-        
-        // If no remote nodes, just return local docs (single node cluster)
-        if remote_nodes.is_empty() {
-            tracing::debug!("[SCATTER-GATHER] No remote nodes, returning {} local docs", local_docs.len());
-            return Ok(local_docs);
-        }
-
+        let my_node_id = coordinator.my_node_id();
         let mut all_docs: Vec<Value> = Vec::new();
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         
-        for doc in local_docs {
-            if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                if seen_keys.insert(key.to_string()) {
-                    all_docs.push(doc);
-                }
-            }
-        }
-        
-        // Query remote nodes sequentially using blocking reqwest
-        // This avoids the deadlock caused by mixing rayon + tokio
-        // Use a short timeout to prevent hanging on unreachable nodes
+        // Build client for remote queries
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .unwrap_or_else(|_| reqwest::blocking::Client::new());
-        let admin_pass = std::env::var("SOLIDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
         
-        for node_addr in &all_nodes {
-            if node_addr == &my_address {
-                continue; // Already queried local
-            }
+        // Query each shard's primary node
+        for shard_id in 0..table.num_shards {
+            let physical_coll = format!("{}_s{}", collection_name, shard_id);
             
-            let url = format!(
-                "http://{}/_api/database/{}/cursor",
-                node_addr, db_name
-            );
-            
-            let query = if let Some(n) = limit {
-                format!("FOR doc IN {} LIMIT {} RETURN doc", collection_name, n)
-            } else {
-                format!("FOR doc IN {} RETURN doc", collection_name)
-            };
-
-            let response = client
-                .post(&url)
-                .header("X-Scatter-Gather", "true") // Prevent infinite recursion
-                .basic_auth("admin", Some(&admin_pass))
-                .json(&serde_json::json!({ "query": query }))
-                .send();
+            if let Some(assignment) = table.assignments.get(&shard_id) {
+                // Check if we have this shard locally (either as primary or replica)
+                let is_primary = assignment.primary_node == my_node_id || assignment.primary_node == "local";
+                let is_replica = assignment.replica_nodes.contains(&my_node_id);
                 
-            match response {
-                Ok(resp) => {
-                    if let Ok(body) = resp.json::<serde_json::Value>() {
-                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
-                            for doc in results {
-                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
-                                    if seen_keys.insert(key.to_string()) {
-                                        all_docs.push(doc.clone());
-                                    }
+                if is_primary || is_replica {
+                    // This shard is local - scan it directly
+                    if let Ok(coll) = self.storage.get_database(db_name)
+                        .and_then(|db| db.get_collection(&physical_coll)) 
+                    {
+                        for doc in coll.scan(limit) {
+                            let value = doc.to_value();
+                            if let Some(key) = value.get("_key").and_then(|k| k.as_str()) {
+                                if seen_keys.insert(key.to_string()) {
+                                    all_docs.push(value);
                                 }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("[SCATTER-GATHER] Failed to query node {}: {}", node_addr, e);
+                } else {
+                    // This shard is remote - try primary first, then replicas
+                    let mut nodes_to_try = vec![assignment.primary_node.clone()];
+                    nodes_to_try.extend(assignment.replica_nodes.clone());
+                    
+                    let mut found = false;
+                    for node_id in &nodes_to_try {
+                        if let Some(addr) = coordinator.get_node_api_address(node_id) {
+                            // Query physical shard collection directly via SDBQL
+                            let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
+                            let url = format!("{}://{}/_api/database/{}/cursor", scheme, addr, db_name);
+                            let query = if let Some(n) = limit {
+                                format!("FOR doc IN `{}` LIMIT {} RETURN doc", physical_coll, n)
+                            } else {
+                                format!("FOR doc IN `{}` RETURN doc", physical_coll)
+                            };
+                            
+                            let response = client
+                                .post(&url)
+                                .header("X-Scatter-Gather", "true")
+                                .header("X-Cluster-Secret", &cluster_secret)
+                                .json(&serde_json::json!({ "query": query }))
+                                .send();
+                                
+                            match response {
+                                Ok(resp) => {
+                                    if let Ok(body) = resp.json::<serde_json::Value>() {
+                                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                                            for doc in results {
+                                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                                                    if seen_keys.insert(key.to_string()) {
+                                                        all_docs.push(doc.clone());
+                                                    }
+                                                }
+                                            }
+                                            found = true;
+                                            break; // Got data, no need to try other nodes
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("[SCATTER-GATHER] Failed to query shard {} from {}: {}, trying next", 
+                                        shard_id, node_id, e);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if !found {
+                        tracing::error!("[SCATTER-GATHER] CRITICAL: Could not get data for shard {} from any node. Data may be missing!", shard_id);
+                    }
                 }
             }
         }
@@ -1236,8 +1363,8 @@ impl<'a> QueryExecutor<'a> {
         }
 
         tracing::info!(
-            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} nodes",
-            collection_name, all_docs.len(), all_nodes.len()
+            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} shards",
+            collection_name, all_docs.len(), table.num_shards
         );
 
         Ok(all_docs)

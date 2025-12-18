@@ -23,18 +23,110 @@
 </div>
 
 <script type="module">
-  import { getServerConfig } from '<%= PublicPath("/api-config.js") %>'
+  import { getServerConfig, getAuthToken, testConnection } from '<%= PublicPath("/api-config.js") %>'
 
   document.addEventListener('DOMContentLoaded', () => {
     const config = getServerConfig();
     if (config && config.host) {
       const serverInfo = document.getElementById('nav-server-info');
       const serverHost = document.getElementById('nav-server-host');
+      
       if (serverInfo && serverHost) {
+        const statusDot = serverInfo.querySelector('div');
+        
         // Parse host to remove http:// for cleaner display
         let displayHost = config.host.replace(/^https?:\/\//, '');
         serverHost.textContent = `${displayHost}:${config.port}`;
         serverInfo.classList.remove('hidden');
+
+        const setStatus = (isConnected) => {
+          if (isConnected) {
+            // Connected: Green styling
+            serverInfo.classList.remove('border-red-500/30', 'bg-red-500/10');
+            serverInfo.classList.add('border-green-500/30', 'bg-green-500/10');
+            serverInfo.title = "Connected";
+            
+            if (statusDot) {
+              statusDot.classList.remove('bg-red-500');
+              statusDot.classList.add('bg-green-500');
+            }
+            
+            serverHost.classList.remove('text-red-400');
+            serverHost.classList.add('text-green-400');
+          } else {
+            // Disconnected: Red styling
+            serverInfo.classList.remove('border-green-500/30', 'bg-green-500/10');
+            serverInfo.classList.add('border-red-500/30', 'bg-red-500/10');
+            serverInfo.title = "Disconnected";
+            
+            if (statusDot) {
+              statusDot.classList.remove('bg-green-500');
+              statusDot.classList.add('bg-red-500');
+            }
+            
+            serverHost.classList.remove('text-green-400');
+            serverHost.classList.add('text-red-400');
+          }
+        };
+
+        let ws = null;
+        let reconnectTimer = null;
+
+        const connect = () => {
+           if (ws) return;
+
+           const protocol = config.host.startsWith('https') ? 'wss:' : 'ws:';
+           const host = config.host.replace(/^https?:\/\//, '');
+           const token = getAuthToken();
+           // Construct WS URL - cluster/status/ws is a public endpoint but accepts token for potential future auth
+           const wsUrl = `${protocol}//${host}:${config.port}/_api/cluster/status/ws${token ? '?token=' + token : ''}`;
+           
+           try {
+             ws = new WebSocket(wsUrl);
+
+             ws.onopen = () => {
+               console.log('[Nav] Server connection established');
+               setStatus(true);
+             };
+
+             ws.onclose = () => {
+               setStatus(false);
+               ws = null;
+               // Reconnect after 3s
+               if (!reconnectTimer) {
+                 reconnectTimer = setTimeout(() => {
+                   reconnectTimer = null;
+                   connect();
+                 }, 3000);
+               }
+             };
+
+             ws.onerror = (e) => {
+               // Error will trigger close
+               console.error('[Nav] Server connection error', e);
+             };
+             
+             // We receive status updates every second
+             ws.onmessage = (event) => {
+                // Heartbeat/status update received
+                // We could parse event.data (ClusterStatus) if we wanted to show CPU/RAM in tooltip later
+             };
+             
+           } catch (e) {
+             console.error('[Nav] Failed to create WebSocket', e);
+             setStatus(false);
+             // Retry
+             if (!reconnectTimer) {
+                reconnectTimer = setTimeout(() => {
+                  reconnectTimer = null;
+                  connect();
+                }, 3000);
+             }
+           }
+        };
+
+        // Start connection
+        connect();
       }
     }
   })

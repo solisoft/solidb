@@ -11,22 +11,22 @@
           Architecture
         </a>
 
-        <!-- Cluster Setup -->
-        <a href="#setup" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Cluster Setup
+        <!-- Quick Start -->
+        <a href="#quick-start" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Quick Start
         </a>
 
         <!-- Security -->
         <a href="#security" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-violet-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
           Security
         </a>
 
-        <!-- CLI Options -->
-        <a href="#cli-options" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          CLI Options
+        <!-- Reference -->
+        <a href="#reference" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          CLI Reference
         </a>
       </nav>
     </div>

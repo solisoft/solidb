@@ -124,7 +124,7 @@
                     }
 
                     // We need to execute boolean query against _system db
-                    const dbUrl = `${url}/database/_system/query`
+                    const dbUrl = `${url}/database/_system/cursor`
 
                     const response = await authenticatedFetch(dbUrl, {
                         method: 'POST',

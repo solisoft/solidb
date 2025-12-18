@@ -78,6 +78,9 @@
             <p if={ state.collectionType==='edge' } class="mt-2 text-xs text-fuchsia-400">
               Edge collections require _from and _to fields for graph relationships
             </p>
+            <p if={ state.collectionType==='blob' } class="mt-2 text-xs text-amber-400">
+              Blob collections are optimized for file storage and automatically shard large files
+            </p>
           </div>
 
           <!-- Sharding Options -->
@@ -138,8 +141,8 @@
         name: '',
         loading: false,
         isSharded: false,
-        numShards: 1,
-        replicationFactor: 1,
+        numShards: 3,
+        replicationFactor: 2,
         shardKey: '_key',
         collectionType: 'document'
       },
@@ -165,8 +168,8 @@
           name: '',
           loading: false,
           isSharded: false,
-          numShards: 1,
-          replicationFactor: 1,
+          numShards: 3,
+          replicationFactor: 2,
           shardKey: '_key',
           collectionType: 'document'
         })

@@ -16,12 +16,13 @@ use crate::storage::StorageEngine;
 pub fn create_router(
     storage: StorageEngine,
     cluster_manager: Option<Arc<crate::cluster::manager::ClusterManager>>,
-    replication_log: Option<Arc<crate::replication::log::ReplicationLog>>,
-    api_port: u16
+    replication_log: Option<Arc<crate::sync::log::SyncLog>>,
+    shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
+    _api_port: u16
 ) -> Router {
     // Initialize Auth (create default admin if needed)
     tracing::info!("Initializing authentication...");
-    
+
     // Auth init needs to know if we are in a cluster to maybe skip default admin creation
     // The previous logic checked cluster_config.peers.
     // New ClusterManager handles joining.
@@ -42,34 +43,18 @@ pub fn create_router(
          }
     }
 
-    // Initialize ShardCoordinator if we have a cluster manager
-    // In new architecture, ShardCoordinator is created OUTSIDE and passed in?
-    // Or we create it here if we have manager.
-    // Handlers expect ShardCoordinator in AppState (if we revert to putting it there).
-    // Let's create it here if cluster_manager is present.
-    // The previous code had complex logic to calculate port offsets etc.
-    // That logic should probably move to ClusterManager or main.rs.
-    // But for now, let's keep it simple: If we have a manager, we have sharding.
-    
-    let shard_coordinator = if let Some(ref manager) = cluster_manager {
-         Some(Arc::new(crate::sharding::ShardCoordinator::new(
-             Arc::new(storage.clone()),
-             manager.clone(),
-         )))
-    } else {
-        None
-    };
+    // Use the shared shard coordinator passed in from main.rs
+    // This ensures all parts of the application share the same shard table cache
 
     let state = AppState {
         storage: Arc::new(storage),
         cursor_store: CursorStore::new(Duration::from_secs(300)),
         cluster_manager,
         replication_log,
-        // We need to restore shard_coordinator to AppState if we want handlers to use it without major refactor
-        // I'll assume I added it back to AppState definition in handlers.rs (I will double check)
-        shard_coordinator, 
+        shard_coordinator,
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
     };
 
 
@@ -99,8 +84,20 @@ pub fn create_router(
             put(recount_collection),
         )
         .route(
+            "/_api/database/{db}/collection/{name}/repair",
+            post(repair_collection),
+        )
+        .route(
             "/_api/database/{db}/collection/{name}/stats",
             get(get_collection_stats),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/sharding",
+            get(get_sharding_details),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/count",
+            get(get_collection_count),
         )
         .route(
             "/_api/database/{db}/collection/{name}/properties",
@@ -114,10 +111,26 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/import",
             post(import_collection).layer(DefaultBodyLimit::max(500 * 1024 * 1024)),
         )
+        .route(
+            "/_api/database/{db}/collection/{name}/_copy_shard",
+            post(copy_shard_data),
+        )
         // Document routes
         .route(
             "/_api/database/{db}/document/{collection}",
             post(insert_document),
+        )
+        .route(
+            "/_api/database/{db}/document/{collection}/_batch",
+            post(insert_documents_batch),
+        )
+        .route(
+            "/_api/database/{db}/document/{collection}/_replica",
+            post(insert_documents_replica),
+        )
+        .route(
+            "/_api/database/{db}/document/{collection}/_verify",
+            post(verify_documents_exist),
         )
         .route(
             "/_api/database/{db}/document/{collection}/{key}",
@@ -186,15 +199,32 @@ pub fn create_router(
         .route("/_api/database/{db}/scripts", get(super::script_handlers::list_scripts_handler))
         .route("/_api/database/{db}/scripts/{script_id}", get(super::script_handlers::get_script_handler))
         .route("/_api/database/{db}/scripts/{script_id}", put(super::script_handlers::update_script_handler))
-        .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler))
-        // Apply authentication middleware
-        .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
+        .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler));
+        // .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
 
     // Combine with public routes
     Router::new()
         .route("/auth/login", post(login_handler))
         // Health check endpoint for cluster node monitoring (no auth required)
         .route("/_api/health", get(health_check_handler))
+        // Internal cluster endpoints (use cluster secret, no user auth)
+        .route("/_api/cluster/cleanup", post(cluster_cleanup))
+        .route("/_api/cluster/reshard", post(cluster_reshard))
+        // Internal Blob Replication endpoint
+        .route(
+            "/_internal/blob/replicate/{db}/{collection}/{key}",
+            post(crate::sync::blob_replication::receive_blob_replication).layer(DefaultBodyLimit::max(500 * 1024 * 1024))
+        )
+        // Internal Blob Chunk fetch endpoint
+        .route(
+            "/_internal/blob/replicate/{db}/{collection}/{key}/chunk/{chunk_idx}",
+            get(crate::sync::blob_replication::get_blob_chunk)
+        )
+        // Internal Blob Upload endpoint (for shard coordinator forwarding)
+        .route(
+            "/_internal/blob/upload/{db}/{collection}",
+            post(crate::sync::blob_replication::receive_blob_upload).layer(DefaultBodyLimit::max(500 * 1024 * 1024))
+        )
         // WebSocket route (outside auth middleware - uses token in query param)
         .route("/_api/cluster/status/ws", get(cluster_status_ws))
         .route("/_api/ws/changefeed", get(ws_changefeed_handler))

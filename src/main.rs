@@ -7,6 +7,9 @@ use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tokio::io::AsyncReadExt;
+use tokio::sync::mpsc;
+use solidb::server::multiplex::{PeekedStream, ChannelListener};
+
 
 #[derive(Parser, Debug)]
 #[command(name = "solidb")]
@@ -24,9 +27,9 @@ struct Args {
     #[arg(long = "peer")]
     peers: Vec<String>,
 
-    /// Port for inter-node replication traffic
-    #[arg(long, default_value_t = 6746)]
-    replication_port: u16,
+    /// Port for inter-node replication traffic (defaults to --port value for multiplexing)
+    #[arg(long)]
+    replication_port: Option<u16>,
 
     /// Data directory path
     #[arg(long, default_value = "./data")]
@@ -162,9 +165,12 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
 
     // 1. Setup Node Identity
     let node_id = args.node_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let api_address = format!("127.0.0.1:{}", args.port); // Hostname resolution is complex, assuming loopback for now or args
-    // In production we'd want actual IP, but for now this matches existing logic assumption
-    let repl_address = format!("127.0.0.1:{}", args.replication_port);
+    
+    // Default to multiplexing (same port) if replication_port is not set
+    let replication_port = args.replication_port.unwrap_or(args.port);
+    
+    let api_address = format!("127.0.0.1:{}", args.port); 
+    let repl_address = format!("127.0.0.1:{}", replication_port);
 
     let local_node = solidb::cluster::node::Node::new(
         node_id.clone(),
@@ -183,7 +189,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let cluster_config = ClusterConfig::new(
         Some(node_id.clone()),
         args.peers.clone(),
-        args.replication_port,
+        replication_port,
         args.keyfile.clone(),
     );
 
@@ -203,9 +209,11 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     
     // Cluster Manager
     // Replication Log (Create BEFORE Manager)
-    let replication_log = Arc::new(solidb::replication::log::ReplicationLog::new(
-        &args.data_dir,
+    // Replication Log (Create BEFORE Manager)
+    let replication_log = Arc::new(solidb::sync::log::SyncLog::new(
         node_id.clone(),
+        &args.data_dir,
+        1000, // cache size
     ).map_err(|e| anyhow::anyhow!("Failed to init replication log: {}", e))?);
 
     // Cluster Manager
@@ -218,30 +226,15 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     ));
 
 
-
     // 4. Start Background Tasks
     
-    // Cluster TCP Listener
-    let listener = transport.listen().await?;
-    let mgr_clone = cluster_manager.clone();
-    tokio::spawn(async move {
-        tracing::info!("Cluster listener started on {}", repl_address);
-        while let Ok((mut socket, addr)) = listener.accept().await {
-            let mgr = mgr_clone.clone();
-            tokio::spawn(async move {
-                // Simple one-shot message reading for now (connection per message)
-                // In production, we'd want persistent connections/framing.
-                let mut buf = Vec::new();
-                if let Ok(_) = socket.read_to_end(&mut buf).await {
-                    if let Ok(msg) = serde_json::from_slice(&buf) {
-                        mgr.handle_message(msg).await;
-                    } else {
-                        tracing::warn!("Failed to deserialize cluster message from {}", addr);
-                    }
-                }
-            });
-        }
-    });
+    // NOTE: In dual port mode, don't start a separate cluster listener because
+    // the SyncWorker will bind to the replication port and handle protocol detection.
+    // Cluster JSON messages will need to be routed through the sync protocol.
+    // For now, cluster messages (JoinRequest etc) are sent directly via TcpTransport.connect_and_send()
+    // which doesn't go through the listener.
+
+
 
     // Start Manager (Heartbeats etc)
     let mgr_clone2 = cluster_manager.clone();
@@ -249,31 +242,29 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         mgr_clone2.start().await;
     });
 
-    // Start Shard Cleanup Service
-    let cleanup_config = solidb::sharding::cleanup::ShardCleanupConfig::default();
-    let cleanup_service = solidb::sharding::cleanup::ShardCleanup::new(
-        cleanup_config,
-        Arc::new(storage.clone()), 
-        cluster_manager.clone(),
-    );
-    tokio::spawn(async move {
-        cleanup_service.start().await;
-    });
+    // Generate cluster secret if not set (for inter-node auth)
+    if std::env::var("SOLIDB_CLUSTER_SECRET").is_err() {
+        let mut secret_bytes = [0u8; 32];
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut secret_bytes);
+        let secret = hex::encode(secret_bytes);
+        std::env::set_var("SOLIDB_CLUSTER_SECRET", &secret);
+        tracing::info!("Generated cluster secret for inter-node communication");
+    }
 
-    // Start Stats Collector
-    let stats_storage = storage_for_shutdown.clone(); // Use the existing storage Arc
-    // Create actual ShardCoordinator instance for stats (and potentially for handlers to use later)
-    // For now we create a dedicated one or we could have created it earlier and passed it to AppState
-    let stats_coordinator = Arc::new(solidb::sharding::coordinator::ShardCoordinator::new(
-        stats_storage.clone(),
-        cluster_manager.clone(),
+    // Create ONE shared ShardCoordinator for ALL consumers to share the same shard table cache.
+    // This is used by: stats collector, heal task, sync worker rebalancing, AND HTTP handlers (via routes).
+    let shared_coordinator = Arc::new(solidb::sharding::coordinator::ShardCoordinator::new(
+        storage_for_shutdown.clone(),
+        Some(cluster_manager.clone()),
+        Some(replication_log.clone()),
     ));
-    
-    // STARTING STATS COLLECTOR
-    // Re-using storage Arc. 
+
+    // Start Stats Collector - uses shared coordinator
+    let stats_storage = storage_for_shutdown.clone();
     let stats_collector = solidb::cluster::stats::ClusterStatsCollector::new(
         stats_storage,
-        stats_coordinator,
+        shared_coordinator.clone(),  // Use shared coordinator
         cluster_manager.clone(),
     );
     tokio::spawn(async move {
@@ -287,51 +278,279 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     tokio::spawn(async move {
         health_monitor.start().await;
     });
+    
+    // Start Shard Healing Background Task (runs every 60 seconds) - uses shared coordinator
+    // Creates new replicas when nodes fail to maintain replication factor
+    // Also cleans up orphaned shards when node rejoins after being replaced
+    
+    // Clone for background task
+    let healing_coordinator = shared_coordinator.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            
+            // First, clean up any orphaned shards from previous node assignment
+            if let Err(e) = healing_coordinator.cleanup_orphaned_shards().await {
+                tracing::error!("Orphaned shard cleanup failed: {}", e);
+            }
+            
+            // Then, heal shards by creating replicas on healthy nodes
+            if let Err(e) = healing_coordinator.heal_shards().await {
+                tracing::error!("Shard healing failed: {}", e);
+            }
+        }
+    });
+
 
     // Start Replication Worker
     let worker_log = replication_log.clone();
-    let worker_transport = transport.clone();
-    let worker_mgr = cluster_manager.clone();
-    tokio::spawn(async move {
-        let worker = solidb::replication::worker::ReplicationWorker::new(worker_log, worker_transport, worker_mgr);
-        worker.start().await;
-    });
+    let _worker_transport = transport.clone();
+    let _worker_mgr = cluster_manager.clone();
+    let worker_storage = Arc::new(storage.clone());
+    let worker_node_id = node_id.clone();
+    let worker_keyfile = args.keyfile.clone().unwrap_or_else(|| "solidb.key".to_string());
+    let worker_repl_addr = repl_address.clone();
+    
+    // Construct Sync Worker dependencies
+    let sync_state = Arc::new(solidb::sync::state::SyncState::new(
+        worker_storage.clone(),
+        worker_node_id.clone()
+    ));
+    
+    let connection_pool = Arc::new(solidb::sync::transport::ConnectionPool::new(
+        worker_node_id.clone(),
+        worker_keyfile.clone()
+    ));
+    
+    let (_tx, worker_cmd_rx) = solidb::sync::worker::create_command_channel();
+    let sync_config = solidb::sync::worker::SyncConfig::default();
+    
+    // Create base worker with ClusterManager for peer discovery 
+    // Use the shared coordinator for rebalancing (same cache as healing task)
+    let sync_worker = solidb::sync::worker::SyncWorker::new(
+        worker_storage,
+        sync_state,
+        connection_pool,
+        worker_log,
+        sync_config,
+        worker_cmd_rx,
+        worker_node_id,
+        worker_keyfile,
+        worker_repl_addr
+    )
+    .with_cluster_manager(cluster_manager.clone())
+    .with_shard_coordinator(shared_coordinator.clone());
 
-    // Join Cluster if peers provided
+
+    // Join Cluster if peers provided (as background task)
     if !args.peers.is_empty() {
         let mgr_clone3 = cluster_manager.clone();
         let seeds = args.peers.clone();
+        
+        // Use the shared coordinator for startup cleanup (same cache as healing/rebalancing)
+        let startup_coordinator = shared_coordinator.clone();
+        
         tokio::spawn(async move {
             // Wait for server to start
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            let mut joined = false;
             for seed in seeds {
                 if let Err(e) = mgr_clone3.join_cluster(&seed).await {
                     tracing::warn!("Failed to join cluster via seed {}: {}", seed, e);
                 } else {
                     tracing::info!("Sent join request to {}", seed);
+                    joined = true;
                     break; // Only need one successful contact
+                }
+            }
+            
+            // If we joined the cluster, wait for shard tables to sync then cleanup orphaned data
+            if joined {
+                tracing::info!("Waiting for shard tables to sync before cleaning up orphaned shards...");
+                // Wait for initial sync and shard table discovery
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                
+                // Trigger a rebalance first to load the latest shard tables from other nodes
+                if let Err(e) = startup_coordinator.rebalance().await {
+                    tracing::warn!("Startup rebalance failed: {}", e);
+                }
+                
+                // Now clean up any shards that were reassigned while we were down
+                match startup_coordinator.cleanup_orphaned_shards().await {
+                    Ok(count) => {
+                        if count > 0 {
+                            tracing::info!("STARTUP: Cleaned up {} orphaned shard collections", count);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("STARTUP: Orphaned shard cleanup failed: {}", e);
+                    }
+                }
+                
+                // Trigger heal_shards to sync data for newly assigned shards
+                // This ensures fresh nodes get their data immediately instead of waiting 60s
+                match startup_coordinator.heal_shards().await {
+                    Ok(count) => {
+                        if count > 0 {
+                            tracing::info!("STARTUP: Healed {} shard replicas", count);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("STARTUP: Shard healing failed: {}", e);
+                    }
                 }
             }
         });
     }
 
-    // 5. Create Router
+    // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(
         storage,
-        Some(cluster_manager),
-        Some(replication_log),
+        Some(cluster_manager.clone()),
+        Some(replication_log.clone()),
+        Some(shared_coordinator.clone()),
         args.port
     );
+    
+    let shutdown_storage = storage_for_shutdown.clone(); // prepare for signal
 
-    // 6. Start API Server
-    let addr = format!("0.0.0.0:{}", args.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("Server listening on {}", addr);
+    // Determine launch mode
+    // Determine launch mode
+    if args.port == replication_port {
+        tracing::info!("Starting in MULTIPLEXED mode on port {}", args.port);
+        let addr = format!("0.0.0.0:{}", args.port);
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        
+        let local_addr = listener.local_addr()?;
+        
+        // Channels for dispatch
+        let (http_tx, http_rx) = mpsc::channel(100);
+        let (sync_tx, sync_rx) = mpsc::channel(100);
+        
+        // 1. Spawn HTTP Server
+        let channel_listener = ChannelListener::new(http_rx, local_addr);
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(channel_listener, app)
+                .with_graceful_shutdown(shutdown_signal(shutdown_storage))
+                .await 
+            {
+                tracing::error!("HTTP server error: {}", e);
+            }
+        });
+        
+        // 2. Spawn Sync Worker (background mode)
+        let sync_worker = sync_worker.with_incoming_channel(sync_rx);
+        tokio::spawn(async move {
+            sync_worker.run_background().await;
+        });
+        
+        // 3. Dispatch Loop (Main Task) with shutdown handling
+        let shutdown_signal_future = async {
+            let ctrl_c = async {
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("failed to install Ctrl+C handler");
+            };
 
-    let shutdown_storage = storage_for_shutdown.clone();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(shutdown_storage))
-        .await?;
+            #[cfg(unix)]
+            let terminate = async {
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("failed to install signal handler")
+                    .recv()
+                    .await;
+            };
+
+            #[cfg(not(unix))]
+            let terminate = std::future::pending::<()>();
+
+            tokio::select! {
+                _ = ctrl_c => {},
+                _ = terminate => {},
+            }
+        };
+        
+        tokio::pin!(shutdown_signal_future);
+        
+        loop {
+            tokio::select! {
+                _ = &mut shutdown_signal_future => {
+                    tracing::info!("Shutdown signal received in multiplexed mode, stopping...");
+                    storage_for_shutdown.flush_all_stats();
+                    tracing::info!("Shutdown complete");
+                    std::process::exit(0);
+                }
+                accept_result = listener.accept() => {
+                    let (mut stream, addr) = match accept_result {
+                        Ok(conn) => conn,
+                        Err(e) => {
+                            tracing::error!("Accept error: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    let http_tx = http_tx.clone();
+                    let sync_tx = sync_tx.clone();
+                    let connection_mgr = cluster_manager.clone();
+                    
+                    tokio::spawn(async move {
+                        // Read initial bytes to determine protocol
+                        let mut buf = vec![0u8; 14];
+                        let n = stream.read(&mut buf).await.unwrap_or(0);
+                        
+                        let peeked_data = buf[..n].to_vec();
+                        
+                        // Detection logic
+                        // Check if it looks like the Sync Magic Header
+                        if &peeked_data == b"solidb-sync-v1" {
+                            // For sync traffic, pass the raw stream - the magic header has been consumed
+                            // and verified, so we don't need to put it back in a PeekedStream
+                            if sync_tx.send((Box::new(stream), addr.to_string())).await.is_err() {
+                                 tracing::error!("Sync worker channel closed");
+                            }
+                        } else if peeked_data.first() == Some(&b'{') {
+                            // Cluster Message (JSON) - need peeked bytes for parsing
+                            let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
+                            let mgr = connection_mgr.clone();
+                            tokio::spawn(async move {
+                                 let mut buf = Vec::new();
+                                 let mut stream = peeked_stream; 
+                                 if let Ok(_) = stream.read_to_end(&mut buf).await {
+                                    if let Ok(msg) = serde_json::from_slice(&buf) {
+                                        mgr.handle_message(msg).await;
+                                    } else {
+                                        tracing::warn!("Failed to deserialize cluster message from {}", addr);
+                                    }
+                                 }
+                            });
+                        } else {
+                            // HTTP traffic - need peeked bytes for HTTP parsing
+                            let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
+                            if http_tx.send((peeked_stream, addr)).await.is_err() {
+                                 tracing::error!("HTTP server channel closed");
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        
+    } else {
+        tracing::info!("Starting in DUAL PORT mode (API: {}, Sync: {})", args.port, replication_port);
+        
+        // 1. Spawn Sync Worker (standard mode)
+        tokio::spawn(async move {
+             sync_worker.run().await;
+        });
+        
+        // 2. Serve HTTP (standard mode)
+        let addr = format!("0.0.0.0:{}", args.port);
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        tracing::info!("Server listening on {}", addr);
+    
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal(shutdown_storage))
+            .await?;
+    }
 
     Ok(())
 }

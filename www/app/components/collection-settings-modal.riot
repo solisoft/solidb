@@ -35,6 +35,14 @@
                             class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed" />
                     </div>
 
+                    <!-- Collection Type -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label>
+                        <input type="text" value={ state.collectionType } disabled
+                            class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed capitalize" />
+                        <p class="mt-1 text-xs text-gray-500">Cannot be changed after creation</p>
+                    </div>
+
                     <!-- Sharding Info (always available) -->
                     <div class="mb-6 border-t border-gray-700/50 pt-4">
                         <h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4>
@@ -69,8 +77,8 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label>
-                                    <input type="number" value={ state.numShards } oninput={ handleNumShards } min="1"
-                                        max="1024"
+                                    <input type="number" value={ state.numShards } oninput={ handleNumShards } min={
+                                        state.initialNumShards || 1 } max="1024"
                                         class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" />
                                     <p class="mt-1 text-xs text-yellow-500/80">⚠️ Changing triggers data rebalance</p>
                                 </div>
@@ -78,7 +86,7 @@
                                     <label class="block text-xs font-medium text-gray-400 mb-1">Replication
                                         Factor</label>
                                     <input type="number" value={ state.replicationFactor } oninput={
-                                        handleReplicationFactor } min="1" max="5"
+                                        handleReplicationFactor } min={ state.initialReplicationFactor || 1 } max="5"
                                         class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" />
                                     <p class="mt-1 text-xs text-green-500/80">Can be updated</p>
                                 </div>
@@ -116,6 +124,7 @@
                 visible: false,
                 error: null,
                 name: '',
+                collectionType: 'document',
                 loading: false,
                 isSharded: false,
                 customShardingEnabled: false,
@@ -142,15 +151,21 @@
                 if (!collection) return;
 
                 const config = collection.shardConfig || {};
+                const currentNumShards = config.num_shards || 1;
+                const currentReplicationFactor = config.replication_factor || 1;
+
                 this.update({
                     visible: true,
                     error: null,
                     name: collection.name,
+                    collectionType: collection.type || 'document',
                     loading: false,
                     isSharded: !!collection.shardConfig,
                     customShardingEnabled: !!collection.shardConfig,
-                    numShards: config.num_shards || 1,
-                    replicationFactor: config.replication_factor || 1,
+                    numShards: currentNumShards,
+                    replicationFactor: currentReplicationFactor,
+                    initialNumShards: currentNumShards,
+                    initialReplicationFactor: currentReplicationFactor,
                     shardKey: config.shard_key || '_key'
                 })
 
@@ -191,12 +206,18 @@
             },
 
             handleNumShards(e) {
-                this.update({ numShards: parseInt(e.target.value) || 1 })
+                const val = parseInt(e.target.value) || 1
+                if (val < (this.state.initialNumShards || 1)) return // Prevent shrinking
+                this.update({ numShards: val })
             },
 
             handleReplicationFactor(e) {
-                this.update({ replicationFactor: parseInt(e.target.value) || 1 })
+                const val = parseInt(e.target.value) || 1
+                if (val < (this.state.initialReplicationFactor || 1)) return // Prevent shrinking
+                this.update({ replicationFactor: val })
             },
+
+
 
             enableCustomSharding() {
                 this.update({
@@ -221,6 +242,7 @@
                 this.update({ error: null, loading: true })
 
                 const payload = {
+                    type: this.state.collectionType,
                     numShards: this.state.numShards,
                     replicationFactor: this.state.replicationFactor
                 }

@@ -15,7 +15,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
     storage.initialize().expect("Failed to initialize storage");
-    let router = create_router(storage, None);
+    let router = create_router(storage, None, None, None, 0);
     (router, temp_dir)
 }
 

@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 use super::node::{Node, NodeId};
+use super::stats::NodeBasicStats;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum NodeStatus {
     Joining,
+    Syncing,
     Active,
     Suspected,
     Dead,
@@ -17,7 +19,9 @@ pub struct ClusterMember {
     pub node: Node,
     pub status: NodeStatus,
     pub last_heartbeat: u64,
+
     pub last_sequence: u64,
+    pub stats: Option<NodeBasicStats>,
 }
 
 /// Manages the state of the cluster members
@@ -60,6 +64,7 @@ impl ClusterState {
             status,
             last_heartbeat: chrono::Utc::now().timestamp_millis() as u64,
             last_sequence: 0,
+            stats: None,
         });
         !exists
     }
@@ -79,11 +84,14 @@ impl ClusterState {
         members.values().cloned().collect()
     }
 
-    pub fn update_heartbeat(&self, node_id: &str, sequence: u64) {
+    pub fn update_heartbeat(&self, node_id: &str, sequence: u64, stats: Option<NodeBasicStats>) {
         let mut members = self.members.write().unwrap();
         if let Some(member) = members.get_mut(node_id) {
             member.last_heartbeat = chrono::Utc::now().timestamp_millis() as u64;
             member.last_sequence = sequence;
+            if let Some(s) = stats {
+                member.stats = Some(s);
+            }
             if member.status == NodeStatus::Suspected {
                 member.status = NodeStatus::Active;
             }

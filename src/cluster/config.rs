@@ -70,7 +70,8 @@ impl ClusterConfig {
 
     /// Check if this node is running in cluster mode
     pub fn is_cluster_mode(&self) -> bool {
-        !self.peers.is_empty()
+        // If we have a cluster config, we are in cluster mode (even if we are the first node)
+        true
     }
 
     /// Get the replication listen address

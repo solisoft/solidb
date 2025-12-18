@@ -23,6 +23,7 @@ const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
+const SHARD_TABLE_KEY: &str = "_stats:shard_table";   // Sharding assignment table
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 
@@ -59,8 +60,11 @@ struct FulltextIndex {
 pub struct CollectionStats {
     pub name: String,
     pub document_count: usize,
+    pub chunk_count: usize,
     pub disk_usage: DiskUsage,
 }
+
+
 
 /// Disk usage statistics for a collection
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -83,6 +87,8 @@ pub struct Collection {
     db: Arc<RwLock<DB>>,
     /// Cached document count (atomic for lock-free updates)
     doc_count: Arc<AtomicUsize>,
+    /// Cached blob chunk count (atomic for lock-free updates)
+    chunk_count: Arc<AtomicUsize>,
     /// Whether count needs to be persisted to disk
     count_dirty: Arc<AtomicBool>,
     /// Last flush time in seconds since UNIX epoch (for throttling)
@@ -99,6 +105,7 @@ impl Clone for Collection {
             name: self.name.clone(),
             db: self.db.clone(),
             doc_count: self.doc_count.clone(),
+            chunk_count: self.chunk_count.clone(),
             count_dirty: self.count_dirty.clone(),
             last_flush_time: self.last_flush_time.clone(),
             change_sender: self.change_sender.clone(),
@@ -142,6 +149,23 @@ impl Collection {
             }
         };
 
+        // Determine initial chunk count (only relevant if it's a blob collection)
+        // We do this lazily or just scan if found? Scanning is safe for startup.
+        let chunk_count = {
+            let db_guard = db.read().unwrap();
+            if let Some(cf) = db_guard.cf_handle(&name) {
+                let prefix = BLO_PREFIX.as_bytes();
+                db_guard
+                    .prefix_iterator_cf(cf, prefix)
+                    .take_while(|r| {
+                         r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix))
+                    })
+                    .count()
+            } else {
+                0
+            }
+        };
+
         let (change_sender, _) = tokio::sync::broadcast::channel(100);
 
         // Load collection type
@@ -161,6 +185,7 @@ impl Collection {
             name,
             db,
             doc_count: Arc::new(AtomicUsize::new(count)),
+            chunk_count: Arc::new(AtomicUsize::new(chunk_count)),
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
@@ -292,9 +317,19 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
         
-        db.put_cf(cf, Self::blo_chunk_key(key, chunk_index), data)
+        // Optimize: Check existence first to only increment on new chunks?
+        // Or assume overwrite is rare for chunks (immutable mostly).
+        // Let's check first to be accurate.
+        let chunk_key = Self::blo_chunk_key(key, chunk_index);
+        let exists = db.get_pinned_cf(cf, &chunk_key).ok().flatten().is_some();
+
+        db.put_cf(cf, chunk_key, data)
             .map_err(|e| DbError::InternalError(format!("Failed to put blob chunk: {}", e)))?;
             
+        if !exists {
+            self.chunk_count.fetch_add(1, Ordering::Relaxed);
+        }
+
         Ok(())
     }
 
@@ -323,16 +358,22 @@ impl Collection {
         let prefix_bytes = prefix.as_bytes();
 
         let iter = db.iterator_cf(cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+        let mut deleted_count = 0;
         
         for item in iter {
              if let Ok((k, _)) = item {
                  if k.starts_with(prefix_bytes) {
                      db.delete_cf(cf, k)
                         .map_err(|e| DbError::InternalError(format!("Failed to delete blob chunk: {}", e)))?;
+                     deleted_count += 1;
                  } else {
                      break;
                  }
              }
+        }
+
+        if deleted_count > 0 {
+            self.chunk_count.fetch_sub(deleted_count, Ordering::Relaxed);
         }
 
         Ok(())
@@ -822,6 +863,86 @@ impl Collection {
         Ok(())
     }
 
+    /// Batch delete multiple documents
+    /// Uses RocksDB WriteBatch for storage efficiency
+    /// Updates indexes for each document (sequential)
+    pub fn delete_batch(&self, keys: &[String]) -> DbResult<usize> {
+        use rocksdb::WriteBatch;
+
+        if keys.is_empty() {
+            return Ok(0);
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let mut batch = WriteBatch::default();
+        let mut deleted_count = 0;
+        let mut deleted_docs = Vec::new();
+
+        // 1. Prepare batch and handle auxiliary updates (indexes, blobs)
+        for key in keys {
+            // Get document first (needed for index cleanup)
+            if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(key)) {
+                if let Ok(doc) = serde_json::from_slice::<Document>(&bytes) {
+                    let doc_value = doc.to_value();
+                    
+                    // Add to batch
+                    batch.delete_cf(cf, Self::doc_key(key));
+                    
+                    // Handle blobs
+                    if self.collection_type == "blob" {
+                        // This might fail partial batch if error? 
+                        // But blob chunks are separate keys.
+                        // We can call delete_blob_data (which does its own deletes).
+                        // Note: delete_blob_data is not batched in the same batch here.
+                        let _ = self.delete_blob_data(key);
+                    }
+                    
+                    // Update indexes (Note: these are separate writes currently)
+                    //Ideally indexes would support batching too, but for now we iterate
+                    if let Err(e) = self.update_indexes_on_delete(key, &doc_value) {
+                        tracing::warn!("Failed to clean indexes for {}: {}", key, e);
+                    }
+                    if let Err(e) = self.update_fulltext_on_delete(key, &doc_value) {
+                         tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
+                    }
+                    
+                    deleted_docs.push((key.clone(), doc_value));
+                    deleted_count += 1;
+                }
+            }
+        }
+        
+        if deleted_count == 0 {
+            return Ok(0);
+        }
+
+        // 2. Commit storage batch
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch delete: {}", e)))?;
+
+        // 3. Update count
+        self.doc_count
+            .fetch_sub(deleted_count, std::sync::atomic::Ordering::Relaxed);
+        self.count_dirty
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+            
+        // 4. Send Change Events
+        for (key, old_data) in deleted_docs {
+            let _ = self.change_sender.send(ChangeEvent {
+                type_: ChangeType::Delete,
+                key: key,
+                data: None,
+                old_data: Some(old_data),
+            });
+        }
+        
+        Ok(deleted_count)
+    }
+
     // ==================== Transactional Document Operations ====================
 
     /// Insert a document within a transaction (deferred until commit)
@@ -1228,6 +1349,18 @@ impl Collection {
         count
     }
 
+    /// Get usage statistics
+    pub fn stats(&self) -> CollectionStats {
+        let disk_usage = self.disk_usage();
+        
+        CollectionStats {
+            name: self.name.clone(),
+            document_count: self.doc_count.load(Ordering::Relaxed),
+            chunk_count: self.chunk_count.load(Ordering::Relaxed),
+            disk_usage,
+        }
+    }
+
     /// Get disk usage statistics for this collection
     pub fn disk_usage(&self) -> DiskUsage {
         let db = self.db.read().unwrap();
@@ -1303,14 +1436,7 @@ impl Collection {
         }
     }
 
-    /// Get full collection statistics
-    pub fn stats(&self) -> CollectionStats {
-        CollectionStats {
-            name: self.name.clone(),
-            document_count: self.count(),
-            disk_usage: self.disk_usage(),
-        }
-    }
+
 
     /// Set sharding configuration for this collection
     pub fn set_shard_config(
@@ -1341,6 +1467,35 @@ impl Collection {
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
     }
+
+    /// Save shard table to storage (persisting assignments)
+    pub fn set_shard_table(
+        &self,
+        table: &crate::sharding::coordinator::ShardTable,
+    ) -> DbResult<()> {
+        let db = self.db.write().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        let table_bytes = serde_json::to_vec(table)?;
+        db.put_cf(cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
+            .map_err(|e| DbError::InternalError(format!("Failed to store shard table: {}", e)))?;
+        
+        Ok(())
+    }
+
+    /// Load shard table from storage
+    pub fn get_stored_shard_table(&self) -> Option<crate::sharding::coordinator::ShardTable> {
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+
+        db.get_cf(cf, SHARD_TABLE_KEY.as_bytes())
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
 
     /// Check if this collection is sharded
     pub fn is_sharded(&self) -> bool {

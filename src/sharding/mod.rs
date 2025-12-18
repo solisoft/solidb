@@ -1,16 +1,12 @@
-//! Sharding module for distributed document storage
+//! Sharding compatibility layer
+//!
+//! This module provides backwards-compatible types for sharding
+//! that map to the new sync module's ShardConfig.
 
 pub mod coordinator;
-pub mod health;
-pub mod cleanup;
-pub mod replication_queue;
 pub mod router;
+pub mod distribution;
+pub mod migration;
+pub mod repro_issue;
 
-// New Architecture
-pub mod table;
-pub mod balancer;
-
-pub use coordinator::ShardCoordinator;
-pub use router::ShardRouter;
-pub use table::ShardTable;
-pub use balancer::ShardBalancer;
+pub use coordinator::{ShardCoordinator, CollectionShardConfig};

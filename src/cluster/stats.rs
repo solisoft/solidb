@@ -3,8 +3,19 @@ use tokio::time::{interval, Duration};
 use tracing::error;
 use serde::{Serialize, Deserialize};
 use crate::storage::engine::StorageEngine;
-use crate::sharding::coordinator::ShardCoordinator;
+use crate::sharding::ShardCoordinator;
 use crate::cluster::manager::ClusterManager;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeBasicStats {
+    pub total_chunk_count: u64,
+    pub total_file_count: u64,
+    pub storage_bytes: u64,
+    pub total_memtable_size: u64,
+    pub total_live_size: u64,
+    pub cpu_usage_percent: f32,
+    pub memory_used_mb: u64,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShardStat {
@@ -20,6 +31,9 @@ pub struct CollectionStats {
     pub database: String,
     pub shard_count: usize,
     pub replication_factor: usize,
+    pub document_count: u64,
+    pub chunk_count: u64,
+    pub storage_bytes: u64,
     pub shards: Vec<ShardStat>,
     pub status: String,
     pub actions: Vec<String>, // "Rebalancing", etc.
@@ -66,13 +80,18 @@ impl ClusterStatsCollector {
             let collections = db.list_collections();
             
             for coll_name in collections {
-                // coll_name is String if collections is Vec<String>
-                // If it was structs, we'd access name.
-                // Assuming Vec<String> based on previous error context (Vec<std::string::String>)
-                
+                // Hide physical shard collections (they end with _sN where N is a number)
+                // These are summarized within their logical collection
+                if is_physical_shard_collection(&coll_name) {
+                    continue;
+                }
+
                 // Get Sharding Info from Coordinator
                 let shard_table = self.coordinator.get_shard_table(&db_name, &coll_name);
                 
+                // Get Cluster-wide stats
+                let (document_count, chunk_count, storage_bytes) = self.coordinator.get_total_stats(&db_name, &coll_name, None).await.unwrap_or((0, 0, 0));
+
                 let mut shard_stats = Vec::new();
                 let mut shard_count = 0;
                 let mut replication_factor = 1;
@@ -111,6 +130,9 @@ impl ClusterStatsCollector {
                     database: db_name.clone(),
                     shard_count,
                     replication_factor,
+                    document_count,
+                    chunk_count,
+                    storage_bytes,
                     shards: shard_stats,
                     status: "Ready".to_string(),
                     actions: vec![],
@@ -151,5 +173,14 @@ impl ClusterStatsCollector {
         }
         
         Ok(())
+    }
+}
+
+fn is_physical_shard_collection(name: &str) -> bool {
+    if let Some(pos) = name.rfind("_s") {
+        let suffix = &name[pos + 2..];
+        !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit())
+    } else {
+        false
     }
 }

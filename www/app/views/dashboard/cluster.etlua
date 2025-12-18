@@ -17,27 +17,23 @@
     </div>
   </div>
 
-  <!-- Cluster Table Component -->
-  <cluster-table></cluster-table>
+  <!-- Cluster Dashboard Component -->
+  <cluster-dashboard></cluster-dashboard>
   
-  <!-- Detailed Stats Component -->
-  <replication-stats-table></replication-stats-table>
+  <!-- Detailed Stats Component Removed by Request -->
 </div>
 
 <script type="module">
   // import the component JavaScript output generated via @riotjs/compiler
-  import ClusterTable from '<%= PublicPath("/app/components/cluster-table.riot.js") %>'
-  import ReplicationStatsTable from '<%= PublicPath("/app/components/replication-stats-table.riot.js") %>'
+  import ClusterDashboard from '<%= PublicPath("/app/components/cluster-dashboard.riot.js") %>'
 
   // register the riot components
-  riot.register('cluster-table', ClusterTable)
-  riot.register('replication-stats-table', ReplicationStatsTable)
+  riot.register('cluster-dashboard', ClusterDashboard)
 
   // Wait for DOM to be ready
   document.addEventListener('DOMContentLoaded', () => {
     // Mount the components
-    riot.mount('cluster-table')
-    riot.mount('replication-stats-table')
+    riot.mount('cluster-dashboard')
   })
 </script>
 

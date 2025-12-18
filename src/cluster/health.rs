@@ -14,9 +14,11 @@ pub struct HealthConfig {
 impl Default for HealthConfig {
     fn default() -> Self {
         Self {
-            heartbeat_interval: Duration::from_secs(1),
-            suspicion_threshold: Duration::from_secs(3),
-            failure_threshold: Duration::from_secs(10),
+            // TODO: These are set high because heartbeat SENDING is not yet implemented.
+            // Nodes are updated via sync operations, but dedicated heartbeats need to be added.
+            heartbeat_interval: Duration::from_secs(5),
+            suspicion_threshold: Duration::from_secs(10),
+            failure_threshold: Duration::from_secs(15),
         }
     }
 }

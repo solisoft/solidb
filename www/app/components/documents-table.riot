@@ -396,7 +396,14 @@
             await this.uploadSingleFile(file, completedFiles, totalFiles)
           } catch (error) {
             console.error('Upload error for file:', file.name, error)
-            this.update({ uploadError: `Failed to upload ${file.name}: ${error.message}` })
+            let errorMessage = `Failed to upload ${file.name}: ${error.message}`
+
+            // Provide better error messages for common issues
+            if (error.message.includes('405') || error.message.includes('blob collection') || error.message.includes('not a blob collection')) {
+              errorMessage = `Cannot upload to this collection. Please create a blob collection first: ${file.name}`
+            }
+
+            this.update({ uploadError: errorMessage })
             break
           }
         }

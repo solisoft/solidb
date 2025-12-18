@@ -39,7 +39,7 @@ export default {
             }
 
             // We need to execute boolean query against _system db
-            const dbUrl = `${url}/database/_system/query`
+            const dbUrl = `${url}/database/_system/cursor`
 
             const response = await authenticatedFetch(dbUrl, {
                 method: 'POST',
@@ -75,11 +75,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="space-y-6 mt-8"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold text-gray-100">Detailed Replication Stats (From _cluster_informations)\n                </h3><button expr0="expr0" class="text-sm text-indigo-400 hover:text-indigo-300 flex items-center"><svg expr1="expr1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>\n                    Refresh\n                </button></div><div expr2="expr2" class="p-6 text-center"></div><div expr3="expr3" class="p-6 text-center"></div><div expr5="expr5" class="p-6 text-center"></div><div expr6="expr6" class="overflow-x-auto"></div></div></div>',
+    '<div class="space-y-6 mt-8"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold text-gray-100">Detailed Replication Stats (From _cluster_informations)\n                </h3><button expr157="expr157" class="text-sm text-indigo-400 hover:text-indigo-300 flex items-center"><svg expr158="expr158" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>\n                    Refresh\n                </button></div><div expr159="expr159" class="p-6 text-center"></div><div expr160="expr160" class="p-6 text-center"></div><div expr162="expr162" class="p-6 text-center"></div><div expr163="expr163" class="overflow-x-auto"></div></div></div>',
     [
       {
-        redundantAttribute: 'expr0',
-        selector: '[expr0]',
+        redundantAttribute: 'expr157',
+        selector: '[expr157]',
 
         expressions: [
           {
@@ -90,8 +90,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr1',
-        selector: '[expr1]',
+        redundantAttribute: 'expr158',
+        selector: '[expr158]',
 
         expressions: [
           {
@@ -111,8 +111,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading && !_scope.state.stats.length,
-        redundantAttribute: 'expr2',
-        selector: '[expr2]',
+        redundantAttribute: 'expr159',
+        selector: '[expr159]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto"></div><p class="mt-2 text-gray-400">Loading replication details...</p>',
@@ -122,15 +122,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr3',
-        selector: '[expr3]',
+        redundantAttribute: 'expr160',
+        selector: '[expr160]',
 
         template: template(
-          '<p expr4="expr4" class="text-red-400"> </p>',
+          '<p expr161="expr161" class="text-red-400"> </p>',
           [
             {
-              redundantAttribute: 'expr4',
-              selector: '[expr4]',
+              redundantAttribute: 'expr161',
+              selector: '[expr161]',
 
               expressions: [
                 {
@@ -146,8 +146,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && _scope.state.stats.length===0,
-        redundantAttribute: 'expr5',
-        selector: '[expr5]',
+        redundantAttribute: 'expr162',
+        selector: '[expr162]',
 
         template: template(
           '<p class="text-gray-400">No replication stats available yet.</p>',
@@ -157,11 +157,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.stats.length > 0,
-        redundantAttribute: 'expr6',
-        selector: '[expr6]',
+        redundantAttribute: 'expr163',
+        selector: '[expr163]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Database/Collection</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Shards</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Replication Factor</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Details</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr7="expr7" class="hover:bg-gray-700 transition-colors"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Database/Collection</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Shards</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Replication Factor</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Details</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr164="expr164" class="hover:bg-gray-700 transition-colors"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -169,11 +169,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4 whitespace-nowrap"><div expr8="expr8" class="text-sm font-medium text-gray-100"> </div></td><td expr9="expr9" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr10="expr10" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr11="expr11"> </span><div expr12="expr12" class="mt-1"></div></td><td class="px-6 py-4 text-sm text-gray-400"><div expr14="expr14" class="mb-1"></div></td>',
+                '<td class="px-6 py-4 whitespace-nowrap"><div expr165="expr165" class="text-sm font-medium text-gray-100"> </div></td><td expr166="expr166" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr167="expr167" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr168="expr168"> </span><div expr169="expr169" class="mt-1"></div></td><td class="px-6 py-4 text-sm text-gray-400"><div expr171="expr171" class="mb-1"></div></td>',
                 [
                   {
-                    redundantAttribute: 'expr8',
-                    selector: '[expr8]',
+                    redundantAttribute: 'expr165',
+                    selector: '[expr165]',
 
                     expressions: [
                       {
@@ -191,8 +191,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr9',
-                    selector: '[expr9]',
+                    redundantAttribute: 'expr166',
+                    selector: '[expr166]',
 
                     expressions: [
                       {
@@ -208,8 +208,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr10',
-                    selector: '[expr10]',
+                    redundantAttribute: 'expr167',
+                    selector: '[expr167]',
 
                     expressions: [
                       {
@@ -225,8 +225,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr11',
-                    selector: '[expr11]',
+                    redundantAttribute: 'expr168',
+                    selector: '[expr168]',
 
                     expressions: [
                       {
@@ -256,11 +256,11 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.stat.actions && _scope.stat.actions.length> 0,
-                    redundantAttribute: 'expr12',
-                    selector: '[expr12]',
+                    redundantAttribute: 'expr169',
+                    selector: '[expr169]',
 
                     template: template(
-                      '<span expr13="expr13" class="text-xs text-amber-400 block"></span>',
+                      '<span expr170="expr170" class="text-xs text-amber-400 block"></span>',
                       [
                         {
                           type: bindingTypes.EACH,
@@ -282,8 +282,8 @@ export default {
                             ]
                           ),
 
-                          redundantAttribute: 'expr13',
-                          selector: '[expr13]',
+                          redundantAttribute: 'expr170',
+                          selector: '[expr170]',
                           itemName: 'action',
                           indexName: null,
                           evaluate: _scope => _scope.stat.actions
@@ -297,11 +297,11 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<span expr15="expr15" class="text-indigo-300 font-mono"> </span><span expr16="expr16" class="text-gray-300"> </span><span expr17="expr17" class="text-gray-400"></span>',
+                      '<span expr172="expr172" class="text-indigo-300 font-mono"> </span><span expr173="expr173" class="text-gray-300"> </span><span expr174="expr174" class="text-gray-400"></span>',
                       [
                         {
-                          redundantAttribute: 'expr15',
-                          selector: '[expr15]',
+                          redundantAttribute: 'expr172',
+                          selector: '[expr172]',
 
                           expressions: [
                             {
@@ -319,8 +319,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr16',
-                          selector: '[expr16]',
+                          redundantAttribute: 'expr173',
+                          selector: '[expr173]',
 
                           expressions: [
                             {
@@ -339,8 +339,8 @@ export default {
                         {
                           type: bindingTypes.IF,
                           evaluate: _scope => _scope.shard.replicas.length,
-                          redundantAttribute: 'expr17',
-                          selector: '[expr17]',
+                          redundantAttribute: 'expr174',
+                          selector: '[expr174]',
 
                           template: template(
                             ' ',
@@ -368,8 +368,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr14',
-                    selector: '[expr14]',
+                    redundantAttribute: 'expr171',
+                    selector: '[expr171]',
                     itemName: 'shard',
                     indexName: null,
                     evaluate: _scope => _scope.stat.shards
@@ -377,8 +377,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr7',
-              selector: '[expr7]',
+              redundantAttribute: 'expr164',
+              selector: '[expr164]',
               itemName: 'stat',
               indexName: null,
               evaluate: _scope => _scope.state.stats

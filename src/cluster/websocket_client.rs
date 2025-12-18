@@ -1,5 +1,5 @@
 use futures::{SinkExt, StreamExt};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async, tungstenite::{protocol::Message, client::IntoClientRequest}};
 use url::Url;
 use crate::storage::collection::ChangeEvent;
 
@@ -12,34 +12,40 @@ impl ClusterWebsocketClient {
         node_addr: &str,
         database: &str,
         collection: &str,
+        local_only: bool,
     ) -> anyhow::Result<impl futures::Stream<Item =  anyhow::Result<ChangeEvent>>> {
-        // Construct WebSocket URL
-        // Internal connections don't need auth or can use a special internal token?
-        // For now, let's assume no auth or we need to pass a system token.
-        // The implementation plan mentioned "token", but handlers.rs requires one.
-        // We should generate a temporary internal token or use the keyfile system.
-        // For simplicity in this iteration, we'll try to connect without a token 
-        // implies we might need to adjust auth validation or use a "system" bypass
-        // BUT handlers.rs definitely checks for token.
-        // Let's assume we pass a dummy token "internal-cluster" for now and we might need to fix auth later
-        // or re-use the cluster keyfile to sign a token.
-        
+        // Construct WebSocket URL with cluster-internal authentication
+
+        // Get cluster secret for authentication
+        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        if cluster_secret.is_empty() {
+            return Err(anyhow::anyhow!("SOLIDB_CLUSTER_SECRET not set - cannot connect to cluster WebSocket"));
+        }
+
         let url_str = format!(
-            "ws://{}/_api/ws/changefeed?token=internal-cluster", 
+            "ws://{}/_api/ws/changefeed?token=cluster-internal",
             node_addr
         );
         let url = Url::parse(&url_str)?;
 
-        tracing::debug!("[CLUSTER-WS] Connecting to {}", url);
+        tracing::debug!("[CLUSTER-WS] Connecting to {} (local_only={})", url, local_only);
 
-        let (ws_stream, _) = connect_async(url.as_str()).await?;
+        // Connect with cluster secret header for authentication
+        let mut request = IntoClientRequest::into_client_request(url.as_str())?;
+        request.headers_mut().insert(
+            "X-Cluster-Secret",
+            cluster_secret.parse().unwrap(),
+        );
+
+        let (ws_stream, _) = connect_async(request).await?;
         let (mut write, mut read) = ws_stream.split();
 
         // Send subscription message
         let subscribe_msg = serde_json::json!({
             "type": "subscribe",
             "database": database,
-            "collection": collection
+            "collection": collection,
+            "local": local_only
         });
 
         write.send(Message::Text(subscribe_msg.to_string().into())).await?;

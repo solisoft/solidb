@@ -3,6 +3,7 @@ use tracing::{info, error};
 
 use super::node::Node;
 use super::state::{ClusterState, NodeStatus};
+use super::stats::NodeBasicStats;
 use super::health::HealthMonitor;
 use super::transport::{Transport, ClusterMessage};
 
@@ -11,7 +12,7 @@ pub struct ClusterManager {
     state: ClusterState,
     transport: Arc<dyn Transport>,
     health_monitor: Option<HealthMonitor>,
-    replication_log: Option<Arc<crate::replication::log::ReplicationLog>>,
+    replication_log: Option<Arc<crate::sync::log::SyncLog>>,
     storage: Option<Arc<crate::storage::engine::StorageEngine>>,
 }
 
@@ -20,7 +21,7 @@ impl ClusterManager {
         local_node: Node,
         state: ClusterState,
         transport: Arc<dyn Transport>,
-        replication_log: Option<Arc<crate::replication::log::ReplicationLog>>,
+        replication_log: Option<Arc<crate::sync::log::SyncLog>>,
         storage: Option<Arc<crate::storage::engine::StorageEngine>>,
     ) -> Self {
         // Add local node to state
@@ -36,12 +37,17 @@ impl ClusterManager {
         }
     }
 
-    pub fn set_replication_log(&mut self, log: Arc<crate::replication::log::ReplicationLog>) {
+    pub fn set_replication_log(&mut self, log: Arc<crate::sync::log::SyncLog>) {
         self.replication_log = Some(log);
     }
 
     pub fn local_node_id(&self) -> String {
         self.local_node.id.clone()
+    }
+
+    /// Get the local node's replication address (for when node isn't in member list yet)
+    pub fn get_local_address(&self) -> String {
+        self.local_node.address.clone()
     }
 
     pub fn get_node_address(&self, node_id: &str) -> Option<String> {
@@ -57,6 +63,58 @@ impl ClusterManager {
         &self.state
     }
 
+    /// Check if a node is considered healthy based on heartbeat timeout
+    /// Default timeout: 30 seconds
+    pub fn is_node_healthy(&self, node_id: &str) -> bool {
+        // Local node is always healthy
+        if node_id == self.local_node.id {
+            return true;
+        }
+        
+        if let Some(member) = self.state.get_member(node_id) {
+            // Check status
+            if member.status == NodeStatus::Dead || member.status == NodeStatus::Leaving || member.status == NodeStatus::Syncing || member.status == NodeStatus::Joining || member.status == NodeStatus::Suspected {
+                return false;
+            }
+            
+            // Check heartbeat timeout (30 seconds)
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let timeout_ms = 30_000; // 30 seconds
+            if now - member.last_heartbeat > timeout_ms {
+                return false;
+            }
+            
+            true
+        } else {
+            // Unknown node is considered unhealthy
+            false
+        }
+    }
+    
+    /// Get all healthy node IDs
+    pub fn get_healthy_nodes(&self) -> Vec<String> {
+        let local_id = self.local_node.id.clone();
+        
+        self.state.get_all_members()
+            .into_iter()
+            .filter(|m| {
+                // Local node is always considered healthy
+                if m.node.id == local_id {
+                    return true;
+                }
+                
+                if m.status == NodeStatus::Dead || m.status == NodeStatus::Leaving || m.status == NodeStatus::Syncing || m.status == NodeStatus::Joining || m.status == NodeStatus::Suspected {
+                    return false;
+                }
+                let now = chrono::Utc::now().timestamp_millis() as u64;
+                let timeout_ms = 30_000;
+                now - m.last_heartbeat <= timeout_ms
+            })
+            .map(|m| m.node.id)
+            .collect()
+    }
+
+
 
     pub fn set_health_monitor(&mut self, monitor: HealthMonitor) {
         self.health_monitor = Some(monitor);
@@ -66,12 +124,85 @@ impl ClusterManager {
         info!("Starting ClusterManager for node {}", self.local_node.id);
         
         // Start health monitor if configured
-        if let Some(monitor) = &self.health_monitor {
+        if let Some(_monitor) = &self.health_monitor {
             // In a real impl, we'd spawn this. For now, since monitor.start consumes self, 
             // we need to handle ownership or cloning.
              // tokio::spawn(async move { monitor.start().await });
              // For this stubs we just leave it for now
         }
+
+        // Heartbeat Loop
+        let transport = self.transport.clone();
+        let state = self.state.clone();
+        let local_node_id = self.local_node.id.clone();
+        let storage_opt = self.storage.clone();
+        let replication_log = self.replication_log.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+
+                // 1. Collect Local Stats
+                let stats = if let Some(storage) = &storage_opt {
+                    let databases = storage.list_databases();
+                    let mut total_chunk_count = 0;
+                    let mut total_file_count = 0;
+                    let mut storage_bytes = 0;
+                    let mut total_memtable_size = 0;
+                    let mut total_live_size = 0;
+
+                    for db_name in databases {
+                         if let Ok(db) = storage.get_database(&db_name) {
+                             for coll_name in db.list_collections() {
+                                 if let Ok(coll) = db.get_collection(&coll_name) {
+                                     let s = coll.stats();
+                                     total_chunk_count += s.chunk_count as u64;
+                                     total_file_count += s.disk_usage.num_sst_files;
+                                     storage_bytes += s.disk_usage.sst_files_size;
+                                     total_memtable_size += s.disk_usage.memtable_size;
+                                     total_live_size += s.disk_usage.live_data_size;
+                                 }
+                             }
+                         }
+                    }
+                    
+                    Some(NodeBasicStats {
+                        total_chunk_count,
+                        total_file_count,
+                        storage_bytes,
+                        total_memtable_size,
+                        total_live_size,
+                        cpu_usage_percent: 0.0, // TODO: Add sysinfo if needed
+                        memory_used_mb: 0,     // TODO: Add sysinfo if needed
+                    })
+                } else {
+                    None
+                };
+
+                // 2. Get peers to send to
+                let peers = state.active_nodes();
+                let current_seq = if let Some(log) = &replication_log {
+                    log.current_sequence()
+                } else {
+                    0
+                };
+
+                // 3. Send Heartbeat
+                for peer in peers {
+                    if peer.id == local_node_id { continue; }
+                    
+                    let msg = ClusterMessage::Heartbeat { 
+                        from: local_node_id.clone(), 
+                        sequence: current_seq,
+                        stats: stats.clone() 
+                    };
+                    
+                    // We don't await strictly or handle error to prevent blocking loop
+                    let _ = transport.send(&peer.address, msg).await;
+                }
+            }
+        });
     }
 
     pub async fn join_cluster(&self, seed_node: &str) -> anyhow::Result<()> {
@@ -121,64 +252,53 @@ impl ClusterManager {
                     }
                 }
             }
-            ClusterMessage::Heartbeat { from, sequence } => {
+            ClusterMessage::Heartbeat { from, sequence, stats } => {
                 // trace!("Received heartbeat from {} seq {}", from, sequence);
                 // self.state.update_heartbeat(&from, sequence);
-                // Using info! for debugging now, catch them all
-                tracing::trace!("Received heartbeat from {} seq {}", from, sequence);
-                self.state.update_heartbeat(&from, sequence);
+                // Using trace! for heartbeats
+                tracing::trace!("Received heartbeat from {} seq {} stats {:?}", from, sequence, stats);
+                self.state.update_heartbeat(&from, sequence, stats);
             }
             ClusterMessage::Leave { from } => {
                 info!("Node {} is leaving", from);
                 self.state.remove_member(&from);
             }
-            ClusterMessage::Replication(repl_msg) => {
-                 self.handle_replication_message(repl_msg).await;
+            ClusterMessage::Replication(sync_msg) => {
+                 self.handle_sync_message(sync_msg).await;
             }
         }
     }
     
-    async fn handle_replication_message(&self, msg: crate::replication::protocol::ReplicationMessage) {
-        use crate::replication::protocol::{ReplicationMessage, Operation};
+    async fn handle_sync_message(&self, msg: crate::sync::SyncMessage) {
+        use crate::sync::{SyncMessage, Operation};
         use std::collections::HashMap;
         
         match msg {
-            ReplicationMessage::SyncResponse { entries, .. } => {
+            SyncMessage::SyncBatch { entries, .. } => {
                 let total_entries = entries.len();
                 if total_entries == 0 {
                     return;
                 }
                 
-                tracing::debug!("Received {} replication entries", total_entries);
+                tracing::debug!("Received {} sync entries", total_entries);
                 
-                // Filter entries first (loop detection + cycle detection)
+                // Filter entries (loop detection)
                 let mut valid_entries = Vec::with_capacity(total_entries);
                 for entry in entries {
                     // Loop Detection: If we originated this entry, ignore it.
-                    if entry.node_id == self.local_node.id {
+                    if entry.origin_node == self.local_node.id {
                         continue;
                     }
                     
-                    // Cycle Detection via Vector Clock (Max Origin Sequence)
-                    let origin_seq = entry.origin_sequence.unwrap_or(0);
-                    if origin_seq > 0 {
-                        if !self.state.check_and_update_origin_sequence(entry.node_id.clone(), origin_seq) {
-                            continue;
-                        }
+                    // Cycle Detection via sequence
+                    if !self.state.check_and_update_origin_sequence(entry.origin_node.clone(), entry.origin_sequence) {
+                        continue;
                     }
                     valid_entries.push(entry);
                 }
                 
                 if valid_entries.is_empty() {
                     return;
-                }
-                
-                // Append to replication log in batch
-                if let Some(log) = &self.replication_log {
-                    if let Err(e) = log.append_batch(valid_entries.clone()) {
-                        error!("Failed to append replication batch: {}", e);
-                        return;
-                    }
                 }
                 
                 // Group entries by (database, collection) for batched application
@@ -188,13 +308,13 @@ impl ClusterManager {
                 for entry in &valid_entries {
                     match entry.operation {
                         Operation::Insert | Operation::Update => {
-                            if let Some(data) = &entry.data {
+                            if let Some(data) = &entry.document_data {
                                 if let Ok(doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
                                     let key = (entry.database.clone(), entry.collection.clone());
                                     insert_update_groups
                                         .entry(key)
                                         .or_insert_with(Vec::new)
-                                        .push((entry.key.clone(), doc_value));
+                                        .push((entry.document_key.clone(), doc_value));
                                 }
                             }
                         }
@@ -204,12 +324,12 @@ impl ClusterManager {
                     }
                 }
                 
-                // Apply batched inserts/updates in blocking task
+                // Apply batched inserts/updates
                 if let Some(storage) = &self.storage {
                     let storage = storage.clone();
                     let insert_update_groups = insert_update_groups;
                     
-                    // Compute node topology BEFORE spawning blocking task
+                    // Compute node topology
                     let mut all_nodes: Vec<String> = self.state.get_all_members()
                         .iter()
                         .map(|m| m.node.address.clone())
@@ -228,7 +348,6 @@ impl ClusterManager {
                                     let docs_to_apply = if let Some(shard_config) = collection.get_shard_config() {
                                         if shard_config.num_shards > 0 && num_nodes > 0 {
                                             if let Some(my_idx) = my_index {
-                                                let original_count = docs.len();
                                                 let filtered: Vec<(String, serde_json::Value)> = docs
                                                     .into_iter()
                                                     .filter(|(doc_key, _)| {
@@ -244,25 +363,15 @@ impl ClusterManager {
                                                         )
                                                     })
                                                     .collect();
-                                                
-                                                let skipped = original_count - filtered.len();
-                                                if skipped > 0 {
-                                                    tracing::info!(
-                                                        "[SHARD-FILTER] Filtered {}/{} docs for {}/{} (RF={}, my_idx={}, num_nodes={})",
-                                                        skipped, original_count, db_name, coll_name,
-                                                        shard_config.replication_factor, my_idx, num_nodes
-                                                    );
-                                                }
                                                 filtered
                                             } else {
-                                                tracing::warn!("[SHARD-FILTER] Could not determine node index, applying all docs");
                                                 docs
                                             }
                                         } else {
-                                            docs // No shards configured
+                                            docs
                                         }
                                     } else {
-                                        docs // Not sharded
+                                        docs
                                     };
                                     
                                     if docs_to_apply.is_empty() {
@@ -270,14 +379,8 @@ impl ClusterManager {
                                     }
                                     
                                     let doc_count = docs_to_apply.len();
-                                    match collection.upsert_batch(docs_to_apply) {
-                                        Ok(_) => {
-                                            tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Failed to batch upsert to {}/{}: {}", db_name, coll_name, e);
-                                        }
-                                    }
+                                    let _ = collection.upsert_batch(docs_to_apply);
+                                    tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
                                 }
                             }
                         }
@@ -287,29 +390,29 @@ impl ClusterManager {
                         error!("Blocking task panicked: {}", e);
                     }
                     
-                    // Apply non-insert/update operations sequentially (less common)
+                    // Apply non-insert/update operations
                     for entry in other_entries {
-                        if let Err(e) = self.apply_replication_entry(&entry) {
-                            error!("Failed to apply replication entry: {}", e);
+                        if let Err(e) = self.apply_sync_entry(&entry) {
+                            error!("Failed to apply sync entry: {}", e);
                         }
                     }
                 }
                 
-                info!("Applied {} replication entries", valid_entries.len());
+                info!("Applied {} sync entries", valid_entries.len());
             }
             _ => {}
         }
     }
 
-    fn apply_replication_entry(&self, entry: &crate::replication::protocol::LogEntry) -> anyhow::Result<()> {
-        use crate::replication::protocol::Operation;
+    fn apply_sync_entry(&self, entry: &crate::sync::SyncEntry) -> anyhow::Result<()> {
+        use crate::sync::Operation;
         if let Some(storage) = &self.storage {
              match entry.operation {
                 Operation::CreateCollection => {
                     let db = storage.get_database(&entry.database)?;
                     
                     // Extract collection type from metadata
-                    let collection_type = if let Some(data) = &entry.data {
+                    let collection_type = if let Some(data) = &entry.document_data {
                         let metadata: serde_json::Value = serde_json::from_slice(data).unwrap_or_default();
                         metadata.get("type").and_then(|v| v.as_str()).map(|s| s.to_string())
                     } else {
@@ -325,7 +428,7 @@ impl ClusterManager {
                     }
                     
                     // Apply shard config if present
-                    if let Some(data) = &entry.data {
+                    if let Some(data) = &entry.document_data {
                         let metadata: serde_json::Value = serde_json::from_slice(data).unwrap_or_default();
                         
                         // Set collection type
@@ -353,16 +456,8 @@ impl ClusterManager {
                 Operation::Insert | Operation::Update => {
                     let db = storage.get_database(&entry.database)?;
                     let collection = db.get_collection(&entry.collection)?;
-                    if let Some(data) = &entry.data {
+                    if let Some(data) = &entry.document_data {
                         let doc_value: serde_json::Value = serde_json::from_slice(data)?;
-                        // We use insert_internal or similar that DOES NOT generate new log entry?
-                        // Or we use insert but suppress replication?
-                        // If we use standard insert, it might trigger handlers->record_write->log->loop!
-                        // Be careful! 
-                        // StorageEngine::insert writes to backend. It doesn't know about replication.
-                        // Handlers layer adds replication.
-                        // So calling collection.insert() is SAFE from recursion, 
-                        // BUT collection.insert might trigger triggers/indexes.
                         collection.insert(doc_value)?;
                     }
                 }
@@ -370,7 +465,7 @@ impl ClusterManager {
                      let db = storage.get_database(&entry.database)?;
                      let collection = db.get_collection(&entry.collection)?;
                      // Ignore error if doc doesn't exist (idempotency)
-                     let _ = collection.delete(&entry.key);
+                     let _ = collection.delete(&entry.document_key);
                 }
                 Operation::DeleteCollection => {
                     let db = storage.get_database(&entry.database)?;
@@ -380,6 +475,19 @@ impl ClusterManager {
                 Operation::TruncateCollection => {
                     let db = storage.get_database(&entry.database)?;
                     if let Ok(collection) = db.get_collection(&entry.collection) {
+                        // Check if sharded and truncate physical shards
+                        if let Some(shard_config) = collection.get_shard_config() {
+                            if shard_config.num_shards > 0 {
+                                tracing::info!("TRUNCATE: Truncating {} shards for {}.{}", shard_config.num_shards, entry.database, entry.collection);
+                                for shard_id in 0..shard_config.num_shards {
+                                    let physical_name = format!("{}_s{}", entry.collection, shard_id);
+                                    if let Ok(shard_coll) = db.get_collection(&physical_name) {
+                                         let _ = shard_coll.truncate();
+                                    }
+                                }
+                            }
+                        }
+                        
                         let _ = collection.truncate();
                     }
                 }
@@ -393,7 +501,7 @@ impl ClusterManager {
                 }
                 _ => {
                     // PutBlobChunk, DeleteBlob - implement later if needed
-                    tracing::debug!("Unhandled replication operation: {:?}", entry.operation);
+                    tracing::debug!("Unhandled sync operation: {:?}", entry.operation);
                 }
              }
         }

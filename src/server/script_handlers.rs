@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use super::handlers::AppState;
 use crate::error::DbError;
 use crate::scripting::{Script, ScriptContext, ScriptEngine};
-use crate::replication::protocol::{Operation, LogEntry};
+use crate::sync::{Operation, LogEntry};
 
 /// System collection for storing scripts
 pub const SCRIPTS_COLLECTION: &str = "_scripts";
