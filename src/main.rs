@@ -403,12 +403,21 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         });
     }
 
+    // Initialize Queue Management
+    let queue_worker = Arc::new(solidb::queue::QueueWorker::new(Arc::new(storage.clone())));
+    
+    let queue_worker_start = queue_worker.clone();
+    tokio::spawn(async move {
+        queue_worker_start.start().await;
+    });
+
     // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(
         storage,
         Some(cluster_manager.clone()),
         Some(replication_log.clone()),
         Some(shared_coordinator.clone()),
+        Some(queue_worker),
         args.port
     );
     

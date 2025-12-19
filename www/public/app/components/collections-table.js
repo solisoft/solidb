@@ -104,28 +104,28 @@ var collectionsTable = {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr291="expr291" class="flex justify-center items-center py-12"></div><div expr292="expr292" class="text-center py-12"></div><div expr295="expr295" class="text-center py-12"></div><table expr297="expr297" class="min-w-full divide-y\n      divide-gray-700"></table></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr229="expr229" class="flex justify-center items-center py-12"></div><div expr230="expr230" class="text-center py-12"></div><div expr233="expr233" class="text-center py-12"></div><table expr235="expr235" class="min-w-full divide-y\n      divide-gray-700"></table></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr291',
-    selector: '[expr291]',
+    redundantAttribute: 'expr229',
+    selector: '[expr229]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading collections...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr292',
-    selector: '[expr292]',
-    template: template('<p expr293="expr293" class="text-red-400"> </p><button expr294="expr294" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
-      redundantAttribute: 'expr293',
-      selector: '[expr293]',
+    redundantAttribute: 'expr230',
+    selector: '[expr230]',
+    template: template('<p expr231="expr231" class="text-red-400"> </p><button expr232="expr232" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
+      redundantAttribute: 'expr231',
+      selector: '[expr231]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Error loading collections: ', _scope.state.error].join('')
       }]
     }, {
-      redundantAttribute: 'expr294',
-      selector: '[expr294]',
+      redundantAttribute: 'expr232',
+      selector: '[expr232]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -135,11 +135,11 @@ var collectionsTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.collections.length === 0,
-    redundantAttribute: 'expr295',
-    selector: '[expr295]',
-    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No collections</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new collection.</p><div class="mt-6"><button expr296="expr296" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Collection\n        </button></div>', [{
-      redundantAttribute: 'expr296',
-      selector: '[expr296]',
+    redundantAttribute: 'expr233',
+    selector: '[expr233]',
+    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No collections</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new collection.</p><div class="mt-6"><button expr234="expr234" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Collection\n        </button></div>', [{
+      redundantAttribute: 'expr234',
+      selector: '[expr234]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -149,15 +149,15 @@ var collectionsTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.collections.length > 0,
-    redundantAttribute: 'expr297',
-    selector: '[expr297]',
-    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Documents</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Size</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr298="expr298" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
+    redundantAttribute: 'expr235',
+    selector: '[expr235]',
+    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Documents</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Size</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr236="expr236" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap"><a expr299="expr299" class="flex items-center group"><svg expr300="expr300" class="h-5 w-5 text-fuchsia-400 mr-2 group-hover:text-fuchsia-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr301="expr301" class="h-5 w-5 text-amber-400 mr-2 group-hover:text-amber-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr302="expr302" class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><span expr303="expr303" class="text-sm font-medium text-gray-100 group-hover:text-indigo-300 transition-colors"> </span><span expr304="expr304" class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30"></span><span expr305="expr305" class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30"></span></a></td><td class="px-6 py-4 whitespace-nowrap"><span expr306="expr306" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr307="expr307" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><div expr308="expr308" class="flex space-x-2"></div><span expr311="expr311" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-900/30 text-green-400"></span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3"><a expr312="expr312" class="text-green-400 hover:text-green-300 transition-colors" title="View documents"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></a><a expr313="expr313" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Manage indexes"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></a><button expr314="expr314" class="text-blue-400 hover:text-blue-300\n              transition-colors" title="Settings"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button><button expr315="expr315" class="text-yellow-400 hover:text-yellow-300\n              transition-colors" title="Truncate collection"><svg expr316="expr316" class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr317="expr317" class="animate-spin h-5 w-5 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"></svg></button><button expr318="expr318" class="text-red-400 hover:text-red-300\n              transition-colors" title="Delete collection"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>', [{
-        redundantAttribute: 'expr299',
-        selector: '[expr299]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap"><a expr237="expr237" class="flex items-center group"><svg expr238="expr238" class="h-5 w-5 text-fuchsia-400 mr-2 group-hover:text-fuchsia-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr239="expr239" class="h-5 w-5 text-amber-400 mr-2 group-hover:text-amber-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr240="expr240" class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><span expr241="expr241" class="text-sm font-medium text-gray-100 group-hover:text-indigo-300 transition-colors"> </span><span expr242="expr242" class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30"></span><span expr243="expr243" class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30"></span></a></td><td class="px-6 py-4 whitespace-nowrap"><span expr244="expr244" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr245="expr245" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><div expr246="expr246" class="flex space-x-2"></div><span expr249="expr249" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-900/30 text-green-400"></span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3"><a expr250="expr250" class="text-green-400 hover:text-green-300 transition-colors" title="View documents"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></a><a expr251="expr251" class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Manage indexes"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></a><button expr252="expr252" class="text-blue-400 hover:text-blue-300\n              transition-colors" title="Settings"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button><button expr253="expr253" class="text-yellow-400 hover:text-yellow-300\n              transition-colors" title="Truncate collection"><svg expr254="expr254" class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr255="expr255" class="animate-spin h-5 w-5 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"></svg></button><button expr256="expr256" class="text-red-400 hover:text-red-300\n              transition-colors" title="Delete collection"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>', [{
+        redundantAttribute: 'expr237',
+        selector: '[expr237]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -167,24 +167,24 @@ var collectionsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.type === 'edge',
-        redundantAttribute: 'expr300',
-        selector: '[expr300]',
+        redundantAttribute: 'expr238',
+        selector: '[expr238]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.type === 'blob',
-        redundantAttribute: 'expr301',
-        selector: '[expr301]',
+        redundantAttribute: 'expr239',
+        selector: '[expr239]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.type !== 'edge' && _scope.collection.type !== 'blob',
-        redundantAttribute: 'expr302',
-        selector: '[expr302]',
+        redundantAttribute: 'expr240',
+        selector: '[expr240]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>', [])
       }, {
-        redundantAttribute: 'expr303',
-        selector: '[expr303]',
+        redundantAttribute: 'expr241',
+        selector: '[expr241]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -193,26 +193,26 @@ var collectionsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.type === 'edge',
-        redundantAttribute: 'expr304',
-        selector: '[expr304]',
+        redundantAttribute: 'expr242',
+        selector: '[expr242]',
         template: template('Edge', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.type === 'blob',
-        redundantAttribute: 'expr305',
-        selector: '[expr305]',
+        redundantAttribute: 'expr243',
+        selector: '[expr243]',
         template: template('Blob', [])
       }, {
-        redundantAttribute: 'expr306',
-        selector: '[expr306]',
+        redundantAttribute: 'expr244',
+        selector: '[expr244]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.collection.count.toLocaleString()
         }]
       }, {
-        redundantAttribute: 'expr307',
-        selector: '[expr307]',
+        redundantAttribute: 'expr245',
+        selector: '[expr245]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -221,11 +221,11 @@ var collectionsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.collection.shardConfig,
-        redundantAttribute: 'expr308',
-        selector: '[expr308]',
-        template: template('<span expr309="expr309" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-900/30 text-blue-400" title="Shards"> </span><span expr310="expr310" class="px-2 inline-flex text-xs leading-5\n                font-semibold rounded-full bg-purple-900/30 text-purple-400" title="Replication Factor"></span>', [{
-          redundantAttribute: 'expr309',
-          selector: '[expr309]',
+        redundantAttribute: 'expr246',
+        selector: '[expr246]',
+        template: template('<span expr247="expr247" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-900/30 text-blue-400" title="Shards"> </span><span expr248="expr248" class="px-2 inline-flex text-xs leading-5\n                font-semibold rounded-full bg-purple-900/30 text-purple-400" title="Replication Factor"></span>', [{
+          redundantAttribute: 'expr247',
+          selector: '[expr247]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -234,8 +234,8 @@ var collectionsTable = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.collection.shardConfig.replication_factor > 1,
-          redundantAttribute: 'expr310',
-          selector: '[expr310]',
+          redundantAttribute: 'expr248',
+          selector: '[expr248]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -247,12 +247,12 @@ var collectionsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.collection.shardConfig,
-        redundantAttribute: 'expr311',
-        selector: '[expr311]',
+        redundantAttribute: 'expr249',
+        selector: '[expr249]',
         template: template('\n              Single Node\n            ', [])
       }, {
-        redundantAttribute: 'expr312',
-        selector: '[expr312]',
+        redundantAttribute: 'expr250',
+        selector: '[expr250]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -260,8 +260,8 @@ var collectionsTable = {
           evaluate: _scope => ['/database/', _scope.props.db, '/collection/', _scope.collection.name, '/documents'].join('')
         }]
       }, {
-        redundantAttribute: 'expr313',
-        selector: '[expr313]',
+        redundantAttribute: 'expr251',
+        selector: '[expr251]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -269,16 +269,16 @@ var collectionsTable = {
           evaluate: _scope => ['/database/', _scope.props.db, '/collection/', _scope.collection.name, '/indexes'].join('')
         }]
       }, {
-        redundantAttribute: 'expr314',
-        selector: '[expr314]',
+        redundantAttribute: 'expr252',
+        selector: '[expr252]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.props.onSettingsClick(_scope.collection)
         }]
       }, {
-        redundantAttribute: 'expr315',
-        selector: '[expr315]',
+        redundantAttribute: 'expr253',
+        selector: '[expr253]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -292,26 +292,26 @@ var collectionsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.truncatingCollection !== _scope.collection.name,
-        redundantAttribute: 'expr316',
-        selector: '[expr316]',
+        redundantAttribute: 'expr254',
+        selector: '[expr254]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.truncatingCollection === _scope.collection.name,
-        redundantAttribute: 'expr317',
-        selector: '[expr317]',
+        redundantAttribute: 'expr255',
+        selector: '[expr255]',
         template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
       }, {
-        redundantAttribute: 'expr318',
-        selector: '[expr318]',
+        redundantAttribute: 'expr256',
+        selector: '[expr256]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteCollection(_scope.collection.name)
         }]
       }]),
-      redundantAttribute: 'expr298',
-      selector: '[expr298]',
+      redundantAttribute: 'expr236',
+      selector: '[expr236]',
       itemName: 'collection',
       indexName: null,
       evaluate: _scope => _scope.state.collections

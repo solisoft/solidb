@@ -85,6 +85,7 @@ pub struct AppState {
     pub startup_time: std::time::Instant,
     pub request_counter: Arc<std::sync::atomic::AtomicU64>,
     pub system_monitor: Arc<std::sync::Mutex<sysinfo::System>>,
+    pub queue_worker: Option<Arc<crate::queue::QueueWorker>>,
 }
 
 // ==================== Auth Types ====================

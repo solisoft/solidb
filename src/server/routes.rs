@@ -18,6 +18,7 @@ pub fn create_router(
     cluster_manager: Option<Arc<crate::cluster::manager::ClusterManager>>,
     replication_log: Option<Arc<crate::sync::log::SyncLog>>,
     shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
+    queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     _api_port: u16
 ) -> Router {
     // Initialize Auth (create default admin if needed)
@@ -52,6 +53,7 @@ pub fn create_router(
         cluster_manager,
         replication_log,
         shard_coordinator,
+        queue_worker,
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
@@ -187,13 +189,23 @@ pub fn create_router(
         .route("/_api/cluster/info", get(cluster_info))
         .route("/_api/cluster/remove-node", post(cluster_remove_node))
         .route("/_api/cluster/rebalance", post(cluster_rebalance))
-// WebSocket routes (moved to public router)
+        // WebSocket routes (moved to public router)
         // .route("/_api/ws/changefeed", get(ws_changefeed_handler))
         // Auth management
         .route("/_api/auth/password", put(change_password_handler))
         .route("/_api/auth/api-keys", post(create_api_key_handler))
         .route("/_api/auth/api-keys", get(list_api_keys_handler))
         .route("/_api/auth/api-keys/{key_id}", delete(delete_api_key_handler))
+        // Queue Management
+        .route("/_api/database/{db}/queues", get(super::queue_handlers::list_queues_handler))
+        .route("/_api/database/{db}/queues/{name}/jobs", get(super::queue_handlers::list_jobs_handler))
+        .route("/_api/database/{db}/queues/{name}/enqueue", post(super::queue_handlers::enqueue_job_handler))
+        .route("/_api/database/{db}/queues/jobs/{id}", delete(super::queue_handlers::cancel_job_handler))
+        // Cron Job Management
+        .route("/_api/database/{db}/cron", get(super::queue_handlers::list_cron_jobs_handler))
+        .route("/_api/database/{db}/cron", post(super::queue_handlers::create_cron_job_handler))
+        .route("/_api/database/{db}/cron/{id}", put(super::queue_handlers::update_cron_job_handler))
+        .route("/_api/database/{db}/cron/{id}", delete(super::queue_handlers::delete_cron_job_handler))
         // Script management routes
         .route("/_api/database/{db}/scripts", post(super::script_handlers::create_script_handler))
         .route("/_api/database/{db}/scripts", get(super::script_handlers::list_scripts_handler))

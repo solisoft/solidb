@@ -267,6 +267,92 @@
         </div>
       </section>
 
+      <!-- Configuration Section -->
+      <section id="configuration" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                ></path>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                ></path>
+              </svg>
+              Configuration
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB can be configured using command-line arguments, environment
+              variables, or an <code class="text-amber-400">.env</code> file
+              located in the same directory as the executable.
+            </p>
+
+            <div class="bg-amber-900/10 border border-amber-500/20 rounded-xl p-6">
+              <h3 class="text-amber-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Environment Variables
+              </h3>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ADMIN_PASSWORD</td>
+                      <td class="p-3">Overrides the auto-generated admin password.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SECRET</td>
+                      <td class="p-3">Secret key required for inter-node authentication.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
+                      <td class="p-3">Protocol for cluster traffic (http or https).</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
+                      <td class="p-3">Secret for signing JSON Web Tokens.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
+                      <td class="p-3">Concurrent workers per node (default: 4).</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="group">
+              <h3 class="text-lg font-semibold text-white mb-3">Example .env</h3>
+              <div
+                class="bg-gray-950 p-4 rounded-xl border border-white/10 font-mono text-sm text-gray-300 whitespace-pre"
+              >SOLIDB_ADMIN_PASSWORD=my_secure_password
+SOLIDB_CLUSTER_SECRET=shhhh_its_a_secret
+QUEUE_WORKERS=8</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Next Steps -->
       <section id="next-steps" class="scroll-mt-24">
         <h2 class="text-2xl font-bold text-white mb-6">Next Steps</h2>

@@ -40,6 +40,10 @@ local app = {
   scripts = function()
     Page("dashboard/scripts", "app")
   end,
+  
+  queues = function()
+    Page("dashboard/queues", "app")
+  end,
 
   sharding = function()
     Page("dashboard/sharding", "app")

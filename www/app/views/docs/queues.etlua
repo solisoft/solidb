@@ -1,0 +1,247 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("queues_sidebar") %>
+
+    <!-- Main Content -->
+     <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Queue Management</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Scalable, distributed background job processing for SoliDB.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 text-gray-300 space-y-4 leading-relaxed">
+            <p>
+              SoliDB provides a built-in, distributed queue system backed by the database itself. Jobs are stored as documents in the <code class="text-indigo-400">_jobs</code> collection, ensuring persistence and reliability.
+            </p>
+            <p>
+              Key features include:
+            </p>
+            <ul class="list-disc list-inside space-y-2 ml-4">
+              <li><strong>Distributed Workers</strong>: Every node in a SoliDB cluster runs background workers that automatically pick up and execute jobs.</li>
+              <li><strong>Optimistic Locking</strong>: Uses SoliDB's revision check (<code class="bg-gray-800 px-1 rounded">_rev</code>) to ensure that a job is executed by exactly one worker, even in a large cluster.</li>
+              <li><strong>Priorities & Retries</strong>: Jobs support priority levels and automatic retries with exponential backoff.</li>
+              <li><strong>Script-based Execution</strong>: Jobs execute server-side Lua scripts, allowing complex logic close to your data.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- API Reference Section -->
+      <section id="api" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              API Reference
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+            
+            <!-- Enqueue -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/queues/:queue/enqueue</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Enqueue a new job.</p>
+              
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr><th class="p-3">Field</th><th class="p-3">Type</th><th class="p-3">Description</th></tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">script</td><td class="p-3 font-mono">string</td><td class="p-3">Path/Name of the Lua script to execute.</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">params</td><td class="p-3 font-mono">object</td><td class="p-3">JSON arguments passed to the script.</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">priority</td><td class="p-3 font-mono">integer</td><td class="p-3">Higher values execute first.</td></tr>
+                       <tr><td class="p-3 text-fuchsia-400 font-mono">max_retries</td><td class="p-3 font-mono">integer</td><td class="p-3">Max attempts on failure on failure.</td></tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {"script": "send_email", "params": {"to": "user@example.com", "body": "Hello"}, "priority": 10}
+               </div>
+            </div>
+
+            <!-- List Queues -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/queues</code>
+              </div>
+              <p class="text-sm text-gray-400">Get statistics for all queues.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lua Driver Section -->
+      <section id="lua" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Lua Driver
+            </h2>
+          </div>
+          <div class="p-6">
+            <p class="text-gray-400 mb-6">
+              You can enqueue jobs directly from your application using the SoliDB Lua driver.
+            </p>
+            
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 overflow-x-auto">
+<pre><code class="language-lua text-sm">-- Enqueue a job in the 'default' queue
+db:queue("default"):enqueue("process_image", {
+  image_id = "img_123",
+  format = "webp"
+})
+
+-- With options
+db:queue("emails"):enqueue("send_welcome", { user_id = "u1" }, {
+  priority = 100,
+  max_retries = 5
+})</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard Section -->
+      <section id="dashboard" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Dashboard
+            </h2>
+          </div>
+          <div class="p-6 text-gray-300">
+            <p class="mb-4">
+              Monitor your queues visually using the dedicated <strong>Queues</strong> tab in the database dashboard.
+            </p>
+            <ul class="list-disc list-inside space-y-2 ml-4">
+               <li>View pending, running, and failed job counts.</li>
+               <li>Inspect job details and parameters.</li>
+               <li>Cancel pending jobs.</li>
+               <li>Manually enqueue jobs for testing.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cron Jobs Section -->
+      <section id="cron" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Cron Jobs (Schedules)
+            </h2>
+          </div>
+          <div class="p-8 text-gray-300 space-y-6">
+            <p>
+              SoliDB supports scheduled jobs via cron expressions. Schedules are stored in the <code class="text-indigo-400">_cron_jobs</code> collection and are automatically managed by the cluster.
+            </p>
+
+            <div class="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-indigo-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                  <strong class="text-indigo-300">Cluster-Safe Execution:</strong>
+                  <span class="text-gray-400"> SoliDB uses optimistic locking to ensure that even in a multi-node cluster, <strong>only one node</strong> will spawn a job for a given schedule tick.</span>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-6">Cron Expression Format</h3>
+            <p class="text-gray-400">
+              SoliDB uses a 7-field cron expression format (including seconds and year):
+            </p>
+            <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 font-mono text-sm overflow-x-auto text-amber-400">
+              sec min hour day month day_of_week year
+            </div>
+            
+            <div class="space-y-4 text-sm">
+              <p>Examples:</p>
+              <ul class="list-disc list-inside space-y-1 ml-4 text-gray-400 font-mono text-xs">
+                <li><code class="text-amber-400">0 */5 * * * * *</code> - Every 5 minutes</li>
+                <li><code class="text-amber-400">0 0 * * * * *</code> - Every hour</li>
+                <li><code class="text-amber-400">0 0 0 * * * *</code> - Every day at midnight</li>
+              </ul>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-6">Job Identification</h3>
+            <p>
+              When a cron job spawns a regular job, the new job will contain a <code class="text-indigo-400">cron_job_id</code> field. In the Dashboard, these jobs are identified by a <span class="text-indigo-400 font-bold font-mono">clock icon</span>.
+            </p>
+
+            <h3 class="text-lg font-semibold text-white mt-6">API Management</h3>
+            <p class="text-gray-400 italic">Endpoints for managing schedules:</p>
+            <ul class="space-y-2 text-sm">
+              <li class="flex items-center gap-3">
+                <span class="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/cron</code>
+              </li>
+              <li class="flex items-center gap-3">
+                <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/cron</code>
+              </li>
+              <li class="flex items-center gap-3">
+                <span class="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/cron/:id</code>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration Section -->
+      <section id="configuration" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              Configuration
+            </h2>
+          </div>
+          <div class="p-6">
+            <p class="text-gray-300 mb-4">
+              By default, each SoliDB node spawns <strong>4 concurrent workers</strong>. You can adjust this globally via environment variables (either directly or via a <code class="text-indigo-400 font-mono">.env</code> file).
+            </p>
+            <div class="bg-gray-950/50 p-4 rounded-lg border border-white/5 font-mono text-sm text-gray-300">
+               QUEUE_WORKERS=8 ./solidb-server ...
+            </div>
+          </div>
+        </div>
+      </section>
+
+     </main>
+  </div>
+</div>

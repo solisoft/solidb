@@ -17,6 +17,12 @@
           Basic Usage
         </a>
 
+        <!-- Configuration -->
+        <a href="#configuration" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Configuration
+        </a>
+
         <!-- Next Steps -->
         <a href="#next-steps" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>

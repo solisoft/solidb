@@ -6,6 +6,7 @@ pub mod storage;
 pub mod transaction;
 pub mod scripting;
 pub mod sharding;
+pub mod queue;
 
 // Synchronization module (new architecture)
 pub mod sync;

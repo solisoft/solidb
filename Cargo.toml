@@ -58,6 +58,7 @@ seahash = "4.1"  # Uniform hash distribution for sharding
 
 # Storage
 rocksdb = "0.24"
+cron = "0.12"
 
 # Authentication
 argon2 = "0.5"

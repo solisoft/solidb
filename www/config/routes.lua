@@ -22,6 +22,7 @@ CustomRoute("GET", "/database/:db/databases", "dashboard#databases")
 CustomRoute("GET", "/database/:db/cluster", "dashboard#cluster")
 CustomRoute("GET", "/database/:db/apikeys", "dashboard#apikeys")
 CustomRoute("GET", "/database/:db/scripts", "dashboard#scripts")
+CustomRoute("GET", "/database/:db/queues", "dashboard#queues")
 CustomRoute("GET", "/database/:db/sharding", "dashboard#sharding")
 
 -- docs pages

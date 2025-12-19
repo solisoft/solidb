@@ -1,0 +1,940 @@
+<queue-manager>
+    <div style="background: red; color: white; padding: 10px; font-weight: bold;" if={ state.error }>
+        Error: { state.error }
+    </div>
+
+    <div class="space-y-6">
+        <!-- Dashboard Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-100">Queue Management</h2>
+                <p class="mt-1 text-sm text-gray-400">Monitor and manage background jobs in { props.db }</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button onclick={ fetchQueues } class="p-2 text-gray-400 hover:text-white transition-colors"
+                    title="Refresh">
+                    <svg class="h-5 w-5 { state.loading ? 'animate-spin' : '' }" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex items-center justify-between border-b border-gray-700/50 pb-px">
+            <nav class="flex space-x-2 p-1 bg-gray-900/50 rounded-xl border border-gray-700/30" aria-label="Tabs">
+                <button onclick={ ()=> switchTab('queues') }
+                    class="flex items-center gap-2.5 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all
+                    duration-300 { state.activeTab === 'queues' ? 'bg-indigo-600 text-white shadow-lg
+                    shadow-indigo-600/20' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5' }">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <span>Queues</span>
+                    <span
+                        class="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold { state.activeTab === 'queues' ? 'bg-white/20 text-white' : 'bg-gray-800 text-gray-500' }">
+                        { state.queues.length }
+                    </span>
+                </button>
+                <button onclick={ ()=> switchTab('schedules') }
+                    class="flex items-center gap-2.5 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all
+                    duration-300 { state.activeTab === 'schedules' ? 'bg-indigo-600 text-white shadow-lg
+                    shadow-indigo-600/20' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5' }">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Schedules</span>
+                    <span
+                        class="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold { state.activeTab === 'schedules' ? 'bg-white/20 text-white' : 'bg-gray-800 text-gray-500' }">
+                        { state.schedules.length }
+                    </span>
+                </button>
+            </nav>
+            <div
+                class="text-xs text-gray-500 font-medium px-4 py-1.5 bg-gray-800/40 rounded-full border border-gray-700/30 backdrop-blur-sm">
+                Last updated: { new Date().toLocaleTimeString() }
+            </div>
+        </div>
+
+        <!-- Queues View -->
+        <div if={ state.activeTab==='queues' } class="space-y-6">
+            <div class="flex justify-end">
+                <button onclick={ showEnqueueModal }
+                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Enqueue Job
+                </button>
+            </div>
+            <!-- Queues Overview -->
+            <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div each={ queue in state.queues } onclick={ ()=> selectQueue(queue.name) }
+                    class="bg-gray-800 overflow-hidden shadow rounded-lg border { state.selectedQueue === queue.name ?
+                    'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-700' } cursor-pointer hover:bg-gray-750
+                    transition-all">
+                    <div class="p-5">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-400 truncate">{ queue.name }</dt>
+                                    <dd>
+                                        <div class="text-lg font-medium text-gray-100">{ queue.total } jobs</div>
+                                    </dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-900/50 px-5 py-3 divide-x divide-gray-700 flex">
+                        <div class="flex-1 text-center px-1">
+                            <span class="block text-xs font-medium text-gray-500 uppercase">Pending</span>
+                            <span class="text-sm font-semibold text-yellow-500">{ queue.pending }</span>
+                        </div>
+                        <div class="flex-1 text-center px-1">
+                            <span class="block text-xs font-medium text-gray-500 uppercase">Running</span>
+                            <span class="text-sm font-semibold text-blue-500">{ queue.running }</span>
+                        </div>
+                        <div class="flex-1 text-center px-1">
+                            <span class="block text-xs font-medium text-gray-500 uppercase">Failed</span>
+                            <span class="text-sm font-semibold text-red-500">{ queue.failed }</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div if={ state.queues.length===0 && !state.loading }
+                    class="col-span-full py-12 text-center bg-gray-800 rounded-lg border border-dashed border-gray-700">
+                    <svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-300">No active queues</h3>
+                    <p class="mt-1 text-sm text-gray-500">Queues appear here once jobs are enqueued.</p>
+                </div>
+            </div>
+
+            <!-- Jobs Table -->
+            <div if={ state.selectedQueue } class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-100 italic">Jobs in "{ state.selectedQueue }"</h3>
+                    <div class="flex items-center space-x-3">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-gray-400">Auto-refresh</span>
+                            <button onclick={ toggleAutoRefresh }
+                                class="relative inline-flex flex-shrink-0 h-5 w-9 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 { state.autoRefresh ? 'bg-indigo-600' : 'bg-gray-700' }">
+                                <span aria-hidden="true"
+                                    class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200 { state.autoRefresh ? 'translate-x-4' : 'translate-x-0' }"></span>
+                            </button>
+                        </div>
+
+                        <div class="flex space-x-1 bg-gray-900/50 border border-gray-700 p-1 rounded-xl">
+                            <button each={ status in ['All', 'Pending' , 'Running' , 'Completed' , 'Failed' ] }
+                                onclick={ ()=>
+                                selectFilter(status.toLowerCase()) }
+                                class="px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200
+                                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900
+                                focus:ring-indigo-500 cursor-pointer {
+                                state.filterStatus === status.toLowerCase() ? 'bg-indigo-600 text-white shadow-lg
+                                shadow-indigo-600/20' :
+                                'text-gray-400 hover:text-gray-100 hover:bg-white/5' }">
+                                { status }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-900/50">
+                            <tr>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Status</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Priority</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Script</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Created</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Run At</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Retries</th>
+                                <th class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-800 divide-y divide-gray-700">
+                            <tr each={ job in state.jobs } class="hover:bg-gray-750 transition-colors">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span
+                                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium { getStatusClasses(job.status) }">
+                                        { job.status }
+                                    </span>
+                                    <span if={ job.cron_job_id } class="ml-1 text-indigo-400"
+                                        title="Spawned by cron job">
+                                        <svg class="h-4 w-4 inline" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                    { job.priority }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-medium text-gray-100">{ job.script_path }</div>
+                                    <div class="text-xs text-gray-500 font-mono truncate max-w-xs">{
+                                        JSON.stringify(job.params) }</div>
+                                    <div if={ job.last_error }
+                                        class="text-xs text-red-400 font-mono mt-1 break-words max-w-xs">
+                                        Error: { job.last_error }
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                    { formatDate(job.created_at) }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                    { formatDate(job.run_at) }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                    { job.retry_count } / { job.max_retries }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button onclick={ ()=>
+                                        cancelJob(job._key) }
+                                        class="cursor-pointer text-gray-500 hover:text-red-400 transition-colors"
+                                        title={ job.status === 'Pending' ? 'Cancel Job' : 'Remove Job' }>
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr if={ state.jobs.length===0 }>
+                                <td colspan="6" class="px-6 py-10 text-center text-gray-500">
+                                    No jobs in this queue.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div if={ state.selectedQueue }
+                class="flex items-center justify-between px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg sm:px-6">
+                <div class="flex-1 flex justify-between sm:hidden">
+                    <button onclick={ prevPage } disabled={ state.page===1 }
+                        class="relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">
+                        Previous
+                    </button>
+                    <button onclick={ nextPage } disabled={ state.page * state.limit>= state.totalJobs }
+                        class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm
+                        font-medium
+                        rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">
+                        Next
+                    </button>
+                </div>
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm text-gray-400" if={ state.totalJobs> 0 }>
+                            Showing
+                            <span class="font-medium text-white">{ (state.page - 1) * state.limit + 1 }</span>
+                            to
+                            <span class="font-medium text-white">{ min(state.page * state.limit, state.totalJobs)
+                                }</span>
+                            of
+                            <span class="font-medium text-white">{ state.totalJobs }</span>
+                            results
+                        </p>
+                        <p class="text-sm text-gray-400" if={ state.totalJobs===0 }>
+                            No results
+                        </p>
+                    </div>
+                    <div>
+                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                            <button onclick={ prevPage } disabled={ state.page===1 }
+                                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-600 bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span class="sr-only">Previous</span>
+                                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                                    fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd"
+                                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                        clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                            <button onclick={ nextPage } disabled={ state.page * state.limit>= state.totalJobs }
+                                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-600
+                                bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50
+                                disabled:cursor-not-allowed">
+                                <span class="sr-only">Next</span>
+                                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                                    fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd"
+                                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                        clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+
+        <!-- Schedules View -->
+        <div if={ state.activeTab==='schedules' } class="space-y-6">
+            <div class="flex justify-end">
+                <button onclick={ showScheduleModal }
+                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    New Schedule
+                </button>
+            </div>
+
+            <!-- Schedules Table -->
+            <div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-700">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-900/50">
+                        <tr>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Name</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Cron</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Queue</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Priority</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Script</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Retries</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Next Run</th>
+                            <th scope="col"
+                                class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                Last Run</th>
+                            <th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-700">
+                        <tr each={ schedule in state.schedules } class="hover:bg-gray-750 transition-colors">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{ schedule.name }
+                            </td>
+                            <td
+                                class="px-6 py-4 whitespace-nowrap text-sm text-gray-300 font-mono bg-gray-900/50 rounded px-2 py-1">
+                                { schedule.cron_expression }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                <span class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-xs">{
+                                    schedule.queue }</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{ schedule.priority
+                                }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{ schedule.script_path }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{ schedule.max_retries }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{
+                                formatDate(schedule.next_run) }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{
+                                formatDate(schedule.last_run) }</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button onclick={ ()=> deleteSchedule(schedule._key) } class="text-red-400
+                                    hover:text-red-300 ml-4 transition-colors">Delete</button>
+                            </td>
+                        </tr>
+                        <tr if={ state.schedules.length===0 }>
+                            <td colspan="9" class="px-6 py-12 text-center text-gray-500">No schedules defined.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
+        <!-- Enqueue Modal -->
+        <div id="enqueueModalBackdrop"
+            class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"
+            onclick={ handleBackdropClick }>
+            <!-- Backdrop overlay -->
+            <div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div>
+
+            <div id="enqueueModalContent"
+                class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"
+                onclick={ (e)=> e.stopPropagation() }>
+
+                <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
+                    <h3 class="text-xl font-semibold text-white tracking-tight">Enqueue New Job</h3>
+                </div>
+
+                <div class="p-6 overflow-y-auto max-h-[80vh]">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Queue Name</label>
+                            <input type="text" oninput={ updateNewJob('queue') } value={ state.newJob.queue }
+                                class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Script Path</label>
+                            <input type="text" oninput={ updateNewJob('script') } value={ state.newJob.script }
+                                class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                                placeholder="e.g. process_data">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Params (JSON)</label>
+                            <textarea oninput={ updateNewJob('params') }
+                                class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono text-sm"
+                                rows="3">{ state.newJob.params }</textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">Priority</label>
+                                <input type="number" oninput={ updateNewJob('priority') } value={ state.newJob.priority
+                                    }
+                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-1">Max Retries</label>
+                                <input type="number" oninput={ updateNewJob('max_retries') } value={
+                                    state.newJob.max_retries }
+                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-1">Scheduled At (optional)</label>
+                            <input type="datetime-local" oninput={ updateNewJob('scheduled_at') } value={
+                                state.newJob.scheduled_at }
+                                class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+                            <p class="mt-1 text-xs text-gray-500">Leave empty to run immediately</p>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3 pt-6 mt-2">
+                        <button onclick={ hideModal } type="button"
+                            class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">
+                            Cancel
+                        </button>
+                        <button onclick={ enqueueJob } type="button"
+                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">
+                            Enqueue
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schedule Modal (at root level for proper z-index) -->
+    <div if={ state.showScheduleModal } class="fixed inset-0 z-[9999] overflow-y-auto" aria-labelledby="modal-title"
+        role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-black bg-opacity-75" aria-hidden="true" onclick={ hideScheduleModal }>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div
+                class="relative inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-gray-700">
+                <div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-100 mb-4" id="modal-title">Create Schedule
+                    </h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400">Name</label>
+                            <input type="text" oninput={ updateNewSchedule('name') }
+                                class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                placeholder="Daily Cleanup">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400">Cron Expression</label>
+                            <input type="text" oninput={ updateNewSchedule('cron_expression') } value={
+                                state.newSchedule.cron_expression }
+                                class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                placeholder="0 */5 * * * * *">
+                            <p class="mt-1 text-xs text-gray-500">Format: sec min hour day month day_of_week year (e.g.
+                                "0 */5 * * * * *" = every 5 min)</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400">Queue Name</label>
+                            <input type="text" oninput={ updateNewSchedule('queue') } value={ state.newSchedule.queue }
+                                class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                placeholder="default">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400">Script Path</label>
+                            <input type="text" oninput={ updateNewSchedule('script') }
+                                class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                placeholder="scripts/my_job.js">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400">Params (JSON)</label>
+                            <textarea oninput={ updateNewSchedule('params') } value={ state.newSchedule.params }
+                                rows="3"
+                                class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"></textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400">Priority</label>
+                                <input type="number" oninput={ updateNewSchedule('priority') } value={
+                                    state.newSchedule.priority }
+                                    class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                    placeholder="0">
+                                <p class="mt-1 text-xs text-gray-500">Higher = runs first</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-400">Max Retries</label>
+                                <input type="number" oninput={ updateNewSchedule('max_retries') } value={
+                                    state.newSchedule.max_retries }
+                                    class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                    placeholder="3">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-800 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-700">
+                    <button type="button" onclick={ createSchedule }
+                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm transition-colors">
+                        Create
+                    </button>
+                    <button type="button" onclick={ hideScheduleModal }
+                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-600 shadow-sm px-4 py-2 bg-gray-700 text-base font-medium text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        import { authenticatedFetch, getApiUrl } from '/api-config.js';
+
+        export default {
+            state: {
+                activeTab: 'queues',
+                queues: [],
+                schedules: [],
+                selectedQueue: null,
+                filterStatus: 'all',
+                page: 1,
+                limit: 50,
+                totalJobs: 0,
+                autoRefresh: false,
+                jobs: [],
+                loading: false,
+                showModal: false,
+                showScheduleModal: false,
+                newJob: {
+                    queue: 'default',
+                    script: '',
+                    params: '{}',
+                    priority: 0,
+                    max_retries: 20,
+                    scheduled_at: ''
+                },
+                newSchedule: {
+                    name: '',
+                    cron_expression: '0 */5 * * * * *',
+                    queue: 'default',
+                    script: '',
+                    params: '{}',
+                    priority: 0,
+                    max_retries: 3
+                },
+                error: null
+            },
+
+            async onMounted() {
+                try {
+                    console.log("QueueManager Mounted");
+                    await this.fetchQueues();
+                    await this.fetchSchedules();
+                    document.addEventListener('keydown', this.handleKeyDown);
+                } catch (e) {
+                    console.error("Mount error:", e);
+                    this.update({ error: e.message });
+                }
+            },
+
+            min(a, b) {
+                return Math.min(a, b);
+            },
+
+            onUnmounted() {
+                document.removeEventListener('keydown', this.handleKeyDown);
+                this.stopAutoRefresh();
+            },
+
+            handleKeyDown(e) {
+                if (e.key === 'Escape') {
+                    if (this.state.showModal) this.hideModal();
+                    if (this.state.showScheduleModal) this.hideScheduleModal();
+                }
+            },
+
+            async fetchQueues() {
+                this.update({ loading: true });
+                try {
+                    const url = `${getApiUrl()}/database/${this.props.db}/queues`;
+                    const res = await authenticatedFetch(url);
+                    if (res.ok) {
+                        const queues = await res.json();
+                        queues.sort((a, b) => a.name.localeCompare(b.name));
+                        this.update({ queues, loading: false });
+
+                        if (this.state.selectedQueue) {
+                            await this.fetchJobs(this.state.selectedQueue);
+                        }
+                    } else {
+                        this.update({ loading: false });
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch queues", e);
+                    this.update({ loading: false });
+                }
+            },
+
+            async fetchSchedules() {
+                this.update({ loading: true });
+                try {
+                    const url = `${getApiUrl()}/database/${this.props.db}/cron`;
+                    const res = await authenticatedFetch(url);
+                    if (res.ok) {
+                        const schedules = await res.json();
+                        this.update({ schedules, loading: false });
+                    } else {
+                        this.update({ loading: false });
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch schedules", e);
+                    this.update({ loading: false });
+                }
+            },
+
+            switchTab(tab) {
+                this.update({ activeTab: tab });
+                if (tab === 'queues') {
+                    this.fetchQueues();
+                } else {
+                    this.fetchSchedules();
+                }
+            },
+
+            async fetchJobs(queueName) {
+                try {
+                    let url = `${getApiUrl()}/database/${this.props.db}/queues/${queueName}/jobs`;
+
+                    const params = new URLSearchParams();
+                    if (this.state.filterStatus !== 'all') {
+                        params.append('status', this.state.filterStatus);
+                    }
+                    params.append('limit', this.state.limit);
+                    params.append('offset', (this.state.page - 1) * this.state.limit);
+
+                    url += `?${params.toString()}`;
+
+                    const res = await authenticatedFetch(url);
+                    if (res.ok) {
+                        const data = await res.json();
+                        this.update({ jobs: data.jobs || [], totalJobs: data.total || 0 });
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch jobs", e);
+                }
+            },
+
+            async selectQueue(queueName) {
+                this.update({ selectedQueue: queueName, filterStatus: 'all', page: 1 });
+                await this.fetchJobs(queueName);
+            },
+
+            async selectFilter(status) {
+                this.update({ filterStatus: status, page: 1 });
+                if (this.state.selectedQueue) {
+                    await this.fetchJobs(this.state.selectedQueue);
+                }
+            },
+
+            async prevPage() {
+                if (this.state.page > 1) {
+                    this.update({ page: this.state.page - 1 });
+                    await this.fetchJobs(this.state.selectedQueue);
+                }
+            },
+
+            async nextPage() {
+                if (this.state.page * this.state.limit < this.state.totalJobs) {
+                    this.update({ page: this.state.page + 1 });
+                    await this.fetchJobs(this.state.selectedQueue);
+                }
+            },
+
+            toggleAutoRefresh() {
+                const newState = !this.state.autoRefresh;
+                this.update({ autoRefresh: newState });
+
+                if (newState) {
+                    this.startAutoRefresh();
+                } else {
+                    this.stopAutoRefresh();
+                }
+            },
+
+            startAutoRefresh() {
+                // Clear any existing timer first
+                this.stopAutoRefresh();
+
+                this.refreshTimer = setInterval(async () => {
+                    if (this.state.selectedQueue) {
+                        try {
+                            await this.fetchJobs(this.state.selectedQueue);
+                            await this.fetchQueues(); // Also refresh stats
+                        } catch (e) {
+                            console.error("Auto-refresh failed", e);
+                        }
+                    }
+                }, 5000);
+            },
+
+            stopAutoRefresh() {
+                if (this.refreshTimer) {
+                    clearInterval(this.refreshTimer);
+                    this.refreshTimer = null;
+                }
+            },
+
+            getStatusClasses(status) {
+                switch (status) {
+                    case 'Pending': return 'bg-yellow-900/50 text-yellow-200 border border-yellow-700/50';
+                    case 'Running': return 'bg-blue-900/50 text-blue-200 border border-blue-700/50';
+                    case 'Completed': return 'bg-green-900/50 text-green-200 border border-green-700/50';
+                    case 'Failed': return 'bg-red-900/50 text-red-200 border border-red-700/50';
+                    default: return 'bg-gray-700 text-gray-300';
+                }
+            },
+
+
+
+            showEnqueueModal() {
+                this.update({ showModal: true });
+
+                const backdrop = this.$('#enqueueModalBackdrop');
+                const content = this.$('#enqueueModalContent');
+
+                if (backdrop && content) {
+                    backdrop.classList.remove('hidden');
+
+                    setTimeout(() => {
+                        backdrop.classList.remove('opacity-0');
+                        content.classList.remove('scale-95', 'opacity-0');
+                        content.classList.add('scale-100', 'opacity-100');
+                    }, 10);
+                }
+            },
+
+            hideModal() {
+                const backdrop = this.$('#enqueueModalBackdrop');
+                const content = this.$('#enqueueModalContent');
+
+                if (backdrop && content) {
+                    backdrop.classList.add('opacity-0');
+                    content.classList.remove('scale-100', 'opacity-100');
+                    content.classList.add('scale-95', 'opacity-0');
+
+                    setTimeout(() => {
+                        this.update({ showModal: false });
+                        backdrop.classList.add('hidden');
+                    }, 300);
+                } else {
+                    this.update({ showModal: false });
+                }
+            },
+
+            handleBackdropClick(e) {
+                if (e.target.id === 'enqueueModalBackdrop') {
+                    this.hideModal();
+                }
+            },
+
+            updateNewJob(prop) {
+                return (e) => {
+                    this.state.newJob[prop] = e.target.value;
+                }
+            },
+
+            async enqueueJob() {
+                const job = this.state.newJob;
+                if (!job.script) {
+                    alert("Script path is required");
+                    return;
+                }
+
+                try {
+                    let params = null;
+                    try {
+                        params = JSON.parse(job.params);
+                    } catch (e) {
+                        alert("Invalid JSON in params");
+                        return;
+                    }
+
+                    const payload = {
+                        script: job.script,
+                        params: params,
+                        priority: parseInt(job.priority),
+                        max_retries: parseInt(job.max_retries)
+                    };
+
+                    // Add run_at if scheduled_at is provided
+                    if (job.scheduled_at) {
+                        payload.run_at = Math.floor(new Date(job.scheduled_at).getTime() / 1000);
+                    }
+
+                    const url = `${getApiUrl()}/database/${this.props.db}/queues/${job.queue}/enqueue`;
+                    const res = await authenticatedFetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (res.ok) {
+                        this.hideModal();
+                        await this.fetchQueues();
+                        if (this.state.selectedQueue === job.queue) {
+                            await this.fetchJobs(job.queue);
+                        }
+                    } else {
+                        const err = await res.json();
+                        alert("Failed to enqueue: " + (err.error || "Unknown error"));
+                    }
+                } catch (e) {
+                    console.error("Enqueue failed", e);
+                    alert("Enqueue failed: " + e.message);
+                }
+            },
+
+            async cancelJob(jobId) {
+                if (!confirm("Are you sure you want to remove this job?")) return;
+
+                try {
+                    const url = `${getApiUrl()}/database/${this.props.db}/queues/jobs/${jobId}`;
+                    const res = await authenticatedFetch(url, {
+                        method: 'DELETE'
+                    });
+
+                    if (res.ok) {
+                        await this.fetchQueues();
+                    } else {
+                        const err = await res.json();
+                        alert("Failed to cancel job: " + (err.error || "Unknown error"));
+                    }
+                } catch (e) {
+                    console.error("Cancel failed", e);
+                }
+            },
+
+            showScheduleModal() {
+                this.update({ showScheduleModal: true });
+            },
+
+            hideScheduleModal() {
+                this.update({ showScheduleModal: false });
+            },
+
+            updateNewSchedule(prop) {
+                return (e) => {
+                    this.state.newSchedule[prop] = e.target.value;
+                }
+            },
+
+            async createSchedule() {
+                const schedule = this.state.newSchedule;
+                if (!schedule.name || !schedule.cron_expression || !schedule.script) {
+                    alert("Name, Cron Expression and Script are required");
+                    return;
+                }
+
+                try {
+                    let params = null;
+                    try {
+                        params = JSON.parse(schedule.params);
+                    } catch (e) {
+                        alert("Invalid JSON in params");
+                        return;
+                    }
+
+                    const url = `${getApiUrl()}/database/${this.props.db}/cron`;
+                    const res = await authenticatedFetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: schedule.name,
+                            cron_expression: schedule.cron_expression,
+                            queue: schedule.queue || 'default',
+                            script: schedule.script,
+                            params: params,
+                            priority: parseInt(schedule.priority) || 0,
+                            max_retries: parseInt(schedule.max_retries) || 3
+                        })
+                    });
+
+                    if (res.ok) {
+                        this.hideScheduleModal();
+                        await this.fetchSchedules();
+                    } else {
+                        const err = await res.json();
+                        alert("Failed to create schedule: " + (err.error || "Unknown error"));
+                    }
+                } catch (e) {
+                    console.error("Create schedule failed", e);
+                    alert("Create schedule failed: " + e.message);
+                }
+            },
+
+            async deleteSchedule(id) {
+                if (!confirm("Are you sure you want to remove this schedule?")) return;
+                try {
+                    const url = `${getApiUrl()}/database/${this.props.db}/cron/${id}`;
+                    const res = await authenticatedFetch(url, { method: 'DELETE' });
+                    if (res.ok) {
+                        await this.fetchSchedules();
+                    } else {
+                        alert("Failed to delete schedule");
+                    }
+                } catch (e) {
+                    console.error("Delete schedule failed", e);
+                }
+            },
+
+            formatDate(ts) {
+                if (!ts) return 'Never';
+                return new Date(ts * 1000).toLocaleString();
+            }
+        }
+    </script>
+</queue-manager>

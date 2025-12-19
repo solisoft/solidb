@@ -245,6 +245,42 @@ end
 
 -- Token
 
+-- Queues
+
+function Solidb:ListQueues()
+  -- GET /_api/database/{db}/queues
+  local body, ok = self:without_Params(self:_get_db_path("/queues"), "GET")
+  return body, ok
+end
+
+function Solidb:ListJobs(queueName)
+  -- GET /_api/database/{db}/queues/{name}/jobs
+  local body, ok = self:without_Params(self:_get_db_path("/queues/" .. queueName .. "/jobs"), "GET")
+  return body, ok
+end
+
+function Solidb:EnqueueJob(queueName, script, params, options)
+  -- POST /_api/database/{db}/queues/{name}/enqueue
+  local payload = {
+    script = script,
+    params = params,
+  }
+  if options then
+    payload.priority = options.priority
+    payload.max_retries = options.max_retries
+    payload.run_at = options.run_at
+  end
+  
+  local body, ok = self:with_Params(self:_get_db_path("/queues/" .. queueName .. "/enqueue"), "POST", payload)
+  return body, ok
+end
+
+function Solidb:CancelJob(jobId)
+  -- DELETE /_api/database/{db}/queues/jobs/{id}
+  local body, ok = self:without_Params(self:_get_db_path("/queues/jobs/" .. jobId), "DELETE")
+  return body, ok
+end
+
 function Solidb:RefreshToken()
   if GetTime() - self._lastDBConnect > 600 then
     self:Auth()
