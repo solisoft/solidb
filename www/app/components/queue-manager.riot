@@ -177,6 +177,9 @@
                                 <th
                                     class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                                     Retries</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Duration</th>
                                 <th class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
                             </tr>
                         </thead>
@@ -216,6 +219,9 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                                     { job.retry_count } / { job.max_retries }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                    { formatDuration(job) }
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <button onclick={ ()=>
@@ -934,6 +940,23 @@
             formatDate(ts) {
                 if (!ts) return 'Never';
                 return new Date(ts * 1000).toLocaleString();
+            },
+
+            formatDuration(job) {
+                if (!job.started_at) return '-';
+                const end = job.completed_at || Math.floor(Date.now() / 1000);
+                const duration = end - job.started_at;
+
+                if (duration < 1) return '<1s';
+                if (duration < 60) return `${duration}s`;
+                if (duration < 3600) {
+                    const mins = Math.floor(duration / 60);
+                    const secs = duration % 60;
+                    return `${mins}m ${secs}s`;
+                }
+                const hours = Math.floor(duration / 3600);
+                const mins = Math.floor((duration % 3600) / 60);
+                return `${hours}h ${mins}m`;
             }
         }
     </script>

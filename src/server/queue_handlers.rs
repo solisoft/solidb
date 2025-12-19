@@ -309,6 +309,8 @@ pub async fn enqueue_job_handler(
         cron_job_id: None,
         run_at: req.run_at.unwrap_or(now),
         created_at: now,
+        started_at: None,
+        completed_at: None,
     };
 
     let doc_val = serde_json::to_value(&job).unwrap();

@@ -736,6 +736,8 @@ impl ScriptEngine {
                 cron_job_id: None,
                 run_at,
                 created_at: run_at,
+                started_at: None,
+                completed_at: None,
             };
 
             let db = storage_enqueue.get_database(&current_db_name)

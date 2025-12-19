@@ -36,6 +36,10 @@ pub struct Job {
     pub cron_job_id: Option<String>,
     pub run_at: u64, // Unix timestamp
     pub created_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +190,7 @@ impl QueueWorker {
             // Claim job
             let rev = job.revision.clone().unwrap_or_default();
             job.status = JobStatus::Running;
+            job.started_at = Some(now);
             let doc_val = serde_json::to_value(&job).unwrap();
             if let Err(_e) = jobs_coll.update_with_rev(&job.id, &rev, doc_val) {
                 // If this fails (e.g. ConflictError), it means another worker claimed it first
@@ -202,26 +207,34 @@ impl QueueWorker {
                 let mut job_to_update = job;
                 match Self::execute_job(&worker_storage, &worker_engine, &job_to_update, &db_name_task).await {
                     Ok(_) => {
+                        let completed_now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
                         job_to_update.status = JobStatus::Completed;
+                        job_to_update.completed_at = Some(completed_now);
                         job_to_update.last_error = None;
-
-                        // HANDLE CRON RECURRENCE REMOVED - using separate _cron_jobs collection logic now
-
                     }
                     Err(e) => {
+                        let completed_now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
                         tracing::error!("Job {} failed in db {}: {}", job_id, db_name_task, e);
                         job_to_update.retry_count += 1;
                         job_to_update.last_error = Some(e.to_string());
                         
                         if job_to_update.retry_count < job_to_update.max_retries as u32 {
                             job_to_update.status = JobStatus::Pending;
+                            job_to_update.started_at = None; // Reset for retry
                             // Exponential backoff: 10 * 2^retry_count seconds
                             let delay = 10 * (2u64.pow(job_to_update.retry_count));
                             // Cap at 24 hours
                             let delay = std::cmp::min(delay, 24 * 3600);
-                            job_to_update.run_at = now + delay;
+                            job_to_update.run_at = completed_now + delay;
                         } else {
                             job_to_update.status = JobStatus::Failed;
+                            job_to_update.completed_at = Some(completed_now);
                         }
                     }
                 }
@@ -346,6 +359,8 @@ impl QueueWorker {
                             cron_job_id: Some(cron_job.id.clone()),
                             run_at: now,
                             created_at: now,
+                            started_at: None,
+                            completed_at: None,
                          };
                          
                          // Ensure _jobs collection exists before inserting
