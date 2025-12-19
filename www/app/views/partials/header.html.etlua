@@ -4,6 +4,14 @@
       <div class="flex">
         <div class="flex-shrink-0 flex items-center gap-3">
           <a href="/" class="flex items-center gap-3">
+<div class="relative flex h-8 w-8 items-center justify-center">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-8 w-8 bg-indigo-500 items-center justify-center shadow-lg">
+              <svg class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+              </svg>
+            </span>
+          </div>
             <span class="text-2xl font-bold text-indigo-400">SoliDB</span>
           </a>
         </div>
