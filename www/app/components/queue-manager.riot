@@ -944,11 +944,16 @@
 
             formatDuration(job) {
                 if (!job.started_at) return '-';
-                const end = job.completed_at || Math.floor(Date.now() / 1000);
-                const duration = end - job.started_at;
+                // started_at and completed_at are in milliseconds
+                const end = job.completed_at || Date.now();
+                const durationMs = end - job.started_at;
 
-                if (duration < 1) return '<1s';
-                if (duration < 60) return `${duration}s`;
+                if (durationMs < 1000) return `${durationMs}ms`;
+
+                const duration = Math.floor(durationMs / 1000);
+                const ms = durationMs % 1000;
+
+                if (duration < 60) return `${duration}.${String(ms).padStart(3, '0').slice(0, 2)}s`;
                 if (duration < 3600) {
                     const mins = Math.floor(duration / 60);
                     const secs = duration % 60;
