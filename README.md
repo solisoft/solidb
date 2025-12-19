@@ -81,4 +81,4 @@ Visit the **[full documentation](https://solidb.solisoft.net/docs/)** for:
 
 ## 📄 License
 
-MIT License
+[O'Saasy License](LICENCE.md)
