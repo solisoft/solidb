@@ -175,8 +175,9 @@
           // Filter out protected system collections in _system database
           let collections = data.collections || [];
 
-          // Always hide _scripts collection (managed via Scripts tab)
-          collections = collections.filter(c => c.name !== '_scripts');
+          // Always hide internal collections (managed via other tabs)
+          const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs'];
+          collections = collections.filter(c => !hiddenCollections.includes(c.name));
 
           if (this.props.db === '_system') {
             collections = collections.filter(c => !c.name.startsWith('_'));

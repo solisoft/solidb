@@ -30,7 +30,7 @@
     <script src="<%= PublicPath('/app_vendor.js') %>"></script>
   </head>
 
-  <body class="min-h-screen flex flex-col bg-gray-900 font-sans text-gray-100">
+  <body class="h-screen flex flex-col bg-gray-900 font-sans text-gray-100 overflow-hidden">
     <!-- Global Background Decorations -->
     <div
       class="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none"
@@ -43,11 +43,35 @@
       ></div>
     </div>
 
-    <main class="grow relative z-10">
-      <%- Partial("header") %> <%- Partial("secondary_nav") %> @yield
-    </main>
+    <!-- Header (Fixed Top) -->
+    <div class="relative z-20 flex-shrink-0">
+      <%- Partial("header") %>
+    </div>
 
-    <%- Partial("footer") %> <%- RefreshPageForDevMode() %>
+    <!-- Flex Container for Sidebar + Main Content -->
+    <div class="flex flex-1 overflow-hidden relative z-10">
+      
+      <!-- Sidebar (Only shown if db param exists) -->
+      <% if Params['db'] then %>
+      <aside class="w-64 bg-gray-900/50 backdrop-blur-xl border-r border-gray-800 overflow-y-auto hidden md:block flex-shrink-0">
+        <%- Partial("side_nav") %>
+      </aside>
+      <% end %>
+
+      <!-- Main Scrollable Content -->
+      <main class="flex-1 overflow-y-auto bg-transparent">
+        <div class="min-h-full flex flex-col">
+          <div class="flex-1 p-4 sm:p-6 lg:p-8">
+            @yield
+          </div>
+          <div class="mt-auto">
+             <%- Partial("footer") %>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <%- RefreshPageForDevMode() %>
     <script type="module">
       import {
         getServerConfig,

@@ -14,32 +14,60 @@ export default {
 
     editor: null,
 
+    onMounted() {
+      document.addEventListener('keydown', this.handleKeyDown)
+    },
+
+    onUnmounted() {
+      document.removeEventListener('keydown', this.handleKeyDown)
+    },
+
+    handleKeyDown(e) {
+      if (e.key === 'Escape' && this.state.visible) {
+        this.handleClose(e)
+      }
+    },
+
     show(document = null, isBlob) {
       this.update({ visible: true, document: document, error: null, isBlob: !!isBlob, downloading: false })
+      const backdrop = this.$('#modalBackdrop')
+      const content = this.$('#modalContent')
+      backdrop.classList.remove('hidden')
+      setTimeout(() => {
+        backdrop.classList.remove('opacity-0')
+        content.classList.remove('scale-95', 'opacity-0')
+        content.classList.add('scale-100', 'opacity-100')
+      }, 10)
     },
 
     hide() {
-      this.update({ visible: false, document: null, error: null })
-      if (this.refs && this.refs.keyInput) {
-        this.refs.keyInput.value = ''
-      }
-      // Destroy the editor instance when closing the modal
-      if (this.editor) {
-        this.editor.destroy()
-        this.editor = null
-        this.lastDocument = null
-      }
+      const backdrop = this.$('#modalBackdrop')
+      const content = this.$('#modalContent')
+      backdrop.classList.add('opacity-0')
+      content.classList.remove('scale-100', 'opacity-100')
+      content.classList.add('scale-95', 'opacity-0')
+      setTimeout(() => {
+        this.update({ visible: false, document: null, error: null })
+        if (this.refs && this.refs.keyInput) {
+          this.refs.keyInput.value = ''
+        }
+        if (this.editor) {
+          this.editor.destroy()
+          this.editor = null
+          this.lastDocument = null
+        }
+        backdrop.classList.add('hidden')
+      }, 300)
     },
 
-    onMounted() {
-      // Component mounted
+    handleBackdropClick(e) {
+      if (e.target.id === 'modalBackdrop' || e.target === e.currentTarget) {
+        this.handleClose(e)
+      }
     },
 
     onUpdated(props, state) {
-      // Access the editor div directly using querySelector
       const editorRef = this.root ? this.root.querySelector('[ref="editor"]') : null
-
-      // Initialize editor when modal becomes visible for the first time
       if (state.visible && !this.editor && editorRef) {
         try {
           this.editor = ace.edit(editorRef)
@@ -50,10 +78,10 @@ export default {
             showPrintMargin: false,
             highlightActiveLine: true,
             enableBasicAutocompletion: true,
-            enableLiveAutocompletion: true
+            enableLiveAutocompletion: true,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
           })
-
-          // Set initial content
+          editorRef.style.backgroundColor = "rgba(0, 0, 0, 0.3)"
           if (state.document) {
             const copy = { ...state.document }
             delete copy._key
@@ -66,17 +94,12 @@ export default {
           } else {
             this.editor.setValue('{\n  \n}', -1)
           }
-
-          // Track that we've set the content
           this.editorContentSet = true
-          this.lastDocument = state.document // Store the document that was used to set initial content
+          this.lastDocument = state.document
         } catch (error) {
           console.error('Error initializing Ace Editor:', error)
         }
       }
-
-      // Only update editor content when document changes (not on every update)
-      // and the editor is visible and initialized
       if (state.visible && this.editor && state.document && state.document !== this.lastDocument) {
         this.lastDocument = state.document
         const copy = { ...state.document }
@@ -94,27 +117,22 @@ export default {
       if (e) e.preventDefault()
       this.hide()
       if (this.props.onClose) {
-        this.props.onClose()
+        setTimeout(() => this.props.onClose(), 300)
       }
     },
 
     async handleSubmit(e) {
       e.preventDefault()
       this.update({ error: null })
-
       if (!this.editor || !this.editor.session) {
         this.update({ error: 'Editor not ready. Please wait a moment and try again.' })
         return
       }
-
-      // Get value using session to ensure we get the latest content
       const dataStr = this.editor.session.getValue().trim()
-
       if (!dataStr) {
         this.update({ error: 'Please enter JSON data' })
         return
       }
-
       let data
       try {
         data = JSON.parse(dataStr)
@@ -122,20 +140,16 @@ export default {
         this.update({ error: 'Invalid JSON: ' + err.message })
         return
       }
-
       try {
         const url = `${getApiUrl()}/database/${this.props.db}`
         let response
-
         if (this.state.document) {
-          // Update existing document
           response = await authenticatedFetch(`${url}/document/${this.props.collection}/${this.state.document._key}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
           })
         } else {
-          // Create new document
           const key = (this.refs && this.refs.keyInput) ? this.refs.keyInput.value.trim() : ''
           if (key) {
             data._key = key
@@ -146,11 +160,10 @@ export default {
             body: JSON.stringify(data)
           })
         }
-
         if (response.ok) {
           this.hide()
           if (this.props.onSaved) {
-            this.props.onSaved()
+            setTimeout(() => this.props.onSaved(), 300)
           }
         } else {
           const error = await response.json()
@@ -165,18 +178,15 @@ export default {
       if (e) e.preventDefault()
       const doc = this.state.document
       if (!doc) return
-
       try {
         this.update({ downloading: true, error: null })
         const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}/${doc._key}`
         const response = await authenticatedFetch(url)
-
         if (response.ok) {
           const blob = await response.blob()
           const downloadUrl = window.URL.createObjectURL(blob)
           const a = document.createElement('a')
           a.href = downloadUrl
-
           let filename = doc.filename || doc.name || doc._key
           const disposition = response.headers.get('Content-Disposition')
           if (disposition && disposition.indexOf('attachment') !== -1) {
@@ -186,7 +196,6 @@ export default {
               filename = matches[1].replace(/['"]/g, '');
             }
           }
-
           a.download = filename
           document.body.appendChild(a)
           a.click()
@@ -211,222 +220,222 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr544="expr544" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>',
+    '<div expr2946="expr2946" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr2947="expr2947" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 expr2948="expr2948" class="text-xl font-semibold text-white tracking-tight"> </h3></div><div class="p-6 overflow-y-auto" style="max-height: calc(90vh - 80px);"><div expr2949="expr2949" class="mb-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700/50"></div><div expr2955="expr2955" class="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-lg"></div><form expr2957="expr2957"><div expr2958="expr2958" class="mb-6"></div><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div><p class="mt-2 text-xs text-gray-500">Enter valid JSON (without _key, _id, _rev - they will be added\n              automatically)</p></div><div class="flex justify-end space-x-3 pt-2"><button expr2959="expr2959" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-green-600/20 transition-all flex items-center disabled:opacity-50 disabled:shadow-none mr-auto"></button><button expr2961="expr2961" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button><button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Save\n              Document</button></div></form></div></div></div>',
     [
       {
+        redundantAttribute: 'expr2946',
+        selector: '[expr2946]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => _scope.handleBackdropClick
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr2947',
+        selector: '[expr2947]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => e => e.stopPropagation()
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr2948',
+        selector: '[expr2948]',
+
+        expressions: [
+          {
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => _scope.state.document ? 'Edit Document' : 'Create New          Document'
+          }
+        ]
+      },
+      {
         type: bindingTypes.IF,
-        evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr544',
-        selector: '[expr544]',
+        evaluate: _scope => _scope.state.document,
+        redundantAttribute: 'expr2949',
+        selector: '[expr2949]',
 
         template: template(
-          '<div class="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto"><h3 expr545="expr545" class="text-xl font-bold text-gray-100 mb-2"> </h3><div expr546="expr546" class="mb-4 p-3 bg-gray-900 rounded border border-gray-700"></div><div expr553="expr553" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr555="expr555"><div expr556="expr556" class="mb-4"></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border: 1px solid #4B5563; border-radius: 0.375rem;"></div><p class="mt-1 text-xs text-gray-400">Enter valid JSON (without _key, _id, _rev - they will be added\n            automatically)</p></div><div class="flex justify-end space-x-3"><button expr557="expr557" type="button" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed mr-auto"></button><button expr559="expr559" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n            Cancel\n          </button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors">\n            Save\n          </button></div></form></div>',
+          '<div class="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr2950="expr2950" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_key:</span><span expr2951="expr2951" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_rev:</span><span expr2952="expr2952" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_created_at:</span><span expr2953="expr2953" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_updated_at:</span><span expr2954="expr2954" class="text-gray-400 ml-2"> </span></div></div>',
           [
             {
-              redundantAttribute: 'expr545',
-              selector: '[expr545]',
+              redundantAttribute: 'expr2950',
+              selector: '[expr2950]',
 
               expressions: [
                 {
                   type: expressionTypes.TEXT,
                   childNodeIndex: 0,
-                  evaluate: _scope => _scope.state.document ? 'Edit Document' : 'Create New Document'
+                  evaluate: _scope => _scope.state.document._id
                 }
               ]
             },
             {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.document,
-              redundantAttribute: 'expr546',
-              selector: '[expr546]',
-
-              template: template(
-                '<div class="grid grid-cols-2 gap-2 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr547="expr547" class="text-gray-300"> </span></div><div><span class="text-gray-500">_key:</span><span expr548="expr548" class="text-gray-300"> </span></div><div><span class="text-gray-500">_rev:</span><span expr549="expr549" class="text-gray-300"> </span></div><div><span class="text-gray-500">_created_at:</span><span expr550="expr550" class="text-gray-300"> </span></div><div><span class="text-gray-500">_updated_at:</span><span expr551="expr551" class="text-gray-300"> </span></div><div><span class="text-gray-500">_replicas:</span><span expr552="expr552" class="text-gray-300"> </span></div></div>',
-                [
-                  {
-                    redundantAttribute: 'expr547',
-                    selector: '[expr547]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._id
-                      }
-                    ]
-                  },
-                  {
-                    redundantAttribute: 'expr548',
-                    selector: '[expr548]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._key
-                      }
-                    ]
-                  },
-                  {
-                    redundantAttribute: 'expr549',
-                    selector: '[expr549]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._rev
-                      }
-                    ]
-                  },
-                  {
-                    redundantAttribute: 'expr550',
-                    selector: '[expr550]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._created_at || '-'
-                      }
-                    ]
-                  },
-                  {
-                    redundantAttribute: 'expr551',
-                    selector: '[expr551]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._updated_at || '-'
-                      }
-                    ]
-                  },
-                  {
-                    redundantAttribute: 'expr552',
-                    selector: '[expr552]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.document._replicas ? _scope.state.document._replicas.join(', ') : '-'
-                      }
-                    ]
-                  }
-                ]
-              )
-            },
-            {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.error,
-              redundantAttribute: 'expr553',
-              selector: '[expr553]',
-
-              template: template(
-                '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr554="expr554" class="text-sm text-red-300"> </p></div>',
-                [
-                  {
-                    redundantAttribute: 'expr554',
-                    selector: '[expr554]',
-
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 0,
-                        evaluate: _scope => _scope.state.error
-                      }
-                    ]
-                  }
-                ]
-              )
-            },
-            {
-              redundantAttribute: 'expr555',
-              selector: '[expr555]',
+              redundantAttribute: 'expr2951',
+              selector: '[expr2951]',
 
               expressions: [
                 {
-                  type: expressionTypes.EVENT,
-                  name: 'onsubmit',
-                  evaluate: _scope => _scope.handleSubmit
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.document._key
                 }
               ]
             },
             {
-              type: bindingTypes.IF,
-              evaluate: _scope => !_scope.state.document,
-              redundantAttribute: 'expr556',
-              selector: '[expr556]',
-
-              template: template(
-                '<label class="block text-sm font-medium text-gray-300 mb-2">Document Key (optional)</label><input type="text" ref="keyInput" pattern="[a-zA-Z0-9_-]+" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Leave empty to auto-generate"/><p class="mt-1 text-xs text-gray-400">Only letters, numbers, hyphens, and underscores allowed</p>',
-                []
-              )
-            },
-            {
-              type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.isBlob && _scope.state.document,
-              redundantAttribute: 'expr557',
-              selector: '[expr557]',
-
-              template: template(
-                '<svg expr558="expr558" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ',
-                [
-                  {
-                    expressions: [
-                      {
-                        type: expressionTypes.TEXT,
-                        childNodeIndex: 1,
-
-                        evaluate: _scope => [
-                          _scope.state.downloading ? 'Downloading...' : 'Download Blob'
-                        ].join(
-                          ''
-                        )
-                      },
-                      {
-                        type: expressionTypes.EVENT,
-                        name: 'onclick',
-                        evaluate: _scope => _scope.handleDownload
-                      },
-                      {
-                        type: expressionTypes.ATTRIBUTE,
-                        isBoolean: true,
-                        name: 'disabled',
-                        evaluate: _scope => _scope.state.downloading
-                      }
-                    ]
-                  },
-                  {
-                    type: bindingTypes.IF,
-                    evaluate: _scope => _scope.state.downloading,
-                    redundantAttribute: 'expr558',
-                    selector: '[expr558]',
-
-                    template: template(
-                      '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>',
-                      []
-                    )
-                  }
-                ]
-              )
-            },
-            {
-              redundantAttribute: 'expr559',
-              selector: '[expr559]',
+              redundantAttribute: 'expr2952',
+              selector: '[expr2952]',
 
               expressions: [
                 {
-                  type: expressionTypes.EVENT,
-                  name: 'onclick',
-                  evaluate: _scope => _scope.handleClose
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.document._rev
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr2953',
+              selector: '[expr2953]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.document._created_at || '-'
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr2954',
+              selector: '[expr2954]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.document._updated_at || '-'
                 }
               ]
             }
           ]
         )
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.error,
+        redundantAttribute: 'expr2955',
+        selector: '[expr2955]',
+
+        template: template(
+          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr2956="expr2956" class="text-sm text-red-300"> </p></div>',
+          [
+            {
+              redundantAttribute: 'expr2956',
+              selector: '[expr2956]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.error
+                }
+              ]
+            }
+          ]
+        )
+      },
+      {
+        redundantAttribute: 'expr2957',
+        selector: '[expr2957]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onsubmit',
+            evaluate: _scope => _scope.handleSubmit
+          }
+        ]
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => !_scope.state.document,
+        redundantAttribute: 'expr2958',
+        selector: '[expr2958]',
+
+        template: template(
+          '<label class="block text-sm font-medium text-gray-300 mb-2">Document Key (optional)</label><input type="text" ref="keyInput" pattern="[a-zA-Z0-9_-]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="Leave empty to auto-generate"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, hyphens, and underscores allowed</p>',
+          []
+        )
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.isBlob && _scope.state.document,
+        redundantAttribute: 'expr2959',
+        selector: '[expr2959]',
+
+        template: template(
+          '<svg expr2960="expr2960" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ',
+          [
+            {
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 1,
+
+                  evaluate: _scope => [
+                    _scope.state.downloading ? 'Downloading...' : 'Download Blob'
+                  ].join(
+                    ''
+                  )
+                },
+                {
+                  type: expressionTypes.EVENT,
+                  name: 'onclick',
+                  evaluate: _scope => _scope.handleDownload
+                },
+                {
+                  type: expressionTypes.ATTRIBUTE,
+                  isBoolean: true,
+                  name: 'disabled',
+                  evaluate: _scope => _scope.state.downloading
+                }
+              ]
+            },
+            {
+              type: bindingTypes.IF,
+              evaluate: _scope => _scope.state.downloading,
+              redundantAttribute: 'expr2960',
+              selector: '[expr2960]',
+
+              template: template(
+                '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>',
+                []
+              )
+            }
+          ]
+        )
+      },
+      {
+        redundantAttribute: 'expr2961',
+        selector: '[expr2961]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => _scope.handleClose
+          }
+        ]
       }
     ]
   ),
