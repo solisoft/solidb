@@ -5050,6 +5050,18 @@ async fn execute_live_query_step(
     let exec_result = tokio::task::spawn_blocking(move || {
         match crate::sdbql::parser::parse(&query_str) {
             Ok(parsed) => {
+                // Security check: Reject mutations in live queries
+                for clause in &parsed.body_clauses {
+                    match clause {
+                        crate::sdbql::BodyClause::Insert(_) |
+                        crate::sdbql::BodyClause::Update(_) |
+                        crate::sdbql::BodyClause::Remove(_) => {
+                             return Err(crate::error::DbError::ExecutionError("Live queries are read-only and cannot contain INSERT, UPDATE, or REMOVE operations".to_string()));
+                        },
+                        _ => {}
+                    }
+                }
+
                 let mut executor = crate::sdbql::executor::QueryExecutor::with_database(&storage, db_name);
                 if let Some(coord) = shard_coordinator {
                     executor = executor.with_shard_coordinator(coord);
