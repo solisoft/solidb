@@ -48,6 +48,7 @@ async fn verify_sharding_endpoint_returns_shards() {
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
+        queue_worker: None,
     };
 
     // Create a mini router with just the needed route

@@ -920,7 +920,12 @@ mod tests {
             _processed_keys: Vec::new(),
         };
 
-        let old_assignments = HashMap::new();
+        let mut old_assignments = HashMap::new();
+        old_assignments.insert(0, ShardAssignment {
+            shard_id: 0,
+            primary_node: "test_node".to_string(),
+            replica_nodes: vec!["node2".to_string()],
+        });
         let mut current_assignments = HashMap::new();
 
         // Mock assignment where current node is primary for shard 0
@@ -1770,7 +1775,12 @@ mod tests {
 
         let coordinator = MigrationCoordinator::new(storage.clone());
 
-        let old_assignments = HashMap::new();
+        let mut old_assignments = HashMap::new();
+        old_assignments.insert(0, ShardAssignment {
+            shard_id: 0,
+            primary_node: "test_node".to_string(), // Local -> Processed
+            replica_nodes: vec![],
+        });
         let mut current_assignments = HashMap::new();
         // Set up assignments: Shard 0 local (so we process it), Shard 1 remote (so migration uses sender)
         current_assignments.insert(0, ShardAssignment {

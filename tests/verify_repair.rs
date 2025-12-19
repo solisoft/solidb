@@ -145,6 +145,7 @@ async fn spawn_node(peers: Vec<String>) -> Result<TestNode> {
         Some(cluster_manager.clone()),
         Some(replication_log.clone()),
         Some(shard_coordinator.clone()),
+        None,
         port
     );
 
