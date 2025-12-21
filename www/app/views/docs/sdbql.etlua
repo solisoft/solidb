@@ -1310,11 +1310,11 @@ RETURN TO_ARRAY({a:1}) // [1]</code></pre>
           </div>
         </div>
 
-        <!-- Logical -->
+        <!-- Logical & Conditional -->
         <div class="mb-12">
           <h3 class="text-xl font-bold text-blue-300 mb-6 flex items-center">
             <span class="w-2 h-8 bg-blue-500 rounded-full mr-3"></span>
-            Logical
+            Logical & Conditional
           </h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div
@@ -1329,6 +1329,120 @@ RETURN TO_ARRAY({a:1}) // [1]</code></pre>
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IF(1 > 0, "yes", "no") // "yes"
 RETURN IF(null, 1, 0) // 0</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3"
+                >cond ? true : false</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Ternary operator. Syntactic sugar for IF function.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN doc.age >= 18 ? "Adult" : "Minor"
+RETURN a ? b ? "both" : "a" : "none"</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Type Checking -->
+        <div class="mb-12" id="func-type">
+          <h3 class="text-xl font-bold text-teal-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-teal-500 rounded-full mr-3"></span>
+            Type Checking
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_ARRAY(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is an array.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_ARRAY([1,2]) // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_BOOLEAN(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is a boolean.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_BOOLEAN(true) // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_NUMBER(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is a number.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NUMBER(42) // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_INTEGER(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is an integer (no decimals).</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_INTEGER(3.14) // false</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_STRING(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is a string.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_STRING("hi") // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_OBJECT(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is an object.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_OBJECT({a:1}) // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_NULL(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is null.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_NULL(null) // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >IS_DATETIME(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns true if value is an ISO 8601 date string.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IS_DATETIME("2024-01-15T10:30:00Z") // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 w-fit mb-3"
+                >TYPENAME(val)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">Returns the type name as a string.</p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TYPENAME([1,2]) // "array"
+RETURN TYPENAME("hi") // "string"</code></pre>
             </div>
           </div>
         </div>

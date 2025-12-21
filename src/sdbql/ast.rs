@@ -198,6 +198,13 @@ pub enum Expression {
 
     /// Subquery (FOR ... RETURN ...) wrapped in parentheses
     Subquery(Box<Query>),
+
+    /// Ternary conditional (condition ? true_expr : false_expr)
+    Ternary {
+        condition: Box<Expression>,
+        true_expr: Box<Expression>,
+        false_expr: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

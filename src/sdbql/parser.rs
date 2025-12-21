@@ -633,7 +633,27 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> DbResult<Expression> {
-        self.parse_or_expression()
+        self.parse_ternary_expression()
+    }
+
+    /// Parse ternary expression: condition ? true_expr : false_expr
+    /// Lowest precedence, right-associative
+    fn parse_ternary_expression(&mut self) -> DbResult<Expression> {
+        let condition = self.parse_or_expression()?;
+
+        if matches!(self.current_token(), Token::Question) {
+            self.advance(); // consume '?'
+            let true_expr = self.parse_ternary_expression()?; // right-associative
+            self.expect(Token::Colon)?;
+            let false_expr = self.parse_ternary_expression()?;
+            Ok(Expression::Ternary {
+                condition: Box::new(condition),
+                true_expr: Box::new(true_expr),
+                false_expr: Box::new(false_expr),
+            })
+        } else {
+            Ok(condition)
+        }
     }
 
     fn parse_or_expression(&mut self) -> DbResult<Expression> {

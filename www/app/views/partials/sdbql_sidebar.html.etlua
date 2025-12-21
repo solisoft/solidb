@@ -72,6 +72,10 @@
                 <span class="w-1 h-1 rounded-full bg-orange-500 mr-2 opacity-50 group-hover:opacity-100"></span>
                 Array
               </a>
+              <a href="#func-type" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+                <span class="w-1 h-1 rounded-full bg-teal-500 mr-2 opacity-50 group-hover:opacity-100"></span>
+                Type Checking
+              </a>
               <a href="#func-object" class="group flex items-center px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
                 <span class="w-1 h-1 rounded-full bg-gray-500 mr-2 opacity-50 group-hover:opacity-100"></span>
                 Object

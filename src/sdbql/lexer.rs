@@ -63,6 +63,7 @@ pub enum Token {
     LeftParen,    // (
     RightParen,   // )
     Colon,        // :
+    Question,     // ?
 
     // Special
     Eof,
@@ -380,6 +381,10 @@ impl Lexer {
             Some(':') => {
                 self.advance();
                 Token::Colon
+            }
+            Some('?') => {
+                self.advance();
+                Token::Question
             }
 
             Some(ch) => {
