@@ -1084,6 +1084,144 @@
         </div>
       </section>
       
+      <!-- TTL Indexes Section -->
+      <section id="ttl-indexes" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               TTL Indexes (Time-To-Live)
+            </h2>
+            <p class="text-gray-400 mt-2 text-sm">Automatically delete documents after a specified time period. Useful for session data, caches, and temporary records.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- POST - Create TTL Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a TTL index on a timestamp field.</p>
+              
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Index name.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">field</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Field containing Unix timestamp (seconds since epoch).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">expire_after_seconds</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Seconds after the timestamp value when documents expire. Use 0 to expire at the exact timestamp.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                {"name": "session_expiry", "field": "expires_at", "expire_after_seconds": 3600}
+              </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "session_expiry",
+                     "field": "expires_at",
+                     "expire_after_seconds": 3600,
+                     "type": "ttl",
+                     "status": "created"
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- GET - List TTL Indexes -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection</code>
+              </div>
+               <p class="text-sm text-gray-400">List all TTL indexes on a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "indexes": [
+                       {"name": "session_expiry", "field": "expires_at", "expire_after_seconds": 3600},
+                       {"name": "cache_ttl", "field": "created_at", "expire_after_seconds": 86400}
+                     ]
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- DELETE - Drop TTL Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/ttl/:collection/:name</code>
+              </div>
+               <p class="text-sm text-gray-400">Drop a TTL index. Documents will no longer be automatically deleted.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Usage Notes -->
+            <div class="p-6 bg-amber-500/5 border-t border-amber-500/20">
+              <h4 class="text-sm font-bold text-amber-400 mb-3 flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                How TTL Indexes Work
+              </h4>
+              <ul class="text-xs text-gray-400 space-y-2">
+                <li>• The timestamp field must contain a <strong class="text-gray-300">Unix timestamp</strong> (seconds since epoch)</li>
+                <li>• Documents are deleted when: <code class="bg-gray-800 px-1 rounded text-amber-300">now >= timestamp + expire_after_seconds</code></li>
+                <li>• A background worker checks for expired documents every <strong class="text-gray-300">60 seconds</strong></li>
+                <li>• Documents without the timestamp field are <strong class="text-gray-300">not deleted</strong></li>
+                <li>• Use <code class="bg-gray-800 px-1 rounded">expire_after_seconds: 0</code> to delete at the exact timestamp</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Lua Scripts Section -->
        <section id="scripts" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -1699,6 +1837,27 @@
                      "deleted": true
                    }
                  </div>
+               </div>
+            </div>
+             <!-- Live Query Token -->
+              <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/livequery/token</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Generate a short-lived JWT token for WebSocket live query connections. This token expires in 30 seconds. Useful for connecting to real-time changefeeds without exposing long-lived admin tokens.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   { "token": "eyJhbGciOiJIUzI1NiIsInR...", "expires_in": 30 }
+                 </div>
+               </div>
+               <div class="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                 <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN</p>
                </div>
             </div>
            </div>

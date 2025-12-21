@@ -151,6 +151,11 @@
                 </thead>
                 <tbody class="divide-y divide-white/5">
                   <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">WS</td>
+                    <td class="px-4 py-3 font-mono">/api/custom/...</td>
+                    <td class="px-4 py-3">WebSocket-only script <span class="text-gray-500 text-xs">(starts as GET)</span></td>
+                  </tr>
+                  <tr>
                     <td class="px-4 py-3 text-green-400 font-bold">POST</td>
                     <td class="px-4 py-3 font-mono">/_api/scripts</td>
                     <td class="px-4 py-3">Create a new script</td>
@@ -204,6 +209,26 @@
                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">solidb.fetch(url, options)</span> <span class="text-gray-500">-&gt; Response</span>
                   <div class="text-xs text-gray-500 mt-1">Make an HTTP request. Options: <code>{ method="GET", headers={}, body="" }</code>. Returns <code>{ status, body, headers, ok }</code>.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- solidb.ws Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">solidb.ws</h3>
+              <p class="text-gray-400 text-sm mb-4">WebSocket API for bidirectional communication (only available in long-lived WebSocket contexts).</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.recv()</span> <span class="text-gray-500">-&gt; string | nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Wait for and receive the next message. Returns <code>nil</code> if the connection is closed.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.send(data)</span>
+                  <div class="text-xs text-gray-500 mt-1">Send a text message to the client.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.close()</span>
+                  <div class="text-xs text-gray-500 mt-1">Gracefully close the WebSocket connection.</div>
                 </li>
               </ul>
             </div>
@@ -623,6 +648,39 @@ db:<span class="text-blue-400">transaction</span>(<span class="text-purple-400">
                   </div>
                 </div>
              </div>
+
+            <!-- Example 8 -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-3">8. WebSocket Echo Server</h3>
+              <p class="text-gray-400 text-sm mb-3">
+                Handle real-time bidirectional communication using <code>solidb.ws</code>.
+                This script runs a message loop, echoing back any received text with an added prefix.
+              </p>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Simple echo server with logging</span>
+solidb.log(<span class="text-green-400">"WebSocket connection established!"</span>)
+
+<span class="text-purple-400">while true do</span>
+    <span class="text-gray-500">-- Wait for the next message (Non-blocking at server level)</span>
+    <span class="text-purple-400">local</span> msg = solidb.ws.recv()
+    <span class="text-purple-400">if not</span> msg <span class="text-purple-400">then</span> 
+        solidb.log(<span class="text-green-400">"WebSocket connection closed"</span>)
+        <span class="text-purple-400">break</span> 
+    <span class="text-purple-400">end</span>
+    
+    solidb.log(<span class="text-green-400">"Received: "</span> .. msg)
+    
+    <span class="text-gray-500">-- Echo back to client</span>
+    solidb.ws.send(<span class="text-green-400">"SoliDB echo: "</span> .. msg)
+    
+    <span class="text-gray-500">-- You can still interact with the DB as usual</span>
+    <span class="text-purple-400">local</span> count = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"logs"</span>):<span class="text-blue-400">count</span>()
+    solidb.ws.send(<span class="text-green-400">"Total logs in DB: "</span> .. count)
+<span class="text-purple-400">end</span></pre>
+                </div>
+              </div>
+           </div>
 
           </div>
         </div>

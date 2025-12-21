@@ -7,6 +7,7 @@ use crate::error::{DbError, DbResult};
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
+    allow_in_operator: bool,
 }
 
 impl Parser {
@@ -17,6 +18,7 @@ impl Parser {
         Ok(Self {
             tokens,
             position: 0,
+            allow_in_operator: true,
         })
     }
 
@@ -366,7 +368,11 @@ impl Parser {
         self.expect(Token::With)?;
 
         // Parse the changes (object expression)
-        let changes = self.parse_expression()?;
+        // Disable IN operator to avoid consuming the 'IN' keyword of the clause
+        self.allow_in_operator = false;
+        let changes_result = self.parse_expression();
+        self.allow_in_operator = true;
+        let changes = changes_result?;
 
         // Expect IN keyword
         self.expect(Token::In)?;
@@ -393,7 +399,11 @@ impl Parser {
         self.expect(Token::Remove)?;
 
         // Parse the document selector (usually a variable like `doc` or `doc._key`)
-        let selector = self.parse_expression()?;
+        // Disable IN operator to avoid consuming the 'IN' keyword of the clause
+        self.allow_in_operator = false;
+        let selector_result = self.parse_expression();
+        self.allow_in_operator = true;
+        let selector = selector_result?;
 
         // Expect IN keyword
         self.expect(Token::In)?;
@@ -682,6 +692,13 @@ impl Parser {
             Token::LessThanEq => Some(BinaryOperator::LessThanOrEqual),
             Token::GreaterThan => Some(BinaryOperator::GreaterThan),
             Token::GreaterThanEq => Some(BinaryOperator::GreaterThanOrEqual),
+            Token::In => {
+                if self.allow_in_operator {
+                    Some(BinaryOperator::In)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }

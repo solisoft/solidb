@@ -411,6 +411,13 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         queue_worker_start.start().await;
     });
 
+    // Initialize TTL Worker (background cleanup of expired documents)
+    let ttl_worker = Arc::new(solidb::ttl::TtlWorker::new(Arc::new(storage.clone())));
+    let ttl_worker_start = ttl_worker.clone();
+    tokio::spawn(async move {
+        ttl_worker_start.start().await;
+    });
+
     // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(
         storage,

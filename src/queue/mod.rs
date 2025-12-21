@@ -425,6 +425,7 @@ impl QueueWorker {
             headers: std::collections::HashMap::new(),
             body: Some(job.params.clone()),
             params: std::collections::HashMap::new(),
+            is_websocket: false,
         };
 
         let res = engine.execute(&script, db_name, &context).await?;

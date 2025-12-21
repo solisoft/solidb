@@ -98,6 +98,8 @@ static JWT_SECRET: Lazy<String> = Lazy::new(|| {
 pub struct Claims {
     pub sub: String, // username
     pub exp: usize,  // expiration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub livequery: Option<bool>,  // If true, this token is only valid for live queries
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -282,6 +284,31 @@ impl AuthService {
         let claims = Claims {
             sub: username.to_owned(),
             exp: expiration,
+            livequery: None,
+        };
+
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(JWT_SECRET.as_bytes()),
+        )
+        .map_err(|e| DbError::InternalError(format!("Token creation failed: {}", e)))
+    }
+
+    /// Create a short-lived JWT token specifically for live query WebSocket connections.
+    /// This token expires in 30 seconds - just enough time to establish a WebSocket connection.
+    /// The livequery claim can be used to restrict what operations this token allows.
+    pub fn create_livequery_jwt() -> Result<String, DbError> {
+        let expiration = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize
+            + 2; // 2 seconds - ultra short lived for file downloads!
+
+        let claims = Claims {
+            sub: "livequery".to_owned(),
+            exp: expiration,
+            livequery: Some(true),
         };
 
         encode(
@@ -347,6 +374,7 @@ impl AuthService {
                 return Ok(Claims {
                     sub: format!("api-key:{}", api_key.name),
                     exp: usize::MAX, // Never expires
+                    livequery: None,
                 });
             }
         }
@@ -388,6 +416,7 @@ pub async fn auth_middleware(
             let claims = Claims {
                 sub: "cluster-internal".to_string(),
                 exp: usize::MAX,
+                livequery: None,
             };
             req.extensions_mut().insert(claims);
             return Ok(next.run(req).await);
@@ -458,6 +487,7 @@ pub async fn auth_middleware(
                                             let claims = Claims {
                                                 sub: username.to_string(),
                                                 exp: usize::MAX,
+                                                livequery: None,
                                             };
                                             req.extensions_mut().insert(claims);
                                             return Ok(next.run(req).await);

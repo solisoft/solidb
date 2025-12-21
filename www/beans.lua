@@ -152,9 +152,43 @@ SetupArangoDB = function(env)
   Adb.primary:CreateDocument("migrations", {filename = "0"})
 end
 
+function SetupSoliDB(env)
+  print("Setup " .. env .. " DB")
+  SoliDB = {}
+  _SoliDB = require("db.solidb")
+  for _, config in pairs(DBConfig[BeansEnv]) do
+    local solidb_driver = _SoliDB.new(config)
+    Logger(solidb_driver)
+    SoliDB[config.name] = solidb_driver
+  end
+
+  if DBConfig["system"] then
+    local solidb_driver = _SoliDB.new(DBConfig["system"])
+    SoliDB.system = solidb_driver
+  end
+
+  if env == "test" then
+    for _, config in pairs(DBConfig[env]) do
+      print("Suppression de la base de test")
+      SoliDB.system:DeleteDatabase(config.db_name)
+    end
+  end
+  for _, config in pairs(DBConfig[env]) do
+    Logger(SoliDB.system:CreateDatabase(config.db_name))
+  end
+
+  SoliDB.primary:CreateCollection("migrations")
+  SoliDB.primary:CreateIndex("migrations", {type = "persistent", unique = true, fields = {"filename"}})
+  SoliDB.primary:CreateCollection("uploads")
+  SoliDB.primary:CreateIndex("uploads", {type = "persistent", unique = true, fields = {"uuid"}})
+  SoliDB.primary:CreateDocument("migrations", {filename = "0"})
+end
+
 if arg[1] == "db:setup" then
   if DBConfig[BeansEnv][1]["engine"] == "arangodb" then
     SetupArangoDB(BeansEnv)
+  elseif DBConfig[BeansEnv][1]["engine"] == "solidb" then
+    SetupSoliDB(BeansEnv)
   end
 end
 

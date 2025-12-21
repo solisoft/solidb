@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use crate::error::DbError;
 use crate::storage::StorageEngine;
 use crate::sdbql::{parse, QueryExecutor};
+use futures::SinkExt;
 
 // Crypto imports
 use sha2::Digest;
@@ -165,6 +166,8 @@ pub struct ScriptContext {
     pub headers: HashMap<String, String>,
     /// Request body (parsed as JSON if applicable)
     pub body: Option<JsonValue>,
+    /// Whether this is a WebSocket connection
+    pub is_websocket: bool,
 }
 
 /// Script metadata stored in _system/_scripts
@@ -246,6 +249,93 @@ impl ScriptEngine {
                 })
             }
             Err(e) => Err(DbError::InternalError(format!("Lua error: {}", e))),
+        }
+    }
+
+    /// Execute a Lua script as a WebSocket handler
+    pub async fn execute_ws(&self, script: &Script, db_name: &str, context: &ScriptContext, ws: axum::extract::ws::WebSocket) -> Result<(), DbError> {
+        let lua = Lua::new();
+
+        // Secure environment
+        let globals = lua.globals();
+        globals.set("os", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure os: {}", e)))?;
+        globals.set("io", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure io: {}", e)))?;
+        globals.set("debug", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure debug: {}", e)))?;
+        globals.set("package", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure package: {}", e)))?;
+        globals.set("dofile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure dofile: {}", e)))?;
+        globals.set("load", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure load: {}", e)))?;
+        globals.set("loadfile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure loadfile: {}", e)))?;
+        globals.set("require", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure require: {}", e)))?;
+
+        // Set up the Lua environment
+        self.setup_lua_globals(&lua, db_name, context)?;
+
+        // Set up WebSocket specific globals
+        let ws_table = lua.create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create ws table: {}", e)))?;
+
+        let ws_arc = Arc::new(tokio::sync::Mutex::new(ws));
+        
+        // ws.send(data)
+        let ws_send_clone = ws_arc.clone();
+        let send_fn = lua.create_async_function(move |_, data: String| {
+            let ws_inner = ws_send_clone.clone();
+            async move {
+                let mut socket = ws_inner.lock().await;
+                socket.send(axum::extract::ws::Message::Text(data.into())).await
+                    .map_err(|e| mlua::Error::RuntimeError(format!("WS send error: {}", e)))?;
+                Ok(())
+            }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create ws.send: {}", e)))?;
+        ws_table.set("send", send_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set ws.send: {}", e)))?;
+
+        // ws.recv() -> string or nil
+        let ws_recv_clone = ws_arc.clone();
+        let recv_fn = lua.create_async_function(move |lua, (): ()| {
+            let ws_inner = ws_recv_clone.clone();
+            async move {
+                let mut socket = ws_inner.lock().await;
+                match socket.recv().await {
+                    Some(Ok(axum::extract::ws::Message::Text(t))) => Ok(LuaValue::String(lua.create_string(t.as_bytes())?)),
+                    Some(Ok(axum::extract::ws::Message::Binary(b))) => Ok(LuaValue::String(lua.create_string(b.as_ref())?)),
+                    Some(Ok(axum::extract::ws::Message::Close(_))) | None | Some(Err(_)) => Ok(LuaValue::Nil),
+                    _ => Ok(LuaValue::Nil), // Ignore Ping/Pong for now
+                }
+            }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create ws.recv: {}", e)))?;
+        ws_table.set("recv", recv_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set ws.recv: {}", e)))?;
+
+        // ws.close()
+        let ws_close_clone = ws_arc.clone();
+        let close_fn = lua.create_async_function(move |_, (): ()| {
+            let ws_inner = ws_close_clone.clone();
+            async move {
+                let mut socket = ws_inner.lock().await;
+                let _ = socket.close().await;
+                Ok(())
+            }
+        }).map_err(|e| DbError::InternalError(format!("Failed to create ws.close: {}", e)))?;
+        ws_table.set("close", close_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set ws.close: {}", e)))?;
+
+        let solidb: mlua::Table = globals.get("solidb")
+            .map_err(|e| DbError::InternalError(format!("Failed to get solidb table: {}", e)))?;
+        solidb.set("ws", ws_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set solidb.ws: {}", e)))?;
+
+        // Execute the script
+        let chunk = lua.load(&script.code);
+        match chunk.eval_async::<LuaValue>().await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                tracing::error!("WebSocket Lua script error: {}", e);
+                // Also try to notify the client of the error if possible
+                let mut socket = ws_arc.lock().await;
+                let _ = socket.send(axum::extract::ws::Message::Text(format!("Lua Error: {}", e).into())).await;
+                Err(DbError::InternalError(format!("Lua error: {}", e)))
+            }
         }
     }
 
@@ -785,8 +875,10 @@ impl ScriptEngine {
             query.set(k.clone(), v.clone())
                 .map_err(|e| DbError::InternalError(format!("Failed to set query param: {}", e)))?;
         }
-        request.set("query", query)
+        request.set("query", query.clone())
             .map_err(|e| DbError::InternalError(format!("Failed to set query: {}", e)))?;
+        request.set("query_params", query)
+            .map_err(|e| DbError::InternalError(format!("Failed to set query_params: {}", e)))?;
 
         // URL params
         let params = lua.create_table()
@@ -816,8 +908,14 @@ impl ScriptEngine {
                 .map_err(|e| DbError::InternalError(format!("Failed to set body: {}", e)))?;
         }
 
-        globals.set("request", request)
+        request.set("is_websocket", context.is_websocket)
+            .map_err(|e| DbError::InternalError(format!("Failed to set is_websocket: {}", e)))?;
+
+        globals.set("request", request.clone())
             .map_err(|e| DbError::InternalError(format!("Failed to set request global: {}", e)))?;
+
+        globals.set("context", request)
+            .map_err(|e| DbError::InternalError(format!("Failed to set context global: {}", e)))?;
 
         // Create 'response' helper table
         let response = lua.create_table()

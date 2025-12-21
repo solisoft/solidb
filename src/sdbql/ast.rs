@@ -209,6 +209,7 @@ pub enum BinaryOperator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    In,
 
     // Logical
     And,

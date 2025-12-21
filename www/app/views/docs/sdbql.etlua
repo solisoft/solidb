@@ -329,6 +329,10 @@ FOR i IN 1..n
                     class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
                     >&gt;=</span
                   >
+                  <span
+                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
+                    >IN</span
+                  >
                 </div>
               </div>
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
@@ -686,6 +690,21 @@ FOR i IN nums
   "points": 100
 }</code></pre>
                   </div>
+                </div>
+
+                <div>
+                  <h4
+                    class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2"
+                  >
+                    Return Modified Document
+                  </h4>
+                  <p class="text-sm text-gray-400 mb-3">
+                    Use <code class="text-blue-300">RETURN NEW</code> to get the version of the document <em>after</em> the update.
+                  </p>
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc._key == "alice"
+  UPDATE doc WITH { status: "active" } IN users
+  RETURN NEW</code></pre>
                 </div>
               </div>
             </div>
@@ -1290,6 +1309,30 @@ RETURN TO_ARRAY({a:1}) // [1]</code></pre>
             </div>
           </div>
         </div>
+
+        <!-- Logical -->
+        <div class="mb-12">
+          <h3 class="text-xl font-bold text-blue-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-blue-500 rounded-full mr-3"></span>
+            Logical
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3"
+                >IF(cond, true, false)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Condition evaluation. Returns true_val if cond is true, else false_val.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN IF(1 > 0, "yes", "no") // "yes"
+RETURN IF(null, 1, 0) // 0</code></pre>
+            </div>
+          </div>
+        </div>
+
 
         <!-- Date Functions (New) -->
         <div class="mb-12" id="func-date">
@@ -2210,12 +2253,13 @@ FOR m IN matches RETURN m.doc</code></pre>
             >
               <code
                 class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3"
-                >POSITION(arr, elem)</code
+                >POSITION(arr, elem, start?)</code
               >
               <p class="text-sm text-gray-400 mb-3">
-                Returns true if element exists, false otherwise.
+                Returns 0-based index if element exists, -1 otherwise. Optional start index.
               </p>
-              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POSITION([10, 20], 20) // true</code></pre>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POSITION([10, 20], 20) // 1
+RETURN POSITION([10, 20], 30) // -1</code></pre>
             </div>
             <div
               class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
@@ -2225,9 +2269,10 @@ FOR m IN matches RETURN m.doc</code></pre>
                 >CONTAINS_ARRAY(arr, elem)</code
               >
               <p class="text-sm text-gray-400 mb-3">
-                Legacy alias for POSITION.
+                Returns true if array contains element, false otherwise.
               </p>
-              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONTAINS_ARRAY([1, 2], 3) // false</code></pre>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CONTAINS_ARRAY([1, 2], 3) // false
+RETURN CONTAINS_ARRAY([1, 2], 1) // true</code></pre>
             </div>
           </div>
 

@@ -859,7 +859,7 @@ impl<'a> QueryExecutor<'a> {
                              let coll_name = update_clause.collection.clone();
                              let config = config.clone();
                              
-                             for ctx in &rows {
+                             for ctx in &mut rows {
                                 // Evaluate selector (Duplicated logic)
                                 let selector_value = self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
                                 let key = match &selector_value {
@@ -882,7 +882,10 @@ impl<'a> QueryExecutor<'a> {
                                       let res = coord.update(&db, &coll, &conf, &k, doc).await;
                                       let _ = tx.send(res);
                                 });
-                                let _ = rx.recv().map_err(|_| DbError::InternalError("Sharded update task failed".to_string()))??;
+                                let updated_doc = rx.recv().map_err(|_| DbError::InternalError("Sharded update task failed".to_string()))??;
+                                
+                                // Inject NEW variable
+                                ctx.insert("NEW".to_string(), updated_doc.clone());
                              }
                              i += 1; // CRITICAL: Advance to next clause
                              continue;
@@ -890,7 +893,7 @@ impl<'a> QueryExecutor<'a> {
                     }
 
                     // Update documents for each row context
-                    for ctx in &rows {
+                    for ctx in &mut rows {
                         // Evaluate selector expression to get the document key
                         let selector_value =
                             self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
@@ -924,6 +927,7 @@ impl<'a> QueryExecutor<'a> {
 
                         // Update the document (collection.update handles merging internally)
                         let doc = collection.update(&key, changes_value)?;
+                        
                         // Log to replication
                         self.log_mutation(
                             &update_clause.collection,
@@ -931,6 +935,9 @@ impl<'a> QueryExecutor<'a> {
                             &key,
                             Some(&doc.to_value()),
                         );
+
+                        // Inject NEW variable
+                        ctx.insert("NEW".to_string(), doc.to_value());
                     }
                 }
                 BodyClause::Remove(remove_clause) => {
@@ -1848,9 +1855,29 @@ impl<'a> QueryExecutor<'a> {
             Expression::Literal(value) => Ok(value.clone()),
 
             Expression::BinaryOp { left, op, right } => {
-                let left_val = self.evaluate_expr_with_context(left, ctx)?;
-                let right_val = self.evaluate_expr_with_context(right, ctx)?;
-                evaluate_binary_op(&left_val, op, &right_val)
+                match op {
+                    BinaryOperator::And => {
+                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                        if !to_bool(&left_val) {
+                            return Ok(Value::Bool(false));
+                        }
+                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                        Ok(Value::Bool(to_bool(&right_val)))
+                    }
+                    BinaryOperator::Or => {
+                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                        if to_bool(&left_val) {
+                            return Ok(Value::Bool(true));
+                        }
+                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                        Ok(Value::Bool(to_bool(&right_val)))
+                    }
+                    _ => {
+                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                        evaluate_binary_op(&left_val, op, &right_val)
+                    }
+                }
             }
 
             Expression::UnaryOp { op, operand } => {
@@ -2018,6 +2045,20 @@ impl<'a> QueryExecutor<'a> {
             .collect::<DbResult<Vec<_>>>()?;
 
         match name.to_uppercase().as_str() {
+            // IF(condition, true_val, false_val) - conditional evaluation
+            "IF" | "IIF" => {
+                if evaluated_args.len() != 3 {
+                    return Err(DbError::ExecutionError(
+                        "IF requires 3 arguments: condition, true_value, false_value".to_string(),
+                    ));
+                }
+                if to_bool(&evaluated_args[0]) {
+                    Ok(evaluated_args[1].clone())
+                } else {
+                    Ok(evaluated_args[2].clone())
+                }
+            }
+
             // DISTANCE(lat1, lon1, lat2, lon2) - distance between two points in meters
             "DISTANCE" => {
                 if evaluated_args.len() != 4 {
@@ -5191,6 +5232,28 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(
             compare_values(left, right) != std::cmp::Ordering::Less,
         )),
+        BinaryOperator::In => {
+            match right {
+                Value::Array(arr) => {
+                    let mut found = false;
+                    for val in arr {
+                        if values_equal(left, val) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    Ok(Value::Bool(found))
+                }
+                Value::Object(obj) => {
+                    if let Some(s) = left.as_str() {
+                        Ok(Value::Bool(obj.contains_key(s)))
+                    } else {
+                        Ok(Value::Bool(false))
+                    }
+                }
+                _ => Ok(Value::Bool(false)),
+            }
+        }
 
         BinaryOperator::And => Ok(Value::Bool(to_bool(left) && to_bool(right))),
         BinaryOperator::Or => Ok(Value::Bool(to_bool(left) || to_bool(right))),

@@ -11,6 +11,8 @@ pub enum IndexType {
     Persistent,
     /// Fulltext index - n-gram based text search with fuzzy matching
     Fulltext,
+    /// TTL index - automatic document expiration based on timestamp field
+    TTL,
 }
 
 // ==================== N-gram Utilities ====================
@@ -230,6 +232,36 @@ pub struct IndexStats {
     pub unique: bool,
     pub unique_values: usize,
     pub indexed_documents: usize,
+}
+
+/// TTL index metadata stored in RocksDB
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlIndex {
+    /// Index name
+    pub name: String,
+    /// Timestamp field path (must contain Unix timestamp in seconds)
+    pub field: String,
+    /// Documents expire after this many seconds from the timestamp value
+    pub expire_after_seconds: u64,
+}
+
+impl TtlIndex {
+    /// Create a new TTL index
+    pub fn new(name: String, field: String, expire_after_seconds: u64) -> Self {
+        Self {
+            name,
+            field,
+            expire_after_seconds,
+        }
+    }
+}
+
+/// TTL index statistics
+#[derive(Debug, Clone, Serialize)]
+pub struct TtlIndexStats {
+    pub name: String,
+    pub field: String,
+    pub expire_after_seconds: u64,
 }
 
 /// Extract a field value from a document

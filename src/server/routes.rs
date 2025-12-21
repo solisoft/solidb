@@ -180,6 +180,13 @@ pub fn create_router(
             "/_api/database/{db}/geo/{collection}/{field}/within",
             post(geo_within),
         )
+        // TTL index routes
+        .route("/_api/database/{db}/ttl/{collection}", post(create_ttl_index))
+        .route("/_api/database/{db}/ttl/{collection}", get(list_ttl_indexes))
+        .route(
+            "/_api/database/{db}/ttl/{collection}/{name}",
+            delete(delete_ttl_index),
+        )
         // Transaction routes
         .route("/_api/database/{db}/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/commit", post(super::transaction_handlers::commit_transaction))
@@ -211,7 +218,9 @@ pub fn create_router(
         .route("/_api/database/{db}/scripts", get(super::script_handlers::list_scripts_handler))
         .route("/_api/database/{db}/scripts/{script_id}", get(super::script_handlers::get_script_handler))
         .route("/_api/database/{db}/scripts/{script_id}", put(super::script_handlers::update_script_handler))
-        .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler));
+        .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler))
+        // Live Query Token (short-lived token for WebSocket connections)
+        .route("/_api/livequery/token", get(livequery_token_handler));
         // .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
 
     // Combine with public routes

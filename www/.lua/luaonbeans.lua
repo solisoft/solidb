@@ -1,6 +1,7 @@
 Routes = {}
 -- DBs
 Adb = {}
+SoliDB = {}
 Crate = {}
 PGRest = {}
 Rest = {}
@@ -90,6 +91,12 @@ function Partial(partial, bindVars)
 	bindVars = bindVars or {}
 	if bindVars.aql then
 		local req = Adb.Aql(bindVars.aql, bindVars.bindVars or {})
+		bindVars.results = req["result"]
+		bindVars.extras = req["extras"]
+	end
+
+	if bindVars.sdbql then
+		local req = SoliDB.Sdbql(bindVars.sqbql, bindVars.bindVars or {})
 		bindVars.results = req["result"]
 		bindVars.extras = req["extras"]
 	end
@@ -416,6 +423,10 @@ function InitDB(db_config)
 			local adb_driver = _Adb.new(config)
 			adb_driver:UpdateCacheConfiguration({ mode = "on" })
 			Adb[config.name] = adb_driver
+		elseif config.engine == "solidb" then
+			local _SoliDB = require("db.solidb")
+			local solidb_driver = _SoliDB.new(config)
+			SoliDB[config.name] = solidb_driver
 		elseif config.engine == "db2rest" then
 			local _Rest = require("db.db2rest")
 			Rest[config.name] = _Rest.new(config)

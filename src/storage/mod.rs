@@ -13,5 +13,5 @@ pub use engine::StorageEngine;
 pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
     bm25_score, calculate_idf, levenshtein_distance, tokenize, FulltextMatch, Index, IndexStats,
-    IndexType,
+    IndexType, TtlIndex, TtlIndexStats,
 };

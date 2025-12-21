@@ -154,7 +154,7 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-2">HTTP Methods</label>
                     <div class="flex space-x-4">
-                        <label each={ method in ['GET', 'POST' , 'PUT' , 'DELETE' ] }
+                        <label each={ method in ['GET', 'POST' , 'PUT' , 'DELETE' , 'WS' ] }
                             class="inline-flex items-center cursor-pointer group">
                             <input type="checkbox" checked={ state.currentScript.methods.includes(method) } onclick={
                                 toggleMethod(method) }
@@ -232,6 +232,7 @@
                     case 'POST': return 'bg-green-900/50 text-green-200 border border-green-700/50';
                     case 'PUT': return 'bg-yellow-900/50 text-yellow-200 border border-yellow-700/50';
                     case 'DELETE': return 'bg-red-900/50 text-red-200 border border-red-700/50';
+                    case 'WS': return 'bg-purple-900/50 text-purple-200 border border-purple-700/50';
                     default: return 'bg-gray-700 text-gray-300';
                 }
             },
@@ -242,6 +243,7 @@
                     case 'POST': return 'text-green-400';
                     case 'PUT': return 'text-yellow-400';
                     case 'DELETE': return 'text-red-400';
+                    case 'WS': return 'text-purple-400';
                     default: return 'text-gray-300';
                 }
             },

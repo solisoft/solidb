@@ -3,7 +3,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -292,11 +292,12 @@ pub async fn delete_script_handler(
 /// Execute a Lua script based on the URL path
 pub async fn execute_script_handler(
     State(state): State<AppState>,
+    ws_res: Result<axum::extract::ws::WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
     method: axum::http::Method,
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     headers: axum::http::HeaderMap,
     body: Option<Json<Value>>,
-) -> Result<impl IntoResponse, DbError> {
+) -> Result<Response, DbError> {
     // Extract the path after /api/custom/:db/:collection/
     let uri_path = uri.path().to_string();
     let prefix = "/api/custom/";
@@ -311,8 +312,10 @@ pub async fn execute_script_handler(
     let db_name = parts[0];
     let script_path = parts[1];
     
+    let is_ws_upgrade = ws_res.is_ok();
+    
     // Find matching script
-    let script = find_script_for_scoped_path(&state, db_name, script_path, method.as_str())?;
+    let script = find_script_for_scoped_path(&state, db_name, script_path, method.as_str(), is_ws_upgrade)?;
 
     // Build context
     let query_params: HashMap<String, String> = uri
@@ -340,15 +343,28 @@ pub async fn execute_script_handler(
         params: extract_path_params(&script.path, script_path),
         headers: headers_map,
         body: body.map(|b| b.0),
+        is_websocket: ws_res.is_ok() && headers.get("upgrade").and_then(|v| v.to_str().ok()).unwrap_or_default().to_lowercase() == "websocket",
     };
 
     // Execute script
     let engine = ScriptEngine::new(state.storage.clone());
     
+    // Handle WebSocket upgrade
+    if context.is_websocket {
+        if let Ok(ws) = ws_res {
+            let db_name = db_name.to_string();
+            return Ok(ws.on_upgrade(move |socket| async move {
+                if let Err(e) = engine.execute_ws(&script, &db_name, &context, socket).await {
+                    tracing::error!("WebSocket script execution failed: {}", e);
+                }
+            }).into_response());
+        }
+    }
+
     // Auto-select DB in Lua context using the path's db_name
     let result = engine.execute(&script, db_name, &context).await?;
 
-    Ok((StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK), Json(result.body)))
+    Ok((StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK), Json(result.body)).into_response())
 }
 
 // ==================== Helper Functions ====================
@@ -368,6 +384,7 @@ fn find_script_for_scoped_path(
     db_name: &str,
     path: &str,
     method: &str,
+    is_ws_upgrade: bool,
 ) -> Result<Script, DbError> {
     let db = state.storage.get_database(db_name)?;
     let collection = db.get_collection(SCRIPTS_COLLECTION)?;
@@ -388,7 +405,7 @@ fn find_script_for_scoped_path(
         if !script
             .methods
             .iter()
-            .any(|m| m.eq_ignore_ascii_case(method))
+            .any(|m| m.eq_ignore_ascii_case(method) || (is_ws_upgrade && m.eq_ignore_ascii_case("WS")))
         {
             continue;
         }

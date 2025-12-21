@@ -8,7 +8,7 @@ use super::document::Document;
 use super::geo::{GeoIndex, GeoIndexStats};
 use super::index::{
     extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch, Index,
-    IndexStats, IndexType, NGRAM_SIZE,
+    IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
 };
 use crate::error::{DbError, DbResult};
 
@@ -26,6 +26,7 @@ const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
 const SHARD_TABLE_KEY: &str = "_stats:shard_table";   // Sharding assignment table
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
+const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
 
 /// Type of change event
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -2990,4 +2991,166 @@ impl Collection {
             })
             .collect()
     }
+
+    // ==================== TTL Index Operations ====================
+
+    /// Build a TTL index metadata key
+    fn ttl_meta_key(index_name: &str) -> Vec<u8> {
+        format!("{}{}", TTL_META_PREFIX, index_name).into_bytes()
+    }
+
+    /// Get all TTL index metadata
+    fn get_all_ttl_indexes(&self) -> Vec<TtlIndex> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let prefix = TTL_META_PREFIX.as_bytes();
+        let iter = db.prefix_iterator_cf(cf, prefix);
+
+        iter.filter_map(|result| {
+            result.ok().and_then(|(key, value)| {
+                if key.starts_with(prefix) {
+                    serde_json::from_slice(&value).ok()
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+    }
+
+    /// Get a TTL index by name
+    fn get_ttl_index(&self, name: &str) -> Option<TtlIndex> {
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+        db.get_cf(cf, Self::ttl_meta_key(name))
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Create a TTL index on a timestamp field
+    pub fn create_ttl_index(
+        &self,
+        name: String,
+        field: String,
+        expire_after_seconds: u64,
+    ) -> DbResult<TtlIndexStats> {
+        // Check if TTL index already exists
+        if self.get_ttl_index(&name).is_some() {
+            return Err(DbError::InvalidDocument(format!(
+                "TTL index '{}' already exists",
+                name
+            )));
+        }
+
+        // Create TTL index metadata
+        let index = TtlIndex::new(name.clone(), field.clone(), expire_after_seconds);
+        let index_bytes = serde_json::to_vec(&index)?;
+
+        // Store TTL index metadata
+        {
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            db.put_cf(cf, Self::ttl_meta_key(&name), &index_bytes)
+                .map_err(|e| DbError::InternalError(format!("Failed to create TTL index: {}", e)))?;
+        }
+
+        Ok(TtlIndexStats {
+            name,
+            field,
+            expire_after_seconds,
+        })
+    }
+
+    /// Drop a TTL index
+    pub fn drop_ttl_index(&self, name: &str) -> DbResult<()> {
+        if self.get_ttl_index(name).is_none() {
+            return Err(DbError::InvalidDocument(format!(
+                "TTL index '{}' not found",
+                name
+            )));
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        // Delete TTL index metadata
+        db.delete_cf(cf, Self::ttl_meta_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to drop TTL index: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// List all TTL indexes
+    pub fn list_ttl_indexes(&self) -> Vec<TtlIndexStats> {
+        self.get_all_ttl_indexes()
+            .iter()
+            .map(|idx| TtlIndexStats {
+                name: idx.name.clone(),
+                field: idx.field.clone(),
+                expire_after_seconds: idx.expire_after_seconds,
+            })
+            .collect()
+    }
+
+    /// Cleanup expired documents for a specific TTL index
+    /// Returns the number of documents deleted
+    pub fn cleanup_expired_documents_for_ttl_index(&self, index: &TtlIndex) -> DbResult<usize> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let docs = self.all();
+        let mut deleted_count = 0;
+
+        for doc in docs {
+            let doc_value = doc.to_value();
+            let field_value = extract_field_value(&doc_value, &index.field);
+
+            // Check if field is a valid timestamp
+            if let Some(timestamp) = field_value.as_u64().or_else(|| field_value.as_i64().map(|v| v as u64)) {
+                // Calculate expiration time
+                let expiration_time = timestamp.saturating_add(index.expire_after_seconds);
+
+                // Delete if expired
+                if now >= expiration_time {
+                    if self.delete(&doc.key).is_ok() {
+                        deleted_count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(deleted_count)
+    }
+
+    /// Cleanup all expired documents for all TTL indexes on this collection
+    /// Returns the total number of documents deleted
+    pub fn cleanup_all_expired_documents(&self) -> DbResult<usize> {
+        let ttl_indexes = self.get_all_ttl_indexes();
+        let mut total_deleted = 0;
+
+        for index in ttl_indexes {
+            match self.cleanup_expired_documents_for_ttl_index(&index) {
+                Ok(count) => total_deleted += count,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to cleanup expired documents for TTL index '{}': {}",
+                        index.name,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(total_deleted)
+    }
 }
+

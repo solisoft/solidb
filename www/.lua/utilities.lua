@@ -12,6 +12,7 @@ require "utilities.string"
 require "utilities.multipart"
 require "utilities.csrf"
 require "utilities.aqlpages"
+require "utilities.session"
 
 HandleCronJob = require("utilities.cronjobs").HandleCronJob
 

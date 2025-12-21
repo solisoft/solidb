@@ -8,9 +8,28 @@ Routes = { ["GET"] = {
     },
     ["dashboard"] = {
       ["@"] = "dashboard#index"
+    },
+    ["talks"] = {
+      ["@"] = "talks#index"
     }
   }
 }
+-- Talks API routes
+CustomRoute("POST", "/talks/create_message", "talks#create_message")
+CustomRoute("POST", "/talks/toggle_reaction", "talks#toggle_reaction")
+CustomRoute("POST", "/talks/create_dm", "talks#create_dm")
+CustomRoute("GET", "/talks/livequery_token", "talks#livequery_token")
+CustomRoute("GET", "/talks/login", "talks#login_form")
+CustomRoute("POST", "/talks/login", "talks#login")
+CustomRoute("GET", "/talks/signup", "talks#signup_form")
+CustomRoute("POST", "/talks/signup", "talks#signup")
+CustomRoute("GET", "/talks/logout", "talks#logout")
+CustomRoute("GET", "/talks/og_metadata", "talks#og_metadata")
+
+-- File routes
+CustomRoute("POST", "/talks/upload", "talks#upload")
+CustomRoute("GET", "/talks/file", "talks#file")
+
 CustomRoute("GET", "/database/:db/query", "dashboard#query")
 CustomRoute("GET", "/database/:db/collections", "dashboard#collections")
 CustomRoute("GET", "/database/:db/collection/:collection/indexes", "dashboard#indexes")

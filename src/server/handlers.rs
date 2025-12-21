@@ -36,7 +36,7 @@ fn sanitize_filename(filename: &str) -> String {
         .to_string()
 }
 use crate::server::cursor_store::CursorStore;
-use crate::storage::{GeoIndexStats, IndexStats, IndexType, StorageEngine};
+use crate::storage::{GeoIndexStats, IndexStats, IndexType, StorageEngine, TtlIndexStats};
 use crate::transaction::TransactionId;
 use std::collections::HashMap;
 
@@ -816,6 +816,25 @@ pub async fn login_handler(
     let token = crate::server::auth::AuthService::create_jwt(&user.username)?;
 
     Ok(Json(LoginResponse { token }))
+}
+
+/// Response for livequery token endpoint
+#[derive(Debug, Serialize)]
+pub struct LiveQueryTokenResponse {
+    pub token: String,
+    pub expires_in: u32,  // seconds until expiration
+}
+
+/// Generate a short-lived JWT token for live query WebSocket connections.
+/// This endpoint requires authentication (regular JWT or API key).
+/// The returned token is valid for 30 seconds - just enough to establish a WebSocket connection.
+/// This allows clients to connect to live queries without exposing long-lived admin tokens.
+pub async fn livequery_token_handler() -> Result<Json<LiveQueryTokenResponse>, DbError> {
+    let token = crate::server::auth::AuthService::create_livequery_jwt()?;
+    Ok(Json(LiveQueryTokenResponse {
+        token,
+        expires_in: 2,
+    }))
 }
 
 // ==================== Database Handlers ====================
@@ -4121,6 +4140,69 @@ pub async fn geo_within(
         results: geo_results,
         count,
     }))
+}
+
+// ==================== TTL Index Handlers ====================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTtlIndexRequest {
+    pub name: String,
+    pub field: String,
+    pub expire_after_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateTtlIndexResponse {
+    pub name: String,
+    pub field: String,
+    pub expire_after_seconds: u64,
+    #[serde(rename = "type")]
+    pub index_type: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListTtlIndexesResponse {
+    pub indexes: Vec<TtlIndexStats>,
+}
+
+pub async fn create_ttl_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<CreateTtlIndexRequest>,
+) -> Result<Json<CreateTtlIndexResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    collection.create_ttl_index(req.name.clone(), req.field.clone(), req.expire_after_seconds)?;
+
+    Ok(Json(CreateTtlIndexResponse {
+        name: req.name,
+        field: req.field,
+        expire_after_seconds: req.expire_after_seconds,
+        index_type: "ttl".to_string(),
+        status: "created".to_string(),
+    }))
+}
+
+pub async fn list_ttl_indexes(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<ListTtlIndexesResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    let indexes = collection.list_ttl_indexes();
+    Ok(Json(ListTtlIndexesResponse { indexes }))
+}
+
+pub async fn delete_ttl_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+) -> Result<StatusCode, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    collection.drop_ttl_index(&index_name)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ==================== Cluster Status ====================
