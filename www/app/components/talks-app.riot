@@ -1603,6 +1603,20 @@
 
                 switch (signal.type) {
                     case 'offer':
+                        // Handle renegotiation offers during active call
+                        if (this.state.activeCall && this.peerConnection && data.call_type === 'renegotiation') {
+                            try {
+                                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                const answer = await this.peerConnection.createAnswer();
+                                await this.peerConnection.setLocalDescription(answer);
+                                await this.sendSignal(signal.from_user, 'answer', { sdp: answer });
+                            } catch (e) {
+                                console.error("Renegotiation answer failed:", e);
+                            }
+                            break;
+                        }
+
+                        // New call offer
                         if (this.state.activeCall) {
                             // Busy
                             return;
@@ -1750,7 +1764,17 @@
 
                 this.peerConnection.ontrack = (event) => {
                     this.remoteStream = event.streams[0];
-                    this.update({ remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0 });
+
+                    // Update video state whenever tracks change
+                    const updateVideoState = () => {
+                        this.update({ remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0 });
+                    };
+
+                    updateVideoState();
+
+                    // Listen for tracks added/removed dynamically (e.g., screen share)
+                    this.remoteStream.onaddtrack = updateVideoState;
+                    this.remoteStream.onremovetrack = updateVideoState;
 
                     // Attach to video element
                     this.$nextTick(() => {
@@ -1766,6 +1790,27 @@
                         this.hangup();
                     }
                 };
+
+                // Handle renegotiation when tracks are added mid-call (e.g., screen share in audio call)
+                this.peerConnection.onnegotiationneeded = async () => {
+                    // Only initiator should create offers during renegotiation
+                    if (!this.state.activeCall || !this.state.activeCall.isInitiator) return;
+
+                    try {
+                        const offer = await this.peerConnection.createOffer();
+                        await this.peerConnection.setLocalDescription(offer);
+                        await this.sendSignal(this.state.activeCall.peer._key, 'offer', {
+                            sdp: offer,
+                            caller_info: this.props.currentUser,
+                            call_type: 'renegotiation'
+                        });
+                    } catch (e) {
+                        console.error("Renegotiation failed:", e);
+                    }
+                };
+
+                // Store remoteUserKey for renegotiation
+                this.remoteUserKey = remoteUserKey;
             },
 
             attachLocalStream() {
