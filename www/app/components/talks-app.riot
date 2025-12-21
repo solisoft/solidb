@@ -78,6 +78,16 @@
                     <button class="text-gray-400 hover:text-white"><i class="far fa-star"></i></button>
                 </div>
                 <div class="flex items-center space-x-4">
+                    <div if={ isDMChannel() } class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2">
+                        <button onclick={ ()=> startCall('audio') } class="text-gray-400 hover:text-white p-2
+                            rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call">
+                            <i class="fas fa-phone"></i>
+                        </button>
+                        <button onclick={ ()=> startCall('video') } class="text-gray-400 hover:text-white p-2
+                            rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call">
+                            <i class="fas fa-video"></i>
+                        </button>
+                    </div>
                     <div class="relative hidden sm:block">
                         <input type="text" placeholder="Search..."
                             class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all">
@@ -426,6 +436,111 @@
         </div>
     </div>
 
+    <!-- Incoming Call Modal -->
+    <div if={ state.incomingCall }
+        class="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center animate-fade-in">
+        <div
+            class="bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full">
+            <div
+                class="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center mb-6 overflow-hidden border-4 border-gray-700">
+                <span class="text-3xl font-bold text-gray-400">{ getInitials(getUsername(state.incomingCall.caller))
+                    }</span>
+            </div>
+            <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{ getUsername(state.incomingCall.caller) }
+            </h3>
+            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call' }</p>
+            <div class="flex items-center gap-8">
+                <button onclick={ declineCall } class="flex flex-col items-center gap-2 group">
+                    <div
+                        class="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-red-500 transition-all transform group-hover:scale-110">
+                        <i class="fas fa-phone-slash"></i>
+                    </div>
+                    <span class="text-xs text-gray-400">Decline</span>
+                </button>
+                <button onclick={ acceptCall } class="flex flex-col items-center gap-2 group">
+                    <div
+                        class="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-green-500 transition-all transform group-hover:scale-110 animate-pulse">
+                        <i class="fas fa-phone"></i>
+                    </div>
+                    <span class="text-xs text-gray-400">Accept</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Call Overlay -->
+    <div if={ state.activeCall } class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in">
+        <!-- Header -->
+        <div
+            class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start">
+            <div class="flex items-center gap-3">
+                <div
+                    class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                    <span class="text-white font-medium text-sm">{ formatCallDuration(state.callDuration) }</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Container -->
+        <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+            <!-- Message when no remote video -->
+            <!-- Message when no remote video -->
+            <div if={ !state.remoteStreamHasVideo }
+                class="absolute inset-0 z-0 flex flex-col items-center justify-center p-8">
+                <div
+                    class="w-32 h-32 rounded-full bg-indigo-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-xl border-4 border-white/10">
+                    { getInitials(getUsername(state.activeCall.peer)) }
+                </div>
+                <h2 class="text-2xl text-white font-bold text-center mt-4 text-shadow-lg">{
+                    getUsername(state.activeCall.peer) }</h2>
+                <p class="text-gray-400 mt-2 font-medium">{ state.localStreamHasVideo ? 'Calling...' : 'Audio Call' }
+                </p>
+            </div>
+
+            <!-- Remote Video -->
+            <video ref="remoteVideo" autoplay playsinline
+                class="absolute inset-0 w-full h-full object-contain z-10 { !state.remoteStreamHasVideo ? 'hidden' : '' }"></video>
+
+            <!-- Local Video (PiP) -->
+            <div
+                class="absolute bottom-24 right-6 w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-2xl border border-gray-700 { !state.localStreamHasVideo ? 'hidden' : '' }">
+                <video ref="localVideo" autoplay playsinline muted
+                    class="w-full h-full object-cover transform scale-x-[-1]"></video>
+            </div>
+        </div>
+
+        <!-- Controls Toolbar -->
+        <div
+            class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0">
+            <button onclick={ toggleMute } class={ 'p-4 rounded-full transition-all ' + (state.isMuted
+                ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) } title={
+                state.isMuted ? "Unmute" : "Mute" }>
+                <i class={ state.isMuted ? "fas fa-microphone-slash" : "fas fa-microphone" }></i>
+            </button>
+
+            <button onclick={ toggleVideo } class={ 'p-4 rounded-full transition-all ' + (!state.isVideoEnabled
+                ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) } title={
+                state.isVideoEnabled ? "Stop Video" : "Start Video" }>
+                <i class={ state.isVideoEnabled ? "fas fa-video" : "fas fa-video-slash" }></i>
+            </button>
+
+            <button onclick={ toggleScreenShare } class={ 'p-4 rounded-full transition-all ' + (state.isScreenSharing
+                ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) }
+                title="Share Screen">
+                <i class="fas fa-desktop"></i>
+            </button>
+
+            <button onclick={ hangup }
+                class="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white ml-8 transition-all px-8 flex items-center gap-2"
+                title="End Call">
+                <i class="fas fa-phone-slash"></i>
+                <span class="font-bold">End</span>
+            </button>
+        </div>
+    </div>
+
+
     <style>
         :host {
             display: block;
@@ -499,7 +614,19 @@
                     unreadChannels: {}, // { channel_id: boolean }
                     usersChannels: {}, // Cache of user_key -> dm_channel_id for sidebar
                     initialSyncDone: false, // Flag to avoid unread dots on first load
+                    incomingCall: null, // { caller, type, offer }
+                    activeCall: null, // { peer, connection, startDate }
+                    callDuration: 0,
+                    isMuted: false,
+                    isVideoEnabled: false,
+                    isScreenSharing: false,
+                    localStreamHasVideo: false,
+                    remoteStreamHasVideo: false,
                 }
+                this.localStream = null;
+                this.remoteStream = null;
+                this.peerConnection = null;
+                this.iceCandidatesQueue = [];
                 // Pre-calculate user channels for DM unread dots
                 if (this.state.users && this.props.currentUser) {
                     // Create lookup for existing DM channels
@@ -536,6 +663,9 @@
 
                 // Connect to users Live Query for real-time presence UI updates
                 this.connectUsersLiveQuery();
+
+                // Connect to signaling Live Query for calls
+                this.connectSignaling();
             },
             onBeforeUnmount() {
                 // Clean up WebSocket connections
@@ -554,6 +684,12 @@
                     this.usersWs.close();
                     this.usersWs = null;
                 }
+                if (this.signalingWs) {
+                    this.signalingWs.onclose = null;
+                    this.signalingWs.close();
+                    this.signalingWs = null;
+                }
+                this.hangup();
             },
             connectPresence() {
                 // Connect to presence WebSocket for online/offline tracking
@@ -1317,7 +1453,502 @@
                         });
                     }, 0);
                 }
+            },
+
+            // --- CALLING LOGIC ---
+
+            // Check if current channel is a DM
+            isDMChannel() {
+                return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+            },
+
+            async connectSignaling() {
+                this.processedSignalIds = new Set();
+                try {
+                    const tokenRes = await fetch('/talks/livequery_token');
+                    if (!tokenRes.ok) return;
+                    const { token } = await tokenRes.json();
+
+                    const wsUrl = `ws://${window.location.hostname}:6745/_api/ws/changefeed?token=${token}`;
+                    this.signalingWs = new WebSocket(wsUrl);
+
+                    this.signalingWs.onopen = () => {
+                        console.log('Signaling connected');
+                        // Subscribe to signals for ME
+                        const myKey = this.props.currentUser._key;
+                        const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
+
+                        this.signalingWs.send(JSON.stringify({
+                            type: 'live_query',
+                            database: this.props.dbName || '_system',
+                            query: query
+                        }));
+                    };
+
+                    this.signalingWs.onmessage = async (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'query_result' && data.result) {
+                                for (const signal of data.result) {
+                                    // Process only if not processed
+                                    if (signal._key && this.processedSignalIds.has(signal._key)) continue;
+                                    if (signal._key) this.processedSignalIds.add(signal._key);
+
+                                    await this.handleSignal(signal);
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Signaling error:', err);
+                        }
+                    };
+
+                    this.signalingWs.onclose = () => {
+                        setTimeout(() => this.connectSignaling(), 3000);
+                    };
+
+                } catch (e) {
+                    console.error(e);
+                    setTimeout(() => this.connectSignaling(), 5000);
+                }
+            },
+
+            async sendSignal(toUser, type, data) {
+                await fetch('/talks/signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_user: toUser,
+                        type: type,
+                        data: data
+                    })
+                });
+            },
+
+            // Start a call
+            async startCall(type) {
+                // Get other user from DM
+                if (!this.isDMChannel()) return;
+
+                // Parse channel name: dm_KEY1_KEY2
+                const parts = this.props.currentChannel.split('_');
+                if (parts.length !== 3) {
+                    console.error("Invalid channel format for DM call:", this.props.currentChannel);
+                    return;
+                }
+
+                const myKey = this.props.currentUser._key;
+                const otherKey = parts[1] === myKey ? parts[2] : parts[1];
+
+                // Find user object
+                const otherUser = this.state.users.find(u => u._key === otherKey);
+                if (!otherUser) return;
+
+                this.update({
+                    activeCall: {
+                        peer: otherUser,
+                        startDate: new Date(),
+                        isInitiator: true
+                    },
+                    isVideoEnabled: type === 'video',
+                    localStreamHasVideo: type === 'video'
+                });
+
+                // Start timer
+                this.callTimer = setInterval(() => {
+                    this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
+                }, 1000);
+
+                await this.setupPeerConnection(otherKey);
+
+                // Add local stream
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: type === 'video'
+                    });
+
+                    this.localStream = stream;
+                    this.attachLocalStream();
+
+                    stream.getTracks().forEach(track => {
+                        this.peerConnection.addTrack(track, stream);
+                    });
+
+                    // Create offer
+                    const offer = await this.peerConnection.createOffer();
+                    await this.peerConnection.setLocalDescription(offer);
+
+                    await this.sendSignal(otherKey, 'offer', {
+                        sdp: offer,
+                        caller_info: this.props.currentUser,
+                        call_type: type
+                    });
+
+                } catch (err) {
+                    console.error('Error accessing media:', err);
+                    alert('Could not access microphone/camera. Please ensure permissions are granted.');
+                    this.hangup();
+                }
+            },
+
+            // Incoming call handler
+            async handleSignal(signal) {
+                // Simple ignore if old (older than 30s)
+                if (Date.now() - signal.timestamp > 30000) return;
+
+                // Ignore if from self (reduntant check)
+                if (signal.from_user === this.props.currentUser._key) return;
+
+                const data = signal.data;
+
+                switch (signal.type) {
+                    case 'offer':
+                        if (this.state.activeCall) {
+                            // Busy
+                            return;
+                        }
+
+                        // Find user
+                        const caller = this.state.users.find(u => u._key === signal.from_user) || { _key: signal.from_user, firstname: 'Unknown', lastname: '' };
+
+                        this.update({
+                            incomingCall: {
+                                caller: caller,
+                                type: data.call_type,
+                                offer: data.sdp,
+                                from_user: signal.from_user
+                            }
+                        });
+                        break;
+
+                    case 'answer':
+                        if (this.state.activeCall && this.peerConnection) {
+                            if (this.peerConnection.signalingState !== 'stable') {
+                                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            } else {
+                                console.warn("Received answer but PC is already stable. Ignoring duplicate answer.");
+                            }
+
+                            // Process queued candidates
+                            while (this.iceCandidatesQueue.length) {
+                                const c = this.iceCandidatesQueue.shift();
+                                if (c) {
+                                    try {
+                                        await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+                                    } catch (e) { console.error("Error adding queued candidate from Answer", e); }
+                                }
+                            }
+                        }
+                        break;
+
+                    case 'candidate':
+                        if (this.state.activeCall && this.peerConnection && this.peerConnection.remoteDescription) {
+                            if (data.candidate) {
+                                try {
+                                    await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                                } catch (e) { console.error("Error adding candidate", e); }
+                            }
+                        } else {
+                            // Queue candidates if arrived before PC setup or before Remote Description
+                            this.iceCandidatesQueue.push(data.candidate);
+                        }
+                        break;
+
+                    case 'bye':
+                        this.hangup();
+                        break;
+                }
+            },
+
+            async acceptCall() {
+                const incoming = this.state.incomingCall;
+                if (!incoming) return;
+
+                this.update({
+                    incomingCall: null,
+                    activeCall: {
+                        peer: incoming.caller,
+                        startDate: new Date(),
+                        isInitiator: false
+                    },
+                    isVideoEnabled: incoming.type === 'video',
+                    localStreamHasVideo: incoming.type === 'video'
+                });
+
+                // Start timer
+                this.callTimer = setInterval(() => {
+                    this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
+                }, 1000);
+
+                await this.setupPeerConnection(incoming.from_user);
+
+                // Add local stream
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: incoming.type === 'video'
+                    });
+
+                    this.localStream = stream;
+                    this.attachLocalStream();
+
+                    stream.getTracks().forEach(track => {
+                        this.peerConnection.addTrack(track, stream);
+                    });
+
+                    // Set remote desc
+                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+
+                    // Create answer
+                    const answer = await this.peerConnection.createAnswer();
+                    await this.peerConnection.setLocalDescription(answer);
+
+                    await this.sendSignal(incoming.from_user, 'answer', {
+                        sdp: answer
+                    });
+
+                    // Process queued candidates
+                    while (this.iceCandidatesQueue.length) {
+                        const c = this.iceCandidatesQueue.shift();
+                        if (c) {
+                            try {
+                                await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+                            } catch (e) { console.error("Error adding queued candidate", e); }
+                        }
+                    }
+
+                } catch (err) {
+                    console.error('Error accepting call:', err);
+                    alert('Error accessing media.');
+                    this.hangup();
+                }
+            },
+
+            declineCall() {
+                // Ideally send a 'decline' signal, but for now just clear UI
+                // await this.sendSignal(this.state.incomingCall.from_user, 'decline', {});
+                this.update({ incomingCall: null });
+            },
+
+            async setupPeerConnection(remoteUserKey) {
+                const config = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                };
+
+                this.peerConnection = new RTCPeerConnection(config);
+
+                this.peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        this.sendSignal(remoteUserKey, 'candidate', {
+                            candidate: event.candidate
+                        });
+                    }
+                };
+
+                this.peerConnection.ontrack = (event) => {
+                    this.remoteStream = event.streams[0];
+                    this.update({ remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0 });
+
+                    // Attach to video element
+                    this.$nextTick(() => {
+                        const video = this.root.querySelector('[ref="remoteVideo"]');
+                        if (video) {
+                            video.srcObject = this.remoteStream;
+                        }
+                    });
+                };
+
+                this.peerConnection.onconnectionstatechange = () => {
+                    if (this.peerConnection.connectionState === 'disconnected' || this.peerConnection.connectionState === 'failed') {
+                        this.hangup();
+                    }
+                };
+            },
+
+            attachLocalStream() {
+                this.$nextTick(() => {
+                    const video = this.root.querySelector('[ref="localVideo"]');
+                    if (video && this.localStream) {
+                        video.srcObject = this.localStream;
+                    }
+                });
+            },
+
+            hangup() {
+                if (this.state.activeCall) {
+                    this.sendSignal(this.state.activeCall.peer._key, 'bye', {});
+                }
+
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                }
+
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                }
+
+                if (this.callTimer) {
+                    clearInterval(this.callTimer);
+                }
+
+                this.localStream = null;
+                this.remoteStream = null;
+                this.peerConnection = null;
+                this.iceCandidatesQueue = []; // Clear queue
+
+                this.update({
+                    activeCall: null,
+                    incomingCall: null,
+                    callDuration: 0,
+                    isMuted: false,
+                    isVideoEnabled: false,
+                    isScreenSharing: false
+                });
+            },
+
+            toggleMute() {
+                if (this.localStream) {
+                    const audioTrack = this.localStream.getAudioTracks()[0];
+                    if (audioTrack) {
+                        audioTrack.enabled = !audioTrack.enabled;
+                        this.update({ isMuted: !audioTrack.enabled });
+                    }
+                }
+            },
+
+            async toggleVideo() {
+                // If video is currently enabled, stop it
+                if (this.state.isVideoEnabled) {
+                    // Stop video track
+                    const videoTrack = this.localStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        videoTrack.stop();
+                        this.localStream.removeTrack(videoTrack);
+                    }
+                    // Update sender
+                    const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) this.peerConnection.removeTrack(sender); // Or we should replace with null, but removeTrack is safer if we want to add later properly
+
+                    this.update({
+                        isVideoEnabled: false,
+                        localStreamHasVideo: false
+                    });
+
+                } else {
+                    // Start video
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        const videoTrack = stream.getVideoTracks()[0];
+
+                        this.localStream.addTrack(videoTrack);
+                        this.peerConnection.addTrack(videoTrack, this.localStream);
+
+                        this.update({
+                            isVideoEnabled: true,
+                            localStreamHasVideo: true
+                        });
+                        this.attachLocalStream();
+                    } catch (e) {
+                        // User denied permission or other error
+                        console.error("Failed to start video", e);
+                        this.update({
+                            isVideoEnabled: false,
+                            localStreamHasVideo: false
+                        });
+                    }
+                }
+            },
+
+            async toggleScreenShare() {
+                if (this.state.isScreenSharing) {
+                    // Stop screen share -> Revert to camera (if was enabled) or nothing
+                    // Simple logic: Stop screen track. If we had video enabled diff from screen, we'd need to restore it.
+                    // For now, let's just stop screen share and maybe revert to camera if it was on?
+                    // Actually, 'isScreenSharing' is simpler if it just replaces the video track.
+
+                    const videoTrack = this.localStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        videoTrack.stop();
+                        this.localStream.removeTrack(videoTrack);
+                    }
+
+                    this.update({ isScreenSharing: false, localStreamHasVideo: false });
+
+                    // If video was supposedly enabled, try to restore camera
+                    if (this.state.isVideoEnabled) {
+                        // Restore camera
+                        // Hack: toggleVideo off then on?
+                        // Let's manually restore
+                        try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                            const newTrack = stream.getVideoTracks()[0];
+                            this.localStream.addTrack(newTrack);
+
+                            // Replace sender
+                            const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                            if (sender) {
+                                sender.replaceTrack(newTrack);
+                            } else {
+                                this.peerConnection.addTrack(newTrack, this.localStream);
+                            }
+                            this.update({ localStreamHasVideo: true });
+                        } catch (e) { }
+                    }
+                } else {
+                    // Start screen share
+                    try {
+                        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                        const screenTrack = stream.getVideoTracks()[0];
+
+                        // Handle user clicking "Stop sharing" chrome UI
+                        screenTrack.onended = () => {
+                            if (this.state.isScreenSharing) this.toggleScreenShare();
+                        };
+
+                        const currentVideoTrack = this.localStream.getVideoTracks()[0];
+                        if (currentVideoTrack) {
+                            currentVideoTrack.stop(); // Stop camera
+                            this.localStream.removeTrack(currentVideoTrack);
+                        }
+
+                        this.localStream.addTrack(screenTrack);
+
+                        // Replace sender
+                        const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                        if (sender) {
+                            sender.replaceTrack(screenTrack);
+                        } else {
+                            this.peerConnection.addTrack(screenTrack, this.localStream);
+                        }
+
+                        this.update({
+                            isScreenSharing: true,
+                            localStreamHasVideo: true
+                        });
+                        this.attachLocalStream();
+
+                    } catch (e) {
+                        console.error("Screen share failed", e);
+                        // If user cancelled, ensure state is reset
+                        this.update({ isScreenSharing: false, localStreamHasVideo: this.state.isVideoEnabled });
+                        // Re-attach local cam if it was supposed to be on
+                        if (this.state.isVideoEnabled) this.attachLocalStream();
+                    }
+                }
+            },
+
+            formatCallDuration(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            },
+
+            $nextTick(fn) {
+                setTimeout(fn, 0);
             }
-        }
+        } // End of component logic
     </script>
 </talks-app>

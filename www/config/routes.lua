@@ -29,6 +29,7 @@ CustomRoute("GET", "/talks/og_metadata", "talks#og_metadata")
 -- File routes
 CustomRoute("POST", "/talks/upload", "talks#upload")
 CustomRoute("GET", "/talks/file", "talks#file")
+CustomRoute("POST", "/talks/signal", "talks#send_signal")
 
 CustomRoute("GET", "/database/:db/query", "dashboard#query")
 CustomRoute("GET", "/database/:db/collections", "dashboard#collections")

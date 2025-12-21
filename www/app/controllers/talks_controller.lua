@@ -25,6 +25,7 @@ local app = {
     pcall(function() db:CreateCollection("messages") end)
     pcall(function() db:CreateCollection("users") end)
     pcall(function() db:CreateCollection("files", { type = "blob" }) end)
+    pcall(function() db:CreateCollection("signals") end)
 
     -- Bootstrap presence WebSocket script
     -- We force delete and recreate to ensure it has the latest code
@@ -648,6 +649,43 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     SetStatus(200)
     SetHeader("Content-Type", "application/json")
     WriteJSON({ success = true, channel = channelName })
+  end,
+
+  -- Send a WebRTC signaling message
+  send_signal = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local target_user = body.target_user
+    local type = body.type
+    local data = body.data
+
+    if not target_user or not type then
+      SetStatus(400)
+      WriteJSON({ error = "target_user and type are required" })
+      return
+    end
+
+    -- Create signal document
+    -- We include a timestamp so the receiver can ignore old signals
+    local signal = {
+        from_user = current_user._key,
+        to_user = target_user,
+        type = type,
+        data = data,
+        timestamp = os.time() * 1000 -- ms precision if possible, or just os.time()
+    }
+
+    db:CreateDocument("signals", signal)
+
+    SetStatus(200)
+    WriteJSON({ success = true })
   end,
 
   -- Fetch Open Graph metadata for URL previews
