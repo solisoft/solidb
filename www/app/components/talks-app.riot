@@ -612,8 +612,7 @@
                         <input ref="newChannelInput" type="text"
                             class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5"
                             placeholder="e.g. plan-budget" onkeyup={ sanitizeChannelInput } onkeydown={ (e)=> e.keyCode
-                        === 13 && createChannel() }
-                        />
+                        === 13 && createChannel() } />
                     </div>
                     <p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p>
                 </div>
@@ -695,7 +694,7 @@
             },
 
             async createChannel() {
-                const input = this.refs.newChannelInput || this.root.querySelector('[ref="newChannelInput"]');
+                const input = (this.refs && this.refs.newChannelInput) || this.root.querySelector('[ref="newChannelInput"]');
                 const name = input ? input.value : '';
 
                 if (!name) return;
