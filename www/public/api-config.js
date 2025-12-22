@@ -49,7 +49,8 @@ export function setServerConfig(config) {
  */
 export function getApiUrl() {
   const config = getServerConfig();
-  return `${config.host}:${config.port}/_api`;
+  const baseUrl = config.port ? `${config.host}:${config.port}` : config.host;
+  return `${baseUrl}/_api`;
 }
 
 /**
@@ -58,7 +59,8 @@ export function getApiUrl() {
  */
 export function getLoginUrl() {
   const config = getServerConfig();
-  return `${config.host}:${config.port}/auth/login`;
+  const baseUrl = config.port ? `${config.host}:${config.port}` : config.host;
+  return `${baseUrl}/auth/login`;
 }
 
 /**
@@ -226,7 +228,8 @@ export function removeRecentServer(config) {
 export async function testConnection(config) {
   try {
     const token = getAuthToken();
-    const url = `${config.host}:${config.port}/_api/databases`;
+    const baseUrl = config.port ? `${config.host}:${config.port}` : config.host;
+    const url = `${baseUrl}/_api/databases`;
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     const response = await fetch(url, {
       method: "GET",

@@ -292,7 +292,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
   login_form = function()
     Params.hide_header = true
-    Params.full_height = true
+    Params.no_padding = true
     Page("talks/login", "app")
   end,
 
@@ -304,7 +304,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     if not email or not password then
       Params.error = "Email and password are required"
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       return Page("talks/login", "app")
     end
 
@@ -313,7 +313,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     if not res or not res.result or #res.result == 0 then
       Params.error = "Invalid email or password"
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       return Page("talks/login", "app")
     end
 
@@ -326,14 +326,14 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     else
       Params.error = "Invalid email or password"
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       Page("talks/login", "app")
     end
   end,
 
   signup_form = function()
     Params.hide_header = true
-    Params.full_height = true
+    Params.no_padding = true
     Page("talks/signup", "app")
   end,
 
@@ -347,7 +347,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     if not firstname or not lastname or not email or not password then
       Params.error = "All fields are required"
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       return Page("talks/signup", "app")
     end
 
@@ -356,7 +356,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     if res and res.result and #res.result > 0 then
       Params.error = "Email already registered"
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       return Page("talks/signup", "app")
     end
 
@@ -367,7 +367,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     if not hash then
       Params.error = "Error hashing password: " .. tostring(err)
       Params.hide_header = true
-      Params.full_height = true
+      Params.no_padding = true
       return Page("talks/signup", "app")
     end
 

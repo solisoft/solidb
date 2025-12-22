@@ -13,16 +13,22 @@
     <link rel="icon" type="image/svg+xml" href="<%= PublicPath("/logo.svg") %>" />
     <link rel="manifest" href="/manifest.json" />
     <script>
+      // Unregister Service Workers to clear stale cache
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => {
-              console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            })
-            .catch(err => {
-              console.log('ServiceWorker registration failed: ', err);
-            });
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
         });
+        
+        // Clear caches
+        if ('caches' in window) {
+           caches.keys().then(function(names) {
+             for (let name of names) {
+               caches.delete(name);
+             }
+           });
+        }
       }
     </script>
     <link
@@ -81,7 +87,7 @@
       >
         <div class="h-full flex flex-col">
           <div
-            class="flex-1 <%= Params.full_height and 'p-0 min-h-0' or 'p-4 sm:p-6 lg:p-8' %>"
+            class="flex-1 <%= (Params.full_height or Params.no_padding) and 'p-0 min-h-0' or 'p-4 sm:p-6 lg:p-8' %>"
           >
             @yield
           </div>

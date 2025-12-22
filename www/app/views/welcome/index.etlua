@@ -107,10 +107,10 @@
         <div class="space-y-4">
           <div>
             <label
-              for="server-host"
+              for="server-url"
               class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1"
             >
-              Host
+              Server Address
             </label>
             <div class="relative group">
               <div
@@ -132,47 +132,11 @@
               </div>
               <input
                 type="text"
-                id="server-host"
-                value="http://localhost"
+                id="server-url"
+                value="http://localhost:6745"
                 required
                 class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
-                placeholder="http://localhost"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label
-              for="server-port"
-              class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 ml-1"
-            >
-              Port
-            </label>
-            <div class="relative group">
-              <div
-                class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-              >
-                <svg
-                  class="h-5 w-5 text-gray-500 group-focus-within:text-indigo-400 transition-colors"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-              </div>
-              <input
-                type="text"
-                id="server-port"
-                value="6745"
-                required
-                class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
-                placeholder="6745"
+                placeholder="http://localhost:6745"
               />
             </div>
           </div>
@@ -446,8 +410,7 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     // Elements
-    const serverHost = document.getElementById("server-host");
-    const serverPort = document.getElementById("server-port");
+    const serverUrlInput = document.getElementById("server-url");
     const connectBtn = document.getElementById("connect-btn");
     const loginForm = document.getElementById("login-form");
 
@@ -489,17 +452,56 @@
       serverUnreachableBanner.classList.add("hidden");
     });
 
+    // Helper to parse server URL
+    function parseServerUrl(url) {
+      if (!url) return { host: '', port: '' };
+      
+      // Default protocol if missing
+      let fullUrl = url;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        fullUrl = 'http://' + url;
+      }
+      
+      try {
+        const u = new URL(fullUrl);
+        let host = `${u.protocol}//${u.hostname}`;
+        // Only use port if explicitly provided in URL
+        let port = u.port;
+        
+        // If not provided, check if we should apply specific defaults
+        if (!port) {
+           if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+             port = '6745';
+           } else {
+             // For remote hosts, keep port empty to use protocol default (80/443)
+             port = '';
+           }
+        }
+        return { host, port };
+      } catch (e) {
+        // Fallback for simple "localhost:6745" or "localhost"
+        const parts = url.split(':');
+        let host = parts[0];
+        if (!host.startsWith('http')) host = 'http://' + host;
+        // If part 1 exists, use it. If not, only default to 6745 for localhost
+        let port = parts[1] || '';
+        if (!port && (host.includes('localhost') || host.includes('127.0.0.1'))) {
+           port = '6745';
+        }
+        return { host, port };
+      }
+    }
+
     // Load Recent Servers
     renderRecentServers();
 
     // Check saved config
     const savedConfig = getServerConfig();
     if (savedConfig && savedConfig.host && savedConfig.port) {
-      serverHost.value = savedConfig.host;
-      serverPort.value = savedConfig.port;
+      serverUrlInput.value = savedConfig.port ? `${savedConfig.host}:${savedConfig.port}` : savedConfig.host;
 
       // Auto-connect flow - test if server is reachable and we have a token
-      const serverUrl = `${savedConfig.host}:${savedConfig.port}`;
+      const serverUrl = savedConfig.port ? `${savedConfig.host}:${savedConfig.port}` : savedConfig.host;
       unreachableServerUrl.textContent = serverUrl;
 
       // Check if we have a valid token
@@ -507,7 +509,7 @@
       if (existingToken) {
         try {
           const response = await authenticatedFetch(
-            `${savedConfig.host}:${savedConfig.port}/_api/databases`
+            savedConfig.port ? `${savedConfig.host}:${savedConfig.port}/_api/databases` : `${savedConfig.host}/_api/databases`
           );
           if (response.ok) {
             setUIConnectedState(savedConfig);
@@ -531,7 +533,7 @@
       // Hide form, show success overlay
       loginForm.classList.add("hidden");
       successOverlay.classList.remove("hidden");
-      connectedServerText.textContent = `${config.host}:${config.port}`;
+      connectedServerText.textContent = config.port ? `${config.host}:${config.port}` : config.host;
 
       // Enable database section
       dbSection.classList.remove("opacity-50", "pointer-events-none");
@@ -618,7 +620,7 @@
           }</div>
           <div class="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">${
             server.host
-          }:${server.port}</div>
+          }${server.port ? ':' + server.port : ''}</div>
         </div>
         <div class="flex items-center space-x-2">
            <button type="button" class="delete-btn p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all" title="Remove server">
@@ -638,8 +640,7 @@
           if (e.target.closest(".delete-btn")) return;
 
           // Fill form and trigger connect
-          serverHost.value = server.host;
-          serverPort.value = server.port;
+          serverUrlInput.value = server.port ? `${server.host}:${server.port}` : server.host;
           loginAndConnect(server);
         };
 
@@ -677,17 +678,19 @@
         port = overrideConfig.port;
         username = usernameInput.value.trim() || "admin";
         password = passwordInput.value.trim() || "admin";
-        serverHost.value = host;
-        serverPort.value = port;
+        serverUrlInput.value = port ? `${host}:${port}` : host;
       } else {
-        host = serverHost.value.trim();
-        port = serverPort.value.trim();
+        const urlValue = serverUrlInput.value.trim();
+        const parsed = parseServerUrl(urlValue);
+        host = parsed.host;
+        port = parsed.port;
         username = usernameInput.value.trim();
         password = passwordInput.value.trim();
       }
 
-      if (!host || !port) {
-        showStatus("error", "Please enter both host and port.");
+      // Port is optional now
+      if (!host) {
+        showStatus("error", "Please enter a valid server address.");
         return;
       }
 
@@ -704,7 +707,8 @@
 
       try {
         // 1. Login first
-        const loginUrl = `${host}:${port}/auth/login`;
+        const baseUrl = port ? `${host}:${port}` : host;
+        const loginUrl = `${baseUrl}/auth/login`;
         const loginResponse = await fetch(loginUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -726,7 +730,7 @@
 
         // 2. Now fetch databases with the token
         const dbResponse = await authenticatedFetch(
-          `${host}:${port}/_api/databases`
+          `${baseUrl}/_api/databases`
         );
         if (!dbResponse.ok)
           throw new Error(`HTTP error! status: ${dbResponse.status}`);
@@ -746,7 +750,7 @@
         clearAuthToken();
         showStatus("error", error.message || "Failed to connect.");
 
-        const serverUrl = `${host}:${port}`;
+        const serverUrl = port ? `${host}:${port}` : host;
         unreachableServerUrl.textContent = serverUrl;
         serverUnreachableBanner.classList.remove("hidden");
 
@@ -766,7 +770,7 @@
       const config = getServerConfig();
       try {
         const response = await authenticatedFetch(
-          `${config.host}:${config.port}/_api/databases`
+          config.port ? `${config.host}:${config.port}/_api/databases` : `${config.host}/_api/databases`
         );
         if (!response.ok) throw new Error("Failed to fetch databases");
         const data = await response.json();
