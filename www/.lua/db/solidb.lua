@@ -22,6 +22,8 @@ function SoliDB:Api_run(path, method, params, headers)
   params = params or {}
   headers = headers or {}
 
+  local t1  = GetTime()
+
   -- Add Authorization header if we have a token
   if self._token ~= "" then
     headers = table.append({ ["Authorization"] = "Bearer " .. self._token }, headers)
@@ -40,6 +42,8 @@ function SoliDB:Api_run(path, method, params, headers)
     return {}, ok, h
   end
 
+  Logger(params)
+  Logger("Request ran in %s" %  {GetTime() - t1})
   return DecodeJson(body), ok, h
 end
 
