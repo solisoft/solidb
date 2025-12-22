@@ -9,6 +9,7 @@ function SoliDB.new(db_config)
   self._db_config = db_config
   self._token = ""
 
+  Logger("DEBUB: Connecting ... ")
   self:Auth()
 
   return self
