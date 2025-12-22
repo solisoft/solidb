@@ -16,9 +16,6 @@ local app = {
   index = function()
     -- Initialize database connection
     local db = SoliDB.primary
-    Logger("DEBUG: db config for SoliDB.primary:")
-    Logger(EncodeJson(db._db_config))
-    Logger("DEBUG: db_name extraction: " .. tostring(db._db_config.db_name))
 
     -- Create collections if they don't exist
     pcall(function() db:CreateCollection("channels") end)
