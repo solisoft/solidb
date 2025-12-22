@@ -48,13 +48,14 @@ function SoliDB:Api_run(path, method, params, headers)
 end
 
 function SoliDB:Auth()
+  Logger(self._db_config.url .. "/auth/login")
+
   local ok, headers, body = Fetch(self._db_config.url .. "/auth/login", {
     method = "POST",
     body = '{ "username": "' .. self._db_config.username .. '", "password": "' .. self._db_config.password .. '" }',
     headers = { ["Content-Type"] = "application/json" }
   })
 
-  Logger(self._db_config.url .. "/auth/login")
   Logger(ok)
   Logger(body)
 
