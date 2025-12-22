@@ -18,7 +18,7 @@
       currentChannel: "<%= Params.currentChannel %>",
       channelId: "<%= Params.channelId %>",
       dbName: "<%= Params.db_name %>",
-      dbHost: "<%= Params.db_host %>",
+      dbHost: "<%= ENV["DB_HOST"] or "localhost:6745" %>",
       currentUser: <%- Params.currentUser %>,
       users: <%- Params.users %>,
       dmChannels: <%- Params.dmChannels %>
