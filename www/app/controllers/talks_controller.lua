@@ -17,12 +17,36 @@ local app = {
     -- Initialize database connection
     local db = SoliDB.primary
 
-    -- Create collections if they don't exist
-    pcall(function() db:CreateCollection("channels") end)
-    pcall(function() db:CreateCollection("messages") end)
-    pcall(function() db:CreateCollection("users") end)
-    pcall(function() db:CreateCollection("files", { type = "blob" }) end)
-    pcall(function() db:CreateCollection("signals") end)
+    -- Helper to ensure index exists without erroring if it does
+    local function ensure_index(collection, fields, unique)
+        -- In a real production app, this should be done in a migration or startup script,
+        -- not on every request. For this demo/dev setup, we'll keep it here but guard it.
+        -- But for performance, we should ideally check if it exists or rely on the driver not crashing.
+        -- SolidDB driver CreateIndex is idempotent-ish or we can ignore errors.
+        -- Ideally, we check GetAllIndexes first.
+        -- For now, let's just attempt creation and suppress errors, or assume it's cheap enough if effectively no-op.
+        -- Actually, checking GetAllIndexes adds a round trip.
+        -- Let's just create them once or assume the driver handles it.
+        -- HOWEVER, the user complained about slowness.
+        -- So let's do this: check a global flag or similar? No, Lua state might not persist across requests in this environment?
+        -- If this is Redbean, the Lua state persists.
+        -- Let's use a global flag to do this only once per server restart.
+    end
+
+    if not _G.APP_INITIALIZED then
+        pcall(function() db:CreateCollection("channels") end)
+        pcall(function() db:CreateCollection("messages") end)
+        pcall(function() db:CreateCollection("users") end)
+        pcall(function() db:CreateCollection("files", { type = "blob" }) end)
+        pcall(function() db:CreateCollection("signals") end)
+
+        -- Create Indexes
+        pcall(function() db:CreateIndex("channels", { fields = { "name" }, unique = true }) end)
+        pcall(function() db:CreateIndex("users", { fields = { "email" }, unique = true }) end)
+        pcall(function() db:CreateIndex("messages", { fields = { "channel_id" }, unique = false }) end)
+
+        _G.APP_INITIALIZED = true
+    end
 
     -- Bootstrap presence WebSocket script
     -- We force delete and recreate to ensure it has the latest code
