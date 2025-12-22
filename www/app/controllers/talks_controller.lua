@@ -169,16 +169,16 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       })
     end
 
-    -- Fetch all channels
-    local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type != 'dm' SORT c.name ASC RETURN c")
-    local channels = (channelsRes and channelsRes.result) or {}
-
     -- Get current user early for validation
     local current_user = get_current_user()
     if not current_user then
       RedirectTo("/talks/login")
       return
     end
+
+    -- Fetch all channels (standard + private where user is member)
+    local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR (c.type == 'private' AND @me IN c.members) SORT c.name ASC RETURN c", { me = current_user._key })
+    local channels = (channelsRes and channelsRes.result) or {}
 
     -- Get current channel (default to first channel from DB)
     local currentChannel = GetParam("channel") or "general"
@@ -193,12 +193,27 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     Params.channel = currentChannel
 
-    local channelRes = db:Sdbql(
-      [[
-        FOR c IN channels FILTER c.name == @name RETURN c
-      ]],
-      { name = currentChannel }
-    ).result[1]
+    Params.channel = currentChannel
+
+    -- Try to find channel by key first, then by name
+    local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
+    local channelRes = db:Sdbql(channelQuery, { key = currentChannel, name = currentChannel }).result[1]
+
+    -- Access Control for Private Channels
+    if channelRes and channelRes.type == "private" then
+        local isMember = false
+        if channelRes.members then
+            for _, m in ipairs(channelRes.members) do
+                if m == current_user._key then isMember = true break end
+            end
+        end
+
+        if not isMember then
+            -- Eject unauthorized user
+            RedirectTo("/talks?channel=general")
+            return
+        end
+    end
 
     -- Lazy create DM channel if it doesn't exist
     if not channelRes and string.sub(currentChannel, 1, 3) == "dm_" then
@@ -266,6 +281,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     -- Pass data to view
     Params.channels = EncodeJson(channels)
     Params.channelId = channelRes._id
+    Params.currentChannelData = EncodeJson(channelRes)
     Params.messages = EncodeJson(messages)
     Params.channels = EncodeJson(channels)
     Params.channelId = channelRes._id
@@ -558,15 +574,20 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
          return
     end
 
-    -- Check if channel exists
-    local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = name })
-    if res and res.result and #res.result > 0 then
-        SetStatus(409)
-        WriteJSON({ error = "Channel already exists" })
-        return
+    -- Check if channel exists (only for public channels)
+    if not is_private then
+        local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = name })
+        if res and res.result and #res.result > 0 then
+            SetStatus(409)
+            WriteJSON({ error = "Channel already exists" })
+            return
+        end
     end
 
-    -- Create channel
+    local is_private = body.is_private or false
+    local members = body.members or {}
+
+    -- Initialize channel document
     local doc = {
         name = name,
         type = "standard",
@@ -574,7 +595,21 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         created_at = os.time()
     }
 
+    if is_private then
+        doc.type = "private"
+        -- Ensure creator is in members
+        local has_creator = false
+        for _, m in ipairs(members) do
+            if m == current_user._key then has_creator = true break end
+        end
+        if not has_creator then
+            table.insert(members, current_user._key)
+        end
+        doc.members = members
+    end
+
     local createRes = db:CreateDocument("channels", doc)
+    doc._key = createRes._key -- Assign the new key to doc for response
 
     SetStatus(201)
     SetHeader("Content-Type", "application/json")

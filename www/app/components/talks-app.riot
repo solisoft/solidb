@@ -16,10 +16,14 @@
                                 class="fas fa-plus"></i></button>
                     </div>
                     <nav>
-                        <a each={ channel in props.channels } href={ '/talks?channel=' + channel.name }
-                            class={ 'flex items-center px-4 py-1 ' + (props.currentChannel===channel.name
+                        <a each={ channel in props.channels } href={ '/talks?channel=' + (channel.type==='private' ?
+                            channel._key : channel.name) } class={ 'flex items-center px-4 py-1 ' +
+                            (props.currentChannel===channel.name || props.currentChannelData?._key===channel._key
                             ? 'bg-[#1164A3] text-white' : 'text-gray-400 hover:bg-[#350D36] hover:text-white' ) }>
-                            <span class="mr-2">#</span> { channel.name }
+                            <span class="mr-2 w-4 text-center inline-block">
+                                <i if={ channel.type==='private' } class="fas fa-lock text-xs"></i>
+                                <span if={ channel.type !=='private' }>#</span>
+                            </span> { channel.name }
                             <div if={ state.unreadChannels[channel._id] }
                                 class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
                             </div>
@@ -112,6 +116,37 @@
                     <button class="text-gray-400 hover:text-white"><i class="far fa-star"></i></button>
                 </div>
                 <div class="flex items-center space-x-4">
+                    <!-- Members Button (Private Channels Only) -->
+                    <div if={ props.currentChannelData && props.currentChannelData.type==='private' } class="relative">
+                        <button onclick={ toggleMembersPanel }
+                            class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors">
+                            <i class="fas fa-users text-xs"></i>
+                            <span class="text-sm">{ props.currentChannelData.members ?
+                                props.currentChannelData.members.length : 0 } members</span>
+                        </button>
+                        <!-- Members Dropdown Panel -->
+                        <div if={ state.showMembersPanel }
+                            class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-2xl z-50 overflow-hidden">
+                            <div class="p-3 border-b border-gray-700 flex items-center justify-between">
+                                <span class="text-sm font-medium text-white">Channel Members</span>
+                                <button onclick={ toggleMembersPanel } class="text-gray-400 hover:text-white"><i
+                                        class="fas fa-times"></i></button>
+                            </div>
+                            <div class="max-h-64 overflow-y-auto custom-scrollbar p-2">
+                                <div each={ memberKey in (props.currentChannelData.members || []) }
+                                    class="flex items-center gap-2 p-2 hover:bg-white/5 rounded">
+                                    <div
+                                        class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold">
+                                        { getInitials(getMemberName(memberKey)) }
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-gray-200 text-sm truncate">{ getMemberName(memberKey) }</div>
+                                        <div class="text-gray-500 text-xs truncate">{ getMemberEmail(memberKey) }</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div if={ isDMChannel() } class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2">
                         <button onclick={ ()=> startCall('audio') } class="text-gray-400 hover:text-white p-2
                             rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call">
@@ -675,6 +710,60 @@
                     <p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p>
                 </div>
 
+                <!-- Private Channel Toggle -->
+                <div class="mb-4">
+                    <label class="flex items-center cursor-pointer select-none">
+                        <div class="relative">
+                            <input type="checkbox" class="sr-only" onchange={ togglePrivateMode } checked={
+                                state.isCreatingPrivate }>
+                            <div class={ 'w-10 h-6 bg-gray-600 rounded-full shadow-inner transition-colors ' +
+                                (state.isCreatingPrivate ? 'bg-green-500' : '' ) }></div>
+                            <div class={ 'absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform '
+                                + (state.isCreatingPrivate ? 'translate-x-4' : '' ) }></div>
+                        </div>
+                        <div class="ml-3 text-sm font-medium text-gray-300 flex items-center">
+                            Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i>
+                        </div>
+                    </label>
+                    <p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p>
+                </div>
+
+                <!-- Member Selection (Only for Private) -->
+                <div if={ state.isCreatingPrivate } class="mb-4 animate-fade-in">
+                    <label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label>
+                    <div class="bg-[#222529] border border-gray-700 rounded-lg p-2">
+                        <div class="flex flex-wrap gap-2 mb-2" show={ state.createChannelMembers.length> 0 }>
+                            <span each={ user in state.createChannelMembers }
+                                class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30">
+                                { getUsername(user) }
+                                <button onclick={ ()=> removeCreateChannelMember(user) } class="ml-1
+                                    hover:text-white"><i class="fas fa-times"></i></button>
+                            </span>
+                        </div>
+                        <input type="text" ref="createChannelMemberInput" placeholder="Search users..."
+                            class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"
+                            oninput={ handleCreateChannelMemberInput }>
+
+                        <!-- User Suggestions -->
+                        <div show={ state.filteredCreateChannelUsers && state.filteredCreateChannelUsers.length> 0 }
+                            class="mt-2 border-t border-gray-700 pt-2
+                            max-h-32 overflow-y-auto custom-scrollbar">
+                            <div each={ user in state.filteredCreateChannelUsers } onclick={ ()=>
+                                addCreateChannelMember(user) }
+                                class="flex items-center p-2 hover:bg-white/5 rounded cursor-pointer">
+                                <div
+                                    class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0">
+                                    { getInitials(getUsername(user)) }
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-gray-300 text-sm font-medium truncate">{ getUsername(user) }</div>
+                                    <div class="text-gray-500 text-xs truncate">{ user.email }</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div if={ state.createChannelError }
                     class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
                     { state.createChannelError }
@@ -781,6 +870,11 @@
                     showDmPopup: false,
                     dmPopupUsers: [],
                     showStatusMenu: false,
+                    isCreatingPrivate: false,
+                    createChannelMembers: [],
+                    createChannelMemberQuery: '',
+                    filteredCreateChannelUsers: [],
+                    showMembersPanel: false,
                 }
                 this.localStream = null;
                 this.remoteStream = null;
@@ -810,6 +904,59 @@
                 e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
             },
 
+            togglePrivateMode(e) {
+                this.update({ isCreatingPrivate: e.target.checked });
+            },
+
+            handleCreateChannelMemberInput(e) {
+                const query = e.target.value.toLowerCase();
+                const filtered = this.state.users.filter(u =>
+                    this.getUsername(u).toLowerCase().includes(query) &&
+                    !this.state.createChannelMembers.find(m => m._key === u._key) &&
+                    u._key !== this.props.currentUser._key
+                );
+                this.update({
+                    filteredCreateChannelUsers: filtered,
+                    createChannelMemberQuery: query
+                });
+            },
+
+            addCreateChannelMember(user) {
+                const members = [...this.state.createChannelMembers, user];
+                this.update({
+                    createChannelMembers: members,
+                    createChannelMemberQuery: '',
+                    filteredCreateChannelUsers: []
+                });
+                const input = this.root.querySelector('[ref="createChannelMemberInput"]');
+                if (input) {
+                    input.value = '';
+                    input.focus();
+                }
+            },
+
+            removeCreateChannelMember(user) {
+                const members = this.state.createChannelMembers.filter(m => m._key !== user._key);
+                this.update({ createChannelMembers: members });
+            },
+
+            toggleMembersPanel() {
+                this.update({ showMembersPanel: !this.state.showMembersPanel });
+            },
+
+            getMemberName(memberKey) {
+                const user = this.state.users.find(u => u._key === memberKey);
+                if (user) {
+                    return this.getUsername(user);
+                }
+                return memberKey;
+            },
+
+            getMemberEmail(memberKey) {
+                const user = this.state.users.find(u => u._key === memberKey);
+                return user ? user.email : '';
+            },
+
             async createChannel() {
                 const input = (this.refs && this.refs.newChannelInput) || this.root.querySelector('[ref="newChannelInput"]');
                 const name = input ? input.value : '';
@@ -819,9 +966,16 @@
                 this.update({ creatingChannel: true, createChannelError: null });
 
                 try {
+                    const payload = {
+                        name: name,
+                        is_private: this.state.isCreatingPrivate,
+                        // members list including creator
+                        members: this.state.createChannelMembers.map(u => u._key)
+                    };
+
                     const response = await fetch('/talks/create_channel', {
                         method: 'POST',
-                        body: JSON.stringify({ name: name }),
+                        body: JSON.stringify(payload),
                         headers: { 'Content-Type': 'application/json' }
                     });
 
@@ -831,10 +985,14 @@
                         // success
                         this.update({
                             showCreateChannelModal: false,
-                            creatingChannel: false
+                            creatingChannel: false,
+                            isCreatingPrivate: false,
+                            createChannelMembers: []
                         });
-                        // Redirect to new channel
-                        window.location.href = '/talks?channel=' + data.channel.name;
+                        if (data.success) {
+                            // Force a reload of the current page to refresh the channel list and route to the new channel
+                            window.location.href = `/talks?channel=${data.channel._key}`;
+                        }
                     } else {
                         this.update({
                             createChannelError: data.error || 'Failed to create channel',
