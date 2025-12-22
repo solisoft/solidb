@@ -1,0 +1,87 @@
+<talks-header>
+    <header
+        class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md">
+        <div class="flex items-center min-w-0 flex-1">
+            <h2 class="text-xl font-bold text-white mr-2 truncate flex items-center">
+                <i if={ props.currentChannelData && props.currentChannelData.type==='private' }
+                    class="fas fa-lock text-sm mr-2 text-gray-400"></i>
+                <span if={ !props.currentChannelData || (props.currentChannelData.type !=='private' &&
+                    props.currentChannelData.type !=='dm' ) } class="mr-1">#</span>
+                { props.currentChannelData ? getChannelName(props.currentChannelData, props.currentUser, props.users) :
+                props.currentChannel }
+            </h2>
+            <button onclick={ ()=> props.onToggleFavorite() } class="text-gray-400 hover:text-white transition-colors">
+                <i class={ getStarClass() }></i>
+            </button>
+        </div>
+        <div class="flex items-center space-x-4">
+            <div if={ props.currentChannelData && props.currentChannelData.type==='private' } class="relative">
+                <button onclick={ props.onToggleMembersPanel }
+                    class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors">
+                    <i class="fas fa-users text-xs"></i>
+                    <span class="text-sm">{ props.currentChannelData.members ? props.currentChannelData.members.length :
+                        0 } members</span>
+                </button>
+                <div if={ props.showMembersPanel }
+                    class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <div class="p-3 border-b border-gray-700 flex items-center justify-between">
+                        <span class="text-sm font-medium text-white">Channel Members</span>
+                        <button onclick={ props.onToggleMembersPanel } class="text-gray-400 hover:text-white"><i
+                                class="fas fa-times"></i></button>
+                    </div>
+                    <div class="max-h-64 overflow-y-auto custom-scrollbar p-2">
+                        <div each={ memberKey in (props.currentChannelData.members || []) }
+                            class="flex items-center gap-2 p-2 hover:bg-white/5 rounded">
+                            <div
+                                class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold">
+                                { getInitials(getMemberName(props.users, memberKey)) }
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-gray-200 text-sm truncate">{ getMemberName(props.users, memberKey) }
+                                </div>
+                                <div class="text-gray-500 text-xs truncate">{ getMemberEmail(memberKey) }</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div if={ isDMChannel() } class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2">
+                <button onclick={ ()=> props.onStartCall('audio') } class="text-gray-400 hover:text-white p-2
+                    rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call">
+                    <i class="fas fa-phone"></i>
+                </button>
+                <button onclick={ ()=> props.onStartCall('video') } class="text-gray-400 hover:text-white p-2
+                    rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call">
+                    <i class="fas fa-video"></i>
+                </button>
+            </div>
+            <div class="relative hidden sm:block">
+                <input type="text" placeholder="Search..."
+                    class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all">
+                <i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i>
+            </div>
+            <button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button>
+        </div>
+    </header>
+    <script>
+        import TalksMixin from './talks-common.js'
+
+        export default {
+            ...TalksMixin,
+            onMounted() {
+                console.log('Header mounted');
+            },
+            getStarClass() {
+                const isFav = this.props.currentChannelData && this.props.isFavorite(this.props.currentChannelData._key);
+                return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
+            },
+            getMemberEmail(memberKey) {
+                const user = this.props.users.find(u => u._key === memberKey);
+                return user ? user.email : '';
+            },
+            isDMChannel() {
+                return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+            }
+        }
+    </script>
+</talks-header>

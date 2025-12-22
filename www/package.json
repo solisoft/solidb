@@ -10,8 +10,9 @@
     "watch:css": "tailwindcss -i ./app/views/layouts/app/css_tw_src.css -o ./public/app.css --watch"
   },
   "dependencies": {
-    "@riotjs/cli": "^6.1.4",
-    "@riotjs/compiler": "^9.5.1",
-    "@tailwindcss/cli": "^4.1.13"
+    "@riotjs/cli": "^10.0.0",
+    "@riotjs/compiler": "^10.0.1",
+    "@tailwindcss/cli": "^4.1.13",
+    "navigo": "^8.11.1"
   }
 }

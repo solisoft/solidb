@@ -1,679 +1,236 @@
 <talks-app>
-    <div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden">
-        <!-- Sidebar -->
-        <aside class="w-64 bg-[#19171D] flex flex-col border-r border-gray-800">
-            <div class="p-4 border-b border-gray-800 flex items-center justify-between">
-                <h1 class="text-xl font-bold text-white">SoliDB Talks</h1>
-                <div class="bg-green-500 w-3 h-3 rounded-full border-2 border-[#19171D]"></div>
-            </div>
+    <div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden" ondragenter={ onDragEnter }
+        ondragleave={ onDragLeave } ondragover={ onDragOver } ondrop={ onDrop }>
+        <talks-sidebar currentUser={ state.currentUser } channels={ props.channels } users={ state.users }
+            unreadChannels={ state.unreadChannels } usersChannels={ state.usersChannels } favorites={ getFavorites() }
+            connectionStatus={ state.connectionStatus } showStatusMenu={ state.showStatusMenu } getDMUrl={ getDMUrl }
+            onNavigate={ onNavigate } onShowCreateChannel={ ()=> update({ showCreateChannelModal: true }) }
+            onToggleDmPopup={ toggleDmPopup } onToggleStatusMenu={ toggleStatusMenu }
+            onUpdateStatus={ updateStatus } currentChannel={ state.currentChannel }
+            currentChannelData={ state.currentChannelData } />
 
-            <div class="flex-1 overflow-y-auto overflow-x-hidden py-4">
-                <!-- Favorites -->
-                <div if={ getFavorites().length> 0 } class="mb-6">
-                    <div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2">
-                        <span>Favorites</span>
-                    </div>
-                    <nav>
-                        <a each={ item in getFavorites() } href={ getChannelHref(item) } class={ getChannelClass(item)
-                            }>
-                            <span class="mr-2 w-4 text-center inline-block flex items-center justify-center">
-                                <template if={ item.type==='dm' }>
-                                    <div class={ 'w-2 h-2 rounded-full ' + getStatusColor(getOtherUserForDM(item) ?
-                                        getOtherUserForDM(item).status : 'offline' ) }></div>
-                                </template>
-                                <template if={ item.type !=='dm' }>
-                                    <i if={ item.type==='private' } class="fas fa-lock text-xs"></i>
-                                    <span if={ item.type==='standard' }>#</span>
-                                </template>
-                            </span>
-                            <span class="truncate">
-                                { getChannelName(item) }
-                            </span>
-                            <div if={ state.unreadChannels[item._id] }
-                                class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
-                            </div>
-                        </a>
-                    </nav>
-                </div>
+            <main class="flex-1 flex flex-col min-w-0 h-full relative">
+                <talks-header currentChannelData={ state.currentChannelData } currentChannel={ state.currentChannel }
+                    showMembersPanel={ state.showMembersPanel } users={ state.users } currentUser={ state.currentUser }
+                    onToggleFavorite={ toggleFavorite } onToggleMembersPanel={ toggleMembersPanel } onStartCall={
+                    startCall } isFavorite={ isFavorite } />
 
-                <!-- Channels -->
-                <div class="mb-6">
-                    <div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2">
-                        <span>Channels</span>
-                        <div class="relative group">
-                            <button class="hover:text-white" onclick={ ()=> update({ showCreateChannelModal: true })
-                                }><i class="fas fa-plus"></i></button>
-                            <!-- Tooltip -->
-                            <div
-                                class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                Create Channel
-                            </div>
-                        </div>
-                    </div>
-                    <nav>
-                        <a each={ channel in props.channels } if={ !isFavorite(channel._key) } href={
-                            getChannelHref(channel) } class={ getChannelClass(channel) }>
-                            <span class="mr-2 w-4 text-center inline-block">
-                                <i if={ channel.type==='private' } class="fas fa-lock text-xs"></i>
-                                <span if={ channel.type !=='private' }>#</span>
-                            </span> { channel.name }
-                            <div if={ state.unreadChannels[channel._id] }
-                                class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
-                            </div>
-                        </a>
-                    </nav>
-                </div>
+                <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
+                    state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
+                    fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
+                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } />
 
-                <!-- Direct Messages -->
-                <div>
-                    <div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2">
-                        <span>Direct Messages</span>
-                        <button class="hover:text-white" onclick={ toggleDmPopup }><i class="fas fa-plus"></i></button>
-                    </div>
-                    <nav>
-                        <a each={ user in state.users } if={ !isFavorite(state.usersChannels[user._key]) } href={
-                            getDMUrl(user) } class={ getDMClass(user) }>
-                            <div class={ 'w-2 h-2 rounded-full mr-2 ' + getStatusColor(user.status) } title={
-                                getStatusLabel(user.status) }></div>
-                            <span class="flex-1 truncate">{ getUsername(user) } { user._key === props.currentUser._key ?
-                                ' (you)' : '' }</span>
-                            <div if={ state.unreadChannels[state.usersChannels[user._key]] }
-                                class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
-                            </div>
-                        </a>
-                    </nav>
-                </div>
-            </div>
+                <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
+                    showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
+                    onDragOver={ onDragOver } ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown }
+                    onHandleMessageInput={ handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker }
+                    onSendMessage={ sendMessage } />
+            </main>
 
-            <div class="p-4 bg-[#121016] border-t border-gray-800">
-                <div class="flex items-center">
-                    <div
-                        class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg">
-                        { getInitials(getUsername(props.currentUser)) }
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-bold text-white truncate">{ props.currentUser.firstname }</p>
-                        <div class="relative">
-                            <button onclick={ toggleStatusMenu }
-                                class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group">
-                                <span class={ 'w-2 h-2 rounded-full mr-1.5 ' + (getStatusColor(getCurrentUser().status))
-                                    }></span>
-                                <span class={ 'transition-colors ' + (getCurrentUser().status==='online'
-                                    ? 'text-green-500' : 'text-gray-400 group-hover:text-gray-300' ) }>{
-                                    getStatusLabel(getCurrentUser().status) }</span>
-                                <i
-                                    class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+            <talks-calls incomingCall={ state.incomingCall } activeCall={ state.activeCall } callDuration={
+                state.callDuration } isMuted={ state.isMuted } isVideoEnabled={ state.isVideoEnabled } isScreenSharing={
+                state.isScreenSharing } localStreamHasVideo={ state.localStreamHasVideo } remoteStreamHasVideo={
+                state.remoteStreamHasVideo } onAcceptCall={ acceptCall } onDeclineCall={ declineCall } onToggleMute={
+                toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={ toggleScreenShare } onHangup={ hangup
+                } />
+
+            <!-- Fullscreen Image Lightbox -->
+            <div if={ state.lightboxImage } onclick={ closeLightbox }
+                class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in">
+                <div onclick={ (e)=> e.stopPropagation() } class="flex flex-col max-w-[90vw] max-h-[90vh]">
+                    <img src={ state.lightboxImage.url } alt={ state.lightboxImage.filename }
+                        class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+                    <div class="flex items-center justify-between mt-4 px-1">
+                        <div class="text-white/70 text-sm truncate max-w-[60%]">{ state.lightboxImage.filename }</div>
+                        <div class="flex items-center gap-2">
+                            <a href={ state.lightboxImage.url } download={ state.lightboxImage.filename }
+                                class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm">
+                                <i class="fas fa-download"></i> Download
+                            </a>
+                            <button onclick={ closeLightbox }
+                                class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm">
+                                <i class="fas fa-times"></i> Close
                             </button>
-
-                            <!-- Status Menu -->
-                            <div if={ state.showStatusMenu }
-                                class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up">
-                                <div class="p-1 space-y-0.5">
-                                    <button onclick={ ()=> updateStatus('online') } class="w-full text-left px-3 py-1.5
-                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
-                                        items-center transition-colors">
-                                        <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active
-                                    </button>
-                                    <button onclick={ ()=> updateStatus('busy') } class="w-full text-left px-3 py-1.5
-                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
-                                        items-center transition-colors">
-                                        <span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy
-                                    </button>
-                                    <button onclick={ ()=> updateStatus('offline') } class="w-full text-left px-3 py-1.5
-                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
-                                        items-center transition-colors">
-                                        <span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off
-                                    </button>
-                                </div>
-                            </div>
-                            <div if={ state.showStatusMenu } class="fixed inset-0 z-40" onclick={ toggleStatusMenu }>
-                            </div>
                         </div>
                     </div>
-                    <a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors"
-                        title="Logout">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </a>
                 </div>
             </div>
-        </aside>
 
-        <!-- Main Content -->
-        <main class="flex-1 flex flex-col min-w-0 h-full relative">
-            <!-- Header -->
-            <header
-                class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#1A1D21]/80 backdrop-blur-md">
-                <div class="flex items-center min-w-0">
-                    <h2 class="text-xl font-bold text-white mr-2 truncate">
-                        <i if={ props.currentChannelData && props.currentChannelData.type==='private' }
-                            class="fas fa-lock text-sm mr-2 text-gray-400"></i>
-                        <span if={ !props.currentChannelData || props.currentChannelData.type !=='private' &&
-                            props.currentChannelData.type !=='dm' }>#</span>
-                        { props.currentChannelData ? getChannelName(props.currentChannelData) : props.currentChannel }
-                    </h2>
-                    <!-- Favorite Toggle -->
-                    <button onclick={ ()=> toggleFavorite() } class="text-gray-400 hover:text-white transition-colors">
-                        <i class={ getStarClass() }></i>
-                    </button>
+            <!-- Floating Emoji Picker -->
+            <div if={ state.showEmojiPicker }
+                class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"
+                style={ getEmojiPickerStyle() }>
+                <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showEmojiPicker: false }) }></div>
+                <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
+                <div class="flex flex-wrap gap-1 mb-3">
+                    <button each={ emoji in getInputEmojis().smileys } onclick={ (e)=> insertEmoji(emoji, e) }
+                        class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <!-- Members Button (Private Channels Only) -->
-                    <div if={ props.currentChannelData && props.currentChannelData.type==='private' } class="relative">
-                        <button onclick={ toggleMembersPanel }
-                            class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors">
-                            <i class="fas fa-users text-xs"></i>
-                            <span class="text-sm">{ props.currentChannelData.members ?
-                                props.currentChannelData.members.length : 0 } members</span>
-                        </button>
-                        <!-- Members Dropdown Panel -->
-                        <div if={ state.showMembersPanel }
-                            class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-2xl z-50 overflow-hidden">
-                            <div class="p-3 border-b border-gray-700 flex items-center justify-between">
-                                <span class="text-sm font-medium text-white">Channel Members</span>
-                                <button onclick={ toggleMembersPanel } class="text-gray-400 hover:text-white"><i
-                                        class="fas fa-times"></i></button>
+                <div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div>
+                <div class="flex flex-wrap gap-1 mb-3">
+                    <button each={ emoji in getInputEmojis().gestures } onclick={ (e)=> insertEmoji(emoji, e) }
+                        class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
+                </div>
+                <div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div>
+                <div class="flex flex-wrap gap-1 mb-3">
+                    <button each={ emoji in getInputEmojis().objects } onclick={ (e)=> insertEmoji(emoji, e) }
+                        class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
+                </div>
+            </div>
+
+            <!-- User Mention Picker -->
+            <div if={ state.showUserPicker }
+                class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"
+                style={ getUserPickerStyle() }>
+                <div
+                    class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                    People</div>
+                <div class="max-h-48 overflow-y-auto custom-scrollbar">
+                    <div each={ (user, index) in state.filteredUsers } onclick={ ()=> insertMention(user) } class={
+                        getUserPickerItemClass(index) }>
+                        <div
+                            class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+                            { getInitials(getUsername(user)) }</div>
+                        <span class="text-sm truncate font-medium">{ getUsername(user) }</span>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Create Channel Modal -->
+            <div if={ state.showCreateChannelModal } class="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick={ ()=> update({
+                    showCreateChannelModal: false }) }></div>
+                <div
+                    class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+                    <div class="p-6">
+                        <h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2>
+                        <p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They're best
+                            when organized around a topic.</p>
+                        <div class="mb-4">
+                            <label class="block text-gray-300 text-sm font-bold mb-2">Name</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2.5 text-gray-500">#</span>
+                                <input ref="newChannelInput" type="text"
+                                    class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5"
+                                    placeholder="e.g. plan-budget" onkeyup={ sanitizeChannelInput } onkeydown={ (e)=>
+                                e.keyCode === 13 && createChannel() } />
                             </div>
-                            <div class="max-h-64 overflow-y-auto custom-scrollbar p-2">
-                                <div each={ memberKey in (props.currentChannelData.members || []) }
-                                    class="flex items-center gap-2 p-2 hover:bg-white/5 rounded">
-                                    <div
-                                        class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold">
-                                        { getInitials(getMemberName(memberKey)) }
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="text-gray-200 text-sm truncate">{ getMemberName(memberKey) }</div>
-                                        <div class="text-gray-500 text-xs truncate">{ getMemberEmail(memberKey) }</div>
-                                    </div>
+                            <p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p>
+                        </div>
+                        <div class="mb-4">
+                            <label class="flex items-center cursor-pointer select-none">
+                                <div class="relative">
+                                    <input type="checkbox" class="sr-only" onchange={ togglePrivateMode } checked={
+                                        state.isCreatingPrivate }>
+                                    <div class={ getPrivateToggleBgClass() }></div>
+                                    <div class={ getPrivateToggleKnobClass() }></div>
                                 </div>
-                            </div>
+                                <div class="ml-3 text-sm font-medium text-gray-300 flex items-center">
+                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i>
+                                </div>
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p>
                         </div>
-                    </div>
-                    <div if={ isDMChannel() } class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2">
-                        <button onclick={ ()=> startCall('audio') } class="text-gray-400 hover:text-white p-2
-                            rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call">
-                            <i class="fas fa-phone"></i>
-                        </button>
-                        <button onclick={ ()=> startCall('video') } class="text-gray-400 hover:text-white p-2
-                            rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call">
-                            <i class="fas fa-video"></i>
-                        </button>
-                    </div>
-                    <div class="relative hidden sm:block">
-                        <input type="text" placeholder="Search..."
-                            class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all">
-                        <i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i>
-                    </div>
-                    <button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button>
-                </div>
-            </header>
-
-            <!-- Messages Area -->
-            <!-- Messages Area Wrapper -->
-            <div class="flex-1 relative min-h-0 flex flex-col">
-                <div ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-6" onscroll={ onScroll }>
-                    <!-- Day Divider -->
-                    <div class="relative flex items-center py-2">
-                        <div class="flex-grow border-t border-gray-800"></div>
-                        <span
-                            class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">Today</span>
-                        <div class="flex-grow border-t border-gray-800"></div>
-                    </div>
-
-                    <!-- Empty state -->
-                    <div if={ !state.messages || state.messages.length===0 } class="text-center text-gray-500 py-8">
-                        <i class="fas fa-comments text-4xl mb-4"></i>
-                        <p>No messages yet. Start the conversation!</p>
-                    </div>
-
-                    <!-- Dynamic Messages -->
-                    <div each={ message in state.messages }
-                        class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors">
-                        <div class={ getAvatarClass(message.sender) }>
-                            { getInitials(message.sender) }
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-baseline mb-1">
-                                <span class="font-bold text-white mr-2 hover:underline cursor-pointer">{ message.sender
-                                    }</span>
-                                <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
-                            </div>
-                            <!-- Message content with parsed code blocks -->
-                            <div class={ 'leading-snug message-content ' + (isEmojiOnly(message.text) ? 'text-4xl'
-                                : 'text-[#D1D2D3]' ) }>
-                                <span each={ part in parseMessage(message.text) }>
-                                    <span if={ part.type==='text' }>
-                                        <span each={ segment in parseTextWithLinks(part.content) }>
-                                            <span if={ segment.type==='text' }>{ segment.content }</span>
-                                            <span if={ segment.type==='mention' } onclick={ ()=> goToDm(segment.content)
-                                                }
-                                                class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer
-                                                font-medium bg-blue-500/10 px-0.5 rounded transition-colors"
-                                                title={ 'Direct Message @' + segment.content }>@{ segment.content
-                                                }</span>
-                                            <a if={ segment.type==='link' } href={ segment.url } target="_blank"
-                                                rel="noopener noreferrer"
-                                                class="text-blue-400 hover:text-blue-300 hover:underline">{
-                                                segment.display
-                                                }</a>
-                                            <code if={ segment.type==='code' }
-                                                class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{
-                                            segment.content }</code>
-                                            <strong if={ segment.type==='bold' } class="font-bold text-gray-200">{
-                                                segment.content }</strong>
-                                            <em if={ segment.type==='italic' } class="italic text-gray-300">{
-                                                segment.content }</em>
-                                            <span if={ segment.type==='strike' } class="line-through text-gray-500">{
-                                                segment.content }</span>
-                                        </span>
+                        <div if={ state.isCreatingPrivate } class="mb-4 animate-fade-in">
+                            <label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label>
+                            <div class="bg-[#222529] border border-gray-700 rounded-lg p-2">
+                                <div class="flex flex-wrap gap-2 mb-2" show={ state.createChannelMembers.length> 0 }>
+                                    <span each={ user in state.createChannelMembers }
+                                        class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30">
+                                        { getUsername(user) }
+                                        <button onclick={ ()=> removeCreateChannelMember(user) } class="ml-1
+                                            hover:text-white"><i class="fas fa-times"></i></button>
                                     </span>
-                                    <div if={ part.type==='code' }
-                                        class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+                                </div>
+                                <input type="text" ref="createChannelMemberInput" placeholder="Search users..."
+                                    class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"
+                                    oninput={ handleCreateChannelMemberInput }>
+                                <div show={ (state.filteredCreateChannelUsers &&
+                                    state.filteredCreateChannelUsers.length> 0) }
+                                    class="mt-2 border-t border-gray-700
+                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                    <div each={ user in state.filteredCreateChannelUsers } onclick={ ()=>
+                                        addCreateChannelMember(user) } class="flex items-center p-2 hover:bg-white/5
+                                        rounded cursor-pointer">
                                         <div
-                                            class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                            <span class="text-xs font-mono text-gray-500">code</span>
-                                            <span
-                                                class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                                part.lang || 'text' }</span>
+                                            class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0">
+                                            { getInitials(getUsername(user)) }</div>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-gray-300 text-sm font-medium truncate">{ getUsername(user)
+                                                }</div>
+                                            <div class="text-gray-500 text-xs truncate">{ user.email }</div>
                                         </div>
-                                        <pre
-                                            class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ 'block p-4 language-' + (part.lang || 'text') }>{ part.content }</code></pre>
                                     </div>
-                                </span>
-                            </div>
-
-                            <!-- Link Previews -->
-                            <div each={ url in getMessageUrls(message.text) } class="mt-3">
-                                <div if={ state.ogCache[url] && !state.ogCache[url].error && message.text.trim()===url }
-                                    class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg">
-                                    <a href={ url } target="_blank" rel="noopener noreferrer" class="block">
-                                        <div if={ state.ogCache[url].image }
-                                            class="w-full h-48 bg-gray-800 border-b border-gray-700">
-                                            <img src={ state.ogCache[url].image } class="w-full h-full object-cover"
-                                                onerror={ handleImageError } />
-                                        </div>
-                                        <div class="p-3">
-                                            <div class="flex items-center gap-2 mb-1">
-                                                <img if={ state.ogCache[url].favicon } src={ state.ogCache[url].favicon
-                                                    } class="w-4 h-4 rounded" onerror={ (e)=>
-                                                e.target.style.display='none' }
-                                                />
-                                                <span class="text-xs text-gray-500">{ state.ogCache[url].site_name ||
-                                                    getDomain(url) }</span>
-                                            </div>
-                                            <h4 class="text-sm font-semibold text-white line-clamp-1">{
-                                                state.ogCache[url].title || url }</h4>
-                                            <p if={ state.ogCache[url].description }
-                                                class="text-xs text-gray-400 line-clamp-2 mt-1">{
-                                                state.ogCache[url].description }</p>
-                                        </div>
-                                    </a>
                                 </div>
                             </div>
+                        </div>
+                        <div if={ state.createChannelError }
+                            class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{
+                            state.createChannelError }</div>
+                    </div>
+                    <div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3">
+                        <button onclick={ ()=> update({ showCreateChannelModal: false }) } class="px-4 py-2 text-sm
+                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button>
+                        <button onclick={ createChannel } disabled={ state.creatingChannel }
+                            class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{
+                            state.creatingChannel ? 'Creating...' : 'Create Channel' }</button>
+                    </div>
+                </div>
+            </div>
 
-                            <!-- Legacy Code Sample (for seeded data) -->
-                            <div if={ message.code_sample }
-                                class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+            <!-- New DM Modal -->
+            <div if={ state.showDmPopup } class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick={ toggleDmPopup }>
+                </div>
+                <div
+                    class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]">
+                    <div class="p-4 border-b border-gray-700 flex flex-col gap-3">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-lg font-bold text-white">New Conversation</h2>
+                            <button onclick={ toggleDmPopup }
+                                class="text-gray-400 hover:text-white transition-colors"><i
+                                    class="fas fa-times"></i></button>
+                        </div>
+                        <div class="relative">
+                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                            <input type="text" placeholder="Find people..."
+                                class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600"
+                                oninput={ handleDmFilterInput } ref="dmFilterInput">
+                        </div>
+                    </div>
+                    <div class="overflow-y-auto custom-scrollbar p-2">
+                        <div each={ user in state.dmPopupUsers } onclick={ ()=> startDm(user) } class="flex items-center
+                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group">
+                            <div class="relative">
                                 <div
-                                    class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                    <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename
-                                        }</span>
-                                    <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                        message.code_sample.language }</span>
-                                </div>
-                                <pre
-                                    class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ 'block p-4 language-' + message.code_sample.language }>{ message.code_sample.code }</code></pre>
+                                    class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg">
+                                    { getInitials(getUsername(user)) }</div>
+                                <div class={ 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full '
+                                    + getStatusColor(user.status) }></div>
                             </div>
-
-                            <!-- Attachments -->
-                            <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap
-                                gap-2">
-                                <div each={ attachment in message.attachments } class="relative group/attachment">
-                                    <template if={ isImage(attachment) }>
-                                        <div onclick={ (e)=> openLightbox(attachment, e) } class="block cursor-pointer">
-                                            <img src={ getFileUrl(attachment) } alt={ attachment.filename }
-                                                class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90" />
-                                        </div>
-                                    </template>
-                                    <template if={ !isImage(attachment) }>
-                                        <a href={ getFileUrl(attachment) } target="_blank"
-                                            class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300">
-                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor"
-                                                viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13">
-                                                </path>
-                                            </svg>
-                                            <span class="text-sm truncate max-w-[150px]">{ attachment.filename }</span>
-                                        </a>
-                                    </template>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between">
+                                    <span
+                                        class="text-gray-200 font-medium group-hover:text-white transition-colors truncate">{
+                                        getUsername(user) }</span>
+                                    <span if={ user._key===props.currentUser._key }
+                                        class="text-xs text-gray-500 italic">You</span>
                                 </div>
+                                <div class="text-xs text-gray-500 truncate">{ user.email }</div>
                             </div>
-
-                            <!-- Reactions -->
-                            <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
-                                <!-- Existing reactions with click to toggle -->
-                                <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
-                                    <button onclick={ (e)=> toggleReaction(message, reaction.emoji, e) }
-                                        class={ 'px-2 py-0.5 rounded text-xs flex items-center border transition-colors'
-                                        + (reaction.users && reaction.users.includes(getUsername(props.currentUser)) ?
-                                        'bg-blue-900/50 border-blue-500 text-blue-300' :
-                                        'bg-[#222529] hover:bg-gray-700 border-gray-700') }>
-                                        { reaction.emoji } <span class="ml-1 text-gray-400">{ reaction.users ?
-                                            reaction.users.length : 0 }</span>
-                                    </button>
-                                    <!-- Tooltip popup -->
-                                    <div
-                                        class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs text-white whitespace-nowrap opacity-0 invisible group-hover/reaction:opacity-100 group-hover/reaction:visible transition-all z-50">
-                                        <div class="font-bold mb-1">{ reaction.emoji } { reaction.users ?
-                                            reaction.users.length : 0 }</div>
-                                        <div each={ user in (reaction.users || []) } class="text-gray-400">{ user }
-                                        </div>
-                                        <div
-                                            class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-700">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Add reaction button with emoji picker -->
-                                <div class="relative group/emoji">
-                                    <button
-                                        class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100">
-                                        <i class="far fa-smile text-sm"></i>
-                                    </button>
-                                    <!-- Emoji picker popup -->
-                                    <div class="absolute bottom-full left-0 mb-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover/emoji:opacity-100 group-hover/emoji:visible transition-all z-50 overflow-y-auto custom-scrollbar"
-                                        style="width: 280px; max-height: 250px;">
-                                        <div class="p-2">
-                                            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
-                                            <div class="flex flex-wrap gap-1 mb-3">
-                                                <button each={ emoji in getInputEmojis().smileys } onclick={ (e)=>
-                                                    toggleReaction(message, emoji, e) }
-                                                    class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors">
-                                                    { emoji }
-                                                </button>
-                                            </div>
-                                            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div>
-                                            <div class="flex flex-wrap gap-1 mb-3">
-                                                <button each={ emoji in getInputEmojis().gestures } onclick={ (e)=>
-                                                    toggleReaction(message, emoji, e) }
-                                                    class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors">
-                                                    { emoji }
-                                                </button>
-                                            </div>
-                                            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div>
-                                            <div class="flex flex-wrap gap-1">
-                                                <button each={ emoji in getInputEmojis().objects } onclick={ (e)=>
-                                                    toggleReaction(message, emoji, e) }
-                                                    class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors">
-                                                    { emoji }
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <i
+                                class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>
+                        </div>
+                        <div if={ state.dmPopupUsers.length===0 }
+                            class="p-8 text-center text-gray-500 flex flex-col items-center">
+                            <i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i>
+                            <p>No users found matching "{ state.dmFilterQuery }"</p>
                         </div>
                     </div>
                 </div>
-
-                <!-- New Message Notification Button -->
-                <div if={ state.hasNewMessages } class="absolute bottom-6 right-8 z-10 animate-fade-in">
-                    <button onclick={ scrollToLatest }
-                        class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium">
-                        <span>Read latest messages</span>
-                        <i class="fas fa-arrow-down"></i>
-                    </button>
-                </div>
             </div>
-
-
-
-            <!-- Input Area -->
-            <footer class="p-0 flex-shrink-0">
-                <div ondragenter={ onDragEnter } ondragleave={ onDragLeave } ondragover={ onDragOver } ondrop={ onDrop }
-                    class="border-t border-gray-700 bg-[#222529] transition-colors overflow-hidden { state.dragging ? 'bg-gray-700/50 border-blue-500' : '' }">
-                    <div if={ state.files.length> 0 } class="flex flex-wrap gap-2 p-3 pb-0">
-                        <div each={ (file, index) in state.files }
-                            class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group">
-                            <div
-                                class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400">
-                                <i class="fas fa-file-code"></i>
-                            </div>
-                            <div class="flex flex-col max-w-[150px]">
-                                <span class="text-xs text-gray-200 truncate font-medium">{ file.name }</span>
-                                <span class="text-[10px] text-gray-500">{ (file.size / 1024).toFixed(1) } KB</span>
-                            </div>
-                            <button onclick={ ()=> removeFile(index) }
-                                class="ml-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100
-                                transition-all">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="p-4">
-                        <textarea ref="messageInput" placeholder={ 'Message' } onkeydown={ onKeyDown } oninput={
-                            handleMessageInput }
-                            class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea>
-                    </div>
-                    <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700">
-                        <div class="flex items-center space-x-1">
-                            <!-- Emoji picker -->
-                            <button onclick={ toggleEmojiPicker } class={ 'p-2 transition-colors ' +
-                                (state.showEmojiPicker ? 'text-yellow-400' : 'text-gray-500 hover:text-white' ) }>
-                                <i class="far fa-smile"></i>
-                            </button>
-                        </div>
-                        <button onclick={ sendMessage } disabled={ state.sending }
-                            class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50">
-                            <i class={ state.sending ? 'fas fa-spinner fa-spin mr-1' : 'fas fa-paper-plane mr-1' }></i>
-                            { state.sending ? 'Sending...' : 'Send' }
-                        </button>
-                    </div>
-                </div>
-            </footer>
-        </main>
-
-        <!-- Fullscreen Image Lightbox -->
-        <div if={ state.lightboxImage } onclick={ closeLightbox }
-            class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in">
-
-            <!-- Content wrapper -->
-            <div onclick={ (e)=> e.stopPropagation() } class="flex flex-col max-w-[90vw] max-h-[90vh]">
-                <!-- Image -->
-                <img src={ state.lightboxImage.url } alt={ state.lightboxImage.filename }
-                    class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
-
-                <!-- Controls below image -->
-                <div class="flex items-center justify-between mt-4 px-1">
-                    <!-- Filename on left -->
-                    <div class="text-white/70 text-sm truncate max-w-[60%]">
-                        { state.lightboxImage.filename }
-                    </div>
-
-                    <!-- Buttons on right -->
-                    <div class="flex items-center gap-2">
-                        <a href={ state.lightboxImage.url } download={ state.lightboxImage.filename }
-                            class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                            </svg>
-                            Download
-                        </a>
-                        <button onclick={ closeLightbox }
-                            class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M6 18L18 6M6 6l12 12"></path>
-                            </svg>
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Floating Emoji Picker -->
-        <div if={ state.showEmojiPicker }
-            class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"
-            style={ 'width: 320px; max-height: 300px; left: ' + state.emojiPickerPos.left + 'px; bottom: ' +
-            state.emojiPickerPos.bottom + 'px;' }>
-
-            <!-- Close on outside click (overlay) -->
-            <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showEmojiPicker: false }) }></div>
-
-            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
-            <div class="flex flex-wrap gap-1 mb-3">
-                <button each={ emoji in getInputEmojis().smileys } onclick={ (e)=> insertEmoji(emoji, e) }
-                    class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">
-                    { emoji }
-                </button>
-            </div>
-            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div>
-            <div class="flex flex-wrap gap-1 mb-3">
-                <button each={ emoji in getInputEmojis().gestures } onclick={ (e)=> insertEmoji(emoji, e) }
-                    class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">
-                    { emoji }
-                </button>
-            </div>
-            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div>
-            <div class="flex flex-wrap gap-1">
-                <button each={ emoji in getInputEmojis().objects } onclick={ (e)=> insertEmoji(emoji, e) }
-                    class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">
-                    { emoji }
-                </button>
-            </div>
-        </div>
-
-        <!-- User Mention Picker -->
-        <div if={ state.showUserPicker }
-            class="fixed w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-hidden"
-            style={ 'left: ' + state.userPickerPos.left + 'px; bottom: ' + state.userPickerPos.bottom + 'px;' }>
-
-            <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showUserPicker: false }) }></div>
-
-            <div class="max-h-60 overflow-y-auto custom-scrollbar p-1">
-                <div each={ (user, i) in state.filteredUsers } onclick={ ()=> insertMention(user) }
-                    class={ 'flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ' +
-                    (state.selectedUserIndex === i ? 'bg-gray-800 ring-1 ring-blue-500' : 'hover:bg-gray-800') }>
-                    <div
-                        class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300">
-                        { getInitials(getUsername(user)) }
-                    </div>
-                    <span class="text-sm text-gray-200">{ getUsername(user) }</span>
-                </div>
-                <div if={ state.filteredUsers.length===0 } class="p-3 text-center text-gray-500 text-sm">
-                    No users found
-                </div>
-            </div>
-        </div>
     </div>
-
-    <!-- Incoming Call Modal -->
-    <div if={ state.incomingCall }
-        class="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center animate-fade-in">
-        <div
-            class="bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full">
-            <div
-                class="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center mb-6 overflow-hidden border-4 border-gray-700">
-                <span class="text-3xl font-bold text-gray-400">{ getInitials(getUsername(state.incomingCall.caller))
-                    }</span>
-            </div>
-            <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{ getUsername(state.incomingCall.caller) }
-            </h3>
-            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' :
-                'Incoming&nbsp;Audio&nbsp;Call' }</p>
-            <div class="flex items-center gap-8">
-                <button onclick={ declineCall } class="flex flex-col items-center gap-2 group">
-                    <div
-                        class="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-red-500 transition-all transform group-hover:scale-110">
-                        <i class="fas fa-phone-slash"></i>
-                    </div>
-                    <span class="text-xs text-gray-400">Decline</span>
-                </button>
-                <button onclick={ acceptCall } class="flex flex-col items-center gap-2 group">
-                    <div
-                        class="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-green-500 transition-all transform group-hover:scale-110 animate-pulse">
-                        <i class="fas fa-phone"></i>
-                    </div>
-                    <span class="text-xs text-gray-400">Accept</span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Active Call Overlay -->
-    <div if={ state.activeCall } class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in">
-        <!-- Header -->
-        <div
-            class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start">
-            <div class="flex items-center gap-3">
-                <div
-                    class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3">
-                    <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                    <span class="text-white font-medium text-sm">{ formatCallDuration(state.callDuration) }</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Video Container -->
-        <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-            <!-- Message when no remote video -->
-            <!-- Message when no remote video -->
-            <div if={ !state.remoteStreamHasVideo }
-                class="absolute inset-0 z-0 flex flex-col items-center justify-center p-8">
-                <div
-                    class="w-32 h-32 rounded-full bg-indigo-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-xl border-4 border-white/10">
-                    { getInitials(getUsername(state.activeCall.peer)) }
-                </div>
-                <h2 class="text-2xl text-white font-bold text-center mt-4 text-shadow-lg">{
-                    getUsername(state.activeCall.peer) }</h2>
-                <p class="text-gray-400 mt-2 font-medium">{ state.localStreamHasVideo ? 'Calling...' : 'Audio Call' }
-                </p>
-            </div>
-
-            <!-- Remote Video -->
-            <video ref="remoteVideo" autoplay playsinline
-                class="absolute inset-0 w-full h-full object-contain z-10 { !state.remoteStreamHasVideo ? 'hidden' : '' }"></video>
-
-            <!-- Local Video (PiP) -->
-            <div
-                class="absolute bottom-24 right-6 w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-2xl border border-gray-700 { !state.localStreamHasVideo ? 'hidden' : '' }">
-                <video ref="localVideo" autoplay playsinline muted
-                    class="w-full h-full object-cover transform scale-x-[-1]"></video>
-            </div>
-        </div>
-
-        <!-- Controls Toolbar -->
-        <div
-            class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0">
-            <button onclick={ toggleMute } class={ 'p-4 rounded-full transition-all ' + (state.isMuted
-                ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) } title={
-                state.isMuted ? "Unmute" : "Mute" }>
-                <i class={ state.isMuted ? "fas fa-microphone-slash" : "fas fa-microphone" }></i>
-            </button>
-
-            <button onclick={ toggleVideo } class={ 'p-4 rounded-full transition-all ' + (!state.isVideoEnabled
-                ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) } title={
-                state.isVideoEnabled ? "Stop Video" : "Start Video" }>
-                <i class={ state.isVideoEnabled ? "fas fa-video" : "fas fa-video-slash" }></i>
-            </button>
-
-            <button onclick={ toggleScreenShare } class={ 'p-4 rounded-full transition-all ' + (state.isScreenSharing
-                ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-700 text-white hover:bg-gray-600' ) }
-                title="Share Screen">
-                <i class="fas fa-desktop"></i>
-            </button>
-
-            <button onclick={ hangup }
-                class="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white ml-8 transition-all px-8 flex items-center gap-2"
-                title="End Call">
-                <i class="fas fa-phone-slash"></i>
-                <span class="font-bold">End</span>
-            </button>
-        </div>
-    </div>
-
 
     <style>
         :host {
@@ -728,154 +285,23 @@
         }
     </style>
 
-    <!-- Create Channel Modal -->
-    <div if={ state.showCreateChannelModal } class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick={ ()=> update({ showCreateChannelModal: false
-            }) }></div>
-        <div
-            class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
-            <div class="p-6">
-                <h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2>
-                <p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They're best when
-                    organized around a topic.</p>
-
-                <div class="mb-4">
-                    <label class="block text-gray-300 text-sm font-bold mb-2">Name</label>
-                    <div class="relative">
-                        <span class="absolute left-3 top-2.5 text-gray-500">#</span>
-                        <input ref="newChannelInput" type="text"
-                            class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5"
-                            placeholder="e.g. plan-budget" onkeyup={ sanitizeChannelInput } onkeydown={ (e)=> e.keyCode
-                        === 13 && createChannel() } />
-                    </div>
-                    <p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p>
-                </div>
-
-                <!-- Private Channel Toggle -->
-                <div class="mb-4">
-                    <label class="flex items-center cursor-pointer select-none">
-                        <div class="relative">
-                            <input type="checkbox" class="sr-only" onchange={ togglePrivateMode } checked={
-                                state.isCreatingPrivate }>
-                            <div class={ 'w-10 h-6 bg-gray-600 rounded-full shadow-inner transition-colors ' +
-                                (state.isCreatingPrivate ? 'bg-green-500' : '' ) }></div>
-                            <div class={ 'absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform '
-                                + (state.isCreatingPrivate ? 'translate-x-4' : '' ) }></div>
-                        </div>
-                        <div class="ml-3 text-sm font-medium text-gray-300 flex items-center">
-                            Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i>
-                        </div>
-                    </label>
-                    <p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p>
-                </div>
-
-                <!-- Member Selection (Only for Private) -->
-                <div if={ state.isCreatingPrivate } class="mb-4 animate-fade-in">
-                    <label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label>
-                    <div class="bg-[#222529] border border-gray-700 rounded-lg p-2">
-                        <div class="flex flex-wrap gap-2 mb-2" show={ state.createChannelMembers.length> 0 }>
-                            <span each={ user in state.createChannelMembers }
-                                class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30">
-                                { getUsername(user) }
-                                <button onclick={ ()=> removeCreateChannelMember(user) } class="ml-1
-                                    hover:text-white"><i class="fas fa-times"></i></button>
-                            </span>
-                        </div>
-                        <input type="text" ref="createChannelMemberInput" placeholder="Search users..."
-                            class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"
-                            oninput={ handleCreateChannelMemberInput }>
-
-                        <!-- User Suggestions -->
-                        <div show={ state.filteredCreateChannelUsers && state.filteredCreateChannelUsers.length> 0 }
-                            class="mt-2 border-t border-gray-700 pt-2
-                            max-h-32 overflow-y-auto custom-scrollbar">
-                            <div each={ user in state.filteredCreateChannelUsers } onclick={ ()=>
-                                addCreateChannelMember(user) }
-                                class="flex items-center p-2 hover:bg-white/5 rounded cursor-pointer">
-                                <div
-                                    class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0">
-                                    { getInitials(getUsername(user)) }
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <div class="text-gray-300 text-sm font-medium truncate">{ getUsername(user) }</div>
-                                    <div class="text-gray-500 text-xs truncate">{ user.email }</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div if={ state.createChannelError }
-                    class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                    { state.createChannelError }
-                </div>
-            </div>
-
-            <div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3">
-                <button onclick={ ()=> update({ showCreateChannelModal: false }) }
-                    class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">
-                    Cancel
-                </button>
-                <button onclick={ createChannel } disabled={ state.creatingChannel }
-                    class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    { state.creatingChannel ? 'Creating...' : 'Create Channel' }
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- New DM Modal -->
-    <div if={ state.showDmPopup } class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick={ toggleDmPopup }></div>
-        <div
-            class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]">
-            <div class="p-4 border-b border-gray-700 flex flex-col gap-3">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-lg font-bold text-white">New Conversation</h2>
-                    <button onclick={ toggleDmPopup } class="text-gray-400 hover:text-white transition-colors"><i
-                            class="fas fa-times"></i></button>
-                </div>
-                <div class="relative">
-                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
-                    <input type="text" placeholder="Find people..."
-                        class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600"
-                        oninput={ handleDmFilterInput } ref="dmFilterInput">
-                </div>
-            </div>
-            <div class="overflow-y-auto custom-scrollbar p-2">
-                <div each={ user in state.dmPopupUsers } onclick={ ()=> startDm(user) }
-                    class="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors
-                    group">
-                    <div class="relative">
-                        <div
-                            class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg">
-                            { getInitials(getUsername(user)) }
-                        </div>
-                        <div class={ 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' +
-                            getStatusColor(user.status) }></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-200 font-medium group-hover:text-white transition-colors truncate">{
-                                getUsername(user) }</span>
-                            <span if={ user._key===props.currentUser._key }
-                                class="text-xs text-gray-500 italic">You</span>
-                        </div>
-                        <div class="text-xs text-gray-500 truncate">{ user.email }</div>
-                    </div>
-                    <i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>
-                </div>
-                <div if={ state.dmPopupUsers.length===0 }
-                    class="p-8 text-center text-gray-500 flex flex-col items-center">
-                    <i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i>
-                    <p>No users found matching "{ state.dmFilterQuery }"</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
+        import Sidebar from './talks-sidebar.riot.js'
+        import Header from './talks-header.riot.js'
+        import Messages from './talks-messages.riot.js'
+        import Input from './talks-input.riot.js'
+        import Calls from './talks-calls.riot.js'
+        import TalksMixin from './talks-common.js'
+
         export default {
+            components: {
+                'talks-sidebar': Sidebar,
+                'talks-header': Header,
+                'talks-messages': Messages,
+                'talks-input': Input,
+                'talks-calls': Calls
+            },
+            ...TalksMixin,
             onBeforeMount() {
                 this.dragCounter = 0;
                 this.isUserScrolledUp = false;
@@ -917,6 +343,10 @@
                     filteredCreateChannelUsers: [],
                     showMembersPanel: false,
                     currentUser: this.props.currentUser || {},
+                    currentChannel: this.props.currentChannel,
+                    currentChannelData: this.props.currentChannelData,
+                    channelId: this.props.channelId,
+                    connectionStatus: 'connecting'
                 }
                 // Ensure favorites array exists and is an array
                 if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -956,7 +386,7 @@
             },
 
             async toggleFavorite(channelData) {
-                const targetChannel = channelData || this.props.currentChannelData;
+                const targetChannel = channelData || this.state.currentChannelData;
                 if (!targetChannel) return;
 
                 const channelKey = targetChannel._key;
@@ -1016,49 +446,9 @@
                 return favItems;
             },
 
-            getOtherUserForDM(channel) {
-                if (!channel.members || !this.state.currentUser) return null;
-                const otherKey = channel.members.find(k => k !== this.state.currentUser._key) || channel.members[0]; // fallback for self-dm
-                return this.state.users.find(u => u._key === otherKey);
-            },
 
-            getChannelName(item) {
-                if (item.type === 'dm') {
-                    const otherUser = this.getOtherUserForDM(item);
-                    return otherUser ? this.getUsername(otherUser) : item.name;
-                }
-                return item.name;
-            },
 
-            getChannelHref(item) {
-                if (item.type === 'private' || item.type === 'dm') {
-                    return '/talks?channel=' + item._key;
-                }
-                return '/talks?channel=' + item.name;
-            },
 
-            getChannelClass(item) {
-                const isActive = (this.props.currentChannel === item.name) || (this.props.currentChannelData && this.props.currentChannelData._key === item._key);
-                let base = 'flex items-center px-4 py-1 transition-colors ';
-                if (isActive) {
-                    return base + 'bg-[#1164A3] text-white font-medium';
-                }
-                return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
-            },
-
-            getDMClass(user) {
-                const isActive = this.isCurrentDM(user);
-                let base = 'flex items-center px-4 py-1 transition-colors ';
-                if (isActive) {
-                    return base + 'bg-[#1164A3] text-white font-medium';
-                }
-                return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
-            },
-
-            getStarClass() {
-                const isFav = this.props.currentChannelData && this.isFavorite(this.props.currentChannelData._key);
-                return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
-            },
 
             togglePrivateMode(e) {
                 this.update({ isCreatingPrivate: e.target.checked });
@@ -1100,18 +490,7 @@
                 this.update({ showMembersPanel: !this.state.showMembersPanel });
             },
 
-            getMemberName(memberKey) {
-                const user = this.state.users.find(u => u._key === memberKey);
-                if (user) {
-                    return this.getUsername(user);
-                }
-                return memberKey;
-            },
 
-            getMemberEmail(memberKey) {
-                const user = this.state.users.find(u => u._key === memberKey);
-                return user ? user.email : '';
-            },
 
             async createChannel() {
                 const input = (this.refs && this.refs.newChannelInput) || this.root.querySelector('[ref="newChannelInput"]');
@@ -1178,7 +557,80 @@
 
                 // Connect to signaling Live Query for calls
                 this.connectSignaling();
+
+                // SPA Routing
+                this.initRouter();
             },
+
+            initRouter() {
+                this.router = new Navigo('/talks', { hash: false });
+
+                this.router.on('*', (match) => {
+                    if (match && match.queryString) {
+                        const searchParams = new URLSearchParams(match.queryString);
+                        const channel = searchParams.get('channel');
+                        if (channel) {
+                            this.switchChannel(channel);
+                        }
+                    }
+                }).resolve();
+            },
+
+            onNavigate(e) {
+                e.preventDefault();
+                const href = e.currentTarget.getAttribute('href');
+                const url = new URL(href, window.location.origin);
+                const channel = url.searchParams.get('channel');
+                if (channel) {
+                    // Navigate only, let router handler call switchChannel
+                    this.router.navigate(`?channel=${channel}`);
+                }
+            },
+
+            async switchChannel(channelKey) {
+                if (this.state.currentChannelData && this.state.currentChannelData._key === channelKey) return;
+                if (this.state.currentChannel === channelKey) return;
+
+                console.log('Switching to channel:', channelKey);
+
+                try {
+                    const response = await fetch(`/talks/channel_data?channel=${channelKey}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        const newAllMessages = [...this.state.allMessages];
+                        const currentKeys = new Set(newAllMessages.map(m => m._key));
+                        data.messages.forEach(m => {
+                            if (!currentKeys.has(m._key)) newAllMessages.push(m);
+                        });
+                        newAllMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+                        this.update({
+                            currentChannel: data.currentChannel,
+                            currentChannelData: data.currentChannelData,
+                            channelId: data.channelId,
+                            messages: data.messages,
+                            allMessages: newAllMessages
+                        });
+
+                        // Refocus input
+                        setTimeout(() => {
+                            const input = this.root.querySelector('textarea');
+                            if (input) input.focus();
+                            this.scrollToBottom(true);
+                        }, 50);
+
+                        // Mark as read
+                        const unread = { ...this.state.unreadChannels };
+                        if (unread[data.channelId]) {
+                            delete unread[data.channelId];
+                            this.update({ unreadChannels: unread });
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to switch channel:', err);
+                }
+            },
+
             onBeforeUnmount() {
                 // Clean up WebSocket connections
                 if (this.ws) {
@@ -1285,6 +737,7 @@
 
                     this.ws.onopen = () => {
                         console.log('Live query connected');
+                        this.update({ connectionStatus: 'connected' });
                         // Subscribe to messages collection for all public channels and DMs the user is involved in
                         const query = `
                             LET my_user_key = "${this.props.currentUser._key}"
@@ -1314,6 +767,9 @@
 
                             // Handle full query results (re-executed on every change)
                             if (data.type === 'query_result' && data.result) {
+                                if (this.state.connectionStatus !== 'connected') {
+                                    this.update({ connectionStatus: 'connected' });
+                                }
                                 const newMessages = data.result;
                                 const currentMessages = [...this.state.allMessages];
                                 const currentKeys = new Set(currentMessages.map(m => m._key));
@@ -1358,7 +814,7 @@
                                         newMessages.forEach(m => {
                                             if (!currentKeys.has(m._key)) {
                                                 // If message is NOT in current channel, mark channel as unread
-                                                if (String(m.channel_id) !== String(this.props.channelId)) {
+                                                if (String(m.channel_id) !== String(this.state.channelId)) {
                                                     unread[m.channel_id] = true;
                                                     unreadChanged = true;
                                                 }
@@ -1367,7 +823,7 @@
                                     }
 
                                     // Filter for current channel display
-                                    const filtered = updated.filter(m => String(m.channel_id) === String(this.props.channelId));
+                                    const filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId));
 
                                     const updateData = {
                                         allMessages: updated,
@@ -1378,7 +834,7 @@
                                     this.update(updateData);
 
                                     // Only scroll/notify if new items added to CURRENT channel
-                                    const hasNewItemsInCurrent = hasNewItems && newMessages.some(m => !currentKeys.has(m._key) && String(m.channel_id) === String(this.props.channelId));
+                                    const hasNewItemsInCurrent = hasNewItems && newMessages.some(m => !currentKeys.has(m._key) && String(m.channel_id) === String(this.state.channelId));
 
                                     if (hasNewItemsInCurrent) {
                                         if (!this.isUserScrolledUp) {
@@ -1401,12 +857,14 @@
 
                     this.ws.onclose = () => {
                         console.log('Live query disconnected');
+                        this.update({ connectionStatus: 'disconnected' });
                         // Reconnect after 5 seconds
                         setTimeout(() => this.connectLiveQuery(), 5000);
                     };
 
                     this.ws.onerror = (err) => {
                         console.error('Live query error:', err);
+                        this.update({ connectionStatus: 'disconnected' });
                     };
                 } catch (err) {
                     console.error('Failed to connect live query:', err);
@@ -1422,13 +880,13 @@
             },
             onBeforeUpdate(props, state) {
                 // Clear unread for current channel when active
-                if (state.unreadChannels[props.channelId]) {
-                    delete state.unreadChannels[props.channelId];
+                if (state.unreadChannels[state.channelId]) {
+                    delete state.unreadChannels[state.channelId];
                 }
 
-                // Update filtered messages if allMessages or channelId changed
-                if (state.allMessages !== this.state.allMessages || props.channelId !== this.props.channelId) {
-                    state.messages = state.allMessages.filter(m => String(m.channel_id) === String(props.channelId));
+                // Update filtered messages if allMessages changed (WebSocket update)
+                if (state.allMessages !== this.state.allMessages) {
+                    state.messages = state.allMessages.filter(m => String(m.channel_id) === String(state.channelId));
                 }
 
                 // Pre-calculate user channels for DM unread dots if users changed
@@ -1580,7 +1038,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            channel: this.props.channelId,
+                            channel: this.state.channelId,
                             text: text,
                             sender: this.getUsername(this.props.currentUser),
                             attachments: attachments
@@ -1617,7 +1075,7 @@
                 const keys = [this.props.currentUser._key, user._key];
                 keys.sort();
                 const dmChannelName = 'dm_' + keys.join('_');
-                return this.props.currentChannel === dmChannelName;
+                return this.state.currentChannel === dmChannelName;
             },
 
 
@@ -1689,11 +1147,7 @@
                 return 'bg-gray-500';
             },
 
-            getStatusLabel(status) {
-                if (status === 'online') return 'Active';
-                if (status === 'busy') return 'Busy';
-                return 'Off';
-            },
+
 
             toggleStatusMenu() {
                 this.update({ showStatusMenu: !this.state.showStatusMenu });
@@ -2093,20 +1547,7 @@
             },
 
             // Helper: Extract all URLs from message text
-            getMessageUrls(text) {
-                if (!text) return [];
-                const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
-                const urls = [];
-                let match;
-                while ((match = urlRegex.exec(text)) !== null) {
-                    if (!urls.includes(match[1])) {
-                        urls.push(match[1]);
-                        // Fetch OG data if not cached
-                        this.fetchOgMetadata(match[1]);
-                    }
-                }
-                return urls;
-            },
+
 
             // Helper: Fetch Open Graph metadata for a URL
             async fetchOgMetadata(url) {
@@ -2131,13 +1572,7 @@
             },
 
             // Helper: Extract domain from URL
-            getDomain(url) {
-                try {
-                    return new URL(url).hostname;
-                } catch {
-                    return url;
-                }
-            },
+
 
             // Helper: Get initials from sender name
             getInitials(sender) {
@@ -2157,14 +1592,7 @@
             },
 
             // Helper: Format timestamp to human-readable time
-            formatTime(timestamp) {
-                const date = new Date(timestamp * 1000);
-                return date.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                });
-            },
+
 
 
 
@@ -2188,7 +1616,7 @@
 
             // Check if current channel is a DM
             isDMChannel() {
-                return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+                return this.state.currentChannel && this.state.currentChannel.startsWith('dm_');
             },
 
             async connectSignaling() {
@@ -2260,9 +1688,9 @@
                 if (!this.isDMChannel()) return;
 
                 // Parse channel name: dm_KEY1_KEY2
-                const parts = this.props.currentChannel.split('_');
+                const parts = this.state.currentChannel.split('_');
                 if (parts.length !== 3) {
-                    console.error("Invalid channel format for DM call:", this.props.currentChannel);
+                    console.error("Invalid channel format for DM call:", this.state.currentChannel);
                     return;
                 }
 
@@ -2715,10 +2143,24 @@
                 }
             },
 
-            formatCallDuration(seconds) {
-                const mins = Math.floor(seconds / 60);
-                const secs = Math.floor(seconds % 60);
-                return `${mins}:${secs.toString().padStart(2, '0')}`;
+
+            getEmojiPickerStyle() {
+                return `width: 320px; max-height: 300px; left: ${this.state.emojiPickerPos.left}px; bottom: ${this.state.emojiPickerPos.bottom}px;`;
+            },
+            getUserPickerStyle() {
+                return `left: ${this.state.userPickerPos.left}px; bottom: ${this.state.userPickerPos.bottom}px;`;
+            },
+            getUserPickerItemClass(index) {
+                return 'flex items-center gap-3 p-2 cursor-pointer transition-colors ' + (index === this.state.selectedUserIndex ? 'bg-indigo-600 text-white' : 'hover:bg-white/5 text-gray-300');
+            },
+            getPrivateToggleBgClass() {
+                return 'w-10 h-6 bg-gray-600 rounded-full shadow-inner transition-colors ' + (this.state.isCreatingPrivate ? 'bg-green-500' : '');
+            },
+            getPrivateToggleKnobClass() {
+                return 'absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform ' + (this.state.isCreatingPrivate ? 'translate-x-4' : '');
+            },
+            getDmUserIndicatorClass(user) {
+                return 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' + this.getStatusColor(user.status);
             },
 
             $nextTick(fn) {

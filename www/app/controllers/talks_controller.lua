@@ -327,6 +327,62 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     Page("talks/index", "app")
   end,
 
+  channel_data = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local currentChannel = GetParam("channel") or "general"
+    
+    -- Try to find channel by key first, then by name
+    local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
+    local channelRes = db:Sdbql(channelQuery, { key = currentChannel, name = currentChannel }).result[1]
+    
+    if not channelRes then
+        SetStatus(404)
+        WriteJSON({ error = "Channel not found" })
+        return
+    end
+
+    -- Access Control (same as in index)
+    if channelRes.type == "private" then
+        local isMember = false
+        if channelRes.members then
+            for _, m in ipairs(channelRes.members) do
+                if m == current_user._key then isMember = true break end
+            end
+        end
+        if not isMember then
+            SetStatus(403)
+            WriteJSON({ error = "Forbidden" })
+            return
+        end
+    end
+
+    -- Fetch messages for this channel
+    local messagesRes = db:Sdbql(
+      [[
+        FOR m IN messages FILTER m.channel_id == @channelId
+        SORT m.timestamp ASC RETURN m
+      ]],
+      { channelId = channelRes._id }
+    )
+    local messages = (messagesRes and messagesRes.result) or {}
+
+    -- Return JSON data
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({
+        currentChannel = currentChannel,
+        currentChannelData = channelRes,
+        channelId = channelRes._id,
+        messages = messages
+    })
+  end,
+
   login_form = function()
     Params.hide_header = true
     Params.no_padding = true

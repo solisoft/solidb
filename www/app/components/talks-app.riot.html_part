@@ -1,0 +1,60 @@
+<talks-app>
+    <div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden">
+        <talks-sidebar currentUser={ state.currentUser } channels={ props.channels } users={ state.users } unreadChannels={ state.unreadChannels } usersChannels={ state.usersChannels } favorites={ getFavorites() } connectionStatus={ state.connectionStatus } showStatusMenu={ state.showStatusMenu } getChannelHref={ getChannelHref } getChannelClass={ getChannelClass } getDMClass={ getDMClass } getDMUrl={ getDMUrl } getStatusColor={ getStatusColor } getStatusLabel={ getStatusLabel } getOtherUserForDM={ getOtherUserForDM } getChannelName={ getChannelName } getInitials={ getInitials } getUsername={ getUsername } onNavigate={ onNavigate } onShowCreateChannel={ () => update({ showCreateChannelModal: true }) } onToggleDmPopup={ toggleDmPopup } onToggleStatusMenu={ toggleStatusMenu } onUpdateStatus={ updateStatus } />
+
+        <main class="flex-1 flex flex-col min-w-0 h-full relative">
+            <talks-header currentChannelData={ props.currentChannelData } currentChannel={ props.currentChannel } showMembersPanel={ state.showMembersPanel } getChannelName={ getChannelName } getStarClass={ getStarClass } getMemberName={ getMemberName } getMemberEmail={ getMemberEmail } getInitials={ getInitials } isDMChannel={ isDMChannel } onToggleFavorite={ toggleFavorite } onToggleMembersPanel={ toggleMembersPanel } onStartCall={ startCall } />
+
+            <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={ state.hasNewMessages } ogCache={ state.ogCache } formatTime={ formatTime } getUsername={ getUsername } getAvatarClass={ getAvatarClass } getInitials={ getInitials } parseMessage={ parseMessage } parseTextWithLinks={ parseTextWithLinks } isEmojiOnly={ isEmojiOnly } getMessageUrls={ getMessageUrls } getDomain={ getDomain } handleImageError={ handleImageError } isImage={ isImage } getFileUrl={ getFileUrl } openLightbox={ openLightbox } toggleReaction={ toggleReaction } getInputEmojis={ getInputEmojis } scrollToLatest={ scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } />
+
+            <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending } showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave } onDragOver={ onDragOver } ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown } onHandleMessageInput={ handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker } onSendMessage={ sendMessage } />
+        </main>
+
+        <talks-calls incomingCall={ state.incomingCall } activeCall={ state.activeCall } callDuration={ state.callDuration } isMuted={ state.isMuted } isVideoEnabled={ state.isVideoEnabled } isScreenSharing={ state.isScreenSharing } localStreamHasVideo={ state.localStreamHasVideo } remoteStreamHasVideo={ state.remoteStreamHasVideo } getUsername={ getUsername } getInitials={ getInitials } formatCallDuration={ formatCallDuration } onAcceptCall={ acceptCall } onDeclineCall={ declineCall } onToggleMute={ toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={ toggleScreenShare } onHangup={ hangup } />
+
+        <!-- Fullscreen Image Lightbox -->
+        <div if={ state.lightboxImage } onclick={ closeLightbox } class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in">
+            <div onclick={ (e) => e.stopPropagation() } class="flex flex-col max-w-[90vw] max-h-[90vh]">
+                <img src={ state.lightboxImage.url } alt={ state.lightboxImage.filename } class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+                <div class="flex items-center justify-between mt-4 px-1">
+                    <div class="text-white/70 text-sm truncate max-w-[60%]">{ state.lightboxImage.filename }</div>
+                    <div class="flex items-center gap-2">
+                        <a href={ state.lightboxImage.url } download={ state.lightboxImage.filename } class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm">
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                        <button onclick={ closeLightbox } class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm">
+                            <i class="fas fa-times"></i> Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Emoji Picker -->
+        <div if={ state.showEmojiPicker } class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar" style={ `width: 320px; max-height: 300px; left: ${state.emojiPickerPos.left}px; bottom: ${state.emojiPickerPos.bottom}px;` }>
+            <div class="fixed inset-0 z-[-1]" onclick={ () => update({ showEmojiPicker: false }) }></div>
+            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
+            <div class="flex flex-wrap gap-1 mb-3">
+                <button each={ emoji in getInputEmojis().smileys } onclick={ (e) => insertEmoji(emoji, e) } class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
+            </div>
+            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div>
+            <div class="flex flex-wrap gap-1 mb-3">
+                <button each={ emoji in getInputEmojis().gestures } onclick={ (e) => insertEmoji(emoji, e) } class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
+            </div>
+            <div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div>
+            <div class="flex flex-wrap gap-1 mb-3">
+                <button each={ emoji in getInputEmojis().objects } onclick={ (e) => insertEmoji(emoji, e) } class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
+            </div>
+        </div>
+
+        <!-- User Mention Picker -->
+        <div if={ state.showUserPicker } class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in" style={ `left: ${state.userPickerPos.left}px; bottom: ${state.userPickerPos.bottom}px;` }>
+            <div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">People</div>
+            <div class="max-h-48 overflow-y-auto custom-scrollbar">
+                <div each={ (user, index) in state.filteredUsers } onclick={ () => insertMention(user) } class={ 'flex items-center gap-3 p-2 cursor-pointer transition-colors ' + (index === state.selectedUserIndex ? 'bg-indigo-600 text-white' : 'hover:bg-white/5 text-gray-300') }>
+                    <div class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">{ getInitials(getUsername(user)) }</div>
+                    <span class="text-sm truncate font-medium">{ getUsername(user) }</span>
+                </div>
+            </div>
+        </div>
+    </div>

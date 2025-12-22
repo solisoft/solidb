@@ -1,0 +1,116 @@
+<talks-calls>
+    <div>
+        <!-- Incoming Call Modal -->
+        <div if={ props.incomingCall }
+            class="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center animate-fade-in">
+            <div
+                class="bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full">
+                <div
+                    class="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center mb-6 overflow-hidden border-4 border-gray-700">
+                    <span class="text-3xl font-bold text-gray-400">{
+                        getInitials(getUsername(props.incomingCall.caller)) }</span>
+                </div>
+                <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{
+                    getUsername(props.incomingCall.caller) }</h3>
+                <p class="text-gray-400 mb-8">{ props.incomingCall.type === "video" ? "Incoming Video Call" :
+                    "Incoming Audio Call" }</p>
+                <div class="flex items-center gap-8">
+                    <button onclick={ props.onDeclineCall } class="flex flex-col items-center gap-2 group">
+                        <div
+                            class="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-red-500 transition-all transform group-hover:scale-110">
+                            <i class="fas fa-phone-slash"></i>
+                        </div>
+                        <span class="text-xs text-gray-400">Decline</span>
+                    </button>
+                    <button onclick={ props.onAcceptCall } class="flex flex-col items-center gap-2 group">
+                        <div
+                            class="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-green-500 transition-all transform group-hover:scale-110 animate-pulse">
+                            <i class="fas fa-phone"></i>
+                        </div>
+                        <span class="text-xs text-gray-400">Accept</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Call Overlay -->
+        <div if={ props.activeCall } class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in">
+            <!-- Header -->
+            <div
+                class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3">
+                        <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                        <span class="text-white font-medium text-sm">{ formatCallDuration(props.callDuration)
+                            }</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Video Container -->
+            <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+                <div if={ !props.remoteStreamHasVideo }
+                    class="absolute inset-0 z-0 flex flex-col items-center justify-center p-8">
+                    <div
+                        class="w-32 h-32 rounded-full bg-indigo-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-xl border-4 border-white/10">
+                        { getInitials(getUsername(props.activeCall.peer)) }
+                    </div>
+                    <h2 class="text-2xl text-white font-bold text-center mt-4 text-shadow-lg">{
+                        getUsername(props.activeCall.peer) }</h2>
+                    <p class="text-gray-400 mt-2 font-medium">{ props.localStreamHasVideo ? "Calling..." : "Audio Call"
+                        }</p>
+                </div>
+
+                <!-- Remote Video -->
+                <video ref="remoteVideo" autoplay playsinline
+                    class='absolute inset-0 w-full h-full object-contain z-10 { !props.remoteStreamHasVideo ? "hidden" : "" }'></video>
+
+                <!-- Local Video (PiP) -->
+                <div
+                    class='absolute bottom-24 right-6 w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-2xl border border-gray-700 { !props.localStreamHasVideo ? "hidden" : "" }'>
+                    <video ref="localVideo" autoplay playsinline muted
+                        class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                </div>
+            </div>
+
+            <!-- Controls Toolbar -->
+            <div
+                class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0">
+                <button onclick={ props.onToggleMute } class={ "p-4 rounded-full transition-all " + (props.isMuted
+                    ? "bg-red-600 text-white hover:bg-red-700" : "bg-gray-700 text-white hover:bg-gray-600" ) } title={
+                    props.isMuted ? "Unmute" : "Mute" }>
+                    <i class={ props.isMuted ? "fas fa-microphone-slash" : "fas fa-microphone" }></i>
+                </button>
+                <button onclick={ props.onToggleVideo } class={ "p-4 rounded-full transition-all " +
+                    (!props.isVideoEnabled ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-gray-700 text-white hover:bg-gray-600" ) } title={ props.isVideoEnabled ? "Stop Video"
+                    : "Start Video" }>
+                    <i class={ props.isVideoEnabled ? "fas fa-video" : "fas fa-video-slash" }></i>
+                </button>
+                <button onclick={ props.onToggleScreenShare } class={ "p-4 rounded-full transition-all " +
+                    (props.isScreenSharing ? "bg-green-600 text-white hover:bg-green-700"
+                    : "bg-gray-700 text-white hover:bg-gray-600" ) } title="Share Screen">
+                    <i class="fas fa-desktop"></i>
+                </button>
+                <button onclick={ props.onHangup }
+                    class="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white ml-8 transition-all px-8 flex items-center gap-2"
+                    title="End Call">
+                    <i class="fas fa-phone-slash"></i>
+                    <span class="font-bold">End</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        import TalksMixin from './talks-common.js'
+
+        export default {
+            ...TalksMixin,
+            onMounted() {
+                console.log("Calls mounted");
+            }
+        }
+    </script>
+</talks-calls>
