@@ -386,7 +386,6 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     -- Redbean/SoliDB driver typically returns the document or meta.
     -- If createRes has _id, use it.
     local userId = createRes._id
-    Logger(createRes)
     if not userId then
        -- Fallback if driver returns something else, fetch by email
        local u = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email }).result[1]
