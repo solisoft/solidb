@@ -758,9 +758,9 @@
       </div>
     </a>
 
-    <!-- Support / Discord -->
+    <!-- Talks -->
     <a
-      href="#"
+      href="/talks"
       class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-yellow-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(234,179,8,0.15)] hover:-translate-y-1"
     >
       <div
@@ -772,24 +772,23 @@
           <div
             class="p-4 bg-yellow-500/10 rounded-2xl border border-yellow-500/20 group-hover:bg-yellow-500/20 transition-colors"
           >
-            <i class="fab fa-discord text-2xl text-yellow-400"></i>
+            <i class="fas fa-comments text-2xl text-yellow-400"></i>
           </div>
         </div>
 
         <h3
           class="text-2xl font-bold text-white mb-3 group-hover:text-yellow-300 transition-colors"
         >
-          Community Help
+          Talks
         </h3>
         <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
-          Join our Discord server to connect with other developers, ask
-          questions, and share your projects.
+          Connect with the team and community using our internal Talks application.
         </p>
 
         <div
           class="flex items-center text-sm font-bold text-yellow-400 uppercase tracking-wider group-hover:text-yellow-300"
         >
-          Join Server
+          Open Talks
           <svg
             class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform"
             fill="none"

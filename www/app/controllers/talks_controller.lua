@@ -348,6 +348,13 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       return Page("talks/signup", "app")
     end
 
+    if #password < 8 then
+      Params.error = "Password must be at least 8 characters long"
+      Params.hide_header = true
+      Params.no_padding = true
+      return Page("talks/signup", "app")
+    end
+
     -- Check if email exists
     local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
     if res and res.result and #res.result > 0 then
@@ -370,8 +377,6 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     local user = {
       firstname = firstname,
-      lastname = lastname,
-      email = email,
       lastname = lastname,
       email = email,
       password_hash = hash,
