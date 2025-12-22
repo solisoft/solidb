@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::error::DbError;
 use crate::storage::StorageEngine;
 use crate::sdbql::{parse, QueryExecutor};
-use futures::SinkExt;
+use futures::{SinkExt, StreamExt};
 
 // Crypto imports
 use sha2::Digest;
@@ -274,15 +274,41 @@ impl ScriptEngine {
         let ws_table = lua.create_table()
             .map_err(|e| DbError::InternalError(format!("Failed to create ws table: {}", e)))?;
 
-        let ws_arc = Arc::new(tokio::sync::Mutex::new(ws));
+        // Split WebSocket into sink and stream
+        let (mut sink, receiver) = ws.split();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<axum::extract::ws::Message>(100);
+        
+        // Task to forward messages from channel to WebSocket sink
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                if sink.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Heartbeat task: Send a Ping every 30 seconds to keep the connection alive
+        let tx_heartbeat = tx.clone();
+        let heartbeat_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            // First tick happens immediately
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                if tx_heartbeat.send(axum::extract::ws::Message::Ping(vec![].into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let receiver_arc = Arc::new(tokio::sync::Mutex::new(receiver));
         
         // ws.send(data)
-        let ws_send_clone = ws_arc.clone();
+        let tx_send = tx.clone();
         let send_fn = lua.create_async_function(move |_, data: String| {
-            let ws_inner = ws_send_clone.clone();
+            let tx = tx_send.clone();
             async move {
-                let mut socket = ws_inner.lock().await;
-                socket.send(axum::extract::ws::Message::Text(data.into())).await
+                tx.send(axum::extract::ws::Message::Text(data.into())).await
                     .map_err(|e| mlua::Error::RuntimeError(format!("WS send error: {}", e)))?;
                 Ok(())
             }
@@ -291,16 +317,18 @@ impl ScriptEngine {
             .map_err(|e| DbError::InternalError(format!("Failed to set ws.send: {}", e)))?;
 
         // ws.recv() -> string or nil
-        let ws_recv_clone = ws_arc.clone();
+        let ws_recv_clone = receiver_arc.clone();
         let recv_fn = lua.create_async_function(move |lua, (): ()| {
-            let ws_inner = ws_recv_clone.clone();
+            let stream_inner = ws_recv_clone.clone();
             async move {
-                let mut socket = ws_inner.lock().await;
-                match socket.recv().await {
-                    Some(Ok(axum::extract::ws::Message::Text(t))) => Ok(LuaValue::String(lua.create_string(t.as_bytes())?)),
-                    Some(Ok(axum::extract::ws::Message::Binary(b))) => Ok(LuaValue::String(lua.create_string(b.as_ref())?)),
-                    Some(Ok(axum::extract::ws::Message::Close(_))) | None | Some(Err(_)) => Ok(LuaValue::Nil),
-                    _ => Ok(LuaValue::Nil), // Ignore Ping/Pong for now
+                let mut stream = stream_inner.lock().await;
+                loop {
+                    match stream.next().await {
+                        Some(Ok(axum::extract::ws::Message::Text(t))) => return Ok(LuaValue::String(lua.create_string(t.as_bytes())?)),
+                        Some(Ok(axum::extract::ws::Message::Binary(b))) => return Ok(LuaValue::String(lua.create_string(b.as_ref())?)),
+                        Some(Ok(axum::extract::ws::Message::Close(_))) | None | Some(Err(_)) => return Ok(LuaValue::Nil),
+                        Some(Ok(axum::extract::ws::Message::Pong(_))) | Some(Ok(axum::extract::ws::Message::Ping(_))) => continue, // Ignore heartbeats
+                    }
                 }
             }
         }).map_err(|e| DbError::InternalError(format!("Failed to create ws.recv: {}", e)))?;
@@ -308,12 +336,11 @@ impl ScriptEngine {
             .map_err(|e| DbError::InternalError(format!("Failed to set ws.recv: {}", e)))?;
 
         // ws.close()
-        let ws_close_clone = ws_arc.clone();
+        let tx_close = tx.clone();
         let close_fn = lua.create_async_function(move |_, (): ()| {
-            let ws_inner = ws_close_clone.clone();
+            let tx = tx_close.clone();
             async move {
-                let mut socket = ws_inner.lock().await;
-                let _ = socket.close().await;
+                let _ = tx.send(axum::extract::ws::Message::Close(None)).await;
                 Ok(())
             }
         }).map_err(|e| DbError::InternalError(format!("Failed to create ws.close: {}", e)))?;
@@ -327,16 +354,19 @@ impl ScriptEngine {
 
         // Execute the script
         let chunk = lua.load(&script.code);
-        match chunk.eval_async::<LuaValue>().await {
+        let result = match chunk.eval_async::<LuaValue>().await {
             Ok(_) => Ok(()),
             Err(e) => {
                 tracing::error!("WebSocket Lua script error: {}", e);
                 // Also try to notify the client of the error if possible
-                let mut socket = ws_arc.lock().await;
-                let _ = socket.send(axum::extract::ws::Message::Text(format!("Lua Error: {}", e).into())).await;
+                let _ = tx.send(axum::extract::ws::Message::Text(format!("Lua Error: {}", e).into())).await;
                 Err(DbError::InternalError(format!("Lua error: {}", e)))
             }
-        }
+        };
+
+        // Cleanup
+        heartbeat_task.abort();
+        result
     }
 
     /// Set up global Lua objects and functions

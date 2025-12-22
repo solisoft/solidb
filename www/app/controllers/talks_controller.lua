@@ -616,6 +616,50 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     WriteJSON({ success = true, channel = doc })
   end,
 
+  -- Toggle favorite status for a channel
+  toggle_favorite = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local channel_key = body.channel_key
+
+    if not channel_key then
+        SetStatus(400)
+        WriteJSON({ error = "Channel key is required" })
+        return
+    end
+
+    local favorites = current_user.favorites or {}
+    local found_index = nil
+    for i, key in ipairs(favorites) do
+        if key == channel_key then
+            found_index = i
+            break
+        end
+    end
+
+    local is_favorite = false
+    if found_index then
+        table.remove(favorites, found_index)
+        is_favorite = false
+    else
+        table.insert(favorites, channel_key)
+        is_favorite = true
+    end
+
+    -- Update user favorites
+    -- Using SDBQL to update the user document
+    db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { favorites: @favorites } IN users", { key = current_user._key, favorites = favorites })
+
+    WriteJSON({ success = true, is_favorite = is_favorite, favorites = favorites })
+  end,
+
   -- API endpoint to update user status
   update_status = function()
     local db = SoliDB.primary

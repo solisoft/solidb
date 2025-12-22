@@ -8,6 +8,7 @@ var talksApp = {
         dragging: false,
         files: [],
         sending: false,
+        allMessages: this.props.messages || [],
         messages: this.props.messages || [],
         ogCache: {},
         // Cache for Open Graph metadata
@@ -22,8 +23,272 @@ var talksApp = {
         // Position for fixed emoji picker
         hasNewMessages: false,
         // Flag to show "Read latest" button
-        users: this.props.users || [] // List of users for sidebar
+        users: this.props.users || [],
+        // List of users for sidebar
+        unreadChannels: {},
+        // { channel_id: boolean }
+        usersChannels: {},
+        // Cache of user_key -> dm_channel_id for sidebar
+        initialSyncDone: false,
+        // Flag to avoid unread dots on first load
+        incomingCall: null,
+        // { caller, type, offer }
+        activeCall: null,
+        // { peer, connection, startDate }
+        callDuration: 0,
+        isMuted: false,
+        isVideoEnabled: false,
+        isScreenSharing: false,
+        localStreamHasVideo: false,
+        remoteStreamHasVideo: false,
+        // User Mention Picker
+        showUserPicker: false,
+        userPickerPos: {
+          left: 0,
+          bottom: 0
+        },
+        filteredUsers: [],
+        mentionQuery: '',
+        selectedUserIndex: 0,
+        showDmPopup: false,
+        dmPopupUsers: [],
+        showStatusMenu: false,
+        isCreatingPrivate: false,
+        createChannelMembers: [],
+        createChannelMemberQuery: '',
+        filteredCreateChannelUsers: [],
+        showMembersPanel: false,
+        currentUser: this.props.currentUser || {}
       };
+      // Ensure favorites array exists and is an array
+      if (!Array.isArray(this.state.currentUser.favorites)) {
+        this.state.currentUser.favorites = [];
+      }
+      this.localStream = null;
+      this.remoteStream = null;
+      this.peerConnection = null;
+      this.iceCandidatesQueue = [];
+      // Pre-calculate user channels for DM unread dots
+      if (this.state.users && this.props.currentUser) {
+        // Create lookup for existing DM channels
+        const dmMap = {}; // name -> id
+        if (this.props.dmChannels) {
+          this.props.dmChannels.forEach(c => {
+            dmMap[c.name] = c._id;
+          });
+        }
+        this.state.users.forEach(u => {
+          const keys = [this.props.currentUser._key, u._key];
+          keys.sort();
+          const dmName = 'dm_' + keys.join('_');
+          // Use ID if exists (for unread tracking), otherwise name (for URL generation logic fallback)
+          this.state.usersChannels[u._key] = dmMap[dmName] || dmName;
+        });
+      }
+    },
+    sanitizeChannelInput(e) {
+      e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    },
+    isFavorite(key) {
+      if (!this.state.currentUser || !Array.isArray(this.state.currentUser.favorites)) return false;
+      return this.state.currentUser.favorites.includes(key);
+    },
+    async toggleFavorite(channelData) {
+      const targetChannel = channelData || this.props.currentChannelData;
+      if (!targetChannel) return;
+      const channelKey = targetChannel._key;
+      const user = this.state.currentUser || {};
+      let favorites = Array.isArray(user.favorites) ? user.favorites : [];
+      const isFav = favorites.includes(channelKey);
+      let newFavorites;
+      if (isFav) {
+        newFavorites = favorites.filter(k => k !== channelKey);
+      } else {
+        newFavorites = [...favorites, channelKey];
+      }
+
+      // Optimistic update
+      const updatedUser = {
+        ...user,
+        favorites: newFavorites
+      };
+      this.update({
+        currentUser: updatedUser
+      });
+      try {
+        const response = await fetch('/talks/toggle_favorite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            channel_key: channelKey
+          })
+        });
+        const data = await response.json();
+        if (!data.success) {
+          // Revert on failure
+          this.update({
+            currentUser: this.props.currentUser
+          });
+        }
+      } catch (e) {
+        console.error("Error toggling favorite", e);
+        this.update({
+          currentUser: this.props.currentUser
+        });
+      }
+    },
+    getFavorites() {
+      if (!this.state.currentUser || !Array.isArray(this.state.currentUser.favorites)) return [];
+      const favorites = this.state.currentUser.favorites;
+      if (favorites.length === 0) return [];
+      const favItems = [];
+      // Check standard channels
+      favorites.forEach(key => {
+        const channel = this.props.channels.find(c => c._key === key);
+        if (channel) {
+          favItems.push(channel);
+          return;
+        }
+        // Check DM channels
+        if (this.props.dmChannels) {
+          const dm = this.props.dmChannels.find(c => c._key === key);
+          if (dm) {
+            favItems.push(dm);
+          }
+        }
+      });
+      return favItems;
+    },
+    getOtherUserForDM(channel) {
+      if (!channel.members || !this.state.currentUser) return null;
+      const otherKey = channel.members.find(k => k !== this.state.currentUser._key) || channel.members[0]; // fallback for self-dm
+      return this.state.users.find(u => u._key === otherKey);
+    },
+    getChannelName(item) {
+      if (item.type === 'dm') {
+        const otherUser = this.getOtherUserForDM(item);
+        return otherUser ? this.getUsername(otherUser) : item.name;
+      }
+      return item.name;
+    },
+    getChannelHref(item) {
+      if (item.type === 'private' || item.type === 'dm') {
+        return '/talks?channel=' + item._key;
+      }
+      return '/talks?channel=' + item.name;
+    },
+    getChannelClass(item) {
+      const isActive = this.props.currentChannel === item.name || this.props.currentChannelData && this.props.currentChannelData._key === item._key;
+      let base = 'flex items-center px-4 py-1 transition-colors ';
+      if (isActive) {
+        return base + 'bg-[#1164A3] text-white font-medium';
+      }
+      return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
+    },
+    getDMClass(user) {
+      const isActive = this.isCurrentDM(user);
+      let base = 'flex items-center px-4 py-1 transition-colors ';
+      if (isActive) {
+        return base + 'bg-[#1164A3] text-white font-medium';
+      }
+      return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
+    },
+    getStarClass() {
+      const isFav = this.props.currentChannelData && this.isFavorite(this.props.currentChannelData._key);
+      return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
+    },
+    togglePrivateMode(e) {
+      this.update({
+        isCreatingPrivate: e.target.checked
+      });
+    },
+    handleCreateChannelMemberInput(e) {
+      const query = e.target.value.toLowerCase();
+      const filtered = this.state.users.filter(u => this.getUsername(u).toLowerCase().includes(query) && !this.state.createChannelMembers.find(m => m._key === u._key) && u._key !== this.props.currentUser._key);
+      this.update({
+        filteredCreateChannelUsers: filtered,
+        createChannelMemberQuery: query
+      });
+    },
+    addCreateChannelMember(user) {
+      const members = [...this.state.createChannelMembers, user];
+      this.update({
+        createChannelMembers: members,
+        createChannelMemberQuery: '',
+        filteredCreateChannelUsers: []
+      });
+      const input = this.root.querySelector('[ref="createChannelMemberInput"]');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    },
+    removeCreateChannelMember(user) {
+      const members = this.state.createChannelMembers.filter(m => m._key !== user._key);
+      this.update({
+        createChannelMembers: members
+      });
+    },
+    toggleMembersPanel() {
+      this.update({
+        showMembersPanel: !this.state.showMembersPanel
+      });
+    },
+    getMemberName(memberKey) {
+      const user = this.state.users.find(u => u._key === memberKey);
+      if (user) {
+        return this.getUsername(user);
+      }
+      return memberKey;
+    },
+    getMemberEmail(memberKey) {
+      const user = this.state.users.find(u => u._key === memberKey);
+      return user ? user.email : '';
+    },
+    async createChannel() {
+      const input = this.refs && this.refs.newChannelInput || this.root.querySelector('[ref="newChannelInput"]');
+      const name = input ? input.value : '';
+      if (!name) return;
+      this.update({
+        creatingChannel: true,
+        createChannelError: null
+      });
+      try {
+        const payload = {
+          name: name,
+          is_private: this.state.isCreatingPrivate,
+          // members list including creator
+          members: this.state.createChannelMembers.map(u => u._key)
+        };
+        const response = await fetch('/talks/create_channel', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          // success - redirect to new channel
+          window.location.href = `/talks?channel=${data.channel._key}`;
+        } else {
+          this.update({
+            createChannelError: data.error || 'Failed to create channel',
+            creatingChannel: false
+          });
+        }
+      } catch (err) {
+        this.update({
+          createChannelError: 'Network error',
+          creatingChannel: false
+        });
+      }
+    },
+    // Get DB host from props or fallback to localhost:6745
+    getDbHost() {
+      return this.props.dbHost || 'localhost:6745';
     },
     onMounted() {
       // Use setTimeout to ensure DOM is fully rendered
@@ -36,12 +301,98 @@ var talksApp = {
 
       // Connect to live query WebSocket for real-time updates
       this.connectLiveQuery();
+
+      // Connect to presence WebSocket to track online status
+      this.connectPresence();
+
+      // Connect to users Live Query for real-time presence UI updates
+      this.connectUsersLiveQuery();
+
+      // Connect to signaling Live Query for calls
+      this.connectSignaling();
     },
     onBeforeUnmount() {
-      // Clean up WebSocket connection
+      // Clean up WebSocket connections
       if (this.ws) {
+        this.ws.onclose = null;
         this.ws.close();
         this.ws = null;
+      }
+      if (this.presenceWs) {
+        this.presenceWs.onclose = null;
+        this.presenceWs.close();
+        this.presenceWs = null;
+      }
+      if (this.usersWs) {
+        this.usersWs.onclose = null;
+        this.usersWs.close();
+        this.usersWs = null;
+      }
+      if (this.signalingWs) {
+        this.signalingWs.onclose = null;
+        this.signalingWs.close();
+        this.signalingWs = null;
+      }
+      this.hangup();
+    },
+    connectPresence() {
+      // Connect to presence WebSocket for online/offline tracking
+      const userId = this.props.currentUser?._key;
+      if (!userId) return;
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const dbName = this.props.dbName || 'solidb_dev';
+      const wsUrl = `${wsProtocol}//${this.getDbHost()}/api/custom/${dbName}/presence?user_id=${userId}`;
+      this.presenceWs = new WebSocket(wsUrl);
+      this.presenceWs.onopen = () => {
+        console.log('Presence WebSocket connected');
+      };
+      this.presenceWs.onclose = () => {
+        console.log('Presence WebSocket disconnected');
+        // Reconnect after 5 seconds
+        setTimeout(() => this.connectPresence(), 5000);
+      };
+      this.presenceWs.onerror = err => {
+        console.error('Presence WebSocket error:', err);
+      };
+    },
+    async connectUsersLiveQuery() {
+      try {
+        const tokenRes = await fetch('/talks/livequery_token');
+        if (!tokenRes.ok) return;
+        const {
+          token
+        } = await tokenRes.json();
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+        this.usersWs = new WebSocket(wsUrl);
+        this.usersWs.onopen = () => {
+          console.log('Users Live Query connected');
+          const query = `FOR u IN users RETURN { _key: u._key, _id: u._id, firstname: u.firstname, lastname: u.lastname, email: u.email, status: u.status, connection_count: u.connection_count }`;
+          this.usersWs.send(JSON.stringify({
+            type: 'live_query',
+            database: this.props.dbName || '_system',
+            query: query
+          }));
+        };
+        this.usersWs.onmessage = event => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'query_result' && data.result) {
+              this.update({
+                users: data.result
+              });
+            }
+          } catch (err) {
+            console.log('Users Live Query parse error:', err);
+          }
+        };
+        this.usersWs.onclose = () => {
+          console.log('Users Live Query disconnected');
+          setTimeout(() => this.connectUsersLiveQuery(), 5000);
+        };
+      } catch (err) {
+        console.error('Users Live Query error:', err);
+        setTimeout(() => this.connectUsersLiveQuery(), 5000);
       }
     },
     async connectLiveQuery() {
@@ -57,12 +408,25 @@ var talksApp = {
         } = await tokenRes.json();
 
         // Connect to WebSocket on port 6745
-        const wsUrl = `ws://${window.location.hostname}:6745/_api/ws/changefeed?token=${token}`;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
         this.ws = new WebSocket(wsUrl);
         this.ws.onopen = () => {
           console.log('Live query connected');
-          // Subscribe to messages collection for current channel using SdbQL
-          const query = `FOR doc IN messages FILTER doc.channel_id == "${this.props.channelId}" SORT doc._updated_at DESC LIMIT 5 RETURN doc`;
+          // Subscribe to messages collection for all public channels and DMs the user is involved in
+          const query = `
+                    LET my_user_key = "${this.props.currentUser._key}"
+                    LET my_channels = (
+                        FOR c IN channels
+                            FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                            RETURN c._id
+                    )
+                    FOR m IN messages
+                        FILTER POSITION(my_channels, m.channel_id) >= 0
+                        SORT m.timestamp DESC
+                        LIMIT 10
+                        RETURN m
+                `;
           this.ws.send(JSON.stringify({
             type: 'live_query',
             database: this.props.dbName || '_system',
@@ -77,7 +441,7 @@ var talksApp = {
             // Handle full query results (re-executed on every change)
             if (data.type === 'query_result' && data.result) {
               const newMessages = data.result;
-              const currentMessages = [...this.state.messages];
+              const currentMessages = [...this.state.allMessages];
               const currentKeys = new Set(currentMessages.map(m => m._key));
 
               // Build a map of new messages by _key for updates
@@ -110,12 +474,37 @@ var talksApp = {
               if (hasNewItems || hasUpdates) {
                 // Sort by timestamp
                 updated.sort((a, b) => a.timestamp - b.timestamp);
-                this.update({
-                  messages: updated
-                });
 
-                // Only scroll if new items added AND already at bottom
-                if (hasNewItems) {
+                // Handle unread indicators for new messages
+                const unread = {
+                  ...this.state.unreadChannels
+                };
+                let unreadChanged = false;
+                if (hasNewItems && this.state.initialSyncDone) {
+                  newMessages.forEach(m => {
+                    if (!currentKeys.has(m._key)) {
+                      // If message is NOT in current channel, mark channel as unread
+                      if (String(m.channel_id) !== String(this.props.channelId)) {
+                        unread[m.channel_id] = true;
+                        unreadChanged = true;
+                      }
+                    }
+                  });
+                }
+
+                // Filter for current channel display
+                const filtered = updated.filter(m => String(m.channel_id) === String(this.props.channelId));
+                const updateData = {
+                  allMessages: updated,
+                  messages: filtered,
+                  initialSyncDone: true
+                };
+                if (unreadChanged) updateData.unreadChannels = unread;
+                this.update(updateData);
+
+                // Only scroll/notify if new items added to CURRENT channel
+                const hasNewItemsInCurrent = hasNewItems && newMessages.some(m => !currentKeys.has(m._key) && String(m.channel_id) === String(this.props.channelId));
+                if (hasNewItemsInCurrent) {
                   if (!this.isUserScrolledUp) {
                     setTimeout(() => this.scrollToBottom(true), 50);
                   } else {
@@ -153,6 +542,34 @@ var talksApp = {
       this.highlightCode();
       if (!this.isUserScrolledUp) {
         this.scrollToBottom();
+      }
+    },
+    onBeforeUpdate(props, state) {
+      // Clear unread for current channel when active
+      if (state.unreadChannels[props.channelId]) {
+        delete state.unreadChannels[props.channelId];
+      }
+
+      // Update filtered messages if allMessages or channelId changed
+      if (state.allMessages !== this.state.allMessages || props.channelId !== this.props.channelId) {
+        state.messages = state.allMessages.filter(m => String(m.channel_id) === String(props.channelId));
+      }
+
+      // Pre-calculate user channels for DM unread dots if users changed
+      if (state.users !== this.state.users || this.props.dmChannels !== props.dmChannels) {
+        state.usersChannels = {};
+        const dmMap = {};
+        if (props.dmChannels) {
+          props.dmChannels.forEach(c => {
+            dmMap[c.name] = c._id;
+          });
+        }
+        state.users.forEach(u => {
+          const keys = [props.currentUser._key, u._key];
+          keys.sort();
+          const dmName = 'dm_' + keys.join('_');
+          state.usersChannels[u._key] = dmMap[dmName] || dmName;
+        });
       }
     },
     onScroll(e) {
@@ -225,6 +642,34 @@ var talksApp = {
     },
     // Handle Enter to send message (Shift+Enter for new line)
     onKeyDown(e) {
+      // Handle User Picker Navigation
+      if (this.state.showUserPicker && this.state.filteredUsers.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const nextIndex = (this.state.selectedUserIndex + 1) % this.state.filteredUsers.length;
+          this.update({
+            selectedUserIndex: nextIndex
+          });
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const prevIndex = (this.state.selectedUserIndex - 1 + this.state.filteredUsers.length) % this.state.filteredUsers.length;
+          this.update({
+            selectedUserIndex: prevIndex
+          });
+          return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation(); // Prevent newline or sending
+          this.insertMention(this.state.filteredUsers[this.state.selectedUserIndex]);
+          return;
+        } else if (e.key === 'Escape') {
+          this.update({
+            showUserPicker: false
+          });
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage(e.target);
@@ -324,6 +769,173 @@ var talksApp = {
       this.update({
         showEmojiPicker: !this.state.showEmojiPicker
       });
+    },
+    // DM Popup Methods
+    toggleDmPopup() {
+      const show = !this.state.showDmPopup;
+      this.update({
+        showDmPopup: show,
+        dmPopupUsers: this.state.users,
+        dmFilterQuery: ''
+      });
+      if (show) {
+        setTimeout(() => {
+          const input = this.root.querySelector('[ref="dmFilterInput"]');
+          if (input) input.focus();
+        }, 50);
+      }
+    },
+    handleDmFilterInput(e) {
+      const query = e.target.value.toLowerCase();
+      const filtered = this.state.users.filter(u => this.getUsername(u).toLowerCase().includes(query));
+      this.update({
+        dmPopupUsers: filtered,
+        dmFilterQuery: query
+      });
+    },
+    startDm(user) {
+      this.goToDm(this.getUsername(user));
+      this.update({
+        showDmPopup: false
+      });
+    },
+    // Status Methods
+    getCurrentUser() {
+      if (!this.props.currentUser) return null;
+      return this.state.users.find(u => u._key === this.props.currentUser._key) || this.props.currentUser;
+    },
+    getStatusColor(status) {
+      if (status === 'online') return 'bg-green-500';
+      if (status === 'busy') return 'bg-red-500';
+      return 'bg-gray-500';
+    },
+    getStatusLabel(status) {
+      if (status === 'online') return 'Active';
+      if (status === 'busy') return 'Busy';
+      return 'Off';
+    },
+    toggleStatusMenu() {
+      this.update({
+        showStatusMenu: !this.state.showStatusMenu
+      });
+    },
+    async updateStatus(status) {
+      try {
+        await fetch('/talks/update_status', {
+          method: 'POST',
+          body: JSON.stringify({
+            status
+          }),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        this.update({
+          showStatusMenu: false
+        });
+      } catch (e) {
+        console.error("Failed to update status", e);
+      }
+    },
+    // Toggle User Picker
+    toggleUserPicker(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        this.state.userPickerPos = {
+          left: rect.left,
+          bottom: window.innerHeight - rect.top + 5
+        };
+      }
+
+      // Reset filter to show all users initially
+      this.update({
+        showUserPicker: !this.state.showUserPicker,
+        filteredUsers: this.state.users,
+        mentionQuery: '',
+        selectedUserIndex: 0
+      });
+    },
+    // Insert selected user mention
+    insertMention(user) {
+      const textarea = this.refs && this.refs.messageInput || this.root.querySelector('[ref="messageInput"]');
+      if (!textarea) return;
+      const username = this.getUsername(user);
+      const mentionText = `@${username} `;
+      const cursorPosition = textarea.selectionStart;
+      const textBefore = textarea.value.substring(0, cursorPosition);
+      const textAfter = textarea.value.substring(cursorPosition);
+
+      // Check for existing @ pattern before cursor to replace
+      const match = textBefore.match(/@([a-zA-Z0-9_.-]*)$/);
+      if (match) {
+        // Match found (e.g. "@" or "@oli"), replace it
+        const newTextBefore = textBefore.substring(0, textBefore.length - match[0].length) + mentionText;
+        textarea.value = newTextBefore + textAfter;
+        textarea.focus();
+        const newCursorPos = newTextBefore.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+      } else {
+        // No match (e.g. button click without typing), insert at cursor
+        textarea.value = textBefore + mentionText + textAfter;
+        textarea.focus();
+        const newCursorPos = cursorPosition + mentionText.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+      }
+      this.update({
+        showUserPicker: false,
+        mentionQuery: '',
+        selectedUserIndex: 0
+      });
+    },
+    // Navigate to DM with mentioned user
+    goToDm(username) {
+      const user = this.state.users.find(u => this.getUsername(u) === username);
+      if (user) {
+        const url = this.getDMUrl(user);
+        // Use route helper if available or standard location
+        window.location.href = url;
+      }
+    },
+    // Detect @ mention typing
+    handleMessageInput(e) {
+      const textarea = e.target;
+      const cursorPosition = textarea.selectionStart;
+      const text = textarea.value;
+      const textBeforeCursor = text.substring(0, cursorPosition);
+
+      // Regex to find @mention pattern at the end of the text before cursor
+      // Matches @ followed by word characters, optionally allowing spaces if we wanted (but standard is usually no spaces)
+      const match = textBeforeCursor.match(/@([a-zA-Z0-9_.-]*)$/);
+      if (match) {
+        const query = match[1].toLowerCase();
+        const filtered = this.state.users.filter(u => {
+          const username = this.getUsername(u).toLowerCase();
+          return username.includes(query);
+        });
+
+        // Calculate position for the picker (simplified, near cursor would contain more logic)
+        // For now, use a fixed position above the input or try to estimate
+        const rect = textarea.getBoundingClientRect();
+        this.update({
+          showUserPicker: true,
+          filteredUsers: filtered,
+          mentionQuery: query,
+          selectedUserIndex: 0,
+          userPickerPos: {
+            left: rect.left + 20,
+            // Offset slightly
+            bottom: window.innerHeight - rect.top + 10
+          }
+        });
+      } else {
+        if (this.state.showUserPicker) {
+          this.update({
+            showUserPicker: false
+          });
+        }
+      }
     },
     // Insert emoji at cursor position in textarea
     insertEmoji(emoji, e) {
@@ -510,9 +1122,9 @@ var talksApp = {
         content: ''
       }];
 
-      // Match formatting, code, or URLs
-      // G1: __bold__, G2: ''italic'', G3: --strike--, G4: `code`, G5: URL
-      const combinedRegex = /(__.+?__)|(''.+?'')|(--.+?--)|(`[^`]+`)|(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
+      // Match formatting, code, or URLs, or Mentions
+      // G1: __bold__, G2: ''italic'', G3: --strike--, G4: `code`, G5: URL, G6: Mention
+      const combinedRegex = /(__.+?__)|(''.+?'')|(--.+?--)|(`[^`]+`)|(https?:\/\/[^\s<>"{}|\\^`\[\]]+)|(@[a-zA-Z0-9_.-]+)/g;
       const parts = [];
       let lastIndex = 0;
       let match;
@@ -556,6 +1168,21 @@ var talksApp = {
             url: url,
             display: url.length > 50 ? url.substring(0, 47) + '...' : url
           });
+        } else if (match[6]) {
+          // Mention (@username)
+          const username = match[6].substring(1); // remove @
+          const userExists = this.state.users.some(u => this.getUsername(u) === username);
+          if (userExists) {
+            parts.push({
+              type: 'mention',
+              content: username
+            });
+          } else {
+            parts.push({
+              type: 'text',
+              content: match[6]
+            });
+          }
         }
         lastIndex = match.index + match[0].length;
       }
@@ -660,13 +1287,621 @@ var talksApp = {
           });
         }, 0);
       }
+    },
+    // --- CALLING LOGIC ---
+
+    // Check if current channel is a DM
+    isDMChannel() {
+      return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+    },
+    async connectSignaling() {
+      this.processedSignalIds = new Set();
+      try {
+        const tokenRes = await fetch('/talks/livequery_token');
+        if (!tokenRes.ok) return;
+        const {
+          token
+        } = await tokenRes.json();
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+        this.signalingWs = new WebSocket(wsUrl);
+        this.signalingWs.onopen = () => {
+          console.log('Signaling connected');
+          // Subscribe to signals for ME
+          const myKey = this.props.currentUser._key;
+          const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
+          this.signalingWs.send(JSON.stringify({
+            type: 'live_query',
+            database: this.props.dbName || '_system',
+            query: query
+          }));
+        };
+        this.signalingWs.onmessage = async event => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'query_result' && data.result) {
+              for (const signal of data.result) {
+                // Process only if not processed
+                if (signal._key && this.processedSignalIds.has(signal._key)) continue;
+                if (signal._key) this.processedSignalIds.add(signal._key);
+                await this.handleSignal(signal);
+              }
+            }
+          } catch (err) {
+            console.error('Signaling error:', err);
+          }
+        };
+        this.signalingWs.onclose = () => {
+          setTimeout(() => this.connectSignaling(), 3000);
+        };
+      } catch (e) {
+        console.error(e);
+        setTimeout(() => this.connectSignaling(), 5000);
+      }
+    },
+    async sendSignal(toUser, type, data) {
+      await fetch('/talks/signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          target_user: toUser,
+          type: type,
+          data: data
+        })
+      });
+    },
+    // Start a call
+    async startCall(type) {
+      // Get other user from DM
+      if (!this.isDMChannel()) return;
+
+      // Parse channel name: dm_KEY1_KEY2
+      const parts = this.props.currentChannel.split('_');
+      if (parts.length !== 3) {
+        console.error("Invalid channel format for DM call:", this.props.currentChannel);
+        return;
+      }
+      const myKey = this.props.currentUser._key;
+      const otherKey = parts[1] === myKey ? parts[2] : parts[1];
+
+      // Find user object
+      const otherUser = this.state.users.find(u => u._key === otherKey);
+      if (!otherUser) return;
+      this.update({
+        activeCall: {
+          peer: otherUser,
+          startDate: new Date(),
+          isInitiator: true
+        },
+        isVideoEnabled: type === 'video',
+        localStreamHasVideo: type === 'video'
+      });
+
+      // Start timer
+      this.callTimer = setInterval(() => {
+        this.update({
+          callDuration: (new Date() - this.state.activeCall.startDate) / 1000
+        });
+      }, 1000);
+      await this.setupPeerConnection(otherKey);
+
+      // Add local stream
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: type === 'video'
+        });
+        this.localStream = stream;
+        this.attachLocalStream();
+        stream.getTracks().forEach(track => {
+          this.peerConnection.addTrack(track, stream);
+        });
+
+        // Create offer
+        const offer = await this.peerConnection.createOffer();
+        await this.peerConnection.setLocalDescription(offer);
+        await this.sendSignal(otherKey, 'offer', {
+          sdp: offer,
+          caller_info: this.props.currentUser,
+          call_type: type
+        });
+      } catch (err) {
+        console.error('Error accessing media:', err);
+        alert('Could not access microphone/camera. Please ensure permissions are granted.');
+        this.hangup();
+      }
+    },
+    // Incoming call handler
+    async handleSignal(signal) {
+      // Simple ignore if old (older than 30s)
+      if (Date.now() - signal.timestamp > 30000) return;
+
+      // Ignore if from self (reduntant check)
+      if (signal.from_user === this.props.currentUser._key) return;
+      const data = signal.data;
+      switch (signal.type) {
+        case 'offer':
+          // Handle renegotiation offers during active call
+          if (this.state.activeCall && this.peerConnection && data.call_type === 'renegotiation') {
+            try {
+              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+              const answer = await this.peerConnection.createAnswer();
+              await this.peerConnection.setLocalDescription(answer);
+              await this.sendSignal(signal.from_user, 'answer', {
+                sdp: answer
+              });
+            } catch (e) {
+              console.error("Renegotiation answer failed:", e);
+            }
+            break;
+          }
+
+          // New call offer
+          if (this.state.activeCall) {
+            // Busy
+            return;
+          }
+
+          // Find user
+          const caller = this.state.users.find(u => u._key === signal.from_user) || {
+            _key: signal.from_user,
+            firstname: 'Unknown',
+            lastname: ''
+          };
+          this.update({
+            incomingCall: {
+              caller: caller,
+              type: data.call_type,
+              offer: data.sdp,
+              from_user: signal.from_user
+            }
+          });
+          break;
+        case 'answer':
+          if (this.state.activeCall && this.peerConnection) {
+            if (this.peerConnection.signalingState !== 'stable') {
+              await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            } else {
+              console.warn("Received answer but PC is already stable. Ignoring duplicate answer.");
+            }
+
+            // Process queued candidates
+            while (this.iceCandidatesQueue.length) {
+              const c = this.iceCandidatesQueue.shift();
+              if (c) {
+                try {
+                  await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+                } catch (e) {
+                  console.error("Error adding queued candidate from Answer", e);
+                }
+              }
+            }
+          }
+          break;
+        case 'candidate':
+          if (this.state.activeCall && this.peerConnection && this.peerConnection.remoteDescription) {
+            if (data.candidate) {
+              try {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } catch (e) {
+                console.error("Error adding candidate", e);
+              }
+            }
+          } else {
+            // Queue candidates if arrived before PC setup or before Remote Description
+            this.iceCandidatesQueue.push(data.candidate);
+          }
+          break;
+        case 'bye':
+          this.hangup();
+          break;
+      }
+    },
+    async acceptCall() {
+      const incoming = this.state.incomingCall;
+      if (!incoming) return;
+      this.update({
+        incomingCall: null,
+        activeCall: {
+          peer: incoming.caller,
+          startDate: new Date(),
+          isInitiator: false
+        },
+        isVideoEnabled: incoming.type === 'video',
+        localStreamHasVideo: incoming.type === 'video'
+      });
+
+      // Start timer
+      this.callTimer = setInterval(() => {
+        this.update({
+          callDuration: (new Date() - this.state.activeCall.startDate) / 1000
+        });
+      }, 1000);
+      await this.setupPeerConnection(incoming.from_user);
+
+      // Add local stream
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: incoming.type === 'video'
+        });
+        this.localStream = stream;
+        this.attachLocalStream();
+        stream.getTracks().forEach(track => {
+          this.peerConnection.addTrack(track, stream);
+        });
+
+        // Set remote desc
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+
+        // Create answer
+        const answer = await this.peerConnection.createAnswer();
+        await this.peerConnection.setLocalDescription(answer);
+        await this.sendSignal(incoming.from_user, 'answer', {
+          sdp: answer
+        });
+
+        // Process queued candidates
+        while (this.iceCandidatesQueue.length) {
+          const c = this.iceCandidatesQueue.shift();
+          if (c) {
+            try {
+              await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            } catch (e) {
+              console.error("Error adding queued candidate", e);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error accepting call:', err);
+        alert('Error accessing media.');
+        this.hangup();
+      }
+    },
+    declineCall() {
+      // Ideally send a 'decline' signal, but for now just clear UI
+      // await this.sendSignal(this.state.incomingCall.from_user, 'decline', {});
+      this.update({
+        incomingCall: null
+      });
+    },
+    async setupPeerConnection(remoteUserKey) {
+      const config = {
+        iceServers: [{
+          urls: 'stun:stun.l.google.com:19302'
+        }, {
+          urls: 'stun:stun1.l.google.com:19302'
+        }]
+      };
+      this.peerConnection = new RTCPeerConnection(config);
+      this.peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          this.sendSignal(remoteUserKey, 'candidate', {
+            candidate: event.candidate
+          });
+        }
+      };
+      this.peerConnection.ontrack = event => {
+        this.remoteStream = event.streams[0];
+
+        // Update video state whenever tracks change
+        const updateVideoState = () => {
+          this.update({
+            remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0
+          });
+        };
+        updateVideoState();
+
+        // Listen for tracks added/removed dynamically (e.g., screen share)
+        this.remoteStream.onaddtrack = updateVideoState;
+        this.remoteStream.onremovetrack = updateVideoState;
+
+        // Attach to video element
+        this.$nextTick(() => {
+          const video = this.root.querySelector('[ref="remoteVideo"]');
+          if (video) {
+            video.srcObject = this.remoteStream;
+          }
+        });
+      };
+      this.peerConnection.onconnectionstatechange = () => {
+        if (this.peerConnection.connectionState === 'disconnected' || this.peerConnection.connectionState === 'failed') {
+          this.hangup();
+        }
+      };
+
+      // Handle renegotiation when tracks are added mid-call (e.g., screen share in audio call)
+      this.peerConnection.onnegotiationneeded = async () => {
+        // Only initiator should create offers during renegotiation
+        if (!this.state.activeCall || !this.state.activeCall.isInitiator) return;
+        try {
+          const offer = await this.peerConnection.createOffer();
+          await this.peerConnection.setLocalDescription(offer);
+          await this.sendSignal(this.state.activeCall.peer._key, 'offer', {
+            sdp: offer,
+            caller_info: this.props.currentUser,
+            call_type: 'renegotiation'
+          });
+        } catch (e) {
+          console.error("Renegotiation failed:", e);
+        }
+      };
+
+      // Store remoteUserKey for renegotiation
+      this.remoteUserKey = remoteUserKey;
+    },
+    attachLocalStream() {
+      this.$nextTick(() => {
+        const video = this.root.querySelector('[ref="localVideo"]');
+        if (video && this.localStream) {
+          video.srcObject = this.localStream;
+        }
+      });
+    },
+    hangup() {
+      if (this.state.activeCall) {
+        this.sendSignal(this.state.activeCall.peer._key, 'bye', {});
+      }
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => track.stop());
+      }
+      if (this.peerConnection) {
+        this.peerConnection.close();
+      }
+      if (this.callTimer) {
+        clearInterval(this.callTimer);
+      }
+      this.localStream = null;
+      this.remoteStream = null;
+      this.peerConnection = null;
+      this.iceCandidatesQueue = []; // Clear queue
+
+      this.update({
+        activeCall: null,
+        incomingCall: null,
+        callDuration: 0,
+        isMuted: false,
+        isVideoEnabled: false,
+        isScreenSharing: false
+      });
+    },
+    toggleMute() {
+      if (this.localStream) {
+        const audioTrack = this.localStream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = !audioTrack.enabled;
+          this.update({
+            isMuted: !audioTrack.enabled
+          });
+        }
+      }
+    },
+    async toggleVideo() {
+      // If video is currently enabled, stop it
+      if (this.state.isVideoEnabled) {
+        // Stop video track
+        const videoTrack = this.localStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.stop();
+          this.localStream.removeTrack(videoTrack);
+        }
+        // Update sender
+        const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) this.peerConnection.removeTrack(sender); // Or we should replace with null, but removeTrack is safer if we want to add later properly
+
+        this.update({
+          isVideoEnabled: false,
+          localStreamHasVideo: false
+        });
+      } else {
+        // Start video
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true
+          });
+          const videoTrack = stream.getVideoTracks()[0];
+          this.localStream.addTrack(videoTrack);
+          this.peerConnection.addTrack(videoTrack, this.localStream);
+          this.update({
+            isVideoEnabled: true,
+            localStreamHasVideo: true
+          });
+          this.attachLocalStream();
+        } catch (e) {
+          // User denied permission or other error
+          console.error("Failed to start video", e);
+          this.update({
+            isVideoEnabled: false,
+            localStreamHasVideo: false
+          });
+        }
+      }
+    },
+    async toggleScreenShare() {
+      if (this.state.isScreenSharing) {
+        // Stop screen share -> Revert to camera (if was enabled) or nothing
+        // Simple logic: Stop screen track. If we had video enabled diff from screen, we'd need to restore it.
+        // For now, let's just stop screen share and maybe revert to camera if it was on?
+        // Actually, 'isScreenSharing' is simpler if it just replaces the video track.
+
+        const videoTrack = this.localStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.stop();
+          this.localStream.removeTrack(videoTrack);
+        }
+        this.update({
+          isScreenSharing: false,
+          localStreamHasVideo: false
+        });
+
+        // If video was supposedly enabled, try to restore camera
+        if (this.state.isVideoEnabled) {
+          // Restore camera
+          // Hack: toggleVideo off then on?
+          // Let's manually restore
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: true
+            });
+            const newTrack = stream.getVideoTracks()[0];
+            this.localStream.addTrack(newTrack);
+
+            // Replace sender
+            const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(newTrack);
+            } else {
+              this.peerConnection.addTrack(newTrack, this.localStream);
+            }
+            this.update({
+              localStreamHasVideo: true
+            });
+          } catch (e) {}
+        }
+      } else {
+        // Start screen share
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true
+          });
+          const screenTrack = stream.getVideoTracks()[0];
+
+          // Handle user clicking "Stop sharing" chrome UI
+          screenTrack.onended = () => {
+            if (this.state.isScreenSharing) this.toggleScreenShare();
+          };
+          const currentVideoTrack = this.localStream.getVideoTracks()[0];
+          if (currentVideoTrack) {
+            currentVideoTrack.stop(); // Stop camera
+            this.localStream.removeTrack(currentVideoTrack);
+          }
+          this.localStream.addTrack(screenTrack);
+
+          // Replace sender
+          const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack);
+          } else {
+            this.peerConnection.addTrack(screenTrack, this.localStream);
+          }
+          this.update({
+            isScreenSharing: true,
+            localStreamHasVideo: true
+          });
+          this.attachLocalStream();
+        } catch (e) {
+          console.error("Screen share failed", e);
+          // If user cancelled, ensure state is reset
+          this.update({
+            isScreenSharing: false,
+            localStreamHasVideo: this.state.isVideoEnabled
+          });
+          // Re-attach local cam if it was supposed to be on
+          if (this.state.isVideoEnabled) this.attachLocalStream();
+        }
+      }
+    },
+    formatCallDuration(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    },
+    $nextTick(fn) {
+      setTimeout(fn, 0);
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><aside class="w-64 bg-[#19171D] flex flex-col border-r border-gray-800"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><h1 class="text-xl font-bold text-white">SoliDB Talks</h1><div class="bg-green-500 w-3 h-3 rounded-full border-2 border-[#19171D]"></div></div><div class="flex-1 overflow-y-auto overflow-x-hidden py-4"><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><button class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr0="expr0"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr1="expr1"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr3="expr3" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr4="expr4" class="text-sm font-bold text-white truncate"> </p><p class="text-xs text-green-500 flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-1.5"></span> Active\n                        </p></div></div></div></aside><main class="flex-1 flex flex-col min-w-0 h-full relative"><header class="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-[#1A1D21] flex-shrink-0"><div class="flex items-center min-w-0"><h2 class="text-xl font-bold text-white mr-2 truncate"># development</h2><button class="text-gray-400 hover:text-white"><i class="far fa-star"></i></button></div><div class="flex items-center space-x-4"><div class="relative hidden sm:block"><input type="text" placeholder="Search..." class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header><div class="flex-1 relative min-h-0 flex flex-col"><div expr5="expr5" ref="messagesArea" class="flex-1 overflow-y-auto p-6 space-y-6"><div class="relative flex items-center py-2"><div class="flex-grow border-t border-gray-800"></div><span class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">Today</span><div class="flex-grow border-t border-gray-800"></div></div><div expr6="expr6" class="text-center text-gray-500 py-8"></div><div expr7="expr7" class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors"></div></div><div expr53="expr53" class="absolute bottom-6 right-8 z-10 animate-fade-in"></div></div><footer class="p-6 pt-0 flex-shrink-0"><div expr55="expr55"><div expr56="expr56" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-3"><textarea expr61="expr61" ref="messageInput" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] rounded-b-lg"><div class="flex items-center space-x-1"><button class="p-2 text-gray-500 hover:text-white transition-colors"><i class="fas fa-plus-circle"></i></button><div class="w-px h-4 bg-gray-800 mx-1"></div><button expr62="expr62"><i class="far fa-smile"></i></button><button class="p-2 text-gray-500 hover:text-white transition-colors"><i class="fas fa-at"></i></button></div><button expr63="expr63" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr64="expr64"></i> </button></div></div></footer></main><div expr65="expr65" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr71="expr71" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><aside class="w-64 bg-[#19171D] flex flex-col border-r border-gray-800"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><h1 class="text-xl font-bold text-white">SoliDB Talks</h1><div class="bg-green-500 w-3 h-3 rounded-full border-2 border-[#19171D]"></div></div><div class="flex-1 overflow-y-auto overflow-x-hidden py-4"><div expr373="expr373" class="mb-6"></div><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><div class="relative group"><button expr382="expr382" class="hover:text-white"><i class="fas fa-plus"></i></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">\n                                Create Channel\n                            </div></div></div><nav><a expr383="expr383"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button expr387="expr387" class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr388="expr388"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr392="expr392" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr393="expr393" class="text-sm font-bold text-white truncate"> </p><div class="relative"><button expr394="expr394" class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group"><span expr395="expr395"></span><span expr396="expr396"> </span><i class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i></button><div expr397="expr397" class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up"></div><div expr401="expr401" class="fixed inset-0 z-40"></div></div></div><a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a></div></div></aside><main class="flex-1 flex flex-col min-w-0 h-full relative"><header class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#1A1D21]/80 backdrop-blur-md"><div class="flex items-center min-w-0"><h2 expr402="expr402" class="text-xl font-bold text-white mr-2 truncate"><i expr403="expr403" class="fas fa-lock text-sm mr-2 text-gray-400"></i><span expr404="expr404"></span> </h2><button expr405="expr405" class="text-gray-400 hover:text-white transition-colors"><i expr406="expr406"></i></button></div><div class="flex items-center space-x-4"><div expr407="expr407" class="relative"></div><div expr416="expr416" class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2"></div><div class="relative hidden sm:block"><input type="text" placeholder="Search..." class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header><div class="flex-1 relative min-h-0 flex flex-col"><div expr419="expr419" ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-6"><div class="relative flex items-center py-2"><div class="flex-grow border-t border-gray-800"></div><span class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">Today</span><div class="flex-grow border-t border-gray-800"></div></div><div expr420="expr420" class="text-center text-gray-500 py-8"></div><div expr421="expr421" class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors"></div></div><div expr468="expr468" class="absolute bottom-6 right-8 z-10 animate-fade-in"></div></div><footer class="p-0 flex-shrink-0"><div expr470="expr470"><div expr471="expr471" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-4"><textarea expr476="expr476" ref="messageInput" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700"><div class="flex items-center space-x-1"><button expr477="expr477"><i class="far fa-smile"></i></button></div><button expr478="expr478" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr479="expr479"></i> </button></div></div></footer></main><div expr480="expr480" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr486="expr486" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr491="expr491" class="fixed w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-hidden"></div></div><div expr497="expr497" class="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center animate-fade-in"></div><div expr503="expr503" class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in"></div><div expr517="expr517" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr536="expr536" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div>', [{
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.getFavorites().length > 0,
+    redundantAttribute: 'expr373',
+    selector: '[expr373]',
+    template: template('<div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Favorites</span></div><nav><a expr374="expr374"></a></nav>', [{
+      type: bindingTypes.EACH,
+      getKey: null,
+      condition: null,
+      template: template('<span class="mr-2 w-4 text-center inline-block flex items-center justify-center"><template expr375="expr375"></template><template expr377="expr377"></template></span><span expr380="expr380" class="truncate"> </span><div expr381="expr381" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
+        expressions: [{
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'href',
+          evaluate: _scope => _scope.getChannelHref(_scope.item)
+        }, {
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'class',
+          evaluate: _scope => _scope.getChannelClass(_scope.item)
+        }]
+      }, {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.item.type === 'dm',
+        redundantAttribute: 'expr375',
+        selector: '[expr375]',
+        template: template('<div expr376="expr376"></div>', [{
+          redundantAttribute: 'expr376',
+          selector: '[expr376]',
+          expressions: [{
+            type: expressionTypes.ATTRIBUTE,
+            isBoolean: false,
+            name: 'class',
+            evaluate: _scope => 'w-2 h-2 rounded-full ' + _scope.getStatusColor(_scope.getOtherUserForDM(_scope.item) ? _scope.getOtherUserForDM(_scope.item).status : 'offline')
+          }]
+        }])
+      }, {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.item.type !== 'dm',
+        redundantAttribute: 'expr377',
+        selector: '[expr377]',
+        template: template('<i expr378="expr378" class="fas fa-lock text-xs"></i><span expr379="expr379"></span>', [{
+          type: bindingTypes.IF,
+          evaluate: _scope => _scope.item.type === 'private',
+          redundantAttribute: 'expr378',
+          selector: '[expr378]',
+          template: template(null, [])
+        }, {
+          type: bindingTypes.IF,
+          evaluate: _scope => _scope.item.type === 'standard',
+          redundantAttribute: 'expr379',
+          selector: '[expr379]',
+          template: template('#', [])
+        }])
+      }, {
+        redundantAttribute: 'expr380',
+        selector: '[expr380]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.getChannelName(_scope.item)].join('')
+        }]
+      }, {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.unreadChannels[_scope.item._id],
+        redundantAttribute: 'expr381',
+        selector: '[expr381]',
+        template: template(null, [])
+      }]),
+      redundantAttribute: 'expr374',
+      selector: '[expr374]',
+      itemName: 'item',
+      indexName: null,
+      evaluate: _scope => _scope.getFavorites()
+    }])
+  }, {
+    redundantAttribute: 'expr382',
+    selector: '[expr382]',
+    expressions: [{
+      type: expressionTypes.EVENT,
+      name: 'onclick',
+      evaluate: _scope => () => _scope.update({
+        showCreateChannelModal: true
+      })
+    }]
+  }, {
     type: bindingTypes.EACH,
     getKey: null,
-    condition: null,
-    template: template('<span class="mr-2">#</span> ', [{
+    condition: _scope => !_scope.isFavorite(_scope.channel._key),
+    template: template('<span class="mr-2 w-4 text-center inline-block"><i expr384="expr384" class="fas fa-lock text-xs"></i><span expr385="expr385"></span></span> <div expr386="expr386" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -675,29 +1910,51 @@ var talksApp = {
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'href',
-        evaluate: _scope => '/talks?channel=' + _scope.channel.name
+        evaluate: _scope => _scope.getChannelHref(_scope.channel)
       }, {
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'class',
-        evaluate: _scope => 'flex items-center px-4 py-1 ' + (_scope.props.currentChannel === _scope.channel.name ? 'bg-[#1164A3] text-white' : 'text-gray-400 hover:bg-[#350D36] hover:text-white')
+        evaluate: _scope => _scope.getChannelClass(_scope.channel)
       }]
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.channel.type === 'private',
+      redundantAttribute: 'expr384',
+      selector: '[expr384]',
+      template: template(null, [])
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.channel.type !== 'private',
+      redundantAttribute: 'expr385',
+      selector: '[expr385]',
+      template: template('#', [])
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.unreadChannels[_scope.channel._id],
+      redundantAttribute: 'expr386',
+      selector: '[expr386]',
+      template: template(null, [])
     }]),
-    redundantAttribute: 'expr0',
-    selector: '[expr0]',
+    redundantAttribute: 'expr383',
+    selector: '[expr383]',
     itemName: 'channel',
     indexName: null,
     evaluate: _scope => _scope.props.channels
   }, {
+    redundantAttribute: 'expr387',
+    selector: '[expr387]',
+    expressions: [{
+      type: expressionTypes.EVENT,
+      name: 'onclick',
+      evaluate: _scope => _scope.toggleDmPopup
+    }]
+  }, {
     type: bindingTypes.EACH,
     getKey: null,
-    condition: null,
-    template: template('<div expr2="expr2"></div> ', [{
+    condition: _scope => !_scope.isFavorite(_scope.state.usersChannels[_scope.user._key]),
+    template: template('<div expr389="expr389"></div><span expr390="expr390" class="flex-1 truncate"> </span><div expr391="expr391" class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
       expressions: [{
-        type: expressionTypes.TEXT,
-        childNodeIndex: 1,
-        evaluate: _scope => [_scope.getUsername(_scope.user), ' ', _scope.user._key === _scope.props.currentUser._key ? ' (you)' : ''].join('')
-      }, {
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'href',
@@ -706,42 +1963,262 @@ var talksApp = {
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'class',
-        evaluate: _scope => 'flex items-center px-4 py-1 ' + (_scope.isCurrentDM(_scope.user) ? 'text-white bg-[#350D36]' : 'text-gray-400 hover:bg-[#350D36] hover:text-white')
+        evaluate: _scope => _scope.getDMClass(_scope.user)
       }]
     }, {
-      redundantAttribute: 'expr2',
-      selector: '[expr2]',
+      redundantAttribute: 'expr389',
+      selector: '[expr389]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'class',
-        evaluate: _scope => 'w-2 h-2 rounded-full mr-2 ' + (_scope.user._key === _scope.props.currentUser._key ? 'bg-green-500' : 'bg-gray-600')
+        evaluate: _scope => 'w-2 h-2 rounded-full mr-2 ' + _scope.getStatusColor(_scope.user.status)
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'title',
+        evaluate: _scope => _scope.getStatusLabel(_scope.user.status)
       }]
+    }, {
+      redundantAttribute: 'expr390',
+      selector: '[expr390]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => [_scope.getUsername(_scope.user), ' ', _scope.user._key === _scope.props.currentUser._key ? ' (you)' : ''].join('')
+      }]
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.unreadChannels[_scope.state.usersChannels[_scope.user._key]],
+      redundantAttribute: 'expr391',
+      selector: '[expr391]',
+      template: template(null, [])
     }]),
-    redundantAttribute: 'expr1',
-    selector: '[expr1]',
+    redundantAttribute: 'expr388',
+    selector: '[expr388]',
     itemName: 'user',
     indexName: null,
     evaluate: _scope => _scope.state.users
   }, {
-    redundantAttribute: 'expr3',
-    selector: '[expr3]',
+    redundantAttribute: 'expr392',
+    selector: '[expr392]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.props.currentUser))].join('')
     }]
   }, {
-    redundantAttribute: 'expr4',
-    selector: '[expr4]',
+    redundantAttribute: 'expr393',
+    selector: '[expr393]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.props.currentUser.firstname
     }]
   }, {
-    redundantAttribute: 'expr5',
-    selector: '[expr5]',
+    redundantAttribute: 'expr394',
+    selector: '[expr394]',
+    expressions: [{
+      type: expressionTypes.EVENT,
+      name: 'onclick',
+      evaluate: _scope => _scope.toggleStatusMenu
+    }]
+  }, {
+    redundantAttribute: 'expr395',
+    selector: '[expr395]',
+    expressions: [{
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'class',
+      evaluate: _scope => 'w-2 h-2 rounded-full mr-1.5 ' + _scope.getStatusColor(_scope.getCurrentUser().status)
+    }]
+  }, {
+    redundantAttribute: 'expr396',
+    selector: '[expr396]',
+    expressions: [{
+      type: expressionTypes.TEXT,
+      childNodeIndex: 0,
+      evaluate: _scope => _scope.getStatusLabel(_scope.getCurrentUser().status)
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'class',
+      evaluate: _scope => 'transition-colors ' + (_scope.getCurrentUser().status === 'online' ? 'text-green-500' : 'text-gray-400 group-hover:text-gray-300')
+    }]
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showStatusMenu,
+    redundantAttribute: 'expr397',
+    selector: '[expr397]',
+    template: template('<div class="p-1 space-y-0.5"><button expr398="expr398" class="w-full text-left px-3 py-1.5\n                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                        items-center transition-colors"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active\n                                    </button><button expr399="expr399" class="w-full text-left px-3 py-1.5\n                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                        items-center transition-colors"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy\n                                    </button><button expr400="expr400" class="w-full text-left px-3 py-1.5\n                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                        items-center transition-colors"><span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off\n                                    </button></div>', [{
+      redundantAttribute: 'expr398',
+      selector: '[expr398]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.updateStatus('online')
+      }]
+    }, {
+      redundantAttribute: 'expr399',
+      selector: '[expr399]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.updateStatus('busy')
+      }]
+    }, {
+      redundantAttribute: 'expr400',
+      selector: '[expr400]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.updateStatus('offline')
+      }]
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showStatusMenu,
+    redundantAttribute: 'expr401',
+    selector: '[expr401]',
+    template: template(null, [{
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleStatusMenu
+      }]
+    }])
+  }, {
+    redundantAttribute: 'expr402',
+    selector: '[expr402]',
+    expressions: [{
+      type: expressionTypes.TEXT,
+      childNodeIndex: 2,
+      evaluate: _scope => [_scope.props.currentChannelData ? _scope.getChannelName(_scope.props.currentChannelData) : _scope.props.currentChannel].join('')
+    }]
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type === 'private',
+    redundantAttribute: 'expr403',
+    selector: '[expr403]',
+    template: template(null, [])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => !_scope.props.currentChannelData || _scope.props.currentChannelData.type !== 'private' && _scope.props.currentChannelData.type !== 'dm',
+    redundantAttribute: 'expr404',
+    selector: '[expr404]',
+    template: template('#', [])
+  }, {
+    redundantAttribute: 'expr405',
+    selector: '[expr405]',
+    expressions: [{
+      type: expressionTypes.EVENT,
+      name: 'onclick',
+      evaluate: _scope => () => _scope.toggleFavorite()
+    }]
+  }, {
+    redundantAttribute: 'expr406',
+    selector: '[expr406]',
+    expressions: [{
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'class',
+      evaluate: _scope => _scope.getStarClass()
+    }]
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type === 'private',
+    redundantAttribute: 'expr407',
+    selector: '[expr407]',
+    template: template('<button expr408="expr408" class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors"><i class="fas fa-users text-xs"></i><span expr409="expr409" class="text-sm"> </span></button><div expr410="expr410" class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-2xl z-50 overflow-hidden"></div>', [{
+      redundantAttribute: 'expr408',
+      selector: '[expr408]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleMembersPanel
+      }]
+    }, {
+      redundantAttribute: 'expr409',
+      selector: '[expr409]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => [_scope.props.currentChannelData.members ? _scope.props.currentChannelData.members.length : 0, ' members'].join('')
+      }]
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.showMembersPanel,
+      redundantAttribute: 'expr410',
+      selector: '[expr410]',
+      template: template('<div class="p-3 border-b border-gray-700 flex items-center justify-between"><span class="text-sm font-medium text-white">Channel Members</span><button expr411="expr411" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button></div><div class="max-h-64 overflow-y-auto custom-scrollbar p-2"><div expr412="expr412" class="flex items-center gap-2 p-2 hover:bg-white/5 rounded"></div></div>', [{
+        redundantAttribute: 'expr411',
+        selector: '[expr411]',
+        expressions: [{
+          type: expressionTypes.EVENT,
+          name: 'onclick',
+          evaluate: _scope => _scope.toggleMembersPanel
+        }]
+      }, {
+        type: bindingTypes.EACH,
+        getKey: null,
+        condition: null,
+        template: template('<div expr413="expr413" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold"> </div><div class="flex-1 min-w-0"><div expr414="expr414" class="text-gray-200 text-sm truncate"> </div><div expr415="expr415" class="text-gray-500 text-xs truncate"> </div></div>', [{
+          redundantAttribute: 'expr413',
+          selector: '[expr413]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => [_scope.getInitials(_scope.getMemberName(_scope.memberKey))].join('')
+          }]
+        }, {
+          redundantAttribute: 'expr414',
+          selector: '[expr414]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => _scope.getMemberName(_scope.memberKey)
+          }]
+        }, {
+          redundantAttribute: 'expr415',
+          selector: '[expr415]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => _scope.getMemberEmail(_scope.memberKey)
+          }]
+        }]),
+        redundantAttribute: 'expr412',
+        selector: '[expr412]',
+        itemName: 'memberKey',
+        indexName: null,
+        evaluate: _scope => _scope.props.currentChannelData.members || []
+      }])
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.isDMChannel(),
+    redundantAttribute: 'expr416',
+    selector: '[expr416]',
+    template: template('<button expr417="expr417" class="text-gray-400 hover:text-white p-2\n                            rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call"><i class="fas fa-phone"></i></button><button expr418="expr418" class="text-gray-400 hover:text-white p-2\n                            rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call"><i class="fas fa-video"></i></button>', [{
+      redundantAttribute: 'expr417',
+      selector: '[expr417]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.startCall('audio')
+      }]
+    }, {
+      redundantAttribute: 'expr418',
+      selector: '[expr418]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.startCall('video')
+      }]
+    }])
+  }, {
+    redundantAttribute: 'expr419',
+    selector: '[expr419]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onscroll',
@@ -750,16 +2227,16 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.messages || _scope.state.messages.length === 0,
-    redundantAttribute: 'expr6',
-    selector: '[expr6]',
+    redundantAttribute: 'expr420',
+    selector: '[expr420]',
     template: template('<i class="fas fa-comments text-4xl mb-4"></i><p>No messages yet. Start the conversation!</p>', [])
   }, {
     type: bindingTypes.EACH,
     getKey: null,
     condition: null,
-    template: template('<div expr8="expr8"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr9="expr9" class="font-bold text-white mr-2 hover:underline cursor-pointer"> </span><span expr10="expr10" class="text-xs text-gray-500"> </span></div><div expr11="expr11"><span expr12="expr12"></span></div><div expr24="expr24" class="mt-3"></div><div expr33="expr33" class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr37="expr37" class="mt-2 flex flex-wrap\n                                gap-2"></div><div class="mt-0.5 flex flex-wrap gap-1.5 items-center"><div expr45="expr45" class="relative group/reaction"></div><div class="relative group/emoji"><button class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100"><i class="far fa-smile text-sm"></i></button><div class="absolute bottom-full left-0 mb-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover/emoji:opacity-100 group-hover/emoji:visible transition-all z-50 overflow-y-auto custom-scrollbar" style="width: 280px; max-height: 250px;"><div class="p-2"><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr50="expr50" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr51="expr51" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1"><button expr52="expr52" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div></div></div></div></div></div>', [{
-      redundantAttribute: 'expr8',
-      selector: '[expr8]',
+    template: template('<div expr422="expr422"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr423="expr423" class="font-bold text-white mr-2 hover:underline cursor-pointer"> </span><span expr424="expr424" class="text-xs text-gray-500"> </span></div><div expr425="expr425"><span expr426="expr426"></span></div><div expr439="expr439" class="mt-3"></div><div expr448="expr448" class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr452="expr452" class="mt-2 flex flex-wrap\n                                gap-2"></div><div class="mt-0.5 flex flex-wrap gap-1.5 items-center"><div expr460="expr460" class="relative group/reaction"></div><div class="relative group/emoji"><button class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100"><i class="far fa-smile text-sm"></i></button><div class="absolute bottom-full left-0 mb-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover/emoji:opacity-100 group-hover/emoji:visible transition-all z-50 overflow-y-auto custom-scrollbar" style="width: 280px; max-height: 250px;"><div class="p-2"><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr465="expr465" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr466="expr466" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1"><button expr467="expr467" class="p-1.5 text-lg hover:bg-gray-700 rounded transition-colors"></button></div></div></div></div></div></div>', [{
+      redundantAttribute: 'expr422',
+      selector: '[expr422]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -771,24 +2248,24 @@ var talksApp = {
         evaluate: _scope => _scope.getAvatarClass(_scope.message.sender)
       }]
     }, {
-      redundantAttribute: 'expr9',
-      selector: '[expr9]',
+      redundantAttribute: 'expr423',
+      selector: '[expr423]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.message.sender
       }]
     }, {
-      redundantAttribute: 'expr10',
-      selector: '[expr10]',
+      redundantAttribute: 'expr424',
+      selector: '[expr424]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.formatTime(_scope.message.timestamp)
       }]
     }, {
-      redundantAttribute: 'expr11',
-      selector: '[expr11]',
+      redundantAttribute: 'expr425',
+      selector: '[expr425]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -799,20 +2276,20 @@ var talksApp = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<span expr13="expr13"></span><div expr21="expr21" class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div>', [{
+      template: template('<span expr427="expr427"></span><div expr436="expr436" class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div>', [{
         type: bindingTypes.IF,
         evaluate: _scope => _scope.part.type === 'text',
-        redundantAttribute: 'expr13',
-        selector: '[expr13]',
-        template: template('<span expr14="expr14"></span>', [{
+        redundantAttribute: 'expr427',
+        selector: '[expr427]',
+        template: template('<span expr428="expr428"></span>', [{
           type: bindingTypes.EACH,
           getKey: null,
           condition: null,
-          template: template('<span expr15="expr15"></span><a expr16="expr16" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 hover:underline"></a><code expr17="expr17" class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700"></code><strong expr18="expr18" class="font-bold text-gray-200"></strong><em expr19="expr19" class="italic text-gray-300"></em><span expr20="expr20" class="line-through text-gray-500"></span>', [{
+          template: template('<span expr429="expr429"></span><span expr430="expr430" class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer\n                                                font-medium bg-blue-500/10 px-0.5 rounded transition-colors"></span><a expr431="expr431" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 hover:underline"></a><code expr432="expr432" class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700"></code><strong expr433="expr433" class="font-bold text-gray-200"></strong><em expr434="expr434" class="italic text-gray-300"></em><span expr435="expr435" class="line-through text-gray-500"></span>', [{
             type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'text',
-            redundantAttribute: 'expr15',
-            selector: '[expr15]',
+            redundantAttribute: 'expr429',
+            selector: '[expr429]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -822,9 +2299,30 @@ var talksApp = {
             }])
           }, {
             type: bindingTypes.IF,
+            evaluate: _scope => _scope.segment.type === 'mention',
+            redundantAttribute: 'expr430',
+            selector: '[expr430]',
+            template: template(' ', [{
+              expressions: [{
+                type: expressionTypes.TEXT,
+                childNodeIndex: 0,
+                evaluate: _scope => ['@', _scope.segment.content].join('')
+              }, {
+                type: expressionTypes.EVENT,
+                name: 'onclick',
+                evaluate: _scope => () => _scope.goToDm(_scope.segment.content)
+              }, {
+                type: expressionTypes.ATTRIBUTE,
+                isBoolean: false,
+                name: 'title',
+                evaluate: _scope => 'Direct Message @' + _scope.segment.content
+              }]
+            }])
+          }, {
+            type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'link',
-            redundantAttribute: 'expr16',
-            selector: '[expr16]',
+            redundantAttribute: 'expr431',
+            selector: '[expr431]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -840,8 +2338,8 @@ var talksApp = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'code',
-            redundantAttribute: 'expr17',
-            selector: '[expr17]',
+            redundantAttribute: 'expr432',
+            selector: '[expr432]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -852,8 +2350,8 @@ var talksApp = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'bold',
-            redundantAttribute: 'expr18',
-            selector: '[expr18]',
+            redundantAttribute: 'expr433',
+            selector: '[expr433]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -864,8 +2362,8 @@ var talksApp = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'italic',
-            redundantAttribute: 'expr19',
-            selector: '[expr19]',
+            redundantAttribute: 'expr434',
+            selector: '[expr434]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -876,8 +2374,8 @@ var talksApp = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.segment.type === 'strike',
-            redundantAttribute: 'expr20',
-            selector: '[expr20]',
+            redundantAttribute: 'expr435',
+            selector: '[expr435]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -886,8 +2384,8 @@ var talksApp = {
               }]
             }])
           }]),
-          redundantAttribute: 'expr14',
-          selector: '[expr14]',
+          redundantAttribute: 'expr428',
+          selector: '[expr428]',
           itemName: 'segment',
           indexName: null,
           evaluate: _scope => _scope.parseTextWithLinks(_scope.part.content)
@@ -895,19 +2393,19 @@ var talksApp = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.part.type === 'code',
-        redundantAttribute: 'expr21',
-        selector: '[expr21]',
-        template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span class="text-xs font-mono text-gray-500">code</span><span expr22="expr22" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr23="expr23"> </code></pre>', [{
-          redundantAttribute: 'expr22',
-          selector: '[expr22]',
+        redundantAttribute: 'expr436',
+        selector: '[expr436]',
+        template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span class="text-xs font-mono text-gray-500">code</span><span expr437="expr437" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr438="expr438"> </code></pre>', [{
+          redundantAttribute: 'expr437',
+          selector: '[expr437]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.part.lang || 'text'
           }]
         }, {
-          redundantAttribute: 'expr23',
-          selector: '[expr23]',
+          redundantAttribute: 'expr438',
+          selector: '[expr438]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -920,8 +2418,8 @@ var talksApp = {
           }]
         }])
       }]),
-      redundantAttribute: 'expr12',
-      selector: '[expr12]',
+      redundantAttribute: 'expr426',
+      selector: '[expr426]',
       itemName: 'part',
       indexName: null,
       evaluate: _scope => _scope.parseMessage(_scope.message.text)
@@ -929,14 +2427,14 @@ var talksApp = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div expr25="expr25" class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg"></div>', [{
+      template: template('<div expr440="expr440" class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg"></div>', [{
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.ogCache[_scope.url] && !_scope.state.ogCache[_scope.url].error && _scope.message.text.trim() === _scope.url,
-        redundantAttribute: 'expr25',
-        selector: '[expr25]',
-        template: template('<a expr26="expr26" target="_blank" rel="noopener noreferrer" class="block"><div expr27="expr27" class="w-full h-48 bg-gray-800 border-b border-gray-700"></div><div class="p-3"><div class="flex items-center gap-2 mb-1"><img expr29="expr29" class="w-4 h-4 rounded"/><span expr30="expr30" class="text-xs text-gray-500"> </span></div><h4 expr31="expr31" class="text-sm font-semibold text-white line-clamp-1"> </h4><p expr32="expr32" class="text-xs text-gray-400 line-clamp-2 mt-1"></p></div></a>', [{
-          redundantAttribute: 'expr26',
-          selector: '[expr26]',
+        redundantAttribute: 'expr440',
+        selector: '[expr440]',
+        template: template('<a expr441="expr441" target="_blank" rel="noopener noreferrer" class="block"><div expr442="expr442" class="w-full h-48 bg-gray-800 border-b border-gray-700"></div><div class="p-3"><div class="flex items-center gap-2 mb-1"><img expr444="expr444" class="w-4 h-4 rounded"/><span expr445="expr445" class="text-xs text-gray-500"> </span></div><h4 expr446="expr446" class="text-sm font-semibold text-white line-clamp-1"> </h4><p expr447="expr447" class="text-xs text-gray-400 line-clamp-2 mt-1"></p></div></a>', [{
+          redundantAttribute: 'expr441',
+          selector: '[expr441]',
           expressions: [{
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
@@ -946,11 +2444,11 @@ var talksApp = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.state.ogCache[_scope.url].image,
-          redundantAttribute: 'expr27',
-          selector: '[expr27]',
-          template: template('<img expr28="expr28" class="w-full h-full object-cover"/>', [{
-            redundantAttribute: 'expr28',
-            selector: '[expr28]',
+          redundantAttribute: 'expr442',
+          selector: '[expr442]',
+          template: template('<img expr443="expr443" class="w-full h-full object-cover"/>', [{
+            redundantAttribute: 'expr443',
+            selector: '[expr443]',
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
               isBoolean: false,
@@ -965,8 +2463,8 @@ var talksApp = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.state.ogCache[_scope.url].favicon,
-          redundantAttribute: 'expr29',
-          selector: '[expr29]',
+          redundantAttribute: 'expr444',
+          selector: '[expr444]',
           template: template(null, [{
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
@@ -980,16 +2478,16 @@ var talksApp = {
             }]
           }])
         }, {
-          redundantAttribute: 'expr30',
-          selector: '[expr30]',
+          redundantAttribute: 'expr445',
+          selector: '[expr445]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.state.ogCache[_scope.url].site_name || _scope.getDomain(_scope.url)
           }]
         }, {
-          redundantAttribute: 'expr31',
-          selector: '[expr31]',
+          redundantAttribute: 'expr446',
+          selector: '[expr446]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -998,8 +2496,8 @@ var talksApp = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.state.ogCache[_scope.url].description,
-          redundantAttribute: 'expr32',
-          selector: '[expr32]',
+          redundantAttribute: 'expr447',
+          selector: '[expr447]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -1009,35 +2507,35 @@ var talksApp = {
           }])
         }])
       }]),
-      redundantAttribute: 'expr24',
-      selector: '[expr24]',
+      redundantAttribute: 'expr439',
+      selector: '[expr439]',
       itemName: 'url',
       indexName: null,
       evaluate: _scope => _scope.getMessageUrls(_scope.message.text)
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.message.code_sample,
-      redundantAttribute: 'expr33',
-      selector: '[expr33]',
-      template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span expr34="expr34" class="text-xs font-mono text-gray-500"> </span><span expr35="expr35" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr36="expr36"> </code></pre>', [{
-        redundantAttribute: 'expr34',
-        selector: '[expr34]',
+      redundantAttribute: 'expr448',
+      selector: '[expr448]',
+      template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span expr449="expr449" class="text-xs font-mono text-gray-500"> </span><span expr450="expr450" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr451="expr451"> </code></pre>', [{
+        redundantAttribute: 'expr449',
+        selector: '[expr449]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.message.code_sample.filename
         }]
       }, {
-        redundantAttribute: 'expr35',
-        selector: '[expr35]',
+        redundantAttribute: 'expr450',
+        selector: '[expr450]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.message.code_sample.language
         }]
       }, {
-        redundantAttribute: 'expr36',
-        selector: '[expr36]',
+        redundantAttribute: 'expr451',
+        selector: '[expr451]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -1052,28 +2550,28 @@ var talksApp = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.message.attachments && _scope.message.attachments.length > 0,
-      redundantAttribute: 'expr37',
-      selector: '[expr37]',
-      template: template('<div expr38="expr38" class="relative group/attachment"></div>', [{
+      redundantAttribute: 'expr452',
+      selector: '[expr452]',
+      template: template('<div expr453="expr453" class="relative group/attachment"></div>', [{
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<template expr39="expr39"></template><template expr42="expr42"></template>', [{
+        template: template('<template expr454="expr454"></template><template expr457="expr457"></template>', [{
           type: bindingTypes.IF,
           evaluate: _scope => _scope.isImage(_scope.attachment),
-          redundantAttribute: 'expr39',
-          selector: '[expr39]',
-          template: template('<div expr40="expr40" class="block cursor-pointer"><img expr41="expr41" class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90"/></div>', [{
-            redundantAttribute: 'expr40',
-            selector: '[expr40]',
+          redundantAttribute: 'expr454',
+          selector: '[expr454]',
+          template: template('<div expr455="expr455" class="block cursor-pointer"><img expr456="expr456" class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90"/></div>', [{
+            redundantAttribute: 'expr455',
+            selector: '[expr455]',
             expressions: [{
               type: expressionTypes.EVENT,
               name: 'onclick',
               evaluate: _scope => e => _scope.openLightbox(_scope.attachment, e)
             }]
           }, {
-            redundantAttribute: 'expr41',
-            selector: '[expr41]',
+            redundantAttribute: 'expr456',
+            selector: '[expr456]',
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
               isBoolean: false,
@@ -1089,11 +2587,11 @@ var talksApp = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => !_scope.isImage(_scope.attachment),
-          redundantAttribute: 'expr42',
-          selector: '[expr42]',
-          template: template('<a expr43="expr43" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg><span expr44="expr44" class="text-sm truncate max-w-[150px]"> </span></a>', [{
-            redundantAttribute: 'expr43',
-            selector: '[expr43]',
+          redundantAttribute: 'expr457',
+          selector: '[expr457]',
+          template: template('<a expr458="expr458" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg><span expr459="expr459" class="text-sm truncate max-w-[150px]"> </span></a>', [{
+            redundantAttribute: 'expr458',
+            selector: '[expr458]',
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
               isBoolean: false,
@@ -1101,8 +2599,8 @@ var talksApp = {
               evaluate: _scope => _scope.getFileUrl(_scope.attachment)
             }]
           }, {
-            redundantAttribute: 'expr44',
-            selector: '[expr44]',
+            redundantAttribute: 'expr459',
+            selector: '[expr459]',
             expressions: [{
               type: expressionTypes.TEXT,
               childNodeIndex: 0,
@@ -1110,8 +2608,8 @@ var talksApp = {
             }]
           }])
         }]),
-        redundantAttribute: 'expr38',
-        selector: '[expr38]',
+        redundantAttribute: 'expr453',
+        selector: '[expr453]',
         itemName: 'attachment',
         indexName: null,
         evaluate: _scope => _scope.message.attachments
@@ -1120,9 +2618,9 @@ var talksApp = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<button expr46="expr46"> <span expr47="expr47" class="ml-1 text-gray-400"> </span></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs text-white whitespace-nowrap opacity-0 invisible group-hover/reaction:opacity-100 group-hover/reaction:visible transition-all z-50"><div expr48="expr48" class="font-bold mb-1"> </div><div expr49="expr49" class="text-gray-400"></div><div class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-700"></div></div>', [{
-        redundantAttribute: 'expr46',
-        selector: '[expr46]',
+      template: template('<button expr461="expr461"> <span expr462="expr462" class="ml-1 text-gray-400"> </span></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs text-white whitespace-nowrap opacity-0 invisible group-hover/reaction:opacity-100 group-hover/reaction:visible transition-all z-50"><div expr463="expr463" class="font-bold mb-1"> </div><div expr464="expr464" class="text-gray-400"></div><div class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-700"></div></div>', [{
+        redundantAttribute: 'expr461',
+        selector: '[expr461]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -1138,16 +2636,16 @@ var talksApp = {
           evaluate: _scope => 'px-2 py-0.5 rounded text-xs flex items-center border transition-colors' + (_scope.reaction.users && _scope.reaction.users.includes(_scope.getUsername(_scope.props.currentUser)) ? 'bg-blue-900/50 border-blue-500 text-blue-300' : 'bg-[#222529] hover:bg-gray-700 border-gray-700')
         }]
       }, {
-        redundantAttribute: 'expr47',
-        selector: '[expr47]',
+        redundantAttribute: 'expr462',
+        selector: '[expr462]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.reaction.users ? _scope.reaction.users.length : 0
         }]
       }, {
-        redundantAttribute: 'expr48',
-        selector: '[expr48]',
+        redundantAttribute: 'expr463',
+        selector: '[expr463]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -1164,14 +2662,14 @@ var talksApp = {
             evaluate: _scope => [_scope.user].join('')
           }]
         }]),
-        redundantAttribute: 'expr49',
-        selector: '[expr49]',
+        redundantAttribute: 'expr464',
+        selector: '[expr464]',
         itemName: 'user',
         indexName: null,
         evaluate: _scope => _scope.reaction.users || []
       }]),
-      redundantAttribute: 'expr45',
-      selector: '[expr45]',
+      redundantAttribute: 'expr460',
+      selector: '[expr460]',
       itemName: 'reaction',
       indexName: null,
       evaluate: _scope => _scope.message.reactions || []
@@ -1190,8 +2688,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.toggleReaction(_scope.message, _scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr50',
-      selector: '[expr50]',
+      redundantAttribute: 'expr465',
+      selector: '[expr465]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().smileys
@@ -1210,8 +2708,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.toggleReaction(_scope.message, _scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr51',
-      selector: '[expr51]',
+      redundantAttribute: 'expr466',
+      selector: '[expr466]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().gestures
@@ -1230,25 +2728,25 @@ var talksApp = {
           evaluate: _scope => e => _scope.toggleReaction(_scope.message, _scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr52',
-      selector: '[expr52]',
+      redundantAttribute: 'expr467',
+      selector: '[expr467]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().objects
     }]),
-    redundantAttribute: 'expr7',
-    selector: '[expr7]',
+    redundantAttribute: 'expr421',
+    selector: '[expr421]',
     itemName: 'message',
     indexName: null,
     evaluate: _scope => _scope.state.messages
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.hasNewMessages,
-    redundantAttribute: 'expr53',
-    selector: '[expr53]',
-    template: template('<button expr54="expr54" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium"><span>Read latest messages</span><i class="fas fa-arrow-down"></i></button>', [{
-      redundantAttribute: 'expr54',
-      selector: '[expr54]',
+    redundantAttribute: 'expr468',
+    selector: '[expr468]',
+    template: template('<button expr469="expr469" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium"><span>Read latest messages</span><i class="fas fa-arrow-down"></i></button>', [{
+      redundantAttribute: 'expr469',
+      selector: '[expr469]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -1256,8 +2754,8 @@ var talksApp = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr55',
-    selector: '[expr55]',
+    redundantAttribute: 'expr470',
+    selector: '[expr470]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'ondragenter',
@@ -1278,64 +2776,68 @@ var talksApp = {
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
       name: 'class',
-      evaluate: _scope => ['border border-gray-700 rounded-lg bg-[#222529] transition-colors overflow-hidden ', _scope.state.dragging ? 'bg-gray-700/50 border-blue-500' : ''].join('')
+      evaluate: _scope => ['border-t border-gray-700 bg-[#222529] transition-colors overflow-hidden ', _scope.state.dragging ? 'bg-gray-700/50 border-blue-500' : ''].join('')
     }]
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.files.length > 0,
-    redundantAttribute: 'expr56',
-    selector: '[expr56]',
-    template: template('<div expr57="expr57" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>', [{
+    redundantAttribute: 'expr471',
+    selector: '[expr471]',
+    template: template('<div expr472="expr472" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr58="expr58" class="text-xs text-gray-200 truncate font-medium"> </span><span expr59="expr59" class="text-[10px] text-gray-500"> </span></div><button expr60="expr60" class="ml-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100\n                                transition-all"><i class="fas fa-times"></i></button>', [{
-        redundantAttribute: 'expr58',
-        selector: '[expr58]',
+      template: template('<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr473="expr473" class="text-xs text-gray-200 truncate font-medium"> </span><span expr474="expr474" class="text-[10px] text-gray-500"> </span></div><button expr475="expr475" class="ml-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100\n                                transition-all"><i class="fas fa-times"></i></button>', [{
+        redundantAttribute: 'expr473',
+        selector: '[expr473]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.file.name
         }]
       }, {
-        redundantAttribute: 'expr59',
-        selector: '[expr59]',
+        redundantAttribute: 'expr474',
+        selector: '[expr474]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [(_scope.file.size / 1024).toFixed(1), ' KB'].join('')
         }]
       }, {
-        redundantAttribute: 'expr60',
-        selector: '[expr60]',
+        redundantAttribute: 'expr475',
+        selector: '[expr475]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.removeFile(_scope.index)
         }]
       }]),
-      redundantAttribute: 'expr57',
-      selector: '[expr57]',
+      redundantAttribute: 'expr472',
+      selector: '[expr472]',
       itemName: 'file',
       indexName: 'index',
       evaluate: _scope => _scope.state.files
     }])
   }, {
-    redundantAttribute: 'expr61',
-    selector: '[expr61]',
+    redundantAttribute: 'expr476',
+    selector: '[expr476]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
       name: 'placeholder',
-      evaluate: _scope => 'Message #' + _scope.props.currentChannel
+      evaluate: _scope => 'Message'
     }, {
       type: expressionTypes.EVENT,
       name: 'onkeydown',
       evaluate: _scope => _scope.onKeyDown
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'oninput',
+      evaluate: _scope => _scope.handleMessageInput
     }]
   }, {
-    redundantAttribute: 'expr62',
-    selector: '[expr62]',
+    redundantAttribute: 'expr477',
+    selector: '[expr477]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -1347,8 +2849,8 @@ var talksApp = {
       evaluate: _scope => 'p-2 transition-colors ' + (_scope.state.showEmojiPicker ? 'text-yellow-400' : 'text-gray-500 hover:text-white')
     }]
   }, {
-    redundantAttribute: 'expr63',
-    selector: '[expr63]',
+    redundantAttribute: 'expr478',
+    selector: '[expr478]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 1,
@@ -1364,8 +2866,8 @@ var talksApp = {
       evaluate: _scope => _scope.state.sending
     }]
   }, {
-    redundantAttribute: 'expr64',
-    selector: '[expr64]',
+    redundantAttribute: 'expr479',
+    selector: '[expr479]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -1375,25 +2877,25 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.lightboxImage,
-    redundantAttribute: 'expr65',
-    selector: '[expr65]',
-    template: template('<div expr66="expr66" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr67="expr67" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr68="expr68" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr69="expr69" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>\n                            Download\n                        </a><button expr70="expr70" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>\n                            Close\n                        </button></div></div></div>', [{
+    redundantAttribute: 'expr480',
+    selector: '[expr480]',
+    template: template('<div expr481="expr481" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr482="expr482" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr483="expr483" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr484="expr484" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>\n                            Download\n                        </a><button expr485="expr485" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>\n                            Close\n                        </button></div></div></div>', [{
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.closeLightbox
       }]
     }, {
-      redundantAttribute: 'expr66',
-      selector: '[expr66]',
+      redundantAttribute: 'expr481',
+      selector: '[expr481]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => e.stopPropagation()
       }]
     }, {
-      redundantAttribute: 'expr67',
-      selector: '[expr67]',
+      redundantAttribute: 'expr482',
+      selector: '[expr482]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -1406,16 +2908,16 @@ var talksApp = {
         evaluate: _scope => _scope.state.lightboxImage.filename
       }]
     }, {
-      redundantAttribute: 'expr68',
-      selector: '[expr68]',
+      redundantAttribute: 'expr483',
+      selector: '[expr483]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => [_scope.state.lightboxImage.filename].join('')
       }]
     }, {
-      redundantAttribute: 'expr69',
-      selector: '[expr69]',
+      redundantAttribute: 'expr484',
+      selector: '[expr484]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -1428,8 +2930,8 @@ var talksApp = {
         evaluate: _scope => _scope.state.lightboxImage.filename
       }]
     }, {
-      redundantAttribute: 'expr70',
-      selector: '[expr70]',
+      redundantAttribute: 'expr485',
+      selector: '[expr485]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -1439,9 +2941,9 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showEmojiPicker,
-    redundantAttribute: 'expr71',
-    selector: '[expr71]',
-    template: template('<div expr72="expr72" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr73="expr73" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr74="expr74" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1"><button expr75="expr75" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>', [{
+    redundantAttribute: 'expr486',
+    selector: '[expr486]',
+    template: template('<div expr487="expr487" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr488="expr488" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr489="expr489" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1"><button expr490="expr490" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -1449,8 +2951,8 @@ var talksApp = {
         evaluate: _scope => 'width: 320px; max-height: 300px; left: ' + _scope.state.emojiPickerPos.left + 'px; bottom: ' + _scope.state.emojiPickerPos.bottom + 'px;'
       }]
     }, {
-      redundantAttribute: 'expr72',
-      selector: '[expr72]',
+      redundantAttribute: 'expr487',
+      selector: '[expr487]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -1473,8 +2975,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr73',
-      selector: '[expr73]',
+      redundantAttribute: 'expr488',
+      selector: '[expr488]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().smileys
@@ -1493,8 +2995,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr74',
-      selector: '[expr74]',
+      redundantAttribute: 'expr489',
+      selector: '[expr489]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().gestures
@@ -1513,11 +3015,553 @@ var talksApp = {
           evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr75',
-      selector: '[expr75]',
+      redundantAttribute: 'expr490',
+      selector: '[expr490]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().objects
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showUserPicker,
+    redundantAttribute: 'expr491',
+    selector: '[expr491]',
+    template: template('<div expr492="expr492" class="fixed inset-0 z-[-1]"></div><div class="max-h-60 overflow-y-auto custom-scrollbar p-1"><div expr493="expr493"></div><div expr496="expr496" class="p-3 text-center text-gray-500 text-sm"></div></div>', [{
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'style',
+        evaluate: _scope => 'left: ' + _scope.state.userPickerPos.left + 'px; bottom: ' + _scope.state.userPickerPos.bottom + 'px;'
+      }]
+    }, {
+      redundantAttribute: 'expr492',
+      selector: '[expr492]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.update({
+          showUserPicker: false
+        })
+      }]
+    }, {
+      type: bindingTypes.EACH,
+      getKey: null,
+      condition: null,
+      template: template('<div expr494="expr494" class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300"> </div><span expr495="expr495" class="text-sm text-gray-200"> </span>', [{
+        expressions: [{
+          type: expressionTypes.EVENT,
+          name: 'onclick',
+          evaluate: _scope => () => _scope.insertMention(_scope.user)
+        }, {
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'class',
+          evaluate: _scope => 'flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ' + (_scope.state.selectedUserIndex === _scope.i ? 'bg-gray-800 ring-1 ring-blue-500' : 'hover:bg-gray-800')
+        }]
+      }, {
+        redundantAttribute: 'expr494',
+        selector: '[expr494]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
+        }]
+      }, {
+        redundantAttribute: 'expr495',
+        selector: '[expr495]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => _scope.getUsername(_scope.user)
+        }]
+      }]),
+      redundantAttribute: 'expr493',
+      selector: '[expr493]',
+      itemName: 'user',
+      indexName: 'i',
+      evaluate: _scope => _scope.state.filteredUsers
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.filteredUsers.length === 0,
+      redundantAttribute: 'expr496',
+      selector: '[expr496]',
+      template: template('\n                    No users found\n                ', [])
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.incomingCall,
+    redundantAttribute: 'expr497',
+    selector: '[expr497]',
+    template: template('<div class="bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full"><div class="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center mb-6 overflow-hidden border-4 border-gray-700"><span expr498="expr498" class="text-3xl font-bold text-gray-400"> </span></div><h3 expr499="expr499" class="w-full text-2xl font-bold text-white mb-2 text-center"> </h3><p expr500="expr500" class="text-gray-400 mb-8"> </p><div class="flex items-center gap-8"><button expr501="expr501" class="flex flex-col items-center gap-2 group"><div class="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-red-500 transition-all transform group-hover:scale-110"><i class="fas fa-phone-slash"></i></div><span class="text-xs text-gray-400">Decline</span></button><button expr502="expr502" class="flex flex-col items-center gap-2 group"><div class="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-green-500 transition-all transform group-hover:scale-110 animate-pulse"><i class="fas fa-phone"></i></div><span class="text-xs text-gray-400">Accept</span></button></div></div>', [{
+      redundantAttribute: 'expr498',
+      selector: '[expr498]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => _scope.getInitials(_scope.getUsername(_scope.state.incomingCall.caller))
+      }]
+    }, {
+      redundantAttribute: 'expr499',
+      selector: '[expr499]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => [_scope.getUsername(_scope.state.incomingCall.caller)].join('')
+      }]
+    }, {
+      redundantAttribute: 'expr500',
+      selector: '[expr500]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => _scope.state.incomingCall.type === 'video' ? 'Incoming Video Call' : 'Incoming&nbsp;Audio&nbsp;Call'
+      }]
+    }, {
+      redundantAttribute: 'expr501',
+      selector: '[expr501]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.declineCall
+      }]
+    }, {
+      redundantAttribute: 'expr502',
+      selector: '[expr502]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.acceptCall
+      }]
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.activeCall,
+    redundantAttribute: 'expr503',
+    selector: '[expr503]',
+    template: template('<div class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start"><div class="flex items-center gap-3"><div class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3"><div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span expr504="expr504" class="text-white font-medium text-sm"> </span></div></div></div><div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden"><div expr505="expr505" class="absolute inset-0 z-0 flex flex-col items-center justify-center p-8"></div><video expr509="expr509" ref="remoteVideo" autoplay playsinline></video><div expr510="expr510"><video ref="localVideo" autoplay playsinline muted class="w-full h-full object-cover transform scale-x-[-1]"></video></div></div><div class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0"><button expr511="expr511"><i expr512="expr512"></i></button><button expr513="expr513"><i expr514="expr514"></i></button><button expr515="expr515" title="Share Screen"><i class="fas fa-desktop"></i></button><button expr516="expr516" class="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white ml-8 transition-all px-8 flex items-center gap-2" title="End Call"><i class="fas fa-phone-slash"></i><span class="font-bold">End</span></button></div>', [{
+      redundantAttribute: 'expr504',
+      selector: '[expr504]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => _scope.formatCallDuration(_scope.state.callDuration)
+      }]
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => !_scope.state.remoteStreamHasVideo,
+      redundantAttribute: 'expr505',
+      selector: '[expr505]',
+      template: template('<div expr506="expr506" class="w-32 h-32 rounded-full bg-indigo-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-xl border-4 border-white/10"> </div><h2 expr507="expr507" class="text-2xl text-white font-bold text-center mt-4 text-shadow-lg"> </h2><p expr508="expr508" class="text-gray-400 mt-2 font-medium"> </p>', [{
+        redundantAttribute: 'expr506',
+        selector: '[expr506]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.state.activeCall.peer))].join('')
+        }]
+      }, {
+        redundantAttribute: 'expr507',
+        selector: '[expr507]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => _scope.getUsername(_scope.state.activeCall.peer)
+        }]
+      }, {
+        redundantAttribute: 'expr508',
+        selector: '[expr508]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.state.localStreamHasVideo ? 'Calling...' : 'Audio Call'].join('')
+        }]
+      }])
+    }, {
+      redundantAttribute: 'expr509',
+      selector: '[expr509]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => ['absolute inset-0 w-full h-full object-contain z-10 ', !_scope.state.remoteStreamHasVideo ? 'hidden' : ''].join('')
+      }]
+    }, {
+      redundantAttribute: 'expr510',
+      selector: '[expr510]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => ['absolute bottom-24 right-6 w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-2xl border border-gray-700 ', !_scope.state.localStreamHasVideo ? 'hidden' : ''].join('')
+      }]
+    }, {
+      redundantAttribute: 'expr511',
+      selector: '[expr511]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleMute
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'p-4 rounded-full transition-all ' + (_scope.state.isMuted ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600')
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'title',
+        evaluate: _scope => _scope.state.isMuted ? "Unmute" : "Mute"
+      }]
+    }, {
+      redundantAttribute: 'expr512',
+      selector: '[expr512]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => _scope.state.isMuted ? "fas fa-microphone-slash" : "fas fa-microphone"
+      }]
+    }, {
+      redundantAttribute: 'expr513',
+      selector: '[expr513]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleVideo
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'p-4 rounded-full transition-all ' + (!_scope.state.isVideoEnabled ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-700 text-white hover:bg-gray-600')
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'title',
+        evaluate: _scope => _scope.state.isVideoEnabled ? "Stop Video" : "Start Video"
+      }]
+    }, {
+      redundantAttribute: 'expr514',
+      selector: '[expr514]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => _scope.state.isVideoEnabled ? "fas fa-video" : "fas fa-video-slash"
+      }]
+    }, {
+      redundantAttribute: 'expr515',
+      selector: '[expr515]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleScreenShare
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'p-4 rounded-full transition-all ' + (_scope.state.isScreenSharing ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-700 text-white hover:bg-gray-600')
+      }]
+    }, {
+      redundantAttribute: 'expr516',
+      selector: '[expr516]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.hangup
+      }]
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showCreateChannelModal,
+    redundantAttribute: 'expr517',
+    selector: '[expr517]',
+    template: template('<div expr518="expr518" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best when\n                    organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr519="expr519" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr520="expr520" type="checkbox" class="sr-only"/><div expr521="expr521"></div><div expr522="expr522"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                            Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr523="expr523" class="mb-4 animate-fade-in"></div><div expr533="expr533" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr534="expr534" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n                    Cancel\n                </button><button expr535="expr535" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>', [{
+      redundantAttribute: 'expr518',
+      selector: '[expr518]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.update({
+          showCreateChannelModal: false
+        })
+      }]
+    }, {
+      redundantAttribute: 'expr519',
+      selector: '[expr519]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onkeyup',
+        evaluate: _scope => _scope.sanitizeChannelInput
+      }, {
+        type: expressionTypes.EVENT,
+        name: 'onkeydown',
+        evaluate: _scope => e => e.keyCode === 13 && _scope.createChannel()
+      }]
+    }, {
+      redundantAttribute: 'expr520',
+      selector: '[expr520]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onchange',
+        evaluate: _scope => _scope.togglePrivateMode
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: true,
+        name: 'checked',
+        evaluate: _scope => _scope.state.isCreatingPrivate
+      }]
+    }, {
+      redundantAttribute: 'expr521',
+      selector: '[expr521]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'w-10 h-6 bg-gray-600 rounded-full shadow-inner transition-colors ' + (_scope.state.isCreatingPrivate ? 'bg-green-500' : '')
+      }]
+    }, {
+      redundantAttribute: 'expr522',
+      selector: '[expr522]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform ' + (_scope.state.isCreatingPrivate ? 'translate-x-4' : '')
+      }]
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.isCreatingPrivate,
+      redundantAttribute: 'expr523',
+      selector: '[expr523]',
+      template: template('<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr524="expr524" class="flex flex-wrap gap-2 mb-2"><span expr525="expr525" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr527="expr527" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr528="expr528" class="mt-2 border-t border-gray-700 pt-2\n                            max-h-32 overflow-y-auto custom-scrollbar"><div expr529="expr529" class="flex items-center p-2 hover:bg-white/5 rounded cursor-pointer"></div></div></div>', [{
+        redundantAttribute: 'expr524',
+        selector: '[expr524]',
+        expressions: [{
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'show',
+          evaluate: _scope => _scope.state.createChannelMembers.length > 0
+        }]
+      }, {
+        type: bindingTypes.EACH,
+        getKey: null,
+        condition: null,
+        template: template(' <button expr526="expr526" class="ml-1\n                                    hover:text-white"><i class="fas fa-times"></i></button>', [{
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => [_scope.getUsername(_scope.user)].join('')
+          }]
+        }, {
+          redundantAttribute: 'expr526',
+          selector: '[expr526]',
+          expressions: [{
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => () => _scope.removeCreateChannelMember(_scope.user)
+          }]
+        }]),
+        redundantAttribute: 'expr525',
+        selector: '[expr525]',
+        itemName: 'user',
+        indexName: null,
+        evaluate: _scope => _scope.state.createChannelMembers
+      }, {
+        redundantAttribute: 'expr527',
+        selector: '[expr527]',
+        expressions: [{
+          type: expressionTypes.EVENT,
+          name: 'oninput',
+          evaluate: _scope => _scope.handleCreateChannelMemberInput
+        }]
+      }, {
+        redundantAttribute: 'expr528',
+        selector: '[expr528]',
+        expressions: [{
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'show',
+          evaluate: _scope => _scope.state.filteredCreateChannelUsers && _scope.state.filteredCreateChannelUsers.length > 0
+        }]
+      }, {
+        type: bindingTypes.EACH,
+        getKey: null,
+        condition: null,
+        template: template('<div expr530="expr530" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr531="expr531" class="text-gray-300 text-sm font-medium truncate"> </div><div expr532="expr532" class="text-gray-500 text-xs truncate"> </div></div>', [{
+          expressions: [{
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => () => _scope.addCreateChannelMember(_scope.user)
+          }]
+        }, {
+          redundantAttribute: 'expr530',
+          selector: '[expr530]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
+          }]
+        }, {
+          redundantAttribute: 'expr531',
+          selector: '[expr531]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => _scope.getUsername(_scope.user)
+          }]
+        }, {
+          redundantAttribute: 'expr532',
+          selector: '[expr532]',
+          expressions: [{
+            type: expressionTypes.TEXT,
+            childNodeIndex: 0,
+            evaluate: _scope => _scope.user.email
+          }]
+        }]),
+        redundantAttribute: 'expr529',
+        selector: '[expr529]',
+        itemName: 'user',
+        indexName: null,
+        evaluate: _scope => _scope.state.filteredCreateChannelUsers
+      }])
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.createChannelError,
+      redundantAttribute: 'expr533',
+      selector: '[expr533]',
+      template: template(' ', [{
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.state.createChannelError].join('')
+        }]
+      }])
+    }, {
+      redundantAttribute: 'expr534',
+      selector: '[expr534]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => () => _scope.update({
+          showCreateChannelModal: false
+        })
+      }]
+    }, {
+      redundantAttribute: 'expr535',
+      selector: '[expr535]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => [_scope.state.creatingChannel ? 'Creating...' : 'Create Channel'].join('')
+      }, {
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.createChannel
+      }, {
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: true,
+        name: 'disabled',
+        evaluate: _scope => _scope.state.creatingChannel
+      }]
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showDmPopup,
+    redundantAttribute: 'expr536',
+    selector: '[expr536]',
+    template: template('<div expr537="expr537" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr538="expr538" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr539="expr539" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr540="expr540" class="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors\n                    group"></div><div expr546="expr546" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>', [{
+      redundantAttribute: 'expr537',
+      selector: '[expr537]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleDmPopup
+      }]
+    }, {
+      redundantAttribute: 'expr538',
+      selector: '[expr538]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.toggleDmPopup
+      }]
+    }, {
+      redundantAttribute: 'expr539',
+      selector: '[expr539]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'oninput',
+        evaluate: _scope => _scope.handleDmFilterInput
+      }]
+    }, {
+      type: bindingTypes.EACH,
+      getKey: null,
+      condition: null,
+      template: template('<div class="relative"><div expr541="expr541" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr542="expr542"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr543="expr543" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr544="expr544" class="text-xs text-gray-500 italic"></span></div><div expr545="expr545" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>', [{
+        expressions: [{
+          type: expressionTypes.EVENT,
+          name: 'onclick',
+          evaluate: _scope => () => _scope.startDm(_scope.user)
+        }]
+      }, {
+        redundantAttribute: 'expr541',
+        selector: '[expr541]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
+        }]
+      }, {
+        redundantAttribute: 'expr542',
+        selector: '[expr542]',
+        expressions: [{
+          type: expressionTypes.ATTRIBUTE,
+          isBoolean: false,
+          name: 'class',
+          evaluate: _scope => 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' + _scope.getStatusColor(_scope.user.status)
+        }]
+      }, {
+        redundantAttribute: 'expr543',
+        selector: '[expr543]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => _scope.getUsername(_scope.user)
+        }]
+      }, {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.user._key === _scope.props.currentUser._key,
+        redundantAttribute: 'expr544',
+        selector: '[expr544]',
+        template: template('You', [])
+      }, {
+        redundantAttribute: 'expr545',
+        selector: '[expr545]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => _scope.user.email
+        }]
+      }]),
+      redundantAttribute: 'expr540',
+      selector: '[expr540]',
+      itemName: 'user',
+      indexName: null,
+      evaluate: _scope => _scope.state.dmPopupUsers
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.dmPopupUsers.length === 0,
+      redundantAttribute: 'expr546',
+      selector: '[expr546]',
+      template: template('<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr547="expr547"> </p>', [{
+        redundantAttribute: 'expr547',
+        selector: '[expr547]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => ['No users found matching "', _scope.state.dmFilterQuery, '"'].join('')
+        }]
+      }])
     }])
   }]),
   name: 'talks-app'

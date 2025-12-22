@@ -8,18 +8,51 @@
             </div>
 
             <div class="flex-1 overflow-y-auto overflow-x-hidden py-4">
+                <!-- Favorites -->
+                <div if={ getFavorites().length> 0 } class="mb-6">
+                    <div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2">
+                        <span>Favorites</span>
+                    </div>
+                    <nav>
+                        <a each={ item in getFavorites() } href={ getChannelHref(item) } class={ getChannelClass(item)
+                            }>
+                            <span class="mr-2 w-4 text-center inline-block flex items-center justify-center">
+                                <template if={ item.type==='dm' }>
+                                    <div class={ 'w-2 h-2 rounded-full ' + getStatusColor(getOtherUserForDM(item) ?
+                                        getOtherUserForDM(item).status : 'offline' ) }></div>
+                                </template>
+                                <template if={ item.type !=='dm' }>
+                                    <i if={ item.type==='private' } class="fas fa-lock text-xs"></i>
+                                    <span if={ item.type==='standard' }>#</span>
+                                </template>
+                            </span>
+                            <span class="truncate">
+                                { getChannelName(item) }
+                            </span>
+                            <div if={ state.unreadChannels[item._id] }
+                                class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
+                            </div>
+                        </a>
+                    </nav>
+                </div>
+
                 <!-- Channels -->
                 <div class="mb-6">
                     <div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2">
                         <span>Channels</span>
-                        <button class="hover:text-white" onclick={ ()=> update({ showCreateChannelModal: true }) }><i
-                                class="fas fa-plus"></i></button>
+                        <div class="relative group">
+                            <button class="hover:text-white" onclick={ ()=> update({ showCreateChannelModal: true })
+                                }><i class="fas fa-plus"></i></button>
+                            <!-- Tooltip -->
+                            <div
+                                class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                Create Channel
+                            </div>
+                        </div>
                     </div>
                     <nav>
-                        <a each={ channel in props.channels } href={ '/talks?channel=' + (channel.type==='private' ?
-                            channel._key : channel.name) } class={ 'flex items-center px-4 py-1 ' +
-                            (props.currentChannel===channel.name || props.currentChannelData?._key===channel._key
-                            ? 'bg-[#1164A3] text-white' : 'text-gray-400 hover:bg-[#350D36] hover:text-white' ) }>
+                        <a each={ channel in props.channels } if={ !isFavorite(channel._key) } href={
+                            getChannelHref(channel) } class={ getChannelClass(channel) }>
                             <span class="mr-2 w-4 text-center inline-block">
                                 <i if={ channel.type==='private' } class="fas fa-lock text-xs"></i>
                                 <span if={ channel.type !=='private' }>#</span>
@@ -38,9 +71,8 @@
                         <button class="hover:text-white" onclick={ toggleDmPopup }><i class="fas fa-plus"></i></button>
                     </div>
                     <nav>
-                        <a each={ user in state.users } href={ getDMUrl(user) } class={ 'flex items-center px-4 py-1 ' +
-                            (isCurrentDM(user) ? 'text-white bg-[#350D36]'
-                            : 'text-gray-400 hover:bg-[#350D36] hover:text-white' ) }>
+                        <a each={ user in state.users } if={ !isFavorite(state.usersChannels[user._key]) } href={
+                            getDMUrl(user) } class={ getDMClass(user) }>
                             <div class={ 'w-2 h-2 rounded-full mr-2 ' + getStatusColor(user.status) } title={
                                 getStatusLabel(user.status) }></div>
                             <span class="flex-1 truncate">{ getUsername(user) } { user._key === props.currentUser._key ?
@@ -112,8 +144,17 @@
             <header
                 class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#1A1D21]/80 backdrop-blur-md">
                 <div class="flex items-center min-w-0">
-                    <h2 class="text-xl font-bold text-white mr-2 truncate"># development</h2>
-                    <button class="text-gray-400 hover:text-white"><i class="far fa-star"></i></button>
+                    <h2 class="text-xl font-bold text-white mr-2 truncate">
+                        <i if={ props.currentChannelData && props.currentChannelData.type==='private' }
+                            class="fas fa-lock text-sm mr-2 text-gray-400"></i>
+                        <span if={ !props.currentChannelData || props.currentChannelData.type !=='private' &&
+                            props.currentChannelData.type !=='dm' }>#</span>
+                        { props.currentChannelData ? getChannelName(props.currentChannelData) : props.currentChannel }
+                    </h2>
+                    <!-- Favorite Toggle -->
+                    <button onclick={ ()=> toggleFavorite() } class="text-gray-400 hover:text-white transition-colors">
+                        <i class={ getStarClass() }></i>
+                    </button>
                 </div>
                 <div class="flex items-center space-x-4">
                     <!-- Members Button (Private Channels Only) -->
@@ -875,6 +916,11 @@
                     createChannelMemberQuery: '',
                     filteredCreateChannelUsers: [],
                     showMembersPanel: false,
+                    currentUser: this.props.currentUser || {},
+                }
+                // Ensure favorites array exists and is an array
+                if (!Array.isArray(this.state.currentUser.favorites)) {
+                    this.state.currentUser.favorites = [];
                 }
                 this.localStream = null;
                 this.remoteStream = null;
@@ -902,6 +948,116 @@
 
             sanitizeChannelInput(e) {
                 e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            },
+
+            isFavorite(key) {
+                if (!this.state.currentUser || !Array.isArray(this.state.currentUser.favorites)) return false;
+                return this.state.currentUser.favorites.includes(key);
+            },
+
+            async toggleFavorite(channelData) {
+                const targetChannel = channelData || this.props.currentChannelData;
+                if (!targetChannel) return;
+
+                const channelKey = targetChannel._key;
+                const user = this.state.currentUser || {};
+                let favorites = Array.isArray(user.favorites) ? user.favorites : [];
+                const isFav = favorites.includes(channelKey);
+
+                let newFavorites;
+                if (isFav) {
+                    newFavorites = favorites.filter(k => k !== channelKey);
+                } else {
+                    newFavorites = [...favorites, channelKey];
+                }
+
+                // Optimistic update
+                const updatedUser = { ...user, favorites: newFavorites };
+                this.update({ currentUser: updatedUser });
+
+                try {
+                    const response = await fetch('/talks/toggle_favorite', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ channel_key: channelKey })
+                    });
+                    const data = await response.json();
+                    if (!data.success) {
+                        // Revert on failure
+                        this.update({ currentUser: this.props.currentUser });
+                    }
+                } catch (e) {
+                    console.error("Error toggling favorite", e);
+                    this.update({ currentUser: this.props.currentUser });
+                }
+            },
+
+            getFavorites() {
+                if (!this.state.currentUser || !Array.isArray(this.state.currentUser.favorites)) return [];
+                const favorites = this.state.currentUser.favorites;
+                if (favorites.length === 0) return [];
+
+                const favItems = [];
+                // Check standard channels
+                favorites.forEach(key => {
+                    const channel = this.props.channels.find(c => c._key === key);
+                    if (channel) {
+                        favItems.push(channel);
+                        return;
+                    }
+                    // Check DM channels
+                    if (this.props.dmChannels) {
+                        const dm = this.props.dmChannels.find(c => c._key === key);
+                        if (dm) {
+                            favItems.push(dm);
+                        }
+                    }
+                });
+                return favItems;
+            },
+
+            getOtherUserForDM(channel) {
+                if (!channel.members || !this.state.currentUser) return null;
+                const otherKey = channel.members.find(k => k !== this.state.currentUser._key) || channel.members[0]; // fallback for self-dm
+                return this.state.users.find(u => u._key === otherKey);
+            },
+
+            getChannelName(item) {
+                if (item.type === 'dm') {
+                    const otherUser = this.getOtherUserForDM(item);
+                    return otherUser ? this.getUsername(otherUser) : item.name;
+                }
+                return item.name;
+            },
+
+            getChannelHref(item) {
+                if (item.type === 'private' || item.type === 'dm') {
+                    return '/talks?channel=' + item._key;
+                }
+                return '/talks?channel=' + item.name;
+            },
+
+            getChannelClass(item) {
+                const isActive = (this.props.currentChannel === item.name) || (this.props.currentChannelData && this.props.currentChannelData._key === item._key);
+                let base = 'flex items-center px-4 py-1 transition-colors ';
+                if (isActive) {
+                    return base + 'bg-[#1164A3] text-white font-medium';
+                }
+                return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
+            },
+
+            getDMClass(user) {
+                const isActive = this.isCurrentDM(user);
+                let base = 'flex items-center px-4 py-1 transition-colors ';
+                if (isActive) {
+                    return base + 'bg-[#1164A3] text-white font-medium';
+                }
+                return base + 'text-gray-400 hover:bg-[#350D36] hover:text-white';
+            },
+
+            getStarClass() {
+                const isFav = this.props.currentChannelData && this.isFavorite(this.props.currentChannelData._key);
+                return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
             },
 
             togglePrivateMode(e) {
@@ -981,18 +1137,9 @@
 
                     const data = await response.json();
 
-                    if (response.ok) {
-                        // success
-                        this.update({
-                            showCreateChannelModal: false,
-                            creatingChannel: false,
-                            isCreatingPrivate: false,
-                            createChannelMembers: []
-                        });
-                        if (data.success) {
-                            // Force a reload of the current page to refresh the channel list and route to the new channel
-                            window.location.href = `/talks?channel=${data.channel._key}`;
-                        }
+                    if (response.ok && data.success) {
+                        // success - redirect to new channel
+                        window.location.href = `/talks?channel=${data.channel._key}`;
                     } else {
                         this.update({
                             createChannelError: data.error || 'Failed to create channel',

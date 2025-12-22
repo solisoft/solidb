@@ -4969,8 +4969,17 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             }
 
                             // Forward aggregated events to client
+                            // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
+                            let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
                             loop {
                                 tokio::select! {
+                                    // Heartbeat tick: send a Ping to keep the connection alive
+                                    _ = heartbeat_interval.tick() => {
+                                        if socket.send(Message::Ping(vec![].into())).await.is_err() {
+                                            tracing::debug!("[CHANGEFEED] Failed to send ping, closing connection");
+                                            break;
+                                        }
+                                    }
                                     // Received event from aggregator
                                     Some(event) = rx.recv() => {
                                         // Note: Local events were already filtered by key in the spawned task.
@@ -4998,10 +5007,11 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                             }
                                         }
                                     }
-                                    // Handle incoming messages (e.g. close)
+                                    // Handle incoming messages (e.g. close, pong)
                                     Some(msg) = socket.recv() => {
                                         match msg {
                                             Ok(Message::Close(_)) | Err(_) => break,
+                                            Ok(Message::Pong(_)) => { /* heartbeat acknowledged */ }
                                             _ => {} // Ignore other messages
                                         }
                                     }
@@ -5186,9 +5196,18 @@ async fn execute_live_query_step(
                                 // 5. Initial Execution
                                 execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
 
-                                // 6. Reactive Loop
+                                // 6. Reactive Loop with heartbeat
+                                // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
+                                let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
                                 loop {
                                     tokio::select! {
+                                        // Heartbeat tick: send a Ping to keep the connection alive
+                                        _ = heartbeat_interval.tick() => {
+                                            if socket.send(Message::Ping(vec![].into())).await.is_err() {
+                                                tracing::debug!("[LIVE_QUERY] Failed to send ping, closing connection");
+                                                break;
+                                            }
+                                        }
                                         Some(_) = rx.recv() => {
                                             // On ANY change to ANY dependency, re-run query
                                             execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
@@ -5196,6 +5215,7 @@ async fn execute_live_query_step(
                                         Some(msg) = socket.recv() => {
                                             match msg {
                                                 Ok(Message::Close(_)) | Err(_) => break,
+                                                Ok(Message::Pong(_)) => { /* heartbeat acknowledged */ }
                                                 _ => {} 
                                             }
                                         }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'talks-v1';
+const CACHE_NAME = 'talks-v2';
 const urlsToCache = [
     '/',
     '/logo.svg',
