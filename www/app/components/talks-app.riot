@@ -135,6 +135,12 @@
                                     <span if={ part.type==='text' }>
                                         <span each={ segment in parseTextWithLinks(part.content) }>
                                             <span if={ segment.type==='text' }>{ segment.content }</span>
+                                            <span if={ segment.type==='mention' } onclick={ ()=> goToDm(segment.content)
+                                                }
+                                                class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer
+                                                font-medium bg-blue-500/10 px-0.5 rounded transition-colors"
+                                                title={ 'Direct Message @' + segment.content }>@{ segment.content
+                                                }</span>
                                             <a if={ segment.type==='link' } href={ segment.url } target="_blank"
                                                 rel="noopener noreferrer"
                                                 class="text-blue-400 hover:text-blue-300 hover:underline">{
@@ -314,9 +320,9 @@
 
 
             <!-- Input Area -->
-            <footer class="p-6 pt-0 flex-shrink-0">
+            <footer class="p-0 flex-shrink-0">
                 <div ondragenter={ onDragEnter } ondragleave={ onDragLeave } ondragover={ onDragOver } ondrop={ onDrop }
-                    class="border border-gray-700 rounded-lg bg-[#222529] transition-colors overflow-hidden { state.dragging ? 'bg-gray-700/50 border-blue-500' : '' }">
+                    class="border-t border-gray-700 bg-[#222529] transition-colors overflow-hidden { state.dragging ? 'bg-gray-700/50 border-blue-500' : '' }">
                     <div if={ state.files.length> 0 } class="flex flex-wrap gap-2 p-3 pb-0">
                         <div each={ (file, index) in state.files }
                             class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group">
@@ -335,23 +341,18 @@
                             </button>
                         </div>
                     </div>
-                    <div class="p-3">
-                        <textarea ref="messageInput" placeholder={ 'Message' } onkeydown={ onKeyDown }
+                    <div class="p-4">
+                        <textarea ref="messageInput" placeholder={ 'Message' } onkeydown={ onKeyDown } oninput={
+                            handleMessageInput }
                             class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea>
                     </div>
-                    <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] rounded-b-lg">
+                    <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700">
                         <div class="flex items-center space-x-1">
-                            <button class="p-2 text-gray-500 hover:text-white transition-colors"><i
-                                    class="fas fa-plus-circle"></i></button>
-                            <div class="w-px h-4 bg-gray-800 mx-1"></div>
                             <!-- Emoji picker -->
-                            <!-- Emoji picker button -->
                             <button onclick={ toggleEmojiPicker } class={ 'p-2 transition-colors ' +
                                 (state.showEmojiPicker ? 'text-yellow-400' : 'text-gray-500 hover:text-white' ) }>
                                 <i class="far fa-smile"></i>
                             </button>
-                            <button class="p-2 text-gray-500 hover:text-white transition-colors"><i
-                                    class="fas fa-at"></i></button>
                         </div>
                         <button onclick={ sendMessage } disabled={ state.sending }
                             class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50">
@@ -434,6 +435,29 @@
                 </button>
             </div>
         </div>
+
+        <!-- User Mention Picker -->
+        <div if={ state.showUserPicker }
+            class="fixed w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-hidden"
+            style={ 'left: ' + state.userPickerPos.left + 'px; bottom: ' + state.userPickerPos.bottom + 'px;' }>
+
+            <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showUserPicker: false }) }></div>
+
+            <div class="max-h-60 overflow-y-auto custom-scrollbar p-1">
+                <div each={ (user, i) in state.filteredUsers } onclick={ ()=> insertMention(user) }
+                    class={ 'flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ' +
+                    (state.selectedUserIndex === i ? 'bg-gray-800 ring-1 ring-blue-500' : 'hover:bg-gray-800') }>
+                    <div
+                        class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300">
+                        { getInitials(getUsername(user)) }
+                    </div>
+                    <span class="text-sm text-gray-200">{ getUsername(user) }</span>
+                </div>
+                <div if={ state.filteredUsers.length===0 } class="p-3 text-center text-gray-500 text-sm">
+                    No users found
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Incoming Call Modal -->
@@ -448,7 +472,8 @@
             </div>
             <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{ getUsername(state.incomingCall.caller) }
             </h3>
-            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call' }</p>
+            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' :
+                'Incoming&nbsp;Audio&nbsp;Call' }</p>
             <div class="flex items-center gap-8">
                 <button onclick={ declineCall } class="flex flex-col items-center gap-2 group">
                     <div
@@ -664,6 +689,12 @@
                     isScreenSharing: false,
                     localStreamHasVideo: false,
                     remoteStreamHasVideo: false,
+                    // User Mention Picker
+                    showUserPicker: false,
+                    userPickerPos: { left: 0, bottom: 0 },
+                    filteredUsers: [],
+                    mentionQuery: '',
+                    selectedUserIndex: 0,
                 }
                 this.localStream = null;
                 this.remoteStream = null;
@@ -1094,6 +1125,29 @@
 
             // Handle Enter to send message (Shift+Enter for new line)
             onKeyDown(e) {
+                // Handle User Picker Navigation
+                if (this.state.showUserPicker && this.state.filteredUsers.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        const nextIndex = (this.state.selectedUserIndex + 1) % this.state.filteredUsers.length;
+                        this.update({ selectedUserIndex: nextIndex });
+                        return;
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const prevIndex = (this.state.selectedUserIndex - 1 + this.state.filteredUsers.length) % this.state.filteredUsers.length;
+                        this.update({ selectedUserIndex: prevIndex });
+                        return;
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation(); // Prevent newline or sending
+                        this.insertMention(this.state.filteredUsers[this.state.selectedUserIndex]);
+                        return;
+                    } else if (e.key === 'Escape') {
+                        this.update({ showUserPicker: false });
+                        return;
+                    }
+                }
+
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     this.sendMessage(e.target);
@@ -1198,6 +1252,115 @@
                     };
                 }
                 this.update({ showEmojiPicker: !this.state.showEmojiPicker });
+            },
+
+            // Toggle User Picker
+            toggleUserPicker(e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    this.state.userPickerPos = {
+                        left: rect.left,
+                        bottom: window.innerHeight - rect.top + 5
+                    };
+                }
+
+                // Reset filter to show all users initially
+                this.update({
+                    showUserPicker: !this.state.showUserPicker,
+                    filteredUsers: this.state.users,
+                    mentionQuery: '',
+                    selectedUserIndex: 0
+                });
+            },
+
+            // Insert selected user mention
+            insertMention(user) {
+                const textarea = (this.refs && this.refs.messageInput) || this.root.querySelector('[ref="messageInput"]');
+                if (!textarea) return;
+
+                const username = this.getUsername(user);
+                const mentionText = `@${username} `;
+
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = textarea.value.substring(0, cursorPosition);
+                const textAfter = textarea.value.substring(cursorPosition);
+
+                // Check for existing @ pattern before cursor to replace
+                const match = textBefore.match(/@([a-zA-Z0-9_.-]*)$/);
+
+                if (match) {
+                    // Match found (e.g. "@" or "@oli"), replace it
+                    const newTextBefore = textBefore.substring(0, textBefore.length - match[0].length) + mentionText;
+                    textarea.value = newTextBefore + textAfter;
+
+                    textarea.focus();
+                    const newCursorPos = newTextBefore.length;
+                    textarea.setSelectionRange(newCursorPos, newCursorPos);
+                } else {
+                    // No match (e.g. button click without typing), insert at cursor
+                    textarea.value = textBefore + mentionText + textAfter;
+
+                    textarea.focus();
+                    const newCursorPos = cursorPosition + mentionText.length;
+                    textarea.setSelectionRange(newCursorPos, newCursorPos);
+                }
+
+                this.update({
+                    showUserPicker: false,
+                    mentionQuery: '',
+                    selectedUserIndex: 0
+                });
+            },
+
+            // Navigate to DM with mentioned user
+            goToDm(username) {
+                const user = this.state.users.find(u => this.getUsername(u) === username);
+                if (user) {
+                    const url = this.getDMUrl(user);
+                    // Use route helper if available or standard location
+                    window.location.href = url;
+                }
+            },
+
+            // Detect @ mention typing
+            handleMessageInput(e) {
+                const textarea = e.target;
+                const cursorPosition = textarea.selectionStart;
+                const text = textarea.value;
+                const textBeforeCursor = text.substring(0, cursorPosition);
+
+                // Regex to find @mention pattern at the end of the text before cursor
+                // Matches @ followed by word characters, optionally allowing spaces if we wanted (but standard is usually no spaces)
+                const match = textBeforeCursor.match(/@([a-zA-Z0-9_.-]*)$/);
+
+                if (match) {
+                    const query = match[1].toLowerCase();
+                    const filtered = this.state.users.filter(u => {
+                        const username = this.getUsername(u).toLowerCase();
+                        return username.includes(query);
+                    });
+
+                    // Calculate position for the picker (simplified, near cursor would contain more logic)
+                    // For now, use a fixed position above the input or try to estimate
+                    const rect = textarea.getBoundingClientRect();
+
+                    this.update({
+                        showUserPicker: true,
+                        filteredUsers: filtered,
+                        mentionQuery: query,
+                        selectedUserIndex: 0,
+                        userPickerPos: {
+                            left: rect.left + 20, // Offset slightly
+                            bottom: window.innerHeight - rect.top + 10
+                        }
+                    });
+                } else {
+                    if (this.state.showUserPicker) {
+                        this.update({ showUserPicker: false });
+                    }
+                }
             },
 
             // Insert emoji at cursor position in textarea
@@ -1399,9 +1562,9 @@
             parseTextWithLinks(text) {
                 if (!text) return [{ type: 'text', content: '' }];
 
-                // Match formatting, code, or URLs
-                // G1: __bold__, G2: ''italic'', G3: --strike--, G4: `code`, G5: URL
-                const combinedRegex = /(__.+?__)|(''.+?'')|(--.+?--)|(`[^`]+`)|(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
+                // Match formatting, code, or URLs, or Mentions
+                // G1: __bold__, G2: ''italic'', G3: --strike--, G4: `code`, G5: URL, G6: Mention
+                const combinedRegex = /(__.+?__)|(''.+?'')|(--.+?--)|(`[^`]+`)|(https?:\/\/[^\s<>"{}|\\^`\[\]]+)|(@[a-zA-Z0-9_.-]+)/g;
                 const parts = [];
                 let lastIndex = 0;
                 let match;
@@ -1435,6 +1598,22 @@
                             url: url,
                             display: url.length > 50 ? url.substring(0, 47) + '...' : url
                         });
+                    } else if (match[6]) {
+                        // Mention (@username)
+                        const username = match[6].substring(1); // remove @
+                        const userExists = this.state.users.some(u => this.getUsername(u) === username);
+
+                        if (userExists) {
+                            parts.push({
+                                type: 'mention',
+                                content: username
+                            });
+                        } else {
+                            parts.push({
+                                type: 'text',
+                                content: match[6]
+                            });
+                        }
                     }
 
                     lastIndex = match.index + match[0].length;
