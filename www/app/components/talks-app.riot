@@ -37,8 +37,8 @@
                         <a each={ user in state.users } href={ getDMUrl(user) } class={ 'flex items-center px-4 py-1 ' +
                             (isCurrentDM(user) ? 'text-white bg-[#350D36]'
                             : 'text-gray-400 hover:bg-[#350D36] hover:text-white' ) }>
-                            <div class={ 'w-2 h-2 rounded-full mr-2 ' + (user.status==='online' ? 'bg-green-500'
-                                : 'bg-gray-600' ) }></div>
+                            <div class={ 'w-2 h-2 rounded-full mr-2 ' + getStatusColor(user.status) } title={
+                                getStatusLabel(user.status) }></div>
                             <span class="flex-1 truncate">{ getUsername(user) } { user._key === props.currentUser._key ?
                                 ' (you)' : '' }</span>
                             <div if={ state.unreadChannels[state.usersChannels[user._key]] }
@@ -57,9 +57,42 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-bold text-white truncate">{ props.currentUser.firstname }</p>
-                        <p class="text-xs text-green-500 flex items-center">
-                            <span class="w-2 h-2 rounded-full bg-green-500 mr-1.5"></span> Active
-                        </p>
+                        <div class="relative">
+                            <button onclick={ toggleStatusMenu }
+                                class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group">
+                                <span class={ 'w-2 h-2 rounded-full mr-1.5 ' + (getStatusColor(getCurrentUser().status))
+                                    }></span>
+                                <span class={ 'transition-colors ' + (getCurrentUser().status==='online'
+                                    ? 'text-green-500' : 'text-gray-400 group-hover:text-gray-300' ) }>{
+                                    getStatusLabel(getCurrentUser().status) }</span>
+                                <i
+                                    class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </button>
+
+                            <!-- Status Menu -->
+                            <div if={ state.showStatusMenu }
+                                class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up">
+                                <div class="p-1 space-y-0.5">
+                                    <button onclick={ ()=> updateStatus('online') } class="w-full text-left px-3 py-1.5
+                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
+                                        items-center transition-colors">
+                                        <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active
+                                    </button>
+                                    <button onclick={ ()=> updateStatus('busy') } class="w-full text-left px-3 py-1.5
+                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
+                                        items-center transition-colors">
+                                        <span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy
+                                    </button>
+                                    <button onclick={ ()=> updateStatus('offline') } class="w-full text-left px-3 py-1.5
+                                        text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex
+                                        items-center transition-colors">
+                                        <span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off
+                                    </button>
+                                </div>
+                            </div>
+                            <div if={ state.showStatusMenu } class="fixed inset-0 z-40" onclick={ toggleStatusMenu }>
+                            </div>
+                        </div>
                     </div>
                     <a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors"
                         title="Logout">
@@ -689,7 +722,7 @@
                             { getInitials(getUsername(user)) }
                         </div>
                         <div class={ 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' +
-                            (user.status==='online' ? 'bg-green-500' : 'bg-gray-500' ) }></div>
+                            getStatusColor(user.status) }></div>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between">
@@ -747,6 +780,7 @@
                     selectedUserIndex: 0,
                     showDmPopup: false,
                     dmPopupUsers: [],
+                    showStatusMenu: false,
                 }
                 this.localStream = null;
                 this.remoteStream = null;
@@ -1336,6 +1370,41 @@
             startDm(user) {
                 this.goToDm(this.getUsername(user));
                 this.update({ showDmPopup: false });
+            },
+
+            // Status Methods
+            getCurrentUser() {
+                if (!this.props.currentUser) return null;
+                return this.state.users.find(u => u._key === this.props.currentUser._key) || this.props.currentUser;
+            },
+
+            getStatusColor(status) {
+                if (status === 'online') return 'bg-green-500';
+                if (status === 'busy') return 'bg-red-500';
+                return 'bg-gray-500';
+            },
+
+            getStatusLabel(status) {
+                if (status === 'online') return 'Active';
+                if (status === 'busy') return 'Busy';
+                return 'Off';
+            },
+
+            toggleStatusMenu() {
+                this.update({ showStatusMenu: !this.state.showStatusMenu });
+            },
+
+            async updateStatus(status) {
+                try {
+                    await fetch('/talks/update_status', {
+                        method: 'POST',
+                        body: JSON.stringify({ status }),
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    this.update({ showStatusMenu: false });
+                } catch (e) {
+                    console.error("Failed to update status", e);
+                }
             },
 
             // Toggle User Picker

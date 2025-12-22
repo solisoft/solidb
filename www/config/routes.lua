@@ -17,6 +17,7 @@ Routes = { ["GET"] = {
 -- Talks API routes
 CustomRoute("POST", "/talks/create_message", "talks#create_message")
 CustomRoute("POST", "/talks/create_channel", "talks#create_channel")
+CustomRoute("POST", "/talks/update_status", "talks#update_status")
 CustomRoute("POST", "/talks/toggle_reaction", "talks#toggle_reaction")
 CustomRoute("POST", "/talks/create_dm", "talks#create_dm")
 CustomRoute("GET", "/talks/livequery_token", "talks#livequery_token")

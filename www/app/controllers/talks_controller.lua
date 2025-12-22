@@ -581,6 +581,32 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     WriteJSON({ success = true, channel = doc })
   end,
 
+  -- API endpoint to update user status
+  update_status = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local status = body.status
+
+    if not status then
+        SetStatus(400)
+        WriteJSON({ error = "Status is required" })
+        return
+    end
+
+    -- Update user status
+    db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { status: @status } IN users", { key = current_user._key, status = status })
+
+    SetStatus(200)
+    WriteJSON({ success = true })
+  end,
+
   -- API endpoint to create a new message
   create_message = function()
     local db = SoliDB.primary
