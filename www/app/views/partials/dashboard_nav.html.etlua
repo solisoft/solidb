@@ -36,7 +36,7 @@
         
         // Parse host to remove http:// for cleaner display
         let displayHost = config.host.replace(/^https?:\/\//, '');
-        serverHost.textContent = `${displayHost}:${config.port}`;
+        serverHost.textContent = config.port ? `${displayHost}:${config.port}` : displayHost;
         serverInfo.classList.remove('hidden');
 
         const setStatus = (isConnected) => {
@@ -79,7 +79,8 @@
            const host = config.host.replace(/^https?:\/\//, '');
            const token = getAuthToken();
            // Construct WS URL - cluster/status/ws is a public endpoint but accepts token for potential future auth
-           const wsUrl = `${protocol}//${host}:${config.port}/_api/cluster/status/ws${token ? '?token=' + token : ''}`;
+           const baseUrl = config.port ? `${host}:${config.port}` : host;
+           const wsUrl = `${protocol}//${baseUrl}/_api/cluster/status/ws${token ? '?token=' + token : ''}`;
            
            try {
              ws = new WebSocket(wsUrl);

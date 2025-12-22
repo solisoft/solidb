@@ -464,31 +464,41 @@
       
       try {
         const u = new URL(fullUrl);
-        let host = `${u.protocol}//${u.hostname}`;
-        // Only use port if explicitly provided in URL
-        let port = u.port;
         
-        // If not provided, check if we should apply specific defaults
-        if (!port) {
-           if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
-             port = '6745';
-           } else {
-             // For remote hosts, keep port empty to use protocol default (80/443)
-             port = '';
-           }
+        // Check for localhost default case
+        if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && !u.port && u.pathname === '/') {
+           return { host: `${u.protocol}//${u.hostname}`, port: '6745' };
         }
-        return { host, port };
+
+        // For all other cases (custom paths, remote hosts, specific ports), 
+        // bundle everything into `host` and leave `port` empty.
+        // This ensures the path is preserved and the port is in the correct place.
+        let path = u.pathname;
+        if (path.endsWith('/')) path = path.slice(0, -1); // Strip trailing slash
+        
+        let host = `${u.protocol}//${u.hostname}`;
+        if (u.port) host += `:${u.port}`;
+        host += path;
+        
+        return { host, port: '' };
       } catch (e) {
         // Fallback for simple "localhost:6745" or "localhost"
         const parts = url.split(':');
         let host = parts[0];
         if (!host.startsWith('http')) host = 'http://' + host;
+        
         // If part 1 exists, use it. If not, only default to 6745 for localhost
         let port = parts[1] || '';
         if (!port && (host.includes('localhost') || host.includes('127.0.0.1'))) {
-           port = '6745';
+           return { host, port: '6745' };
         }
-        return { host, port };
+        
+        // If we have a port but it's part of a path-less string, we might just return it as host/port
+        if (port) {
+            return { host, port };
+        }
+        
+        return { host, port: '' };
       }
     }
 
