@@ -133,7 +133,6 @@
               <input
                 type="text"
                 id="server-url"
-                value="http://localhost:6745"
                 required
                 class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
                 placeholder="http://localhost:6745"
@@ -507,8 +506,11 @@
 
     // Check saved config
     const savedConfig = getServerConfig();
-    if (savedConfig && savedConfig.host && savedConfig.port) {
-      serverUrlInput.value = savedConfig.port ? `${savedConfig.host}:${savedConfig.port}` : savedConfig.host;
+    console.log('[Welcome] Saved config:', savedConfig);
+    if (savedConfig && savedConfig.host) {
+      const calculatedUrl = savedConfig.port ? `${savedConfig.host}:${savedConfig.port}` : savedConfig.host;
+      console.log('[Welcome] Populating input with:', calculatedUrl);
+      serverUrlInput.value = calculatedUrl;
 
       // Auto-connect flow - test if server is reachable and we have a token
       const serverUrl = savedConfig.port ? `${savedConfig.host}:${savedConfig.port}` : savedConfig.host;

@@ -29,15 +29,13 @@ function SoliDB:Api_run(path, method, params, headers)
 
   headers["Content-Type"] = "application/json"
 
-  Logger(path)
-  Logger(headers)
-
   local ok, h, body = Fetch(self:Api_url(path), {
     method = method,
     body = EncodeJson(params) or "",
     headers = headers,
   })
 
+  Logger(ok)
   Logger(body)
 
   -- Handle empty body or error
@@ -54,6 +52,9 @@ function SoliDB:Auth()
     body = '{ "username": "' .. self._db_config.username .. '", "password": "' .. self._db_config.password .. '" }',
     headers = { ["Content-Type"] = "application/json" }
   })
+
+  Logger(ok)
+  Logger(body)
 
   if ok == 200 then
     local res = DecodeJson(body)
