@@ -14,6 +14,21 @@ export default {
         return sender.substring(0, 2).toUpperCase();
     },
 
+    getAvatarClass(sender) {
+        if (!sender) sender = "anonymous";
+        const colors = [
+            'bg-purple-600', 'bg-indigo-600', 'bg-green-600',
+            'bg-blue-600', 'bg-pink-600', 'bg-yellow-600', 'bg-red-600',
+            'bg-orange-600', 'bg-teal-600', 'bg-cyan-600'
+        ];
+        let hash = 0;
+        for (let i = 0; i < sender.length; i++) {
+            hash = sender.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const colorClass = colors[Math.abs(hash) % colors.length];
+        return `w-10 h-10 ${colorClass} rounded-lg flex items-center justify-center text-white font-bold mr-3 flex-shrink-0 shadow-lg`;
+    },
+
     getStatusColor(status) {
         if (status === 'online') return 'bg-green-500';
         if (status === 'busy') return 'bg-red-500';

@@ -195,9 +195,6 @@
             getDomain(url) {
                 try { return new URL(url).hostname; } catch { return url; }
             },
-            getAvatarClass(sender) {
-                return "w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-bold mr-3 flex-shrink-0 shadow-lg";
-            },
             highlightCode() {
                 if (window.hljs) {
                     setTimeout(() => {
