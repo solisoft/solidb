@@ -529,6 +529,58 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
   end,
 
+  -- API endpoint to create a new channel
+  create_channel = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local name = body.name
+
+    if not name or name == "" then
+        SetStatus(400)
+        WriteJSON({ error = "Channel name is required" })
+        return
+    end
+
+    -- Sanitize name (slugify: lowercase, replace spaces with dashes, keep only alphanumeric and dashes)
+    name = string.lower(name)
+    name = string.gsub(name, "[^a-z0-9%-]", "")
+
+    if name == "" then
+         SetStatus(400)
+         WriteJSON({ error = "Invalid channel name" })
+         return
+    end
+
+    -- Check if channel exists
+    local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = name })
+    if res and res.result and #res.result > 0 then
+        SetStatus(409)
+        WriteJSON({ error = "Channel already exists" })
+        return
+    end
+
+    -- Create channel
+    local doc = {
+        name = name,
+        type = "standard",
+        created_by = current_user._key,
+        created_at = os.time()
+    }
+
+    local createRes = db:CreateDocument("channels", doc)
+
+    SetStatus(201)
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({ success = true, channel = doc })
+  end,
+
   -- API endpoint to create a new message
   create_message = function()
     local db = SoliDB.primary
