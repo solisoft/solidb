@@ -41,6 +41,12 @@
           TTL Index
         </a>
 
+        <!-- Sparse Behavior -->
+        <a href="#sparse" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-violet-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Sparse Behavior
+        </a>
+
         <!-- Management -->
         <a href="#management" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>

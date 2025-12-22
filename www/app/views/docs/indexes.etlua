@@ -266,6 +266,72 @@
         </div>
       </section>
 
+      <!-- Sparse Behavior -->
+      <section id="sparse" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Sparse Behavior
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              All SoliDB indexes are <strong>implicitly sparse</strong>. Documents where the indexed field is <code>null</code> or missing are <strong>not added</strong> to the index.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                <h4 class="text-white font-bold mb-3">When Documents Are Indexed</h4>
+                <div class="space-y-2 text-sm">
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span class="text-gray-400">Field exists with a value → <span class="text-green-400">Indexed</span></span>
+                  </div>
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span class="text-gray-400">Field is <code class="bg-white/10 px-1 rounded">null</code> → <span class="text-red-400">Not indexed</span></span>
+                  </div>
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span class="text-gray-400">Field is missing → <span class="text-red-400">Not indexed</span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bg-violet-900/10 border border-violet-500/20 rounded-xl p-6">
+                <h4 class="text-violet-400 font-bold mb-3">Compound Indexes</h4>
+                <p class="text-sm text-gray-400">
+                  For compound indexes on multiple fields, a document is indexed if <strong>at least one field</strong> has a non-null value.
+                </p>
+                <code class="block text-xs bg-black/30 p-2 rounded font-mono text-gray-300 mt-3">
+                  {"user_id": "abc", "email": null} → Indexed (user_id exists)
+                </code>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5">
+              <h4 class="text-sm font-bold text-violet-400 uppercase tracking-widest mb-3">Benefits of Sparse Indexes</h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Storage Efficiency</div>
+                  <p class="text-xs text-gray-500">Documents without the field don't consume index space.</p>
+                </div>
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Unique Constraints</div>
+                  <p class="text-xs text-gray-500">Multiple docs can have <code>null</code> for a unique field (no conflict).</p>
+                </div>
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Query Performance</div>
+                  <p class="text-xs text-gray-500">Smaller indexes = faster lookups and less memory.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Management API -->
       <section id="management" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

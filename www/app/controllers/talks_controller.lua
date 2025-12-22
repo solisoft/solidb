@@ -257,6 +257,9 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local config = db._db_config
     Params.db_name = config.db_name or config.database or config.name
 
+    -- DB host for WebSocket connections (from env var or fallback)
+    Params.db_host = os.getenv("DB_HOST") or "localhost:6745"
+
     Logger("DEBUG: Final Params.db_name: " .. tostring(Params.db_name))
 
     -- Authentication check
@@ -288,6 +291,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
   end,
 
   login_form = function()
+    Params.hide_header = true
+    Params.full_height = true
     Page("talks/login", "app")
   end,
 
@@ -298,6 +303,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     if not email or not password then
       Params.error = "Email and password are required"
+      Params.hide_header = true
+      Params.full_height = true
       return Page("talks/login", "app")
     end
 
@@ -305,6 +312,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     if not res or not res.result or #res.result == 0 then
       Params.error = "Invalid email or password"
+      Params.hide_header = true
+      Params.full_height = true
       return Page("talks/login", "app")
     end
 
@@ -316,11 +325,15 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       SetCookie("talks_session", user._id, { Path = "/", HttpOnly = true, MaxAge = 86400 * 30 })
     else
       Params.error = "Invalid email or password"
+      Params.hide_header = true
+      Params.full_height = true
       Page("talks/login", "app")
     end
   end,
 
   signup_form = function()
+    Params.hide_header = true
+    Params.full_height = true
     Page("talks/signup", "app")
   end,
 
@@ -333,6 +346,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     if not firstname or not lastname or not email or not password then
       Params.error = "All fields are required"
+      Params.hide_header = true
+      Params.full_height = true
       return Page("talks/signup", "app")
     end
 
@@ -340,6 +355,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
     if res and res.result and #res.result > 0 then
       Params.error = "Email already registered"
+      Params.hide_header = true
+      Params.full_height = true
       return Page("talks/signup", "app")
     end
 
@@ -349,6 +366,8 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     if not hash then
       Params.error = "Error hashing password: " .. tostring(err)
+      Params.hide_header = true
+      Params.full_height = true
       return Page("talks/signup", "app")
     end
 

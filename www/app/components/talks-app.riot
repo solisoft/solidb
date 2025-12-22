@@ -335,8 +335,7 @@
                         </div>
                     </div>
                     <div class="p-3">
-                        <textarea ref="messageInput" placeholder={ 'Message' } onkeydown={
-                            onKeyDown }
+                        <textarea ref="messageInput" placeholder={ 'Message' } onkeydown={ onKeyDown }
                             class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea>
                     </div>
                     <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] rounded-b-lg">
@@ -448,7 +447,8 @@
             </div>
             <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{ getUsername(state.incomingCall.caller) }
             </h3>
-            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call' }</p>
+            <p class="text-gray-400 mb-8">{ state.incomingCall.type === 'video' ? 'Incoming Video Call' : 'Incoming
+                Audio Call' }</p>
             <div class="flex items-center gap-8">
                 <button onclick={ declineCall } class="flex flex-col items-center gap-2 group">
                     <div
@@ -646,6 +646,10 @@
                     });
                 }
             },
+            // Get DB host from props or fallback to localhost:6745
+            getDbHost() {
+                return this.props.dbHost || 'localhost:6745';
+            },
             onMounted() {
                 // Use setTimeout to ensure DOM is fully rendered
                 setTimeout(() => this.scrollToBottom(true), 50);
@@ -698,7 +702,7 @@
 
                 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const dbName = this.props.dbName || 'solidb_dev';
-                const wsUrl = `${wsProtocol}//${window.location.hostname}:6745/api/custom/${dbName}/presence?user_id=${userId}`;
+                const wsUrl = `${wsProtocol}//${this.getDbHost()}/api/custom/${dbName}/presence?user_id=${userId}`;
                 this.presenceWs = new WebSocket(wsUrl);
 
 
@@ -722,7 +726,8 @@
                     if (!tokenRes.ok) return;
                     const { token } = await tokenRes.json();
 
-                    const wsUrl = `ws://${window.location.hostname}:6745/_api/ws/changefeed?token=${token}`;
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}://${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
                     this.usersWs = new WebSocket(wsUrl);
 
                     this.usersWs.onopen = () => {
@@ -766,7 +771,8 @@
                     const { token } = await tokenRes.json();
 
                     // Connect to WebSocket on port 6745
-                    const wsUrl = `ws://${window.location.hostname}:6745/_api/ws/changefeed?token=${token}`;
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}://${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
                     this.ws = new WebSocket(wsUrl);
 
                     this.ws.onopen = () => {
@@ -1469,7 +1475,8 @@
                     if (!tokenRes.ok) return;
                     const { token } = await tokenRes.json();
 
-                    const wsUrl = `ws://${window.location.hostname}:6745/_api/ws/changefeed?token=${token}`;
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}://${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
                     this.signalingWs = new WebSocket(wsUrl);
 
                     this.signalingWs.onopen = () => {
