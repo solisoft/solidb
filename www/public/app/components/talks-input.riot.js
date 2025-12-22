@@ -26,11 +26,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<footer class="p-0 flex-shrink-0"><div expr837="expr837"><div expr838="expr838" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-4"><textarea expr843="expr843" ref="messageInput" placeholder="Message" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700"><div class="flex items-center space-x-1"><button expr844="expr844"><i class="far fa-smile"></i></button></div><button expr845="expr845" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr846="expr846"></i> </button></div></div></footer>',
+    '<footer class="p-0 flex-shrink-0"><div expr1389="expr1389"><div expr1390="expr1390" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-4"><textarea expr1395="expr1395" ref="messageInput" placeholder="Message" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700"><div class="flex items-center space-x-1"><button expr1396="expr1396"><i class="far fa-smile"></i></button></div><button expr1397="expr1397" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr1398="expr1398"></i> </button></div></div></footer>',
     [
       {
-        redundantAttribute: 'expr837',
-        selector: '[expr837]',
+        redundantAttribute: 'expr1389',
+        selector: '[expr1389]',
 
         expressions: [
           {
@@ -64,11 +64,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.files.length > 0,
-        redundantAttribute: 'expr838',
-        selector: '[expr838]',
+        redundantAttribute: 'expr1390',
+        selector: '[expr1390]',
 
         template: template(
-          '<div expr839="expr839" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>',
+          '<div expr1391="expr1391" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>',
           [
             {
               type: bindingTypes.EACH,
@@ -76,11 +76,11 @@ export default {
               condition: null,
 
               template: template(
-                '<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr840="expr840" class="text-xs text-gray-200 truncate font-medium"> </span><span expr841="expr841" class="text-[10px] text-gray-500"> </span></div><button expr842="expr842" class="ml-2 text-gray-500 hover:text-red-400\n                        opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-times"></i></button>',
+                '<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr1392="expr1392" class="text-xs text-gray-200 truncate font-medium"> </span><span expr1393="expr1393" class="text-[10px] text-gray-500"> </span></div><button expr1394="expr1394" class="ml-2 text-gray-500 hover:text-red-400\n                        opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-times"></i></button>',
                 [
                   {
-                    redundantAttribute: 'expr840',
-                    selector: '[expr840]',
+                    redundantAttribute: 'expr1392',
+                    selector: '[expr1392]',
 
                     expressions: [
                       {
@@ -91,8 +91,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr841',
-                    selector: '[expr841]',
+                    redundantAttribute: 'expr1393',
+                    selector: '[expr1393]',
 
                     expressions: [
                       {
@@ -106,8 +106,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr842',
-                    selector: '[expr842]',
+                    redundantAttribute: 'expr1394',
+                    selector: '[expr1394]',
 
                     expressions: [
                       {
@@ -120,8 +120,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr839',
-              selector: '[expr839]',
+              redundantAttribute: 'expr1391',
+              selector: '[expr1391]',
               itemName: 'file',
               indexName: 'index',
               evaluate: _scope => _scope.props.files
@@ -130,8 +130,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr843',
-        selector: '[expr843]',
+        redundantAttribute: 'expr1395',
+        selector: '[expr1395]',
 
         expressions: [
           {
@@ -147,8 +147,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr844',
-        selector: '[expr844]',
+        redundantAttribute: 'expr1396',
+        selector: '[expr1396]',
 
         expressions: [
           {
@@ -165,8 +165,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr845',
-        selector: '[expr845]',
+        redundantAttribute: 'expr1397',
+        selector: '[expr1397]',
 
         expressions: [
           {
@@ -193,8 +193,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr846',
-        selector: '[expr846]',
+        redundantAttribute: 'expr1398',
+        selector: '[expr1398]',
 
         expressions: [
           {
