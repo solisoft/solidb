@@ -1627,7 +1627,7 @@ fn setup_articles_collection(storage: &StorageEngine) {
 
     // Create fulltext index on title
     collection
-        .create_fulltext_index("ft_title".to_string(), "title".to_string(), Some(3))
+        .create_fulltext_index("ft_title".to_string(), vec!["title".to_string()], Some(3))
         .unwrap();
 }
 

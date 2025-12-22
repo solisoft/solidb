@@ -52,8 +52,14 @@ pub struct ChangeEvent {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct FulltextIndex {
     name: String,
-    field: String,
+    #[serde(alias = "field", deserialize_with = "crate::storage::index::deserialize_fields")]
+    fields: Vec<String>,
+    #[serde(default = "default_min_length")]
     min_length: usize,
+}
+
+fn default_min_length() -> usize {
+    3
 }
 
 /// Collection statistics including disk usage
@@ -278,8 +284,11 @@ impl Collection {
 
     /// Build an index entry key
     /// Build an index entry key
-    fn idx_entry_key(index_name: &str, value: &Value, doc_key: &str) -> Vec<u8> {
-        let encoded = crate::storage::codec::encode_key(value);
+    fn idx_entry_key(index_name: &str, values: &[Value], doc_key: &str) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        for value in values {
+            encoded.extend(crate::storage::codec::encode_key(value));
+        }
         let hex_value = hex::encode(encoded);
         format!("{}{}:{}:{}", IDX_PREFIX, index_name, hex_value, doc_key).into_bytes()
     }
@@ -558,9 +567,24 @@ impl Collection {
             for doc in docs {
                 let doc_value = doc.to_value();
                 for index in &indexes {
-                    let field_value = extract_field_value(&doc_value, &index.field);
-                    if !field_value.is_null() {
-                        let entry_key = Self::idx_entry_key(&index.name, &field_value, &doc.key);
+                    let field_values: Vec<Value> = index
+                        .fields
+                        .iter()
+                        .map(|f| extract_field_value(&doc_value, f))
+                        .collect();
+                    
+                    // Only index if no field is null (strict match)?
+                    // Or if at least one is not null?
+                    // Legacy behavior: !field_value.is_null() meant skipping nulls.
+                    // For compound: if ANY field is null, we usually index (null matching).
+                    // BUT our `encode_key` handles Null.
+                    // The legacy code explicitly skipped nulls to avoid indexing missing fields?
+                    // Let's adopt a policy: Index if NOT ALL fields are null (Sparse-ish).
+                    // Actually, to support "a=1" lookup even if "b" is missing, we must index.
+                    // But if "a" is missing too?
+                    // Let's skip only if ALL values are Null.
+                    if !field_values.iter().all(|v| v.is_null()) {
+                        let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
                         batch.put_cf(cf, entry_key, doc.key.as_bytes());
                     }
                 }
@@ -606,20 +630,22 @@ impl Collection {
             for doc in docs {
                 let doc_value = doc.to_value();
                 for ft_index in &ft_indexes {
-                    let field_value = extract_field_value(&doc_value, &ft_index.field);
-                    if let Some(text) = field_value.as_str() {
-                        let terms = tokenize(text);
-                        for term in &terms {
-                            if term.len() >= ft_index.min_length {
-                                let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                batch.put_cf(cf, term_key, doc.key.as_bytes());
+                    for field in &ft_index.fields {
+                        let field_value = extract_field_value(&doc_value, field);
+                        if let Some(text) = field_value.as_str() {
+                            let terms = tokenize(text);
+                            for term in &terms {
+                                if term.len() >= ft_index.min_length {
+                                    let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                    batch.put_cf(cf, term_key, doc.key.as_bytes());
+                                }
                             }
-                        }
 
-                        let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                        for ngram in &ngrams {
-                            let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
-                            batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                            let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                            for ngram in &ngrams {
+                                let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
+                                batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                            }
                         }
                     }
                 }
@@ -1692,23 +1718,30 @@ impl Collection {
 
         for index in indexes {
             if index.unique {
-                let field_value = extract_field_value(doc_value, &index.field);
-                if !field_value.is_null() {
-                    let value_str = serde_json::to_string(&field_value).unwrap_or_default();
-                    let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
-                    let mut iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
+                // For compound indexes, extract all field values
+                let field_values: Vec<Value> = index.fields.iter()
+                    .map(|f| extract_field_value(doc_value, f))
+                    .collect();
+                
+                // Skip if all values are null
+                if field_values.iter().all(|v| v.is_null()) {
+                    continue;
+                }
+                
+                let value_str = serde_json::to_string(&field_values).unwrap_or_default();
+                let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
+                let mut iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
 
-                    // Check if any OTHER document already has this value
-                    if let Some(Ok((key, value))) = iter.next() {
-                        if key.starts_with(prefix.as_bytes()) {
-                            let existing_key = String::from_utf8_lossy(&value);
-                            // Allow update of the same document
-                            if existing_key != doc_key {
-                                return Err(DbError::InvalidDocument(format!(
-                                    "Unique constraint violated: field '{}' with value {} already exists in index '{}'",
-                                    index.field, value_str, index.name
-                                )));
-                            }
+                // Check if any OTHER document already has this value
+                if let Some(Ok((key, value))) = iter.next() {
+                    if key.starts_with(prefix.as_bytes()) {
+                        let existing_key = String::from_utf8_lossy(&value);
+                        // Allow update of the same document
+                        if existing_key != doc_key {
+                            return Err(DbError::InvalidDocument(format!(
+                                "Unique constraint violated: fields '{:?}' with value {} already exists in index '{}'",
+                                index.fields, value_str, index.name
+                            )));
                         }
                     }
                 }
@@ -1726,9 +1759,14 @@ impl Collection {
             .expect("Column family should exist");
 
         for index in indexes {
-            let field_value = extract_field_value(doc_value, &index.field);
-            if !field_value.is_null() {
-                let entry_key = Self::idx_entry_key(&index.name, &field_value, doc_key);
+            let field_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(doc_value, f))
+                .collect();
+
+            if !field_values.iter().all(|v| v.is_null()) {
+                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 db.put_cf(cf, entry_key, doc_key.as_bytes()).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
@@ -1771,20 +1809,28 @@ impl Collection {
             .expect("Column family should exist");
 
         for index in indexes {
-            let old_field = extract_field_value(old_value, &index.field);
-            let new_field = extract_field_value(new_value, &index.field);
+            let old_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(old_value, f))
+                .collect();
+            let new_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(new_value, f))
+                .collect();
 
             // Remove old entry
-            if !old_field.is_null() {
-                let old_entry_key = Self::idx_entry_key(&index.name, &old_field, doc_key);
+            if !old_values.iter().all(|v| v.is_null()) {
+                let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
                 db.delete_cf(cf, old_entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
             }
 
             // Add new entry
-            if !new_field.is_null() {
-                let new_entry_key = Self::idx_entry_key(&index.name, &new_field, doc_key);
+            if !new_values.iter().all(|v| v.is_null()) {
+                let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
                 db.put_cf(cf, new_entry_key, doc_key.as_bytes())
                     .map_err(|e| {
                         DbError::InternalError(format!("Failed to update index: {}", e))
@@ -1828,9 +1874,14 @@ impl Collection {
             .expect("Column family should exist");
 
         for index in indexes {
-            let field_value = extract_field_value(doc_value, &index.field);
-            if !field_value.is_null() {
-                let entry_key = Self::idx_entry_key(&index.name, &field_value, doc_key);
+            let field_values: Vec<Value> = index
+                .fields
+                .iter()
+                .map(|f| extract_field_value(doc_value, f))
+                .collect();
+                
+            if !field_values.iter().all(|v| v.is_null()) {
+                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 db.delete_cf(cf, entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
@@ -1859,7 +1910,7 @@ impl Collection {
     pub fn create_index(
         &self,
         name: String,
-        field: String,
+        fields: Vec<String>,
         index_type: IndexType,
         unique: bool,
     ) -> DbResult<IndexStats> {
@@ -1872,7 +1923,7 @@ impl Collection {
         }
 
         // Create index metadata
-        let index = Index::new(name.clone(), field.clone(), index_type.clone(), unique);
+        let index = Index::new(name.clone(), fields.clone(), index_type.clone(), unique);
         let index_bytes = serde_json::to_vec(&index)?;
 
         // Store index metadata and build index
@@ -1894,9 +1945,13 @@ impl Collection {
 
         for doc in &docs {
             let doc_value = doc.to_value();
-            let field_value = extract_field_value(&doc_value, &field);
-            if !field_value.is_null() {
-                let entry_key = Self::idx_entry_key(&name, &field_value, &doc.key);
+            let field_values: Vec<Value> = fields
+                .iter()
+                .map(|f| extract_field_value(&doc_value, f))
+                .collect();
+                
+            if !field_values.iter().all(|v| v.is_null()) {
+                let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
                 db.put_cf(cf, entry_key, doc.key.as_bytes())
                     .map_err(|e| DbError::InternalError(format!("Failed to build index: {}", e)))?;
             }
@@ -1904,7 +1959,8 @@ impl Collection {
 
         Ok(IndexStats {
             name,
-            field,
+            field: fields.first().cloned().unwrap_or_default(),
+            fields,
             index_type,
             unique,
             unique_values: docs.len(),
@@ -2074,9 +2130,14 @@ impl Collection {
             for doc in &docs {
                 let doc_value = doc.to_value();
                 for index in &indexes {
-                    let field_value = extract_field_value(&doc_value, &index.field);
-                    if !field_value.is_null() {
-                        let entry_key = Self::idx_entry_key(&index.name, &field_value, &doc.key);
+                    // Extract values for all fields in the compound index
+                    let field_values: Vec<Value> = index.fields.iter()
+                        .map(|f| extract_field_value(&doc_value, f))
+                        .collect();
+                    
+                    // Index if at least one field is not null
+                    if !field_values.iter().all(|v| v.is_null()) {
+                        let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
                         batch.put_cf(cf, entry_key, doc.key.as_bytes());
                     }
                 }
@@ -2130,22 +2191,24 @@ impl Collection {
             for doc in &docs {
                 let doc_value = doc.to_value();
                 for ft_index in &ft_indexes {
-                    let field_value = extract_field_value(&doc_value, &ft_index.field);
-                    if let Some(text) = field_value.as_str() {
-                        // Index terms
-                        let terms = tokenize(text);
-                        for term in &terms {
-                            if term.len() >= ft_index.min_length {
-                                let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                batch.put_cf(cf, term_key, doc.key.as_bytes());
+                    for field in &ft_index.fields {
+                        let field_value = extract_field_value(&doc_value, field);
+                        if let Some(text) = field_value.as_str() {
+                            // Index terms
+                            let terms = tokenize(text);
+                            for term in &terms {
+                                if term.len() >= ft_index.min_length {
+                                    let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                    batch.put_cf(cf, term_key, doc.key.as_bytes());
+                                }
                             }
-                        }
 
-                        // Index n-grams
-                        let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                        for ngram in &ngrams {
-                            let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
-                            batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                            // Index n-grams
+                            let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                            for ngram in &ngrams {
+                                let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, &doc.key);
+                                batch.put_cf(cf, ngram_key, doc.key.as_bytes());
+                            }
                         }
                     }
                 }
@@ -2185,7 +2248,8 @@ impl Collection {
 
         Some(IndexStats {
             name: index.name,
-            field: index.field,
+            fields: index.fields.clone(),
+            field: index.fields.first().cloned().unwrap_or_default(),
             index_type: index.index_type,
             unique: index.unique,
             unique_values: count,
@@ -2210,7 +2274,8 @@ impl Collection {
                     break;
                 }
                 if let Ok(index) = serde_json::from_slice::<Index>(&value) {
-                    if index.field == field {
+                    // Check if field is the first field in the index (prefix match)
+                    if index.fields.first().map(|s| s.as_str()) == Some(field) {
                         return Some(index);
                     }
                 }
@@ -2648,7 +2713,7 @@ impl Collection {
     pub fn get_fulltext_index_for_field(&self, field: &str) -> Option<String> {
         self.get_all_fulltext_indexes()
             .into_iter()
-            .find(|idx| idx.field == field)
+            .find(|idx| idx.fields.contains(&field.to_string()))
             .map(|idx| idx.name)
     }
 
@@ -2656,7 +2721,7 @@ impl Collection {
     pub fn create_fulltext_index(
         &self,
         name: String,
-        field: String,
+        fields: Vec<String>,
         min_length: Option<usize>,
     ) -> DbResult<IndexStats> {
         if self.get_fulltext_index(&name).is_some() {
@@ -2669,7 +2734,7 @@ impl Collection {
         let min_len = min_length.unwrap_or(3);
         let ft_index = FulltextIndex {
             name: name.clone(),
-            field: field.clone(),
+            fields: fields.clone(),
             min_length: min_len,
         };
         let index_bytes = serde_json::to_vec(&ft_index)?;
@@ -2695,33 +2760,36 @@ impl Collection {
 
         for doc in &docs {
             let doc_value = doc.to_value();
-            let field_value = extract_field_value(&doc_value, &field);
-            if let Some(text) = field_value.as_str() {
-                // Index terms
-                let terms = tokenize(text);
-                for term in &terms {
-                    if term.len() >= min_len {
-                        let term_key = Self::ft_term_key(&name, term, &doc.key);
-                        db.put_cf(cf, term_key, doc.key.as_bytes()).map_err(|e| {
+            for field in &fields {
+                let field_value = extract_field_value(&doc_value, field);
+                if let Some(text) = field_value.as_str() {
+                    // Index terms
+                    let terms = tokenize(text);
+                    for term in &terms {
+                        if term.len() >= min_len {
+                            let term_key = Self::ft_term_key(&name, term, &doc.key);
+                            db.put_cf(cf, term_key, doc.key.as_bytes()).map_err(|e| {
+                                DbError::InternalError(format!("Failed to build fulltext index: {}", e))
+                            })?;
+                        }
+                    }
+
+                    // Index n-grams for fuzzy matching
+                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                    for ngram in &ngrams {
+                        let ngram_key = Self::ft_ngram_key(&name, ngram, &doc.key);
+                        db.put_cf(cf, ngram_key, doc.key.as_bytes()).map_err(|e| {
                             DbError::InternalError(format!("Failed to build fulltext index: {}", e))
                         })?;
                     }
-                }
-
-                // Index n-grams for fuzzy matching
-                let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                for ngram in &ngrams {
-                    let ngram_key = Self::ft_ngram_key(&name, ngram, &doc.key);
-                    db.put_cf(cf, ngram_key, doc.key.as_bytes()).map_err(|e| {
-                        DbError::InternalError(format!("Failed to build fulltext index: {}", e))
-                    })?;
                 }
             }
         }
 
         Ok(IndexStats {
             name,
-            field,
+            fields: fields.clone(),
+            field: fields.first().cloned().unwrap_or_default(),
             index_type: IndexType::Fulltext,
             unique: false,
             unique_values: docs.len(),
@@ -2793,29 +2861,31 @@ impl Collection {
             .expect("Column family should exist");
 
         for ft_index in ft_indexes {
-            let field_value = extract_field_value(doc_value, &ft_index.field);
-            if let Some(text) = field_value.as_str() {
-                // Index terms
-                let terms = tokenize(text);
-                for term in &terms {
-                    if term.len() >= ft_index.min_length {
-                        let term_key = Self::ft_term_key(&ft_index.name, term, doc_key);
-                        db.put_cf(cf, term_key, doc_key.as_bytes()).map_err(|e| {
-                            DbError::InternalError(format!(
-                                "Failed to update fulltext index: {}",
-                                e
-                            ))
+            for field in &ft_index.fields {
+                let field_value = extract_field_value(doc_value, field);
+                if let Some(text) = field_value.as_str() {
+                    // Index terms
+                    let terms = tokenize(text);
+                    for term in &terms {
+                        if term.len() >= ft_index.min_length {
+                            let term_key = Self::ft_term_key(&ft_index.name, term, doc_key);
+                            db.put_cf(cf, term_key, doc_key.as_bytes()).map_err(|e| {
+                                DbError::InternalError(format!(
+                                    "Failed to update fulltext index: {}",
+                                    e
+                                ))
+                            })?;
+                        }
+                    }
+
+                    // Index n-grams
+                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                    for ngram in &ngrams {
+                        let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
+                        db.put_cf(cf, ngram_key, doc_key.as_bytes()).map_err(|e| {
+                            DbError::InternalError(format!("Failed to update fulltext index: {}", e))
                         })?;
                     }
-                }
-
-                // Index n-grams
-                let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                for ngram in &ngrams {
-                    let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
-                    db.put_cf(cf, ngram_key, doc_key.as_bytes()).map_err(|e| {
-                        DbError::InternalError(format!("Failed to update fulltext index: {}", e))
-                    })?;
                 }
             }
         }
@@ -2836,22 +2906,24 @@ impl Collection {
             .expect("Column family should exist");
 
         for ft_index in ft_indexes {
-            let field_value = extract_field_value(doc_value, &ft_index.field);
-            if let Some(text) = field_value.as_str() {
-                // Remove terms
-                let terms = tokenize(text);
-                for term in &terms {
-                    if term.len() >= ft_index.min_length {
-                        let term_key = Self::ft_term_key(&ft_index.name, term, doc_key);
-                        let _ = db.delete_cf(cf, term_key);
+            for field in &ft_index.fields {
+                let field_value = extract_field_value(doc_value, field);
+                if let Some(text) = field_value.as_str() {
+                    // Remove terms
+                    let terms = tokenize(text);
+                    for term in &terms {
+                        if term.len() >= ft_index.min_length {
+                            let term_key = Self::ft_term_key(&ft_index.name, term, doc_key);
+                            let _ = db.delete_cf(cf, term_key);
+                        }
                     }
-                }
 
-                // Remove n-grams
-                let ngrams = generate_ngrams(text, NGRAM_SIZE);
-                for ngram in &ngrams {
-                    let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
-                    let _ = db.delete_cf(cf, ngram_key);
+                    // Remove n-grams
+                    let ngrams = generate_ngrams(text, NGRAM_SIZE);
+                    for ngram in &ngrams {
+                        let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
+                        let _ = db.delete_cf(cf, ngram_key);
+                    }
                 }
             }
         }
@@ -2870,7 +2942,7 @@ impl Collection {
         let ft_index = self
             .get_all_fulltext_indexes()
             .into_iter()
-            .find(|idx| idx.field == field)?;
+            .find(|idx| idx.fields.contains(&field.to_string()))?;
 
         let query_terms = tokenize(query);
         let query_ngrams = generate_ngrams(query, NGRAM_SIZE);
@@ -2983,7 +3055,8 @@ impl Collection {
             .iter()
             .map(|idx| IndexStats {
                 name: idx.name.clone(),
-                field: idx.field.clone(),
+                fields: idx.fields.clone(),
+                field: idx.fields.first().cloned().unwrap_or_default(),
                 index_type: IndexType::Fulltext,
                 unique: false,
                 unique_values: 0,

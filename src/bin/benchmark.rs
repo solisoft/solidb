@@ -233,7 +233,7 @@ fn bench_index_lookup(storage: &StorageEngine) {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             IndexType::Persistent,
             false,
         )
@@ -249,7 +249,7 @@ fn bench_index_lookup(storage: &StorageEngine) {
     collection
         .create_index(
             "idx_city".to_string(),
-            "city".to_string(),
+            vec!["city".to_string()],
             IndexType::Hash,
             false,
         )

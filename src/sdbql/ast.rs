@@ -29,6 +29,7 @@ pub enum BodyClause {
     Remove(RemoveClause),
     GraphTraversal(GraphTraversalClause),
     ShortestPath(ShortestPathClause),
+    Collect(CollectClause),
 }
 
 /// Edge direction for graph traversals
@@ -127,6 +128,30 @@ pub struct RemoveClause {
     pub selector: Expression,
     /// The collection to remove from
     pub collection: String,
+}
+
+/// COLLECT var = expr [INTO group] [WITH COUNT INTO count] [AGGREGATE ...]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CollectClause {
+    /// Group variables: (variable_name, expression) pairs
+    pub group_vars: Vec<(String, Expression)>,
+    /// INTO variable (collects grouped documents into an array)
+    pub into_var: Option<String>,
+    /// WITH COUNT INTO variable
+    pub count_var: Option<String>,
+    /// AGGREGATE expressions
+    pub aggregates: Vec<AggregateExpr>,
+}
+
+/// Aggregate expression: var = FUNC(expr)
+#[derive(Debug, Clone, PartialEq)]
+pub struct AggregateExpr {
+    /// Variable to store the result
+    pub variable: String,
+    /// Aggregate function name (SUM, AVG, MIN, MAX, COUNT, LENGTH, etc.)
+    pub function: String,
+    /// Argument expression
+    pub argument: Option<Expression>,
 }
 
 /// SORT expression [ASC|DESC]

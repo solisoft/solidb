@@ -101,6 +101,9 @@ impl Parser {
                 let let_clause = self.parse_let_clause()?;
                 // LET after FOR goes to body_clauses (correlated), not let_clauses
                 body_clauses.push(BodyClause::Let(let_clause));
+            } else if matches!(self.current_token(), Token::Collect) {
+                let collect_clause = self.parse_collect_clause()?;
+                body_clauses.push(BodyClause::Collect(collect_clause));
             } else {
                 break;
             }
@@ -422,6 +425,148 @@ impl Parser {
         Ok(RemoveClause {
             selector,
             collection,
+        })
+    }
+
+    /// Parse COLLECT clause: COLLECT var = expr [, var = expr]* [INTO var] [WITH COUNT INTO var] [AGGREGATE var = FUNC(expr), ...]
+    fn parse_collect_clause(&mut self) -> DbResult<CollectClause> {
+        self.expect(Token::Collect)?;
+
+        let mut group_vars = Vec::new();
+        let mut into_var = None;
+        let mut count_var = None;
+        let mut aggregates = Vec::new();
+
+        // Parse group variables: var = expr [, var = expr]*
+        loop {
+            // Check if we have a variable name followed by =
+            // Need to peek ahead to not consume tokens meant for other clauses
+            if let Token::Identifier(var_name) = self.current_token() {
+                // Peek: check if next token is = (assignment)
+                if let Some(next) = self.tokens.get(self.position + 1) {
+                    if !matches!(next, Token::Assign) {
+                        // Not a group variable assignment, stop parsing group vars
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                
+                let name = var_name.clone();
+                self.advance(); // consume identifier
+                self.advance(); // consume =
+                
+                // Parse the grouping expression
+                let expr = self.parse_expression()?;
+                group_vars.push((name, expr));
+                
+                // Check for comma for more group variables
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Parse optional INTO var
+        if matches!(self.current_token(), Token::Into) {
+            self.advance(); // consume INTO
+            if let Token::Identifier(var_name) = self.current_token() {
+                into_var = Some(var_name.clone());
+                self.advance();
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected variable name after INTO".to_string(),
+                ));
+            }
+        }
+
+        // Parse optional WITH COUNT INTO var
+        if matches!(self.current_token(), Token::With) {
+            self.advance(); // consume WITH
+            if !matches!(self.current_token(), Token::Count) {
+                return Err(DbError::ParseError(
+                    "Expected COUNT after WITH in COLLECT".to_string(),
+                ));
+            }
+            self.advance(); // consume COUNT
+            
+            if !matches!(self.current_token(), Token::Into) {
+                return Err(DbError::ParseError(
+                    "Expected INTO after WITH COUNT".to_string(),
+                ));
+            }
+            self.advance(); // consume INTO
+            
+            if let Token::Identifier(var_name) = self.current_token() {
+                count_var = Some(var_name.clone());
+                self.advance();
+            } else {
+                return Err(DbError::ParseError(
+                    "Expected variable name after WITH COUNT INTO".to_string(),
+                ));
+            }
+        }
+
+        // Parse optional AGGREGATE var = FUNC(expr) [, ...]
+        if matches!(self.current_token(), Token::Aggregate) {
+            self.advance(); // consume AGGREGATE
+            
+            loop {
+                // Parse var = FUNC(expr)
+                if let Token::Identifier(var_name) = self.current_token() {
+                    let var = var_name.clone();
+                    self.advance();
+                    
+                    self.expect(Token::Assign)?;
+                    
+                    // Parse function call: FUNC(expr)
+                    if let Token::Identifier(func_name) = self.current_token() {
+                        let func = func_name.to_uppercase();
+                        self.advance();
+                        
+                        self.expect(Token::LeftParen)?;
+                        
+                        // Parse optional argument
+                        let arg = if matches!(self.current_token(), Token::RightParen) {
+                            None
+                        } else {
+                            Some(self.parse_expression()?)
+                        };
+                        
+                        self.expect(Token::RightParen)?;
+                        
+                        aggregates.push(AggregateExpr {
+                            variable: var,
+                            function: func,
+                            argument: arg,
+                        });
+                    } else {
+                        return Err(DbError::ParseError(
+                            "Expected aggregate function name".to_string(),
+                        ));
+                    }
+                    
+                    // Check for comma for more aggregates
+                    if matches!(self.current_token(), Token::Comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(CollectClause {
+            group_vars,
+            into_var,
+            count_var,
+            aggregates,
         })
     }
 
@@ -970,8 +1115,14 @@ impl Parser {
                 ));
             };
 
-            self.expect(Token::Colon)?;
-            let value = self.parse_expression()?;
+            // Support shorthand syntax: { city } means { city: city }
+            let value = if matches!(self.current_token(), Token::Colon) {
+                self.advance(); // consume :
+                self.parse_expression()?
+            } else {
+                // Shorthand: key becomes both the field name and variable reference
+                Expression::Variable(key.clone())
+            };
 
             fields.push((key, value));
 

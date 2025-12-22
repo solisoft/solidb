@@ -826,7 +826,7 @@
                </div>
 
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
-                 {"type": "persistent", "fields": ["email"], "unique": true}
+                 {"type": "persistent", "field": "email", "unique": true}
                </div>
 
                <div class="mt-4 mb-4">

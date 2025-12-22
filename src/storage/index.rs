@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -198,13 +198,32 @@ pub struct FulltextMatch {
     pub matched_terms: Vec<String>,
 }
 
+/// Custom deserializer for backward compatibility with single 'field'
+pub fn deserialize_fields<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FieldOrFields {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+
+    match FieldOrFields::deserialize(deserializer)? {
+        FieldOrFields::Single(s) => Ok(vec![s]),
+        FieldOrFields::Multiple(v) => Ok(v),
+    }
+}
+
 /// Index metadata stored in RocksDB
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Index {
     /// Index name
     pub name: String,
-    /// Field path being indexed (e.g., "age" or "address.city")
-    pub field: String,
+    /// Field path(s) being indexed (e.g., "age" or ["name", "age"])
+    #[serde(alias = "field", deserialize_with = "deserialize_fields")]
+    pub fields: Vec<String>,
     /// Type of index
     pub index_type: IndexType,
     /// Whether index values must be unique
@@ -213,10 +232,10 @@ pub struct Index {
 
 impl Index {
     /// Create a new index
-    pub fn new(name: String, field: String, index_type: IndexType, unique: bool) -> Self {
+    pub fn new(name: String, fields: Vec<String>, index_type: IndexType, unique: bool) -> Self {
         Self {
             name,
-            field,
+            fields,
             index_type,
             unique,
         }
@@ -227,6 +246,8 @@ impl Index {
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexStats {
     pub name: String,
+    pub fields: Vec<String>,
+    /// Primary field (for backward compatibility)
     pub field: String,
     pub index_type: IndexType,
     pub unique: bool,

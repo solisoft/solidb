@@ -9,8 +9,22 @@
       content="SoliDB - A New High Performance Database Server"
     />
     <meta property="og:image" content="/images/logo.jpg" />
-    <link rel="stylesheet" href="<%= PublicPath("/app.css") %>" /> <link
-    rel="icon" type="image/svg+xml" href="<%= PublicPath("/logo.svg") %>" />
+    <link rel="stylesheet" href="<%= PublicPath("/app.css") %>" /> 
+    <link rel="icon" type="image/svg+xml" href="<%= PublicPath("/logo.svg") %>" />
+    <link rel="manifest" href="/manifest.json" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            })
+            .catch(err => {
+              console.log('ServiceWorker registration failed: ', err);
+            });
+        });
+      }
+    </script>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css"

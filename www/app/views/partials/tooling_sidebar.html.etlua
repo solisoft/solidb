@@ -1,5 +1,5 @@
 <div class="lg:col-span-3">
-  <div class="sticky top-24 space-y-8">
+  <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto space-y-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
     <!-- On This Page Navigation -->
     <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-xl">
       <div class="p-6 border-b border-white/5 bg-white/5">

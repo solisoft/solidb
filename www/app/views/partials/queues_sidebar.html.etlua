@@ -1,5 +1,5 @@
 <div class="hidden lg:block col-span-3">
-  <div class="sticky top-24 space-y-8">
+  <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto space-y-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
     <!-- Navigation Container -->
     <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Queue System</h3>

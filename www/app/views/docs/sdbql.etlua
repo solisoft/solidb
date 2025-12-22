@@ -977,6 +977,115 @@ FOR i IN nums
         </div>
       </section>
 
+      <!-- Group & Aggregate -->
+      <section id="group-aggregate" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div
+            class="p-8 border-b border-white/5 bg-gradient-to-r from-orange-500/10 to-amber-500/10"
+          >
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-orange-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+              Group & Aggregate
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              Use the <code>COLLECT</code> clause to group documents and perform aggregations like counting, summing, or averaging.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Basic Grouping -->
+                <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-5 border-b border-white/5 bg-white/5">
+                    <h3 class="text-lg font-bold text-orange-300 flex items-center">
+                    Basic Grouping
+                    </h3>
+                </div>
+                <div class="p-5 space-y-4">
+                    <p class="text-sm text-gray-400">Group results by one or more fields to find distinct values.</p>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  COLLECT city = doc.city
+  RETURN { city }</code></pre>
+                </div>
+                </div>
+
+                <!-- With COUNT -->
+                <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-5 border-b border-white/5 bg-white/5">
+                    <h3 class="text-lg font-bold text-orange-300 flex items-center">
+                    Counting Groups
+                    </h3>
+                </div>
+                <div class="p-5 space-y-4">
+                    <p class="text-sm text-gray-400">Count the number of items in each group using <code>WITH COUNT INTO</code>.</p>
+                    <pre><code class="language-sql text-sm">FOR doc IN users
+  COLLECT city = doc.city 
+  WITH COUNT INTO count
+  RETURN { city, count }</code></pre>
+                </div>
+                </div>
+            </div>
+
+            <!-- With Aggregation -->
+             <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+               <div class="p-5 border-b border-white/5 bg-white/5">
+                 <h3 class="text-lg font-bold text-orange-300 flex items-center">
+                   Aggregation Functions
+                 </h3>
+               </div>
+               <div class="p-5 space-y-4">
+                 <p class="text-sm text-gray-400">Calculate aggregates using functions like <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code>.</p>
+                 <pre><code class="language-sql text-sm">FOR s IN sales
+  COLLECT product = s.product
+  AGGREGATE 
+    total = SUM(s.amount),
+    average = AVG(s.amount),
+    min_amt = MIN(s.amount),
+    max_amt = MAX(s.amount)
+  RETURN { product, total, average, min_amt, max_amt }</code></pre>
+               </div>
+            </div>
+
+             <!-- Collecting Lists -->
+             <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+               <div class="p-5 border-b border-white/5 bg-white/5">
+                 <h3 class="text-lg font-bold text-orange-300 flex items-center">
+                   Collecting Lists
+                 </h3>
+               </div>
+               <div class="p-5 space-y-4">
+                 <p class="text-sm text-gray-400">Use <code>COLLECT_LIST</code> to aggregate values from the group into an array.</p>
+                 <pre><code class="language-sql text-sm">FOR u IN users
+  COLLECT city = u.city
+  AGGREGATE userNames = COLLECT_LIST(u.name)
+  RETURN { 
+    city, 
+    userNames 
+  }</code></pre>
+               </div>
+            </div>
+
+             <!-- Syntax Reference -->
+             <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-8">
+               <code class="text-sm text-gray-300 font-mono block whitespace-pre overflow-x-auto">COLLECT <span class="text-orange-400">variable</span> = <span class="text-purple-400">expression</span> [, ...]
+[INTO <span class="text-orange-400">groupVariable</span>]
+[WITH COUNT INTO <span class="text-orange-400">countVariable</span>]
+[AGGREGATE <span class="text-orange-400">variable</span> = <span class="text-blue-400">FUNC</span>(<span class="text-purple-400">expression</span>) [, ...]]</code>
+             </div>
+
+          </div>
+        </div>
+      </section>
+
       <!-- Functions -->
       <section id="functions" class="scroll-mt-24">
         <div class="flex items-center mb-8">

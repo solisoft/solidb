@@ -24,6 +24,11 @@ pub enum Token {
     With,
     Remove,
 
+    // Aggregation keywords
+    Collect,
+    Aggregate,
+    Count,
+
     // Graph traversal keywords
     Outbound,
     Inbound,
@@ -232,6 +237,10 @@ impl Lexer {
             "SHORTEST_PATH" => Token::ShortestPath,
             "GRAPH" => Token::Graph,
             "TO" => Token::To,
+            // Aggregation keywords
+            "COLLECT" => Token::Collect,
+            "AGGREGATE" => Token::Aggregate,
+            "COUNT" => Token::Count,
             _ => Token::Identifier(ident),
         }
     }

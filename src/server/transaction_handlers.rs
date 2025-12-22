@@ -419,6 +419,12 @@ pub async fn execute_transactional_sdbql(
                     "Graph traversals not yet supported in transactions".to_string()
                 ));
             }
+            // COLLECT clause - not yet supported in transactions
+            BodyClause::Collect(_) => {
+                return Err(DbError::ExecutionError(
+                    "COLLECT aggregation not yet supported in transactions".to_string()
+                ));
+            }
         }
     }
     

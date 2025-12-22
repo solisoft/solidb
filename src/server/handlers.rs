@@ -3887,7 +3887,8 @@ pub async fn delete_cursor(
 #[derive(Debug, Deserialize)]
 pub struct CreateIndexRequest {
     pub name: String,
-    pub field: String,
+    pub field: Option<String>,
+    pub fields: Option<Vec<String>>,
     #[serde(rename = "type", default = "default_index_type")]
     pub index_type: String,
     #[serde(default)]
@@ -3902,6 +3903,7 @@ fn default_index_type() -> String {
 pub struct CreateIndexResponse {
     pub name: String,
     pub field: String,
+    pub fields: Vec<String>,
     #[serde(rename = "type")]
     pub index_type: IndexType,
     pub unique: bool,
@@ -3921,6 +3923,16 @@ pub async fn create_index(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
+    let fields = if let Some(fields) = req.fields {
+        fields
+    } else if let Some(field) = req.field {
+        vec![field]
+    } else {
+        return Err(DbError::BadRequest(
+            "One of 'field' or 'fields' must be provided".to_string(),
+        ));
+    };
+
     let index_type = match req.index_type.to_lowercase().as_str() {
         "hash" => IndexType::Hash,
         "persistent" | "skiplist" | "btree" => IndexType::Persistent,
@@ -3935,14 +3947,15 @@ pub async fn create_index(
 
     collection.create_index(
         req.name.clone(),
-        req.field.clone(),
+        fields.clone(),
         index_type.clone(),
         req.unique,
     )?;
 
     Ok(Json(CreateIndexResponse {
         name: req.name,
-        field: req.field,
+        field: fields.first().cloned().unwrap_or_default(),
+        fields,
         index_type,
         unique: req.unique,
         status: "created".to_string(),

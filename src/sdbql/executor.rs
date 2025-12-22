@@ -1180,11 +1180,211 @@ impl<'a> QueryExecutor<'a> {
                     }
                     rows = new_rows;
                 }
+
+                BodyClause::Collect(collect) => {
+                    use std::collections::HashMap;
+                    
+                    // Group rows by the collect key(s)
+                    let mut groups: HashMap<String, (Context, Vec<Context>, i64)> = HashMap::new();
+                    
+                    for ctx in rows {
+                        // Evaluate group key expressions
+                        let mut key_parts = Vec::new();
+                        let mut group_ctx = Context::new();
+                        
+                        for (var_name, expr) in &collect.group_vars {
+                            let val = self.evaluate_expr_with_context(expr, &ctx)?;
+                            key_parts.push(serde_json::to_string(&val).unwrap_or_default());
+                            group_ctx.insert(var_name.clone(), val);
+                        }
+                        
+                        let group_key = key_parts.join("|");
+                        
+                        let entry = groups.entry(group_key).or_insert_with(|| {
+                            (group_ctx.clone(), Vec::new(), 0)
+                        });
+                        
+                        // Collect into groups
+                        entry.1.push(ctx.clone());
+                        entry.2 += 1;
+                    }
+                    
+                    // Build result rows from groups
+                    let mut new_rows = Vec::new();
+                    
+                    for (_key, (mut group_ctx, group_docs, count)) in groups {
+                        // Add INTO variable if present
+                        if let Some(ref into_var) = collect.into_var {
+                            let group_array: Vec<Value> = group_docs.iter()
+                                .map(|ctx| {
+                                    // Create an object with all variables in the context
+                                    let obj: serde_json::Map<String, Value> = ctx.iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect();
+                                    Value::Object(obj)
+                                })
+                                .collect();
+                            group_ctx.insert(into_var.clone(), Value::Array(group_array));
+                        }
+                        
+                        // Add COUNT variable if present
+                        if let Some(ref count_var) = collect.count_var {
+                            group_ctx.insert(count_var.clone(), Value::Number(count.into()));
+                        }
+                        
+                        // Compute aggregates
+                        for agg in &collect.aggregates {
+                            let agg_value = self.compute_aggregate(
+                                &agg.function,
+                                &agg.argument,
+                                &group_docs,
+                            )?;
+                            group_ctx.insert(agg.variable.clone(), agg_value);
+                        }
+                        
+                        new_rows.push(group_ctx);
+                    }
+                    
+                    rows = new_rows;
+                }
             }
             i += 1;
         }
 
         Ok(rows)
+    }
+
+    /// Compute aggregate function over group of rows
+    fn compute_aggregate(
+        &self,
+        function: &str,
+        argument: &Option<Expression>,
+        group_docs: &[Context],
+    ) -> DbResult<Value> {
+        match function {
+            "COUNT" => {
+                if argument.is_none() {
+                    // COUNT() - count all rows
+                    Ok(Value::Number((group_docs.len() as i64).into()))
+                } else {
+                    // COUNT(expr) - count non-null values
+                    let mut count = 0i64;
+                    for ctx in group_docs {
+                        if let Some(expr) = argument {
+                            let val = self.evaluate_expr_with_context(expr, ctx)?;
+                            if !val.is_null() {
+                                count += 1;
+                            }
+                        }
+                    }
+                    Ok(Value::Number(count.into()))
+                }
+            }
+            "SUM" => {
+                let mut sum = 0.0f64;
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        if let Some(n) = val.as_f64() {
+                            sum += n;
+                        } else if let Some(n) = val.as_i64() {
+                            sum += n as f64;
+                        }
+                    }
+                }
+                Ok(Value::Number(serde_json::Number::from_f64(sum).unwrap_or_else(|| (sum as i64).into())))
+            }
+            "AVG" => {
+                let mut sum = 0.0f64;
+                let mut count = 0i64;
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        if let Some(n) = val.as_f64() {
+                            sum += n;
+                            count += 1;
+                        } else if let Some(n) = val.as_i64() {
+                            sum += n as f64;
+                            count += 1;
+                        }
+                    }
+                }
+                if count == 0 {
+                    Ok(Value::Null)
+                } else {
+                    let avg = sum / (count as f64);
+                    Ok(Value::Number(serde_json::Number::from_f64(avg).unwrap_or_else(|| (avg as i64).into())))
+                }
+            }
+            "MIN" => {
+                let mut min: Option<Value> = None;
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        if val.is_null() { continue; }
+                        
+                        if min.is_none() {
+                            min = Some(val);
+                        } else if let (Some(cur), Some(new)) = (min.as_ref().and_then(|v| v.as_f64()), val.as_f64()) {
+                            if new < cur {
+                                min = Some(val);
+                            }
+                        } else if let (Some(cur_str), Some(new_str)) = (min.as_ref().and_then(|v| v.as_str()), val.as_str()) {
+                            if new_str < cur_str {
+                                min = Some(val);
+                            }
+                        }
+                    }
+                }
+                Ok(min.unwrap_or(Value::Null))
+            }
+            "MAX" => {
+                let mut max: Option<Value> = None;
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        if val.is_null() { continue; }
+                        
+                        if max.is_none() {
+                            max = Some(val);
+                        } else if let (Some(cur), Some(new)) = (max.as_ref().and_then(|v| v.as_f64()), val.as_f64()) {
+                            if new > cur {
+                                max = Some(val);
+                            }
+                        } else if let (Some(cur_str), Some(new_str)) = (max.as_ref().and_then(|v| v.as_str()), val.as_str()) {
+                            if new_str > cur_str {
+                                max = Some(val);
+                            }
+                        }
+                    }
+                }
+                Ok(max.unwrap_or(Value::Null))
+            }
+            "LENGTH" | "COUNT_DISTINCT" => {
+                use std::collections::HashSet;
+                let mut seen: HashSet<String> = HashSet::new();
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        seen.insert(serde_json::to_string(&val).unwrap_or_default());
+                    }
+                }
+                Ok(Value::Number((seen.len() as i64).into()))
+            }
+            "COLLECT_LIST" | "COLLECT" => {
+                let mut list = Vec::new();
+                if let Some(expr) = argument {
+                    for ctx in group_docs {
+                        let val = self.evaluate_expr_with_context(expr, ctx)?;
+                        list.push(val);
+                    }
+                }
+                Ok(Value::Array(list))
+            }
+            _ => Err(DbError::ExecutionError(format!(
+                "Unknown aggregate function: {}", function
+            ))),
+        }
     }
 
     /// Get documents for a FOR clause source (collection or variable)
