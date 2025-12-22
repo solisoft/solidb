@@ -16,6 +16,6 @@ else
     echo "Failed to kill process $PID (may already be dead or invalid)."
 fi
 
-BEANS_ENV=production ./luaonbeans.org -D . -sX -d -p $PORT -P luaonbeans.pid -L luaonbeans.log > /dev/null 2>&1 &
+BEANS_ENV=production ./luaonbeans.org -D . -s -d -p $PORT -P luaonbeans.pid -L luaonbeans.log > /dev/null 2>&1 &
 
 exit 0
