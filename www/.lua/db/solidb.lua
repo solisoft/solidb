@@ -35,6 +35,7 @@ function SoliDB:Api_run(path, method, params, headers)
     headers = headers,
   })
 
+  Logger(self:Api_url(path))
   Logger(ok)
   Logger(body)
 
@@ -53,6 +54,7 @@ function SoliDB:Auth()
     headers = { ["Content-Type"] = "application/json" }
   })
 
+  Logger(self._db_config.url .. "/auth/login")
   Logger(ok)
   Logger(body)
 
