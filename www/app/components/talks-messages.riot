@@ -1,130 +1,142 @@
 <talks-messages>
     <div class="flex-1 relative min-h-0 flex flex-col">
-        <div ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-6" onscroll={ props.onScroll }>
-            <div class="relative flex items-center py-2">
-                <div class="flex-grow border-t border-gray-800"></div>
-                <span
-                    class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">Today</span>
-                <div class="flex-grow border-t border-gray-800"></div>
-            </div>
+        <div ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-1" onscroll={ props.onScroll }>
             <div if={ !props.messages || props.messages.length===0 } class="text-center text-gray-500 py-8">
                 <i class="fas fa-comments text-4xl mb-4"></i>
                 <p>No messages yet. Start the conversation!</p>
             </div>
-            <div each={ message in props.messages }
-                class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors">
-                <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-baseline mb-1">
-                        <span class="font-bold text-white mr-2 hover:underline cursor-pointer">{ message.sender }</span>
-                        <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
-                    </div>
-                    <div class={ getMessageContentClass(message) }>
-                        <span each={ part in parseMessage(message.text) }>
-                            <span if={ part.type==='text' }>
-                                <span each={ segment in parseTextWithLinks(part.content) }>
-                                    <span if={ segment.type==='text' }>{ segment.content }</span>
-                                    <span if={ segment.type==='mention' } onclick={ ()=> props.goToDm(segment.content)
-                                        } class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer
-                                        font-medium bg-blue-500/10 px-0.5 rounded transition-colors" title={ `DM
-                                        @${segment.content}` }>@{ segment.content }</span>
-                                    <a if={ segment.type==='link' } href={ segment.url } target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="text-blue-400 hover:text-blue-300 hover:underline">{ segment.display
-                                        }</a>
-                                    <code if={ segment.type==='code' }
-                                        class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{ segment.content }</code>
-                                    <strong if={ segment.type==='bold' } class="font-bold text-gray-200">{
-                                        segment.content }</strong>
-                                    <em if={ segment.type==='italic' } class="italic text-gray-300">{ segment.content
-                                        }</em>
-                                    <span if={ segment.type==='strike' } class="line-through text-gray-500">{
-                                        segment.content }</span>
+            <template each={ group in getMessagesByDay() }>
+                <div class="relative flex items-center py-4">
+                    <div class="flex-grow border-t border-gray-800"></div>
+                    <span
+                        class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">{
+                        group.label }</span>
+                    <div class="flex-grow border-t border-gray-800"></div>
+                </div>
+                <div each={ message in group.messages }
+                    class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors">
+                    <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-baseline mb-1">
+                            <span class="font-bold text-white mr-2 hover:underline cursor-pointer">{ message.sender
+                                }</span>
+                            <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
+                        </div>
+                        <div class={ getMessageContentClass(message) }>
+                            <span each={ part in parseMessage(message.text) }>
+                                <span if={ part.type==='text' }>
+                                    <span each={ segment in parseTextWithLinks(part.content) }>
+                                        <span if={ segment.type==='text' }>{ segment.content }</span>
+                                        <span if={ segment.type==='mention' } onclick={ ()=>
+                                            props.goToDm(segment.content)
+                                            } class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer
+                                            font-medium bg-blue-500/10 px-0.5 rounded transition-colors" title={ `DM
+                                            @${segment.content}` }>@{ segment.content }</span>
+                                        <a if={ segment.type==='link' } href={ segment.url } target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="text-blue-400 hover:text-blue-300 hover:underline">{ segment.display
+                                            }</a>
+                                        <code if={ segment.type==='code' }
+                                            class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{ segment.content }</code>
+                                        <strong if={ segment.type==='bold' } class="font-bold text-gray-200">{
+                                            segment.content }</strong>
+                                        <em if={ segment.type==='italic' } class="italic text-gray-300">{
+                                            segment.content
+                                            }</em>
+                                        <span if={ segment.type==='strike' } class="line-through text-gray-500">{
+                                            segment.content }</span>
+                                    </span>
                                 </span>
-                            </span>
-                            <div if={ part.type==='code' }
-                                class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
-                                <div
-                                    class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                    <span class="text-xs font-mono text-gray-500">code</span>
-                                    <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                        part.lang || 'text' }</span>
-                                </div>
-                                <pre
-                                    class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${part.lang || 'text'}` }>{ part.content }</code></pre>
-                            </div>
-                        </span>
-                    </div>
-                    <div each={ url in getMessageUrls(message.text) } class="mt-3">
-                        <div if={ props.ogCache[url] && !props.ogCache[url].error && message.text.trim()===url }
-                            class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg">
-                            <a href={ url } target="_blank" rel="noopener noreferrer" class="block">
-                                <div if={ props.ogCache[url].image }
-                                    class="w-full h-48 bg-gray-800 border-b border-gray-700">
-                                    <img src={ props.ogCache[url].image } class="w-full h-full object-cover" onerror={
-                                        handleImageError } />
-                                </div>
-                                <div class="p-3">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon }
-                                            class="w-4 h-4 rounded" onerror={ (e)=> e.target.style.display='none' } />
-                                        <span class="text-xs text-gray-500">{ props.ogCache[url].site_name ||
-                                            getDomain(url) }</span>
+                                <div if={ part.type==='code' }
+                                    class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+                                    <div
+                                        class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                                        <span class="text-xs font-mono text-gray-500">code</span>
+                                        <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
+                                            part.lang || 'text' }</span>
                                     </div>
-                                    <h4 class="text-sm font-semibold text-white line-clamp-1">{ props.ogCache[url].title
-                                        || url }</h4>
-                                    <p if={ props.ogCache[url].description }
-                                        class="text-xs text-gray-400 line-clamp-2 mt-1">{ props.ogCache[url].description
-                                        }</p>
+                                    <pre
+                                        class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${part.lang || 'text'}` }>{ part.content }</code></pre>
                                 </div>
-                            </a>
+                            </span>
                         </div>
-                    </div>
-                    <div if={ message.code_sample }
-                        class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
-                        <div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                            <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename }</span>
-                            <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                message.code_sample.language }</span>
-                        </div>
-                        <pre
-                            class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${message.code_sample.language || 'text'}` }>{ message.code_sample.code }</code></pre>
-                    </div>
-                    <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap gap-2">
-                        <div each={ attachment in message.attachments } class="relative group/attachment">
-                            <template if={ isImage(attachment) }>
-                                <div onclick={ (e)=> props.openLightbox(attachment, e) } class="block
-                                    cursor-pointer"><img src={ getFileUrl(attachment) } alt={ attachment.filename }
-                                        class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90" />
-                                </div>
-                            </template>
-                            <template if={ !isImage(attachment) }>
-                                <a href={ getFileUrl(attachment) } target="_blank"
-                                    class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300">
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13">
-                                        </path>
-                                    </svg>
-                                    <span class="text-sm truncate max-w-[150px]">{ attachment.filename }</span>
+                        <div each={ url in getMessageUrls(message.text) } class="mt-3">
+                            <div if={ props.ogCache[url] && !props.ogCache[url].error && message.text.trim()===url }
+                                class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg">
+                                <a href={ url } target="_blank" rel="noopener noreferrer" class="block">
+                                    <div if={ props.ogCache[url].image }
+                                        class="w-full h-48 bg-gray-800 border-b border-gray-700">
+                                        <img src={ props.ogCache[url].image } class="w-full h-full object-cover"
+                                            onerror={ handleImageError } />
+                                    </div>
+                                    <div class="p-3">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon }
+                                                class="w-4 h-4 rounded" onerror={ (e)=> e.target.style.display='none' }
+                                            />
+                                            <span class="text-xs text-gray-500">{ props.ogCache[url].site_name ||
+                                                getDomain(url) }</span>
+                                        </div>
+                                        <h4 class="text-sm font-semibold text-white line-clamp-1">{
+                                            props.ogCache[url].title
+                                            || url }</h4>
+                                        <p if={ props.ogCache[url].description }
+                                            class="text-xs text-gray-400 line-clamp-2 mt-1">{
+                                            props.ogCache[url].description
+                                            }</p>
+                                    </div>
                                 </a>
-                            </template>
+                            </div>
                         </div>
-                    </div>
-                    <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
-                        <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
-                            <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
-                                getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
-                                    reaction.users ? reaction.users.length : 0 }</span></button>
+                        <div if={ message.code_sample }
+                            class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+                            <div
+                                class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                                <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename }</span>
+                                <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
+                                    message.code_sample.language }</span>
+                            </div>
+                            <pre
+                                class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${message.code_sample.language || 'text'}` }>{ message.code_sample.code }</code></pre>
                         </div>
-                        <div class="relative group/emoji">
-                            <button
-                                class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100"><i
-                                    class="far fa-smile text-sm"></i></button>
+                        <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap
+                            gap-2">
+                            <div each={ attachment in message.attachments } class="relative group/attachment">
+                                <template if={ isImage(attachment) }>
+                                    <div onclick={ (e)=> props.openLightbox(attachment, e) } class="block
+                                        cursor-pointer"><img src={ getFileUrl(attachment) } alt={ attachment.filename }
+                                            class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90" />
+                                    </div>
+                                </template>
+                                <template if={ !isImage(attachment) }>
+                                    <a href={ getFileUrl(attachment) } target="_blank"
+                                        class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13">
+                                            </path>
+                                        </svg>
+                                        <span class="text-sm truncate max-w-[150px]">{ attachment.filename }</span>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
+                            <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
+                                <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
+                                    getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
+                                        reaction.users ? reaction.users.length : 0 }</span></button>
+                            </div>
+                            <div class="relative group/emoji">
+                                <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) }
+                                    class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700
+                                    transition-colors opacity-0 group-hover:opacity-100"><i
+                                        class="far fa-smile text-sm"></i></button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </template>
         </div>
         <div if={ props.hasNewMessages } class="absolute bottom-6 right-8 z-10 animate-fade-in"><button onclick={
                 props.scrollToLatest }
@@ -148,6 +160,43 @@
             getReactionClass(reaction) {
                 const isMe = reaction.users && reaction.users.includes(this.getUsername(this.props.currentUser));
                 return 'px-2 py-0.5 rounded text-xs flex items-center border transition-colors ' + (isMe ? 'bg-blue-900/50 border-blue-500 text-blue-300' : 'bg-[#222529] hover:bg-gray-700 border-gray-700');
+            },
+            getMessagesByDay() {
+                if (!this.props.messages || this.props.messages.length === 0) return [];
+
+                const groups = new Map();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+
+                this.props.messages.forEach(message => {
+                    const msgDate = new Date(message.timestamp * 1000);
+                    const msgDay = new Date(msgDate);
+                    msgDay.setHours(0, 0, 0, 0);
+                    const dateKey = msgDay.getTime();
+
+                    if (!groups.has(dateKey)) {
+                        let label;
+                        if (msgDay.getTime() === today.getTime()) {
+                            label = 'Today';
+                        } else if (msgDay.getTime() === yesterday.getTime()) {
+                            label = 'Yesterday';
+                        } else {
+                            label = msgDay.toLocaleDateString('en-US', {
+                                weekday: 'long',
+                                month: 'long',
+                                day: 'numeric',
+                                year: msgDay.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+                            });
+                        }
+                        groups.set(dateKey, { label, messages: [], timestamp: dateKey });
+                    }
+                    groups.get(dateKey).messages.push(message);
+                });
+
+                // Sort by date (oldest first)
+                return Array.from(groups.values()).sort((a, b) => a.timestamp - b.timestamp);
             },
             parseTextWithLinks(text) {
                 if (!text) return [{ type: 'text', content: '' }];

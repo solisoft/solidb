@@ -260,6 +260,16 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         channelRes = db:Sdbql("FOR c IN channels FILTER c.name == 'general' RETURN c").result[1]
     end
 
+    -- Update user's last seen for this channel
+    if channelRes then
+        local seen = current_user.channel_last_seen or {}
+        seen[channelRes._id] = os.time()
+        -- Update the user document
+        db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
+        -- Update local current_user object so it's passed to view correctly
+        current_user.channel_last_seen = seen
+    end
+
     -- Fetch messages for current channel using the resolved channel ID
     local messagesRes = db:Sdbql(
       [[
@@ -372,6 +382,11 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       { channelId = channelRes._id }
     )
     local messages = (messagesRes and messagesRes.result) or {}
+
+    -- Update user's last seen for this channel
+    local seen = current_user.channel_last_seen or {}
+    seen[channelRes._id] = os.time()
+    db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
 
     -- Return JSON data
     SetHeader("Content-Type", "application/json")
@@ -762,14 +777,19 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
 
     -- Create the message
+    local timestamp = os.time()
     local result = db:CreateDocument("messages", {
        channel_id = channel,
        sender = sender,
        text = text,
-       timestamp = os.time(),
+       timestamp = timestamp,
        attachments = attachments,
        reactions = {}
     })
+
+    -- Update channel's latest_message_received
+    -- We filter by _id (if channel arg is an ID) or _key
+    db:Sdbql("FOR c IN channels FILTER c._id == @id OR c._key == @id UPDATE c WITH { latest_message_received: @ts } IN channels", { id = channel, ts = timestamp })
 
     SetStatus(201)
     SetHeader("Content-Type", "application/json")
@@ -907,6 +927,89 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     SetStatus(200)
     SetHeader("Content-Type", "application/json")
     WriteJSON({ success = true, channel = channelName })
+  end,
+
+  join_call = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local channel_id = body.channel_id
+
+    if not channel_id then
+        SetStatus(400)
+        WriteJSON({ error = "Channel ID required" })
+        return
+    end
+
+    -- Get channel
+    local channel = db:GetDocument("channels/" .. channel_id)
+    if not channel then
+        SetStatus(404)
+        WriteJSON({ error = "Channel not found" })
+        return
+    end
+
+    -- Update participants
+    local participants = channel.active_call_participants or {}
+    local exists = false
+    for _, p in ipairs(participants) do
+        if p == current_user._key then exists = true break end
+    end
+
+    if not exists then
+        table.insert(participants, current_user._key)
+        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+    end
+    
+    SetStatus(200)
+    WriteJSON({ success = true, participants = participants })
+  end,
+
+  leave_call = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local channel_id = body.channel_id
+
+    if not channel_id then
+        SetStatus(400)
+        WriteJSON({ error = "Channel ID required" })
+        return
+    end
+
+    -- Get channel
+    local channel = db:GetDocument("channels/" .. channel_id)
+    if not channel then
+        SetStatus(404)
+        WriteJSON({ error = "Channel not found" })
+        return
+    end
+
+    -- Remove from participants
+    local participants = channel.active_call_participants or {}
+    local new_participants = {}
+    for _, p in ipairs(participants) do
+        if p ~= current_user._key then
+            table.insert(new_participants, p)
+        end
+    end
+
+    db:UpdateDocument("channels/" .. channel_id, { active_call_participants = new_participants })
+
+    SetStatus(200)
+    WriteJSON({ success = true })
   end,
 
   -- Send a WebRTC signaling message

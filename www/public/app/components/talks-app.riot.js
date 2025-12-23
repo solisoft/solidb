@@ -1,8 +1,8 @@
-import Sidebar from './talks-sidebar.riot.js'
-import Header from './talks-header.riot.js'
-import Messages from './talks-messages.riot.js'
-import Input from './talks-input.riot.js'
-import Calls from './talks-calls.riot.js'
+import Sidebar from '/app/components/talks-sidebar.riot.js'
+import Header from '/app/components/talks-header.riot.js'
+import Messages from '/app/components/talks-messages.riot.js'
+import Input from '/app/components/talks-input.riot.js'
+import Calls from '/app/components/talks-calls.riot.js'
 import TalksMixin from './talks-common.js'
 
 export default {
@@ -45,6 +45,7 @@ export default {
             isScreenSharing: false,
             localStreamHasVideo: false,
             remoteStreamHasVideo: false,
+            callPeers: [], // Array of { user, stream, hasVideo, isMuted } created from peerConnections
             // User Mention Picker
             showUserPicker: false,
             userPickerPos: { left: 0, bottom: 0 },
@@ -72,6 +73,9 @@ export default {
         this.localStream = null;
         this.remoteStream = null;
         this.peerConnection = null;
+        this.peerConnections = {}; // Map<userId, RTCPeerConnection>
+        this.remoteStreams = {}; // Map<userId, MediaStream>
+        this.activeCallParticipants = [];
         this.iceCandidatesQueue = [];
         // Pre-calculate user channels for DM unread dots
         if (this.state.users && this.props.currentUser) {
@@ -91,6 +95,43 @@ export default {
                 this.state.usersChannels[u._key] = dmMap[dmName] || dmName;
             });
         }
+
+        // Calculate initial unread channels
+        this.calculateUnreadChannels();
+    },
+
+    calculateUnreadChannels() {
+        const unread = {};
+        const userSeen = this.state.currentUser.channel_last_seen || {};
+        const allChannels = [...(this.props.channels || []), ...(this.props.dmChannels || [])];
+
+        allChannels.forEach(c => {
+            const lastSeen = userSeen[c._id] || 0;
+            const lastMsg = c.latest_message_received || 0;
+            // Only mark as unread if new message exists AND it's not the current channel
+            if (lastMsg > lastSeen && c._id !== this.state.channelId) {
+                unread[c._id] = true;
+            }
+        });
+
+        this.state.unreadChannels = unread;
+    },
+
+    updateChannelLastSeen(channelKey) {
+        if (!this.state.currentChannelData) return;
+        const channelId = this.state.currentChannelData._id;
+
+        // Update local state
+        if (!this.state.currentUser.channel_last_seen) {
+            this.state.currentUser.channel_last_seen = {};
+        }
+        this.state.currentUser.channel_last_seen[channelId] = Math.floor(Date.now() / 1000);
+
+        // Debounce server update
+        if (this.lastSeenUpdateTimeout) clearTimeout(this.lastSeenUpdateTimeout);
+        this.lastSeenUpdateTimeout = setTimeout(() => {
+            fetch(`/talks/channel_data?channel=${channelKey}`).catch(e => console.error("Failed to update last seen", e));
+        }, 2000);
     },
 
     sanitizeChannelInput(e) {
@@ -324,6 +365,9 @@ export default {
                     allMessages: newAllMessages
                 });
 
+                // Connect to channel live query to track call state
+                this.connectChannelLiveQuery(data.channelId);
+
                 // Refocus input
                 setTimeout(() => {
                     const input = this.root.querySelector('textarea');
@@ -366,6 +410,50 @@ export default {
             this.signalingWs = null;
         }
         this.hangup();
+        this.hangup();
+    },
+
+    async connectChannelLiveQuery(channelId) {
+        if (this.channelWs) {
+            this.channelWs.onclose = null;
+            this.channelWs.close();
+            this.channelWs = null;
+        }
+
+        try {
+            const tokenRes = await fetch('/talks/livequery_token');
+            if (!tokenRes.ok) return;
+            const { token } = await tokenRes.json();
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+            this.channelWs = new WebSocket(wsUrl);
+
+            this.channelWs.onopen = () => {
+                const query = `FOR c IN channels FILTER c._id == "${channelId}" RETURN c`;
+                this.channelWs.send(JSON.stringify({
+                    type: 'live_query',
+                    database: this.props.dbName || '_system',
+                    query: query
+                }));
+            };
+
+            this.channelWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'query_result' && data.result && data.result.length > 0) {
+                        const channel = data.result[0];
+                        this.update({ currentChannelData: channel });
+                        this.updateCallParticipants(channel.active_call_participants || []);
+                    }
+                } catch (e) { console.error(e); }
+            };
+        } catch (e) { console.error(e); }
+    },
+
+    updateCallParticipants(participants) {
+        this.activeCallParticipants = participants;
+        this.update();
     },
 
     connectPresence() {
@@ -552,6 +640,11 @@ export default {
                             const hasNewItemsInCurrent = hasNewItems && newMessages.some(m => !currentKeys.has(m._key) && String(m.channel_id) === String(this.state.channelId));
 
                             if (hasNewItemsInCurrent) {
+                                // Update last seen timestamp since we are viewing the channel
+                                if (this.state.currentChannelData) {
+                                    this.updateChannelLastSeen(this.state.currentChannelData._key);
+                                }
+
                                 if (!this.isUserScrolledUp) {
                                     setTimeout(() => this.scrollToBottom(true), 50);
                                 } else {
@@ -804,7 +897,7 @@ export default {
     },
 
     // Toggle emoji picker visibility
-    toggleEmojiPicker(e) {
+    toggleEmojiPicker(e, message = null) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -814,6 +907,7 @@ export default {
                 bottom: window.innerHeight - rect.top + 5
             };
         }
+        this.state.emojiPickerContext = message ? { type: 'reaction', message } : { type: 'input' };
         this.update({ showEmojiPicker: !this.state.showEmojiPicker });
     },
 
@@ -988,27 +1082,32 @@ export default {
     },
 
     // Insert emoji at cursor position in textarea
-    insertEmoji(emoji, e) {
+    handleEmojiClick(emoji, e) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
 
-        const textarea = (this.refs && this.refs.messageInput) ||
-            this.root.querySelector('[ref="messageInput"]');
+        if (this.state.emojiPickerContext && this.state.emojiPickerContext.type === 'reaction') {
+            this.toggleReaction(this.state.emojiPickerContext.message, emoji);
+        } else {
+            const textarea = (this.refs && this.refs.messageInput) ||
+                this.root.querySelector('[ref="messageInput"]') || this.root.querySelector('textarea#messageInput');
 
-        if (textarea) {
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const text = textarea.value;
-            textarea.value = text.substring(0, start) + emoji + text.substring(end);
-            // Move cursor after emoji
-            textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
-            textarea.focus();
+            if (textarea) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const text = textarea.value;
+                textarea.value = text.substring(0, start) + emoji + text.substring(end);
+                // Move cursor after emoji
+                textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+                textarea.focus();
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
 
         // Close picker after selection
-        this.update({ showEmojiPicker: false });
+        this.update({ showEmojiPicker: false, emojiPickerContext: null });
     },
 
     // Toggle reaction on a message
@@ -1325,11 +1424,6 @@ export default {
 
     // --- CALLING LOGIC ---
 
-    // Check if current channel is a DM
-    isDMChannel() {
-        return this.state.currentChannel && this.state.currentChannel.startsWith('dm_');
-    },
-
     async connectSignaling() {
         this.processedSignalIds = new Set();
         try {
@@ -1343,7 +1437,6 @@ export default {
 
             this.signalingWs.onopen = () => {
                 console.log('Signaling connected');
-                // Subscribe to signals for ME
                 const myKey = this.props.currentUser._key;
                 const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
 
@@ -1359,10 +1452,8 @@ export default {
                     const data = JSON.parse(event.data);
                     if (data.type === 'query_result' && data.result) {
                         for (const signal of data.result) {
-                            // Process only if not processed
                             if (signal._key && this.processedSignalIds.has(signal._key)) continue;
                             if (signal._key) this.processedSignalIds.add(signal._key);
-
                             await this.handleSignal(signal);
                         }
                     }
@@ -1371,175 +1462,154 @@ export default {
                 }
             };
 
-            this.signalingWs.onclose = () => {
-                setTimeout(() => this.connectSignaling(), 3000);
-            };
+            this.signalingWs.onclose = () => { setTimeout(() => this.connectSignaling(), 3000); };
 
-        } catch (e) {
-            console.error(e);
-            setTimeout(() => this.connectSignaling(), 5000);
-        }
+        } catch (e) { console.error(e); setTimeout(() => this.connectSignaling(), 5000); }
     },
 
     async sendSignal(toUser, type, data) {
         await fetch('/talks/signal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                target_user: toUser,
-                type: type,
-                data: data
-            })
+            body: JSON.stringify({ target_user: toUser, type: type, data: data })
         });
     },
 
-    // Start a call
     async startCall(type) {
-        // Get other user from DM
-        if (!this.isDMChannel()) return;
+        if (!this.state.currentChannelData) return;
+        const channelKey = this.state.currentChannelData._key;
 
-        // Parse channel name: dm_KEY1_KEY2
-        const parts = this.state.currentChannel.split('_');
-        if (parts.length !== 3) {
-            console.error("Invalid channel format for DM call:", this.state.currentChannel);
-            return;
-        }
-
-        const myKey = this.props.currentUser._key;
-        const otherKey = parts[1] === myKey ? parts[2] : parts[1];
-
-        // Find user object
-        const otherUser = this.state.users.find(u => u._key === otherKey);
-        if (!otherUser) return;
+        // Join Call API
+        const res = await fetch('/talks/join_call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel_id: channelKey })
+        });
+        const data = await res.json();
+        if (!res.ok) { console.error("Failed to join call", data); return; }
 
         this.update({
             activeCall: {
-                peer: otherUser,
+                channelId: channelKey,
                 startDate: new Date(),
-                isInitiator: true
             },
             isVideoEnabled: type === 'video',
-            localStreamHasVideo: type === 'video'
+            localStreamHasVideo: type === 'video',
+            callDuration: 0
         });
 
-        // Start timer
         this.callTimer = setInterval(() => {
             this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
         }, 1000);
 
-        await this.setupPeerConnection(otherKey);
-
-        // Add local stream
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: true,
                 video: type === 'video'
             });
-
             this.localStream = stream;
             this.attachLocalStream();
 
-            stream.getTracks().forEach(track => {
-                this.peerConnection.addTrack(track, stream);
-            });
+            const participants = data.participants || [];
+            const myKey = this.props.currentUser._key;
 
-            // Create offer
-            const offer = await this.peerConnection.createOffer();
-            await this.peerConnection.setLocalDescription(offer);
+            let peersToConnect = [];
+            participants.forEach(p => { if (p !== myKey) peersToConnect.push(p); });
 
-            await this.sendSignal(otherKey, 'offer', {
-                sdp: offer,
-                caller_info: this.props.currentUser,
-                call_type: type
-            });
+            // Logic to support Ringing for DMs: Ensure other member is contacted
+            if (this.state.currentChannelData.type === 'dm' && this.state.currentChannelData.members) {
+                const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
+                if (otherMember && !peersToConnect.includes(otherMember)) {
+                    peersToConnect.push(otherMember);
+                }
+            }
 
+            for (const pKey of peersToConnect) {
+                await this.setupPeerConnection(pKey, true);
+            }
         } catch (err) {
             console.error('Error accessing media:', err);
-            alert('Could not access microphone/camera. Please ensure permissions are granted.');
+            alert('Could not access microphone/camera.');
             this.hangup();
         }
     },
 
-    // Incoming call handler
     async handleSignal(signal) {
-        // Simple ignore if old (older than 30s)
         if (Date.now() - signal.timestamp > 30000) return;
-
-        // Ignore if from self (reduntant check)
         if (signal.from_user === this.props.currentUser._key) return;
 
         const data = signal.data;
+        const fromUser = signal.from_user;
 
-        switch (signal.type) {
-            case 'offer':
-                // Handle renegotiation offers during active call
-                if (this.state.activeCall && this.peerConnection && data.call_type === 'renegotiation') {
-                    try {
-                        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                        const answer = await this.peerConnection.createAnswer();
-                        await this.peerConnection.setLocalDescription(answer);
-                        await this.sendSignal(signal.from_user, 'answer', { sdp: answer });
-                    } catch (e) {
-                        console.error("Renegotiation answer failed:", e);
-                    }
-                    break;
-                }
-
-                // New call offer
-                if (this.state.activeCall) {
-                    // Busy
-                    return;
-                }
-
-                // Find user
-                const caller = this.state.users.find(u => u._key === signal.from_user) || { _key: signal.from_user, firstname: 'Unknown', lastname: '' };
-
+        if (!this.state.activeCall) {
+            if (signal.type === 'offer') {
+                const caller = this.state.users.find(u => u._key === fromUser) || { _key: fromUser, firstname: 'Unknown', lastname: '' };
                 this.update({
                     incomingCall: {
                         caller: caller,
                         type: data.call_type,
                         offer: data.sdp,
-                        from_user: signal.from_user
+                        from_user: fromUser
                     }
                 });
-                break;
+            }
+            return;
+        }
 
-            case 'answer':
-                if (this.state.activeCall && this.peerConnection) {
-                    if (this.peerConnection.signalingState !== 'stable') {
-                        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                    } else {
-                        console.warn("Received answer but PC is already stable. Ignoring duplicate answer.");
-                    }
-
-                    // Process queued candidates
-                    while (this.iceCandidatesQueue.length) {
-                        const c = this.iceCandidatesQueue.shift();
-                        if (c) {
-                            try {
-                                await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
-                            } catch (e) { console.error("Error adding queued candidate from Answer", e); }
-                        }
-                    }
-                }
-                break;
-
-            case 'candidate':
-                if (this.state.activeCall && this.peerConnection && this.peerConnection.remoteDescription) {
-                    if (data.candidate) {
+        switch (signal.type) {
+            case 'offer':
+                if (data.call_type === 'renegotiation') {
+                    const pc = this.peerConnections[fromUser];
+                    if (pc) {
                         try {
-                            await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        } catch (e) { console.error("Error adding candidate", e); }
+                            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            const answer = await pc.createAnswer();
+                            await pc.setLocalDescription(answer);
+                            await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                        } catch (e) { console.error("Renegotiation failed", e); }
                     }
-                } else {
-                    // Queue candidates if arrived before PC setup or before Remote Description
-                    this.iceCandidatesQueue.push(data.candidate);
+                    break;
+                }
+
+                await this.setupPeerConnection(fromUser, false);
+                const pc = this.peerConnections[fromUser];
+                if (pc) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                    this.processIceQueue(fromUser);
                 }
                 break;
-
-            case 'bye':
-                this.hangup();
+            case 'answer':
+                const pc2 = this.peerConnections[fromUser];
+                if (pc2) {
+                    await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                    this.processIceQueue(fromUser);
+                }
                 break;
+            case 'candidate':
+                const pc3 = this.peerConnections[fromUser];
+                if (pc3 && pc3.remoteDescription) {
+                    if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } else {
+                    if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
+                    this.iceCandidatesQueue[fromUser].push(data.candidate);
+                }
+                break;
+            case 'bye':
+                this.closePeerConnection(fromUser);
+                break;
+        }
+    },
+
+    processIceQueue(userId) {
+        const q = this.iceCandidatesQueue[userId];
+        if (q && this.peerConnections[userId]) {
+            while (q.length) {
+                const c = q.shift();
+                this.peerConnections[userId].addIceCandidate(new RTCIceCandidate(c));
+            }
         }
     },
 
@@ -1547,139 +1617,129 @@ export default {
         const incoming = this.state.incomingCall;
         if (!incoming) return;
 
+        let channelId = this.state.channelId;
+        if (this.state.usersChannels && this.state.usersChannels[incoming.from_user]) {
+            const dmId = this.state.usersChannels[incoming.from_user];
+            const dmKey = dmId.includes('/') ? dmId.split('/')[1] : dmId;
+            if (dmKey) channelId = dmKey;
+        }
+
+        if (channelId) {
+            fetch('/talks/join_call', {
+                method: 'POST',
+                body: JSON.stringify({ channel_id: channelId })
+            }).catch(e => { });
+        }
+
         this.update({
             incomingCall: null,
             activeCall: {
-                peer: incoming.caller,
                 startDate: new Date(),
-                isInitiator: false
+                channelId: channelId
             },
             isVideoEnabled: incoming.type === 'video',
             localStreamHasVideo: incoming.type === 'video'
         });
 
-        // Start timer
         this.callTimer = setInterval(() => {
             this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
         }, 1000);
 
-        await this.setupPeerConnection(incoming.from_user);
-
-        // Add local stream
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: true,
                 video: incoming.type === 'video'
             });
-
             this.localStream = stream;
             this.attachLocalStream();
 
-            stream.getTracks().forEach(track => {
-                this.peerConnection.addTrack(track, stream);
-            });
+            await this.setupPeerConnection(incoming.from_user, false);
+            const pc = this.peerConnections[incoming.from_user];
 
-            // Set remote desc
-            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+            await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await this.sendSignal(incoming.from_user, 'answer', { sdp: answer });
 
-            // Create answer
-            const answer = await this.peerConnection.createAnswer();
-            await this.peerConnection.setLocalDescription(answer);
-
-            await this.sendSignal(incoming.from_user, 'answer', {
-                sdp: answer
-            });
-
-            // Process queued candidates
-            while (this.iceCandidatesQueue.length) {
-                const c = this.iceCandidatesQueue.shift();
-                if (c) {
-                    try {
-                        await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
-                    } catch (e) { console.error("Error adding queued candidate", e); }
-                }
-            }
+            this.processIceQueue(incoming.from_user);
 
         } catch (err) {
             console.error('Error accepting call:', err);
-            alert('Error accessing media.');
             this.hangup();
         }
     },
 
     declineCall() {
-        // Ideally send a 'decline' signal, but for now just clear UI
-        // await this.sendSignal(this.state.incomingCall.from_user, 'decline', {});
         this.update({ incomingCall: null });
     },
 
-    async setupPeerConnection(remoteUserKey) {
-        const config = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
+    async setupPeerConnection(remoteUserKey, isInitiator) {
+        if (this.peerConnections[remoteUserKey]) return;
 
-        this.peerConnection = new RTCPeerConnection(config);
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const pc = new RTCPeerConnection(config);
+        this.peerConnections[remoteUserKey] = pc;
 
-        this.peerConnection.onicecandidate = (event) => {
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
+        }
+
+        pc.onicecandidate = (event) => {
             if (event.candidate) {
-                this.sendSignal(remoteUserKey, 'candidate', {
-                    candidate: event.candidate
-                });
+                this.sendSignal(remoteUserKey, 'candidate', { candidate: event.candidate });
             }
         };
 
-        this.peerConnection.ontrack = (event) => {
-            this.remoteStream = event.streams[0];
-
-            // Update video state whenever tracks change
-            const updateVideoState = () => {
-                this.update({ remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0 });
-            };
-
-            updateVideoState();
-
-            // Listen for tracks added/removed dynamically (e.g., screen share)
-            this.remoteStream.onaddtrack = updateVideoState;
-            this.remoteStream.onremovetrack = updateVideoState;
-
-            // Attach to video element
-            this.$nextTick(() => {
-                const video = this.root.querySelector('[ref="remoteVideo"]');
-                if (video) {
-                    video.srcObject = this.remoteStream;
-                }
-            });
+        pc.ontrack = (event) => {
+            this.remoteStreams[remoteUserKey] = event.streams[0];
+            this.updateCallPeers();
         };
 
-        this.peerConnection.onconnectionstatechange = () => {
-            if (this.peerConnection.connectionState === 'disconnected' || this.peerConnection.connectionState === 'failed') {
-                this.hangup();
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                this.closePeerConnection(remoteUserKey);
             }
         };
 
-        // Handle renegotiation when tracks are added mid-call (e.g., screen share in audio call)
-        this.peerConnection.onnegotiationneeded = async () => {
-            // Only initiator should create offers during renegotiation
-            if (!this.state.activeCall || !this.state.activeCall.isInitiator) return;
+        pc.onnegotiationneeded = async () => {
+            // Check signaling state to avoid glare? Strict check only allows stable state.
+            if (pc.signalingState !== 'stable') return;
 
             try {
-                const offer = await this.peerConnection.createOffer();
-                await this.peerConnection.setLocalDescription(offer);
-                await this.sendSignal(this.state.activeCall.peer._key, 'offer', {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await this.sendSignal(remoteUserKey, 'offer', {
                     sdp: offer,
-                    caller_info: this.props.currentUser,
                     call_type: 'renegotiation'
                 });
-            } catch (e) {
-                console.error("Renegotiation failed:", e);
-            }
+            } catch (e) { console.error(e); }
         };
+    },
 
-        // Store remoteUserKey for renegotiation
-        this.remoteUserKey = remoteUserKey;
+    closePeerConnection(key) {
+        const pc = this.peerConnections[key];
+        if (pc) {
+            pc.close();
+            delete this.peerConnections[key];
+        }
+        if (this.remoteStreams[key]) {
+            delete this.remoteStreams[key];
+        }
+        this.updateCallPeers();
+    },
+
+    updateCallPeers() {
+        const peers = [];
+        Object.keys(this.peerConnections).forEach(key => {
+            const user = this.state.users.find(u => u._key === key) || { _key: key, firstname: 'User', lastname: key };
+            const stream = this.remoteStreams[key];
+            peers.push({
+                user: user,
+                stream: stream,
+                hasVideo: stream ? stream.getVideoTracks().length > 0 : false
+            });
+        });
+        this.update({ callPeers: peers });
     },
 
     attachLocalStream() {
@@ -1691,35 +1751,33 @@ export default {
         });
     },
 
-    hangup() {
-        if (this.state.activeCall) {
-            this.sendSignal(this.state.activeCall.peer._key, 'bye', {});
+    async hangup() {
+        if (this.state.activeCall && this.state.activeCall.channelId) {
+            fetch('/talks/leave_call', {
+                method: 'POST',
+                body: JSON.stringify({ channel_id: this.state.activeCall.channelId })
+            }).catch(e => { });
         }
+
+        Object.keys(this.peerConnections).forEach(key => {
+            this.sendSignal(key, 'bye', {});
+            this.closePeerConnection(key);
+        });
 
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
         }
-
-        if (this.peerConnection) {
-            this.peerConnection.close();
-        }
-
-        if (this.callTimer) {
-            clearInterval(this.callTimer);
-        }
-
         this.localStream = null;
-        this.remoteStream = null;
-        this.peerConnection = null;
-        this.iceCandidatesQueue = []; // Clear queue
+
+        if (this.callTimer) clearInterval(this.callTimer);
 
         this.update({
             activeCall: null,
             incomingCall: null,
             callDuration: 0,
-            isMuted: false,
-            isVideoEnabled: false,
-            isScreenSharing: false
+            callPeers: [],
+            isScreenSharing: false,
+            localStreamHasVideo: false
         });
     },
 
@@ -1734,123 +1792,113 @@ export default {
     },
 
     async toggleVideo() {
-        // If video is currently enabled, stop it
         if (this.state.isVideoEnabled) {
-            // Stop video track
             const videoTrack = this.localStream.getVideoTracks()[0];
             if (videoTrack) {
                 videoTrack.stop();
                 this.localStream.removeTrack(videoTrack);
             }
-            // Update sender
-            const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-            if (sender) this.peerConnection.removeTrack(sender); // Or we should replace with null, but removeTrack is safer if we want to add later properly
+            this.update({ isVideoEnabled: false, localStreamHasVideo: false });
 
-            this.update({
-                isVideoEnabled: false,
-                localStreamHasVideo: false
+            Object.keys(this.peerConnections).forEach(key => {
+                const pc = this.peerConnections[key];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) pc.removeTrack(sender);
             });
+            return;
+        }
 
-        } else {
-            // Start video
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                const videoTrack = stream.getVideoTracks()[0];
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const videoTrack = stream.getVideoTracks()[0];
+            this.localStream.addTrack(videoTrack);
 
-                this.localStream.addTrack(videoTrack);
-                this.peerConnection.addTrack(videoTrack, this.localStream);
+            this.update({ isVideoEnabled: true, localStreamHasVideo: true });
+            this.attachLocalStream();
 
-                this.update({
-                    isVideoEnabled: true,
-                    localStreamHasVideo: true
-                });
-                this.attachLocalStream();
-            } catch (e) {
-                // User denied permission or other error
-                console.error("Failed to start video", e);
-                this.update({
-                    isVideoEnabled: false,
-                    localStreamHasVideo: false
-                });
-            }
+            Object.keys(this.peerConnections).forEach(key => {
+                const pc = this.peerConnections[key];
+                pc.addTrack(videoTrack, this.localStream);
+            });
+        } catch (e) {
+            console.error("Failed to start video", e);
+            this.update({ isVideoEnabled: false, localStreamHasVideo: false });
         }
     },
 
     async toggleScreenShare() {
         if (this.state.isScreenSharing) {
-            // Stop screen share -> Revert to camera (if was enabled) or nothing
-            // Simple logic: Stop screen track. If we had video enabled diff from screen, we'd need to restore it.
-            // For now, let's just stop screen share and maybe revert to camera if it was on?
-            // Actually, 'isScreenSharing' is simpler if it just replaces the video track.
-
+            // Stop screen share
             const videoTrack = this.localStream.getVideoTracks()[0];
             if (videoTrack) {
                 videoTrack.stop();
                 this.localStream.removeTrack(videoTrack);
             }
-
             this.update({ isScreenSharing: false, localStreamHasVideo: false });
 
-            // If video was supposedly enabled, try to restore camera
+            // Restore camera if enabled
             if (this.state.isVideoEnabled) {
-                // Restore camera
-                // Hack: toggleVideo off then on?
-                // Let's manually restore
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                     const newTrack = stream.getVideoTracks()[0];
                     this.localStream.addTrack(newTrack);
 
-                    // Replace sender
-                    const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(newTrack);
-                    } else {
-                        this.peerConnection.addTrack(newTrack, this.localStream);
-                    }
+                    Object.keys(this.peerConnections).forEach(key => {
+                        const pc = this.peerConnections[key];
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                        if (sender) {
+                            sender.replaceTrack(newTrack);
+                        } else {
+                            pc.addTrack(newTrack, this.localStream);
+                        }
+                    });
                     this.update({ localStreamHasVideo: true });
-                } catch (e) { }
-            }
-        } else {
-            // Start screen share
-            try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const screenTrack = stream.getVideoTracks()[0];
-
-                // Handle user clicking "Stop sharing" chrome UI
-                screenTrack.onended = () => {
-                    if (this.state.isScreenSharing) this.toggleScreenShare();
-                };
-
-                const currentVideoTrack = this.localStream.getVideoTracks()[0];
-                if (currentVideoTrack) {
-                    currentVideoTrack.stop(); // Stop camera
-                    this.localStream.removeTrack(currentVideoTrack);
+                    this.attachLocalStream();
+                } catch (e) {
+                    console.error("Failed to restore camera", e);
                 }
+            } else {
+                Object.keys(this.peerConnections).forEach(key => {
+                    const pc = this.peerConnections[key];
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) pc.removeTrack(sender);
+                });
+            }
+            return;
+        }
 
-                this.localStream.addTrack(screenTrack);
+        // Start screen share
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const screenTrack = stream.getVideoTracks()[0];
 
-                // Replace sender
-                const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            screenTrack.onended = () => {
+                if (this.state.isScreenSharing) this.toggleScreenShare();
+            };
+
+            const currentVideoTrack = this.localStream.getVideoTracks()[0];
+            if (currentVideoTrack) {
+                currentVideoTrack.stop();
+                this.localStream.removeTrack(currentVideoTrack);
+            }
+            this.localStream.addTrack(screenTrack);
+
+            Object.keys(this.peerConnections).forEach(key => {
+                const pc = this.peerConnections[key];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                 if (sender) {
                     sender.replaceTrack(screenTrack);
                 } else {
-                    this.peerConnection.addTrack(screenTrack, this.localStream);
+                    pc.addTrack(screenTrack, this.localStream);
                 }
+            });
 
-                this.update({
-                    isScreenSharing: true,
-                    localStreamHasVideo: true
-                });
-                this.attachLocalStream();
+            this.update({ isScreenSharing: true, localStreamHasVideo: true });
+            this.attachLocalStream();
 
-            } catch (e) {
-                console.error("Screen share failed", e);
-                // If user cancelled, ensure state is reset
-                this.update({ isScreenSharing: false, localStreamHasVideo: this.state.isVideoEnabled });
-                // Re-attach local cam if it was supposed to be on
-                if (this.state.isVideoEnabled) this.attachLocalStream();
-            }
+        } catch (e) {
+            console.error('Screen share failed:', e);
+            this.update({ isScreenSharing: false });
         }
     },
 
@@ -1889,11 +1937,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr1399="expr1399" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr1400="expr1400"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr1401="expr1401"></talks-header><talks-messages expr1402="expr1402"></talks-messages><talks-input expr1403="expr1403"></talks-input></main><talks-calls expr1404="expr1404"></talks-calls><div expr1405="expr1405" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr1411="expr1411" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr1416="expr1416" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr1420="expr1420" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr1439="expr1439" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
+    '<div expr2799="expr2799" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr2800="expr2800"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr2801="expr2801"></talks-header><talks-messages expr2802="expr2802"></talks-messages><talks-input expr2803="expr2803"></talks-input></main><talks-calls expr2804="expr2804"></talks-calls><div expr2805="expr2805" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr2811="expr2811" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr2816="expr2816" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr2820="expr2820" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr2839="expr2839" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
     [
       {
-        redundantAttribute: 'expr1399',
-        selector: '[expr1399]',
+        redundantAttribute: 'expr2799',
+        selector: '[expr2799]',
 
         expressions: [
           {
@@ -2018,8 +2066,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr1400',
-        selector: '[expr1400]'
+        redundantAttribute: 'expr2800',
+        selector: '[expr2800]'
       },
       {
         type: bindingTypes.TAG,
@@ -2081,8 +2129,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr1401',
-        selector: '[expr1401]'
+        redundantAttribute: 'expr2801',
+        selector: '[expr2801]'
       },
       {
         type: bindingTypes.TAG,
@@ -2154,11 +2202,16 @@ export default {
             isBoolean: false,
             name: 'goToDm',
             evaluate: _scope => _scope.goToDm
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'onToggleEmojiPicker',
+            evaluate: _scope => _scope.toggleEmojiPicker
           }
         ],
 
-        redundantAttribute: 'expr1402',
-        selector: '[expr1402]'
+        redundantAttribute: 'expr2802',
+        selector: '[expr2802]'
       },
       {
         type: bindingTypes.TAG,
@@ -2238,8 +2291,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr1403',
-        selector: '[expr1403]'
+        redundantAttribute: 'expr2803',
+        selector: '[expr2803]'
       },
       {
         type: bindingTypes.TAG,
@@ -2297,6 +2350,12 @@ export default {
             evaluate: _scope => _scope.state.remoteStreamHasVideo
           },
           {
+            type: expressionTypes.ATTRIBUTE,
+            isBoolean: false,
+            name: 'callPeers',
+            evaluate: _scope => _scope.state.callPeers
+          },
+          {
             type: expressionTypes.EVENT,
             name: 'onAcceptCall',
             evaluate: _scope => _scope.acceptCall
@@ -2328,17 +2387,17 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr1404',
-        selector: '[expr1404]'
+        redundantAttribute: 'expr2804',
+        selector: '[expr2804]'
       },
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.lightboxImage,
-        redundantAttribute: 'expr1405',
-        selector: '[expr1405]',
+        redundantAttribute: 'expr2805',
+        selector: '[expr2805]',
 
         template: template(
-          '<div expr1406="expr1406" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr1407="expr1407" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr1408="expr1408" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr1409="expr1409" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr1410="expr1410" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
+          '<div expr2806="expr2806" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr2807="expr2807" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr2808="expr2808" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr2809="expr2809" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr2810="expr2810" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
           [
             {
               expressions: [
@@ -2350,8 +2409,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1406',
-              selector: '[expr1406]',
+              redundantAttribute: 'expr2806',
+              selector: '[expr2806]',
 
               expressions: [
                 {
@@ -2362,8 +2421,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1407',
-              selector: '[expr1407]',
+              redundantAttribute: 'expr2807',
+              selector: '[expr2807]',
 
               expressions: [
                 {
@@ -2381,8 +2440,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1408',
-              selector: '[expr1408]',
+              redundantAttribute: 'expr2808',
+              selector: '[expr2808]',
 
               expressions: [
                 {
@@ -2393,8 +2452,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1409',
-              selector: '[expr1409]',
+              redundantAttribute: 'expr2809',
+              selector: '[expr2809]',
 
               expressions: [
                 {
@@ -2412,8 +2471,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1410',
-              selector: '[expr1410]',
+              redundantAttribute: 'expr2810',
+              selector: '[expr2810]',
 
               expressions: [
                 {
@@ -2429,11 +2488,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showEmojiPicker,
-        redundantAttribute: 'expr1411',
-        selector: '[expr1411]',
+        redundantAttribute: 'expr2811',
+        selector: '[expr2811]',
 
         template: template(
-          '<div expr1412="expr1412" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr1413="expr1413" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr1414="expr1414" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr1415="expr1415" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
+          '<div expr2812="expr2812" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr2813="expr2813" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr2814="expr2814" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr2815="expr2815" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
           [
             {
               expressions: [
@@ -2446,8 +2505,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1412',
-              selector: '[expr1412]',
+              redundantAttribute: 'expr2812',
+              selector: '[expr2812]',
 
               expressions: [
                 {
@@ -2475,15 +2534,15 @@ export default {
                       {
                         type: expressionTypes.EVENT,
                         name: 'onclick',
-                        evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
+                        evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
                       }
                     ]
                   }
                 ]
               ),
 
-              redundantAttribute: 'expr1413',
-              selector: '[expr1413]',
+              redundantAttribute: 'expr2813',
+              selector: '[expr2813]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().smileys
@@ -2506,15 +2565,15 @@ export default {
                       {
                         type: expressionTypes.EVENT,
                         name: 'onclick',
-                        evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
+                        evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
                       }
                     ]
                   }
                 ]
               ),
 
-              redundantAttribute: 'expr1414',
-              selector: '[expr1414]',
+              redundantAttribute: 'expr2814',
+              selector: '[expr2814]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().gestures
@@ -2537,15 +2596,15 @@ export default {
                       {
                         type: expressionTypes.EVENT,
                         name: 'onclick',
-                        evaluate: _scope => e => _scope.insertEmoji(_scope.emoji, e)
+                        evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
                       }
                     ]
                   }
                 ]
               ),
 
-              redundantAttribute: 'expr1415',
-              selector: '[expr1415]',
+              redundantAttribute: 'expr2815',
+              selector: '[expr2815]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().objects
@@ -2556,11 +2615,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showUserPicker,
-        redundantAttribute: 'expr1416',
-        selector: '[expr1416]',
+        redundantAttribute: 'expr2816',
+        selector: '[expr2816]',
 
         template: template(
-          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr1417="expr1417"></div></div>',
+          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr2817="expr2817"></div></div>',
           [
             {
               expressions: [
@@ -2578,7 +2637,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr1418="expr1418" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr1419="expr1419" class="text-sm truncate font-medium"> </span>',
+                '<div expr2818="expr2818" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr2819="expr2819" class="text-sm truncate font-medium"> </span>',
                 [
                   {
                     expressions: [
@@ -2599,8 +2658,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1418',
-                    selector: '[expr1418]',
+                    redundantAttribute: 'expr2818',
+                    selector: '[expr2818]',
 
                     expressions: [
                       {
@@ -2618,8 +2677,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1419',
-                    selector: '[expr1419]',
+                    redundantAttribute: 'expr2819',
+                    selector: '[expr2819]',
 
                     expressions: [
                       {
@@ -2635,8 +2694,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr1417',
-              selector: '[expr1417]',
+              redundantAttribute: 'expr2817',
+              selector: '[expr2817]',
               itemName: 'user',
               indexName: 'index',
               evaluate: _scope => _scope.state.filteredUsers
@@ -2647,15 +2706,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showCreateChannelModal,
-        redundantAttribute: 'expr1420',
-        selector: '[expr1420]',
+        redundantAttribute: 'expr2820',
+        selector: '[expr2820]',
 
         template: template(
-          '<div expr1421="expr1421" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr1422="expr1422" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr1423="expr1423" type="checkbox" class="sr-only"/><div expr1424="expr1424"></div><div expr1425="expr1425"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr1426="expr1426" class="mb-4 animate-fade-in"></div><div expr1436="expr1436" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr1437="expr1437" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr1438="expr1438" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
+          '<div expr2821="expr2821" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr2822="expr2822" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr2823="expr2823" type="checkbox" class="sr-only"/><div expr2824="expr2824"></div><div expr2825="expr2825"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr2826="expr2826" class="mb-4 animate-fade-in"></div><div expr2836="expr2836" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr2837="expr2837" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr2838="expr2838" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
           [
             {
-              redundantAttribute: 'expr1421',
-              selector: '[expr1421]',
+              redundantAttribute: 'expr2821',
+              selector: '[expr2821]',
 
               expressions: [
                 {
@@ -2668,8 +2727,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1422',
-              selector: '[expr1422]',
+              redundantAttribute: 'expr2822',
+              selector: '[expr2822]',
 
               expressions: [
                 {
@@ -2685,8 +2744,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1423',
-              selector: '[expr1423]',
+              redundantAttribute: 'expr2823',
+              selector: '[expr2823]',
 
               expressions: [
                 {
@@ -2703,8 +2762,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1424',
-              selector: '[expr1424]',
+              redundantAttribute: 'expr2824',
+              selector: '[expr2824]',
 
               expressions: [
                 {
@@ -2716,8 +2775,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1425',
-              selector: '[expr1425]',
+              redundantAttribute: 'expr2825',
+              selector: '[expr2825]',
 
               expressions: [
                 {
@@ -2731,15 +2790,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.isCreatingPrivate,
-              redundantAttribute: 'expr1426',
-              selector: '[expr1426]',
+              redundantAttribute: 'expr2826',
+              selector: '[expr2826]',
 
               template: template(
-                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr1427="expr1427" class="flex flex-wrap gap-2 mb-2"><span expr1428="expr1428" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr1430="expr1430" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr1431="expr1431" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr1432="expr1432" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
+                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr2827="expr2827" class="flex flex-wrap gap-2 mb-2"><span expr2828="expr2828" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr2830="expr2830" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr2831="expr2831" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr2832="expr2832" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr1427',
-                    selector: '[expr1427]',
+                    redundantAttribute: 'expr2827',
+                    selector: '[expr2827]',
 
                     expressions: [
                       {
@@ -2756,7 +2815,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      ' <button expr1429="expr1429" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
+                      ' <button expr2829="expr2829" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
                       [
                         {
                           expressions: [
@@ -2775,8 +2834,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr1429',
-                          selector: '[expr1429]',
+                          redundantAttribute: 'expr2829',
+                          selector: '[expr2829]',
 
                           expressions: [
                             {
@@ -2789,15 +2848,15 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr1428',
-                    selector: '[expr1428]',
+                    redundantAttribute: 'expr2828',
+                    selector: '[expr2828]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.createChannelMembers
                   },
                   {
-                    redundantAttribute: 'expr1430',
-                    selector: '[expr1430]',
+                    redundantAttribute: 'expr2830',
+                    selector: '[expr2830]',
 
                     expressions: [
                       {
@@ -2808,8 +2867,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1431',
-                    selector: '[expr1431]',
+                    redundantAttribute: 'expr2831',
+                    selector: '[expr2831]',
 
                     expressions: [
                       {
@@ -2826,7 +2885,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      '<div expr1433="expr1433" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr1434="expr1434" class="text-gray-300 text-sm font-medium truncate"> </div><div expr1435="expr1435" class="text-gray-500 text-xs truncate"> </div></div>',
+                      '<div expr2833="expr2833" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr2834="expr2834" class="text-gray-300 text-sm font-medium truncate"> </div><div expr2835="expr2835" class="text-gray-500 text-xs truncate"> </div></div>',
                       [
                         {
                           expressions: [
@@ -2838,8 +2897,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr1433',
-                          selector: '[expr1433]',
+                          redundantAttribute: 'expr2833',
+                          selector: '[expr2833]',
 
                           expressions: [
                             {
@@ -2857,8 +2916,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr1434',
-                          selector: '[expr1434]',
+                          redundantAttribute: 'expr2834',
+                          selector: '[expr2834]',
 
                           expressions: [
                             {
@@ -2872,8 +2931,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr1435',
-                          selector: '[expr1435]',
+                          redundantAttribute: 'expr2835',
+                          selector: '[expr2835]',
 
                           expressions: [
                             {
@@ -2886,8 +2945,8 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr1432',
-                    selector: '[expr1432]',
+                    redundantAttribute: 'expr2832',
+                    selector: '[expr2832]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.filteredCreateChannelUsers
@@ -2898,8 +2957,8 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.createChannelError,
-              redundantAttribute: 'expr1436',
-              selector: '[expr1436]',
+              redundantAttribute: 'expr2836',
+              selector: '[expr2836]',
 
               template: template(
                 ' ',
@@ -2917,8 +2976,8 @@ showCreateChannelModal: false })
               )
             },
             {
-              redundantAttribute: 'expr1437',
-              selector: '[expr1437]',
+              redundantAttribute: 'expr2837',
+              selector: '[expr2837]',
 
               expressions: [
                 {
@@ -2929,8 +2988,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1438',
-              selector: '[expr1438]',
+              redundantAttribute: 'expr2838',
+              selector: '[expr2838]',
 
               expressions: [
                 {
@@ -2957,15 +3016,15 @@ showCreateChannelModal: false })
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showDmPopup,
-        redundantAttribute: 'expr1439',
-        selector: '[expr1439]',
+        redundantAttribute: 'expr2839',
+        selector: '[expr2839]',
 
         template: template(
-          '<div expr1440="expr1440" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr1441="expr1441" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr1442="expr1442" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr1443="expr1443" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr1449="expr1449" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
+          '<div expr2840="expr2840" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr2841="expr2841" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr2842="expr2842" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr2843="expr2843" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr2849="expr2849" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
           [
             {
-              redundantAttribute: 'expr1440',
-              selector: '[expr1440]',
+              redundantAttribute: 'expr2840',
+              selector: '[expr2840]',
 
               expressions: [
                 {
@@ -2976,8 +3035,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1441',
-              selector: '[expr1441]',
+              redundantAttribute: 'expr2841',
+              selector: '[expr2841]',
 
               expressions: [
                 {
@@ -2988,8 +3047,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr1442',
-              selector: '[expr1442]',
+              redundantAttribute: 'expr2842',
+              selector: '[expr2842]',
 
               expressions: [
                 {
@@ -3005,7 +3064,7 @@ showCreateChannelModal: false })
               condition: null,
 
               template: template(
-                '<div class="relative"><div expr1444="expr1444" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr1445="expr1445"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr1446="expr1446" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr1447="expr1447" class="text-xs text-gray-500 italic"></span></div><div expr1448="expr1448" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
+                '<div class="relative"><div expr2844="expr2844" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr2845="expr2845"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr2846="expr2846" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr2847="expr2847" class="text-xs text-gray-500 italic"></span></div><div expr2848="expr2848" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
                 [
                   {
                     expressions: [
@@ -3017,8 +3076,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1444',
-                    selector: '[expr1444]',
+                    redundantAttribute: 'expr2844',
+                    selector: '[expr2844]',
 
                     expressions: [
                       {
@@ -3036,8 +3095,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1445',
-                    selector: '[expr1445]',
+                    redundantAttribute: 'expr2845',
+                    selector: '[expr2845]',
 
                     expressions: [
                       {
@@ -3049,8 +3108,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr1446',
-                    selector: '[expr1446]',
+                    redundantAttribute: 'expr2846',
+                    selector: '[expr2846]',
 
                     expressions: [
                       {
@@ -3066,8 +3125,8 @@ showCreateChannelModal: false })
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.user._key === _scope.props.currentUser._key,
-                    redundantAttribute: 'expr1447',
-                    selector: '[expr1447]',
+                    redundantAttribute: 'expr2847',
+                    selector: '[expr2847]',
 
                     template: template(
                       'You',
@@ -3075,8 +3134,8 @@ showCreateChannelModal: false })
                     )
                   },
                   {
-                    redundantAttribute: 'expr1448',
-                    selector: '[expr1448]',
+                    redundantAttribute: 'expr2848',
+                    selector: '[expr2848]',
 
                     expressions: [
                       {
@@ -3089,8 +3148,8 @@ showCreateChannelModal: false })
                 ]
               ),
 
-              redundantAttribute: 'expr1443',
-              selector: '[expr1443]',
+              redundantAttribute: 'expr2843',
+              selector: '[expr2843]',
               itemName: 'user',
               indexName: null,
               evaluate: _scope => _scope.state.dmPopupUsers
@@ -3098,15 +3157,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.dmPopupUsers.length === 0,
-              redundantAttribute: 'expr1449',
-              selector: '[expr1449]',
+              redundantAttribute: 'expr2849',
+              selector: '[expr2849]',
 
               template: template(
-                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr1450="expr1450"> </p>',
+                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr2850="expr2850"> </p>',
                 [
                   {
-                    redundantAttribute: 'expr1450',
-                    selector: '[expr1450]',
+                    redundantAttribute: 'expr2850',
+                    selector: '[expr2850]',
 
                     expressions: [
                       {

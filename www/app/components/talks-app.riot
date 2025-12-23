@@ -18,7 +18,8 @@
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
                     fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
-                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } />
+                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker
+                    } />
 
                 <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
                     showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
@@ -30,9 +31,9 @@
             <talks-calls incomingCall={ state.incomingCall } activeCall={ state.activeCall } callDuration={
                 state.callDuration } isMuted={ state.isMuted } isVideoEnabled={ state.isVideoEnabled } isScreenSharing={
                 state.isScreenSharing } localStreamHasVideo={ state.localStreamHasVideo } remoteStreamHasVideo={
-                state.remoteStreamHasVideo } onAcceptCall={ acceptCall } onDeclineCall={ declineCall } onToggleMute={
-                toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={ toggleScreenShare } onHangup={ hangup
-                } />
+                state.remoteStreamHasVideo } callPeers={ state.callPeers } onAcceptCall={ acceptCall } onDeclineCall={
+                declineCall } onToggleMute={ toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={
+                toggleScreenShare } onHangup={ hangup } />
 
             <!-- Fullscreen Image Lightbox -->
             <div if={ state.lightboxImage } onclick={ closeLightbox }
@@ -63,17 +64,17 @@
                 <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showEmojiPicker: false }) }></div>
                 <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
                 <div class="flex flex-wrap gap-1 mb-3">
-                    <button each={ emoji in getInputEmojis().smileys } onclick={ (e)=> insertEmoji(emoji, e) }
+                    <button each={ emoji in getInputEmojis().smileys } onclick={ (e)=> handleEmojiClick(emoji, e) }
                         class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
                 </div>
                 <div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div>
                 <div class="flex flex-wrap gap-1 mb-3">
-                    <button each={ emoji in getInputEmojis().gestures } onclick={ (e)=> insertEmoji(emoji, e) }
+                    <button each={ emoji in getInputEmojis().gestures } onclick={ (e)=> handleEmojiClick(emoji, e) }
                         class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
                 </div>
                 <div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div>
                 <div class="flex flex-wrap gap-1 mb-3">
-                    <button each={ emoji in getInputEmojis().objects } onclick={ (e)=> insertEmoji(emoji, e) }
+                    <button each={ emoji in getInputEmojis().objects } onclick={ (e)=> handleEmojiClick(emoji, e) }
                         class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors">{ emoji }</button>
                 </div>
             </div>
@@ -286,11 +287,11 @@
     </style>
 
     <script>
-        import Sidebar from './talks-sidebar.riot.js'
-        import Header from './talks-header.riot.js'
-        import Messages from './talks-messages.riot.js'
-        import Input from './talks-input.riot.js'
-        import Calls from './talks-calls.riot.js'
+        import Sidebar from '/app/components/talks-sidebar.riot.js'
+        import Header from '/app/components/talks-header.riot.js'
+        import Messages from '/app/components/talks-messages.riot.js'
+        import Input from '/app/components/talks-input.riot.js'
+        import Calls from '/app/components/talks-calls.riot.js'
         import TalksMixin from './talks-common.js'
 
         export default {
@@ -328,6 +329,7 @@
                     isScreenSharing: false,
                     localStreamHasVideo: false,
                     remoteStreamHasVideo: false,
+                    callPeers: [], // Array of { user, stream, hasVideo, isMuted } created from peerConnections
                     // User Mention Picker
                     showUserPicker: false,
                     userPickerPos: { left: 0, bottom: 0 },
@@ -355,6 +357,9 @@
                 this.localStream = null;
                 this.remoteStream = null;
                 this.peerConnection = null;
+                this.peerConnections = {}; // Map<userId, RTCPeerConnection>
+                this.remoteStreams = {}; // Map<userId, MediaStream>
+                this.activeCallParticipants = [];
                 this.iceCandidatesQueue = [];
                 // Pre-calculate user channels for DM unread dots
                 if (this.state.users && this.props.currentUser) {
@@ -374,6 +379,43 @@
                         this.state.usersChannels[u._key] = dmMap[dmName] || dmName;
                     });
                 }
+
+                // Calculate initial unread channels
+                this.calculateUnreadChannels();
+            },
+
+            calculateUnreadChannels() {
+                const unread = {};
+                const userSeen = this.state.currentUser.channel_last_seen || {};
+                const allChannels = [...(this.props.channels || []), ...(this.props.dmChannels || [])];
+
+                allChannels.forEach(c => {
+                    const lastSeen = userSeen[c._id] || 0;
+                    const lastMsg = c.latest_message_received || 0;
+                    // Only mark as unread if new message exists AND it's not the current channel
+                    if (lastMsg > lastSeen && c._id !== this.state.channelId) {
+                        unread[c._id] = true;
+                    }
+                });
+
+                this.state.unreadChannels = unread;
+            },
+
+            updateChannelLastSeen(channelKey) {
+                if (!this.state.currentChannelData) return;
+                const channelId = this.state.currentChannelData._id;
+
+                // Update local state
+                if (!this.state.currentUser.channel_last_seen) {
+                    this.state.currentUser.channel_last_seen = {};
+                }
+                this.state.currentUser.channel_last_seen[channelId] = Math.floor(Date.now() / 1000);
+
+                // Debounce server update
+                if (this.lastSeenUpdateTimeout) clearTimeout(this.lastSeenUpdateTimeout);
+                this.lastSeenUpdateTimeout = setTimeout(() => {
+                    fetch(`/talks/channel_data?channel=${channelKey}`).catch(e => console.error("Failed to update last seen", e));
+                }, 2000);
             },
 
             sanitizeChannelInput(e) {
@@ -612,6 +654,9 @@
                             allMessages: newAllMessages
                         });
 
+                        // Connect to channel live query to track call state
+                        this.connectChannelLiveQuery(data.channelId);
+
                         // Refocus input
                         setTimeout(() => {
                             const input = this.root.querySelector('textarea');
@@ -654,7 +699,51 @@
                     this.signalingWs = null;
                 }
                 this.hangup();
+                this.hangup();
             },
+            async connectChannelLiveQuery(channelId) {
+                if (this.channelWs) {
+                    this.channelWs.onclose = null;
+                    this.channelWs.close();
+                    this.channelWs = null;
+                }
+
+                try {
+                    const tokenRes = await fetch('/talks/livequery_token');
+                    if (!tokenRes.ok) return;
+                    const { token } = await tokenRes.json();
+
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+                    this.channelWs = new WebSocket(wsUrl);
+
+                    this.channelWs.onopen = () => {
+                        const query = `FOR c IN channels FILTER c._id == "${channelId}" RETURN c`;
+                        this.channelWs.send(JSON.stringify({
+                            type: 'live_query',
+                            database: this.props.dbName || '_system',
+                            query: query
+                        }));
+                    };
+
+                    this.channelWs.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'query_result' && data.result && data.result.length > 0) {
+                                const channel = data.result[0];
+                                this.update({ currentChannelData: channel });
+                                this.updateCallParticipants(channel.active_call_participants || []);
+                            }
+                        } catch (e) { console.error(e); }
+                    };
+                } catch (e) { console.error(e); }
+            },
+
+            updateCallParticipants(participants) {
+                this.activeCallParticipants = participants;
+                this.update();
+            },
+
             connectPresence() {
                 // Connect to presence WebSocket for online/offline tracking
                 const userId = this.props.currentUser?._key;
@@ -837,6 +926,11 @@
                                     const hasNewItemsInCurrent = hasNewItems && newMessages.some(m => !currentKeys.has(m._key) && String(m.channel_id) === String(this.state.channelId));
 
                                     if (hasNewItemsInCurrent) {
+                                        // Update last seen timestamp since we are viewing the channel
+                                        if (this.state.currentChannelData) {
+                                            this.updateChannelLastSeen(this.state.currentChannelData._key);
+                                        }
+
                                         if (!this.isUserScrolledUp) {
                                             setTimeout(() => this.scrollToBottom(true), 50);
                                         } else {
@@ -1090,7 +1184,7 @@
             },
 
             // Toggle emoji picker visibility
-            toggleEmojiPicker(e) {
+            toggleEmojiPicker(e, message = null) {
                 if (e) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1100,6 +1194,7 @@
                         bottom: window.innerHeight - rect.top + 5
                     };
                 }
+                this.state.emojiPickerContext = message ? { type: 'reaction', message } : { type: 'input' };
                 this.update({ showEmojiPicker: !this.state.showEmojiPicker });
             },
 
@@ -1276,27 +1371,32 @@
             },
 
             // Insert emoji at cursor position in textarea
-            insertEmoji(emoji, e) {
+            handleEmojiClick(emoji, e) {
                 if (e) {
                     e.preventDefault();
                     e.stopPropagation();
                 }
 
-                const textarea = (this.refs && this.refs.messageInput) ||
-                    this.root.querySelector('[ref="messageInput"]');
+                if (this.state.emojiPickerContext && this.state.emojiPickerContext.type === 'reaction') {
+                    this.toggleReaction(this.state.emojiPickerContext.message, emoji);
+                } else {
+                    const textarea = (this.refs && this.refs.messageInput) ||
+                        this.root.querySelector('[ref="messageInput"]') || this.root.querySelector('textarea#messageInput');
 
-                if (textarea) {
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    const text = textarea.value;
-                    textarea.value = text.substring(0, start) + emoji + text.substring(end);
-                    // Move cursor after emoji
-                    textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
-                    textarea.focus();
+                    if (textarea) {
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const text = textarea.value;
+                        textarea.value = text.substring(0, start) + emoji + text.substring(end);
+                        // Move cursor after emoji
+                        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+                        textarea.focus();
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
                 }
 
                 // Close picker after selection
-                this.update({ showEmojiPicker: false });
+                this.update({ showEmojiPicker: false, emojiPickerContext: null });
             },
 
             // Toggle reaction on a message
@@ -1614,11 +1714,6 @@
 
             // --- CALLING LOGIC ---
 
-            // Check if current channel is a DM
-            isDMChannel() {
-                return this.state.currentChannel && this.state.currentChannel.startsWith('dm_');
-            },
-
             async connectSignaling() {
                 this.processedSignalIds = new Set();
                 try {
@@ -1632,7 +1727,6 @@
 
                     this.signalingWs.onopen = () => {
                         console.log('Signaling connected');
-                        // Subscribe to signals for ME
                         const myKey = this.props.currentUser._key;
                         const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
 
@@ -1648,10 +1742,8 @@
                             const data = JSON.parse(event.data);
                             if (data.type === 'query_result' && data.result) {
                                 for (const signal of data.result) {
-                                    // Process only if not processed
                                     if (signal._key && this.processedSignalIds.has(signal._key)) continue;
                                     if (signal._key) this.processedSignalIds.add(signal._key);
-
                                     await this.handleSignal(signal);
                                 }
                             }
@@ -1660,175 +1752,154 @@
                         }
                     };
 
-                    this.signalingWs.onclose = () => {
-                        setTimeout(() => this.connectSignaling(), 3000);
-                    };
+                    this.signalingWs.onclose = () => { setTimeout(() => this.connectSignaling(), 3000); };
 
-                } catch (e) {
-                    console.error(e);
-                    setTimeout(() => this.connectSignaling(), 5000);
-                }
+                } catch (e) { console.error(e); setTimeout(() => this.connectSignaling(), 5000); }
             },
 
             async sendSignal(toUser, type, data) {
                 await fetch('/talks/signal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_user: toUser,
-                        type: type,
-                        data: data
-                    })
+                    body: JSON.stringify({ target_user: toUser, type: type, data: data })
                 });
             },
 
-            // Start a call
             async startCall(type) {
-                // Get other user from DM
-                if (!this.isDMChannel()) return;
+                if (!this.state.currentChannelData) return;
+                const channelKey = this.state.currentChannelData._key;
 
-                // Parse channel name: dm_KEY1_KEY2
-                const parts = this.state.currentChannel.split('_');
-                if (parts.length !== 3) {
-                    console.error("Invalid channel format for DM call:", this.state.currentChannel);
-                    return;
-                }
-
-                const myKey = this.props.currentUser._key;
-                const otherKey = parts[1] === myKey ? parts[2] : parts[1];
-
-                // Find user object
-                const otherUser = this.state.users.find(u => u._key === otherKey);
-                if (!otherUser) return;
+                // Join Call API
+                const res = await fetch('/talks/join_call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channel_id: channelKey })
+                });
+                const data = await res.json();
+                if (!res.ok) { console.error("Failed to join call", data); return; }
 
                 this.update({
                     activeCall: {
-                        peer: otherUser,
+                        channelId: channelKey,
                         startDate: new Date(),
-                        isInitiator: true
                     },
                     isVideoEnabled: type === 'video',
-                    localStreamHasVideo: type === 'video'
+                    localStreamHasVideo: type === 'video',
+                    callDuration: 0
                 });
 
-                // Start timer
                 this.callTimer = setInterval(() => {
                     this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
                 }, 1000);
 
-                await this.setupPeerConnection(otherKey);
-
-                // Add local stream
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({
                         audio: true,
                         video: type === 'video'
                     });
-
                     this.localStream = stream;
                     this.attachLocalStream();
 
-                    stream.getTracks().forEach(track => {
-                        this.peerConnection.addTrack(track, stream);
-                    });
+                    const participants = data.participants || [];
+                    const myKey = this.props.currentUser._key;
 
-                    // Create offer
-                    const offer = await this.peerConnection.createOffer();
-                    await this.peerConnection.setLocalDescription(offer);
+                    let peersToConnect = [];
+                    participants.forEach(p => { if (p !== myKey) peersToConnect.push(p); });
 
-                    await this.sendSignal(otherKey, 'offer', {
-                        sdp: offer,
-                        caller_info: this.props.currentUser,
-                        call_type: type
-                    });
+                    // Logic to support Ringing for DMs: Ensure other member is contacted
+                    if (this.state.currentChannelData.type === 'dm' && this.state.currentChannelData.members) {
+                        const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
+                        if (otherMember && !peersToConnect.includes(otherMember)) {
+                            peersToConnect.push(otherMember);
+                        }
+                    }
 
+                    for (const pKey of peersToConnect) {
+                        await this.setupPeerConnection(pKey, true);
+                    }
                 } catch (err) {
                     console.error('Error accessing media:', err);
-                    alert('Could not access microphone/camera. Please ensure permissions are granted.');
+                    alert('Could not access microphone/camera.');
                     this.hangup();
                 }
             },
 
-            // Incoming call handler
             async handleSignal(signal) {
-                // Simple ignore if old (older than 30s)
                 if (Date.now() - signal.timestamp > 30000) return;
-
-                // Ignore if from self (reduntant check)
                 if (signal.from_user === this.props.currentUser._key) return;
 
                 const data = signal.data;
+                const fromUser = signal.from_user;
 
-                switch (signal.type) {
-                    case 'offer':
-                        // Handle renegotiation offers during active call
-                        if (this.state.activeCall && this.peerConnection && data.call_type === 'renegotiation') {
-                            try {
-                                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                                const answer = await this.peerConnection.createAnswer();
-                                await this.peerConnection.setLocalDescription(answer);
-                                await this.sendSignal(signal.from_user, 'answer', { sdp: answer });
-                            } catch (e) {
-                                console.error("Renegotiation answer failed:", e);
-                            }
-                            break;
-                        }
-
-                        // New call offer
-                        if (this.state.activeCall) {
-                            // Busy
-                            return;
-                        }
-
-                        // Find user
-                        const caller = this.state.users.find(u => u._key === signal.from_user) || { _key: signal.from_user, firstname: 'Unknown', lastname: '' };
-
+                if (!this.state.activeCall) {
+                    if (signal.type === 'offer') {
+                        const caller = this.state.users.find(u => u._key === fromUser) || { _key: fromUser, firstname: 'Unknown', lastname: '' };
                         this.update({
                             incomingCall: {
                                 caller: caller,
                                 type: data.call_type,
                                 offer: data.sdp,
-                                from_user: signal.from_user
+                                from_user: fromUser
                             }
                         });
-                        break;
+                    }
+                    return;
+                }
 
-                    case 'answer':
-                        if (this.state.activeCall && this.peerConnection) {
-                            if (this.peerConnection.signalingState !== 'stable') {
-                                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            } else {
-                                console.warn("Received answer but PC is already stable. Ignoring duplicate answer.");
-                            }
-
-                            // Process queued candidates
-                            while (this.iceCandidatesQueue.length) {
-                                const c = this.iceCandidatesQueue.shift();
-                                if (c) {
-                                    try {
-                                        await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
-                                    } catch (e) { console.error("Error adding queued candidate from Answer", e); }
-                                }
-                            }
-                        }
-                        break;
-
-                    case 'candidate':
-                        if (this.state.activeCall && this.peerConnection && this.peerConnection.remoteDescription) {
-                            if (data.candidate) {
+                switch (signal.type) {
+                    case 'offer':
+                        if (data.call_type === 'renegotiation') {
+                            const pc = this.peerConnections[fromUser];
+                            if (pc) {
                                 try {
-                                    await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                                } catch (e) { console.error("Error adding candidate", e); }
+                                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                    const answer = await pc.createAnswer();
+                                    await pc.setLocalDescription(answer);
+                                    await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                                } catch (e) { console.error("Renegotiation failed", e); }
                             }
-                        } else {
-                            // Queue candidates if arrived before PC setup or before Remote Description
-                            this.iceCandidatesQueue.push(data.candidate);
+                            break;
+                        }
+
+                        await this.setupPeerConnection(fromUser, false);
+                        const pc = this.peerConnections[fromUser];
+                        if (pc) {
+                            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            const answer = await pc.createAnswer();
+                            await pc.setLocalDescription(answer);
+                            await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                            this.processIceQueue(fromUser);
                         }
                         break;
-
-                    case 'bye':
-                        this.hangup();
+                    case 'answer':
+                        const pc2 = this.peerConnections[fromUser];
+                        if (pc2) {
+                            await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            this.processIceQueue(fromUser);
+                        }
                         break;
+                    case 'candidate':
+                        const pc3 = this.peerConnections[fromUser];
+                        if (pc3 && pc3.remoteDescription) {
+                            if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        } else {
+                            if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
+                            this.iceCandidatesQueue[fromUser].push(data.candidate);
+                        }
+                        break;
+                    case 'bye':
+                        this.closePeerConnection(fromUser);
+                        break;
+                }
+            },
+
+            processIceQueue(userId) {
+                const q = this.iceCandidatesQueue[userId];
+                if (q && this.peerConnections[userId]) {
+                    while (q.length) {
+                        const c = q.shift();
+                        this.peerConnections[userId].addIceCandidate(new RTCIceCandidate(c));
+                    }
                 }
             },
 
@@ -1836,139 +1907,129 @@
                 const incoming = this.state.incomingCall;
                 if (!incoming) return;
 
+                let channelId = this.state.channelId;
+                if (this.state.usersChannels && this.state.usersChannels[incoming.from_user]) {
+                    const dmId = this.state.usersChannels[incoming.from_user];
+                    const dmKey = dmId.includes('/') ? dmId.split('/')[1] : dmId;
+                    if (dmKey) channelId = dmKey;
+                }
+
+                if (channelId) {
+                    fetch('/talks/join_call', {
+                        method: 'POST',
+                        body: JSON.stringify({ channel_id: channelId })
+                    }).catch(e => { });
+                }
+
                 this.update({
                     incomingCall: null,
                     activeCall: {
-                        peer: incoming.caller,
                         startDate: new Date(),
-                        isInitiator: false
+                        channelId: channelId
                     },
                     isVideoEnabled: incoming.type === 'video',
                     localStreamHasVideo: incoming.type === 'video'
                 });
 
-                // Start timer
                 this.callTimer = setInterval(() => {
                     this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
                 }, 1000);
 
-                await this.setupPeerConnection(incoming.from_user);
-
-                // Add local stream
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({
                         audio: true,
                         video: incoming.type === 'video'
                     });
-
                     this.localStream = stream;
                     this.attachLocalStream();
 
-                    stream.getTracks().forEach(track => {
-                        this.peerConnection.addTrack(track, stream);
-                    });
+                    await this.setupPeerConnection(incoming.from_user, false);
+                    const pc = this.peerConnections[incoming.from_user];
 
-                    // Set remote desc
-                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+                    await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await this.sendSignal(incoming.from_user, 'answer', { sdp: answer });
 
-                    // Create answer
-                    const answer = await this.peerConnection.createAnswer();
-                    await this.peerConnection.setLocalDescription(answer);
-
-                    await this.sendSignal(incoming.from_user, 'answer', {
-                        sdp: answer
-                    });
-
-                    // Process queued candidates
-                    while (this.iceCandidatesQueue.length) {
-                        const c = this.iceCandidatesQueue.shift();
-                        if (c) {
-                            try {
-                                await this.peerConnection.addIceCandidate(new RTCIceCandidate(c));
-                            } catch (e) { console.error("Error adding queued candidate", e); }
-                        }
-                    }
+                    this.processIceQueue(incoming.from_user);
 
                 } catch (err) {
                     console.error('Error accepting call:', err);
-                    alert('Error accessing media.');
                     this.hangup();
                 }
             },
 
             declineCall() {
-                // Ideally send a 'decline' signal, but for now just clear UI
-                // await this.sendSignal(this.state.incomingCall.from_user, 'decline', {});
                 this.update({ incomingCall: null });
             },
 
-            async setupPeerConnection(remoteUserKey) {
-                const config = {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
-                };
+            async setupPeerConnection(remoteUserKey, isInitiator) {
+                if (this.peerConnections[remoteUserKey]) return;
 
-                this.peerConnection = new RTCPeerConnection(config);
+                const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+                const pc = new RTCPeerConnection(config);
+                this.peerConnections[remoteUserKey] = pc;
 
-                this.peerConnection.onicecandidate = (event) => {
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
+                }
+
+                pc.onicecandidate = (event) => {
                     if (event.candidate) {
-                        this.sendSignal(remoteUserKey, 'candidate', {
-                            candidate: event.candidate
-                        });
+                        this.sendSignal(remoteUserKey, 'candidate', { candidate: event.candidate });
                     }
                 };
 
-                this.peerConnection.ontrack = (event) => {
-                    this.remoteStream = event.streams[0];
-
-                    // Update video state whenever tracks change
-                    const updateVideoState = () => {
-                        this.update({ remoteStreamHasVideo: this.remoteStream.getVideoTracks().length > 0 });
-                    };
-
-                    updateVideoState();
-
-                    // Listen for tracks added/removed dynamically (e.g., screen share)
-                    this.remoteStream.onaddtrack = updateVideoState;
-                    this.remoteStream.onremovetrack = updateVideoState;
-
-                    // Attach to video element
-                    this.$nextTick(() => {
-                        const video = this.root.querySelector('[ref="remoteVideo"]');
-                        if (video) {
-                            video.srcObject = this.remoteStream;
-                        }
-                    });
+                pc.ontrack = (event) => {
+                    this.remoteStreams[remoteUserKey] = event.streams[0];
+                    this.updateCallPeers();
                 };
 
-                this.peerConnection.onconnectionstatechange = () => {
-                    if (this.peerConnection.connectionState === 'disconnected' || this.peerConnection.connectionState === 'failed') {
-                        this.hangup();
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                        this.closePeerConnection(remoteUserKey);
                     }
                 };
 
-                // Handle renegotiation when tracks are added mid-call (e.g., screen share in audio call)
-                this.peerConnection.onnegotiationneeded = async () => {
-                    // Only initiator should create offers during renegotiation
-                    if (!this.state.activeCall || !this.state.activeCall.isInitiator) return;
+                pc.onnegotiationneeded = async () => {
+                    // Check signaling state to avoid glare? Strict check only allows stable state.
+                    if (pc.signalingState !== 'stable') return;
 
                     try {
-                        const offer = await this.peerConnection.createOffer();
-                        await this.peerConnection.setLocalDescription(offer);
-                        await this.sendSignal(this.state.activeCall.peer._key, 'offer', {
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        await this.sendSignal(remoteUserKey, 'offer', {
                             sdp: offer,
-                            caller_info: this.props.currentUser,
                             call_type: 'renegotiation'
                         });
-                    } catch (e) {
-                        console.error("Renegotiation failed:", e);
-                    }
+                    } catch (e) { console.error(e); }
                 };
+            },
 
-                // Store remoteUserKey for renegotiation
-                this.remoteUserKey = remoteUserKey;
+            closePeerConnection(key) {
+                const pc = this.peerConnections[key];
+                if (pc) {
+                    pc.close();
+                    delete this.peerConnections[key];
+                }
+                if (this.remoteStreams[key]) {
+                    delete this.remoteStreams[key];
+                }
+                this.updateCallPeers();
+            },
+
+            updateCallPeers() {
+                const peers = [];
+                Object.keys(this.peerConnections).forEach(key => {
+                    const user = this.state.users.find(u => u._key === key) || { _key: key, firstname: 'User', lastname: key };
+                    const stream = this.remoteStreams[key];
+                    peers.push({
+                        user: user,
+                        stream: stream,
+                        hasVideo: stream ? stream.getVideoTracks().length > 0 : false
+                    });
+                });
+                this.update({ callPeers: peers });
             },
 
             attachLocalStream() {
@@ -1980,35 +2041,33 @@
                 });
             },
 
-            hangup() {
-                if (this.state.activeCall) {
-                    this.sendSignal(this.state.activeCall.peer._key, 'bye', {});
+            async hangup() {
+                if (this.state.activeCall && this.state.activeCall.channelId) {
+                    fetch('/talks/leave_call', {
+                        method: 'POST',
+                        body: JSON.stringify({ channel_id: this.state.activeCall.channelId })
+                    }).catch(e => { });
                 }
+
+                Object.keys(this.peerConnections).forEach(key => {
+                    this.sendSignal(key, 'bye', {});
+                    this.closePeerConnection(key);
+                });
 
                 if (this.localStream) {
                     this.localStream.getTracks().forEach(track => track.stop());
                 }
-
-                if (this.peerConnection) {
-                    this.peerConnection.close();
-                }
-
-                if (this.callTimer) {
-                    clearInterval(this.callTimer);
-                }
-
                 this.localStream = null;
-                this.remoteStream = null;
-                this.peerConnection = null;
-                this.iceCandidatesQueue = []; // Clear queue
+
+                if (this.callTimer) clearInterval(this.callTimer);
 
                 this.update({
                     activeCall: null,
                     incomingCall: null,
                     callDuration: 0,
-                    isMuted: false,
-                    isVideoEnabled: false,
-                    isScreenSharing: false
+                    callPeers: [],
+                    isScreenSharing: false,
+                    localStreamHasVideo: false
                 });
             },
 
@@ -2023,126 +2082,115 @@
             },
 
             async toggleVideo() {
-                // If video is currently enabled, stop it
                 if (this.state.isVideoEnabled) {
-                    // Stop video track
                     const videoTrack = this.localStream.getVideoTracks()[0];
                     if (videoTrack) {
                         videoTrack.stop();
                         this.localStream.removeTrack(videoTrack);
                     }
-                    // Update sender
-                    const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (sender) this.peerConnection.removeTrack(sender); // Or we should replace with null, but removeTrack is safer if we want to add later properly
+                    this.update({ isVideoEnabled: false, localStreamHasVideo: false });
 
-                    this.update({
-                        isVideoEnabled: false,
-                        localStreamHasVideo: false
+                    Object.keys(this.peerConnections).forEach(key => {
+                        const pc = this.peerConnections[key];
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                        if (sender) pc.removeTrack(sender);
                     });
+                    return;
+                }
 
-                } else {
-                    // Start video
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                        const videoTrack = stream.getVideoTracks()[0];
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const videoTrack = stream.getVideoTracks()[0];
+                    this.localStream.addTrack(videoTrack);
 
-                        this.localStream.addTrack(videoTrack);
-                        this.peerConnection.addTrack(videoTrack, this.localStream);
+                    this.update({ isVideoEnabled: true, localStreamHasVideo: true });
+                    this.attachLocalStream();
 
-                        this.update({
-                            isVideoEnabled: true,
-                            localStreamHasVideo: true
-                        });
-                        this.attachLocalStream();
-                    } catch (e) {
-                        // User denied permission or other error
-                        console.error("Failed to start video", e);
-                        this.update({
-                            isVideoEnabled: false,
-                            localStreamHasVideo: false
-                        });
-                    }
+                    Object.keys(this.peerConnections).forEach(key => {
+                        const pc = this.peerConnections[key];
+                        pc.addTrack(videoTrack, this.localStream);
+                    });
+                } catch (e) {
+                    console.error("Failed to start video", e);
+                    this.update({ isVideoEnabled: false, localStreamHasVideo: false });
                 }
             },
 
             async toggleScreenShare() {
                 if (this.state.isScreenSharing) {
-                    // Stop screen share -> Revert to camera (if was enabled) or nothing
-                    // Simple logic: Stop screen track. If we had video enabled diff from screen, we'd need to restore it.
-                    // For now, let's just stop screen share and maybe revert to camera if it was on?
-                    // Actually, 'isScreenSharing' is simpler if it just replaces the video track.
-
+                    // Stop screen share
                     const videoTrack = this.localStream.getVideoTracks()[0];
                     if (videoTrack) {
                         videoTrack.stop();
                         this.localStream.removeTrack(videoTrack);
                     }
-
                     this.update({ isScreenSharing: false, localStreamHasVideo: false });
 
-                    // If video was supposedly enabled, try to restore camera
+                    // Restore camera if enabled
                     if (this.state.isVideoEnabled) {
-                        // Restore camera
-                        // Hack: toggleVideo off then on?
-                        // Let's manually restore
                         try {
                             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                             const newTrack = stream.getVideoTracks()[0];
                             this.localStream.addTrack(newTrack);
 
-                            // Replace sender
-                            const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                            if (sender) {
-                                sender.replaceTrack(newTrack);
-                            } else {
-                                this.peerConnection.addTrack(newTrack, this.localStream);
-                            }
+                            Object.keys(this.peerConnections).forEach(key => {
+                                const pc = this.peerConnections[key];
+                                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                                if (sender) {
+                                    sender.replaceTrack(newTrack);
+                                } else {
+                                    pc.addTrack(newTrack, this.localStream);
+                                }
+                            });
                             this.update({ localStreamHasVideo: true });
-                        } catch (e) { }
-                    }
-                } else {
-                    // Start screen share
-                    try {
-                        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                        const screenTrack = stream.getVideoTracks()[0];
-
-                        // Handle user clicking "Stop sharing" chrome UI
-                        screenTrack.onended = () => {
-                            if (this.state.isScreenSharing) this.toggleScreenShare();
-                        };
-
-                        const currentVideoTrack = this.localStream.getVideoTracks()[0];
-                        if (currentVideoTrack) {
-                            currentVideoTrack.stop(); // Stop camera
-                            this.localStream.removeTrack(currentVideoTrack);
+                            this.attachLocalStream();
+                        } catch (e) {
+                            console.error("Failed to restore camera", e);
                         }
+                    } else {
+                        Object.keys(this.peerConnections).forEach(key => {
+                            const pc = this.peerConnections[key];
+                            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                            if (sender) pc.removeTrack(sender);
+                        });
+                    }
+                    return;
+                }
 
-                        this.localStream.addTrack(screenTrack);
+                // Start screen share
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    const screenTrack = stream.getVideoTracks()[0];
 
-                        // Replace sender
-                        const sender = this.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    screenTrack.onended = () => {
+                        if (this.state.isScreenSharing) this.toggleScreenShare();
+                    };
+
+                    const currentVideoTrack = this.localStream.getVideoTracks()[0];
+                    if (currentVideoTrack) {
+                        currentVideoTrack.stop();
+                        this.localStream.removeTrack(currentVideoTrack);
+                    }
+                    this.localStream.addTrack(screenTrack);
+
+                    Object.keys(this.peerConnections).forEach(key => {
+                        const pc = this.peerConnections[key];
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                         if (sender) {
                             sender.replaceTrack(screenTrack);
                         } else {
-                            this.peerConnection.addTrack(screenTrack, this.localStream);
+                            pc.addTrack(screenTrack, this.localStream);
                         }
+                    });
 
-                        this.update({
-                            isScreenSharing: true,
-                            localStreamHasVideo: true
-                        });
-                        this.attachLocalStream();
+                    this.update({ isScreenSharing: true, localStreamHasVideo: true });
+                    this.attachLocalStream();
 
-                    } catch (e) {
-                        console.error("Screen share failed", e);
-                        // If user cancelled, ensure state is reset
-                        this.update({ isScreenSharing: false, localStreamHasVideo: this.state.isVideoEnabled });
-                        // Re-attach local cam if it was supposed to be on
-                        if (this.state.isVideoEnabled) this.attachLocalStream();
-                    }
+                } catch (e) {
+                    console.error('Screen share failed:', e);
+                    this.update({ isScreenSharing: false });
                 }
             },
-
 
             getEmojiPickerStyle() {
                 return `width: 320px; max-height: 300px; left: ${this.state.emojiPickerPos.left}px; bottom: ${this.state.emojiPickerPos.bottom}px;`;

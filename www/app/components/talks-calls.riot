@@ -37,46 +37,76 @@
         <div if={ props.activeCall } class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in">
             <!-- Header -->
             <div
-                class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start">
-                <div class="flex items-center gap-3">
+                class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start pointer-events-none">
+                <div class="flex items-center gap-3 pointer-events-auto">
                     <div
-                        class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3">
+                        class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3 shadow-lg">
                         <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
                         <span class="text-white font-medium text-sm">{ formatCallDuration(props.callDuration)
                             }</span>
                     </div>
+                    <div class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow">
+                        { (props.callPeers && props.callPeers.length > 0) ? props.callPeers.length + 1 + ' participants'
+                        : 'Calling...' }
+                    </div>
                 </div>
             </div>
 
-            <!-- Video Container -->
-            <div class="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-                <div if={ !props.remoteStreamHasVideo }
-                    class="absolute inset-0 z-0 flex flex-col items-center justify-center p-8">
-                    <div
-                        class="w-32 h-32 rounded-full bg-indigo-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-xl border-4 border-white/10">
-                        { getInitials(getUsername(props.activeCall.peer)) }
+            <!-- Video Grid -->
+            <div class="flex-1 bg-black overflow-y-auto custom-scrollbar p-4 flex items-center justify-center">
+                <div class="flex flex-wrap justify-center items-center gap-4 w-full h-full content-center">
+
+                    <!-- Remote Peers -->
+                    <div each={ peer in props.callPeers }
+                        class="relative bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 transition-all"
+                        style={ getGridStyle(props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
+
+                        <!-- Placeholder -->
+                        <div if={ !peer.hasVideo }
+                            class="absolute inset-0 flex flex-col items-center justify-center z-0">
+                            <div
+                                class="w-20 h-20 rounded-full bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg">
+                                { getInitials(getUsername(peer.user)) }
+                            </div>
+                            <div class="text-white font-bold text-lg">{ getUsername(peer.user) }</div>
+                        </div>
+
+                        <!-- Video -->
+                        <video id={ 'remote-video-' + peer.user._key } autoplay playsinline
+                            class={ 'w-full h-full object-cover z-10 ' + (!peer.hasVideo ? 'hidden' : '' ) }></video>
+
+                        <!-- Name Tag -->
+                        <div
+                            class="absolute bottom-3 left-3 bg-black/60 px-2.5 py-1 rounded-md text-white text-xs backdrop-blur font-medium z-20">
+                            { getUsername(peer.user) }
+                        </div>
                     </div>
-                    <h2 class="text-2xl text-white font-bold text-center mt-4 text-shadow-lg">{
-                        getUsername(props.activeCall.peer) }</h2>
-                    <p class="text-gray-400 mt-2 font-medium">{ props.localStreamHasVideo ? "Calling..." : "Audio Call"
-                        }</p>
+
+                    <!-- Local User (if grid view preferred, or keep as PiP) -->
+                    <!-- Let's put local user in grid if it's a group call, or PiP if 1-on-1? 
+                         Actually, standardizing on grid is easier for now, calls like Zoom/Meet do grid.
+                         But let's keep PiP for 1-on-1 feel if preferred, or just always PiP.
+                         Wait, if I have 3 people, I want to see 3 people.
+                         Let's keep Local Video as PiP for now to minimize disruption, unless requested.
+                    -->
+
                 </div>
 
-                <!-- Remote Video -->
-                <video ref="remoteVideo" autoplay playsinline
-                    class='absolute inset-0 w-full h-full object-contain z-10 { !props.remoteStreamHasVideo ? "hidden" : "" }'></video>
-
                 <!-- Local Video (PiP) -->
-                <div
-                    class='absolute bottom-24 right-6 w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-2xl border border-gray-700 { !props.localStreamHasVideo ? "hidden" : "" }'>
+                <div class={ 'absolute bottom-24 right-6 w-56 aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-600 transition-all hover:scale-105 '
+                    + (!props.localStreamHasVideo ? 'hidden' : '' ) }>
                     <video ref="localVideo" autoplay playsinline muted
                         class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                    <div
+                        class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur">
+                        You
+                    </div>
                 </div>
             </div>
 
             <!-- Controls Toolbar -->
             <div
-                class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0">
+                class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0 z-50">
                 <button onclick={ props.onToggleMute } class={ "p-4 rounded-full transition-all " + (props.isMuted
                     ? "bg-red-600 text-white hover:bg-red-700" : "bg-gray-700 text-white hover:bg-gray-600" ) } title={
                     props.isMuted ? "Unmute" : "Mute" }>
@@ -110,6 +140,41 @@
             ...TalksMixin,
             onMounted() {
                 console.log("Calls mounted");
+            },
+            onUpdated() {
+                this.updateStreams();
+            },
+            updateStreams() {
+                if (this.props.callPeers) {
+                    this.props.callPeers.forEach(peer => {
+                        const videoEl = this.$('#remote-video-' + peer.user._key);
+                        if (videoEl && peer.stream && videoEl.srcObject !== peer.stream) {
+                            videoEl.srcObject = peer.stream;
+                        }
+                    });
+                }
+            },
+            getGridStyle(count) {
+                // Return style for flex items to look like a grid
+                // Basic logic:
+                // 1 peer: full size
+                // 2 peers: 50% width
+                // 3-4 peers: 50% width 
+                // 5+ peers: 33% width
+
+                let basis = '100%';
+                let maxWidth = '1200px';
+
+                if (count > 1) {
+                    basis = 'calc(50% - 1rem)'; // 2 per row
+                    maxWidth = '600px';
+                }
+                if (count > 4) {
+                    basis = 'calc(33.33% - 1rem)'; // 3 per row
+                    maxWidth = '400px';
+                }
+
+                return `flex: 1 1 ${basis}; max-width: ${maxWidth}; aspect-ratio: 16/9;`;
             }
         }
     </script>
