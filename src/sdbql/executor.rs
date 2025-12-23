@@ -3597,10 +3597,8 @@ impl<'a> QueryExecutor<'a> {
                 let input = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("MD5: argument must be a string".to_string())
                 })?;
-                use md5::{Md5, Digest};
-                let mut hasher = Md5::new();
-                hasher.update(input.as_bytes());
-                Ok(Value::String(hex::encode(hasher.finalize())))
+                let digest = md5::compute(input.as_bytes());
+                Ok(Value::String(hex::encode(*digest)))
             }
 
             // SHA256(string)
