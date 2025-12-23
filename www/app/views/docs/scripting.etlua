@@ -204,7 +204,7 @@
                 </li>
                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">solidb.log(message)</span>
-                  <div class="text-xs text-gray-500 mt-1">Log a message to the server console.</div>
+                  <div class="text-xs text-gray-500 mt-1">Log a message. Tables/objects are automatically converted to JSON strings. Visible in <span class="text-white">Scripts > Logs</span>.</div>
                 </li>
                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">solidb.fetch(url, options)</span> <span class="text-gray-500">-&gt; Response</span>

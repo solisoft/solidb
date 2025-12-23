@@ -260,7 +260,7 @@ impl ScriptEngine {
         globals.set("require", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure require: {}", e)))?;
 
         // Set up the Lua environment
-        self.setup_lua_globals(&lua, db_name, context)?;
+        self.setup_lua_globals(&lua, db_name, context, Some((&script.key, &script.name)))?;
 
         // Execute the script
         let chunk = lua.load(&script.code);
@@ -307,7 +307,7 @@ impl ScriptEngine {
         globals.set("require", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure require: {}", e)))?;
 
         // Set up the Lua environment
-        self.setup_lua_globals(&lua, db_name, context)?;
+        self.setup_lua_globals(&lua, db_name, context, Some((&script.key, &script.name)))?;
 
         // Set up WebSocket specific globals
         let ws_table = lua.create_table()
@@ -408,8 +408,7 @@ impl ScriptEngine {
         result
     }
 
-    /// Set up global Lua objects and functions
-    fn setup_lua_globals(&self, lua: &Lua, db_name: &str, context: &ScriptContext) -> Result<(), DbError> {
+    fn setup_lua_globals(&self, lua: &Lua, db_name: &str, context: &ScriptContext, script_info: Option<(&str, &str)>) -> Result<(), DbError> {
         let globals = lua.globals();
 
         // Create 'solidb' namespace
@@ -417,8 +416,55 @@ impl ScriptEngine {
             .map_err(|e| DbError::InternalError(format!("Failed to create solidb table: {}", e)))?;
 
         // solidb.log(msg)
-        let log_fn = lua.create_function(|_, msg: String| {
+        let storage_log = self.storage.clone();
+        let db_log = db_name.to_string();
+        let script_details = script_info.map(|(k, n)| (k.to_string(), n.to_string()));
+
+        let log_fn = lua.create_function(move |lua, val: mlua::Value| {
+            let msg = match val {
+                mlua::Value::String(ref s) => s.to_str()?.to_string(),
+                _ => {
+                    let json_val = lua_to_json_value(lua, val)?;
+                    serde_json::to_string(&json_val).map_err(mlua::Error::external)?
+                }
+            };
+
             tracing::info!("[Lua Script] {}", msg);
+
+            if let Some((sid, sname)) = &script_details {
+                 if let Ok(db) = storage_log.get_database(&db_log) {
+                        let collection_res = db.get_collection("_logs");
+                        let collection = match collection_res {
+                            Ok(c) => Some(c),
+                            Err(DbError::CollectionNotFound(_)) => {
+                                // Try to create it
+                                if db.create_collection("_logs".to_string(), None).is_ok() {
+                                    db.get_collection("_logs").ok()
+                                } else {
+                                    None
+                                }
+                            },
+                            Err(_) => None
+                        };
+
+                        if let Some(collection) = collection {
+                            let timestamp = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64;
+                            
+                            let log_entry = serde_json::json!({
+                                "script_id": sid,
+                                "script_name": sname,
+                                "message": msg,
+                                "timestamp": timestamp,
+                                "level": "INFO"
+                            });
+                            
+                            let _ = collection.insert(log_entry);
+                        }
+                 }
+            }
             Ok(())
         }).map_err(|e| DbError::InternalError(format!("Failed to create log function: {}", e)))?;
         solidb.set("log", log_fn)
