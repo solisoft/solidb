@@ -56,8 +56,10 @@
                 </button>
             </div>
             <div class="relative hidden sm:block">
-                <input type="text" placeholder="Search..."
-                    class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all">
+                <input type="text" placeholder="Search messages..." ref="searchInput" oninput={ handleSearchInput }
+                    onkeydown={ handleSearchKeydown } onfocus={ ()=> props.onSearchFocus && props.onSearchFocus() }
+                class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none
+                focus:border-indigo-500 w-64 transition-all text-gray-200">
                 <i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i>
             </div>
             <button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button>
@@ -81,6 +83,28 @@
             },
             isDMChannel() {
                 return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+            },
+            handleSearchInput(e) {
+                const query = e.target.value;
+                // Only clear if empty, don't auto-search while typing
+                if (query.length === 0 && this.props.onSearchClear) {
+                    this.props.onSearchClear();
+                }
+            },
+            handleSearchKeydown(e) {
+                if (e.key === 'Enter') {
+                    const query = e.target.value;
+                    if (this.props.onSearch && query.length >= 2) {
+                        this.props.onSearch(query);
+                    }
+                } else if (e.key === 'Escape') {
+                    e.target.value = '';
+                    if (this.props.onSearchClear) {
+                        this.props.onSearchClear();
+                    }
+                    // Blur input to allow closing sidebar without clearing if user wants
+                    e.target.blur();
+                }
             }
         }
     </script>

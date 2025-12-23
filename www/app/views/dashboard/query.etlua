@@ -103,7 +103,7 @@
       </div>
     </div>
     <div class="p-0">
-      <div id="queryEditor" style="height: 300px; width: 100%"></div>
+      <div id="queryEditor" style="height: 300px; width: 100%; resize: vertical; overflow: hidden; min-height: 100px;"></div>
     </div>
   </div>
 
@@ -378,8 +378,19 @@
   window.addEventListener("load", function () {
     if (typeof require !== "undefined") {
       require(["vs/editor/editor.main"], function () {
-        editor = monaco.editor.create(document.getElementById("queryEditor"), {
-          value: `FOR doc IN users\n  LIMIT 10\n  RETURN doc`,
+          // Get latest query from history or use default
+          let initialValue = `FOR doc IN users\n  LIMIT 10\n  RETURN doc`;
+          try {
+            const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+            if (history.length > 0) {
+              initialValue = history[0];
+            }
+          } catch (e) {
+            console.error("Failed to load history for initial value", e);
+          }
+
+          editor = monaco.editor.create(document.getElementById("queryEditor"), {
+            value: initialValue,
           language: "sql",
           theme: "vs-dark",
           automaticLayout: true,
@@ -415,7 +426,16 @@
     textarea.id = "fallbackEditor";
     textarea.className =
       "w-full h-full px-4 py-3 bg-gray-900 border-0 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none";
-    textarea.value = `FOR doc IN users\n  LIMIT 10\n  RETURN doc`;
+    // Get latest query from history or use default
+    let initialValue = `FOR doc IN users\n  LIMIT 10\n  RETURN doc`;
+    try {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (history.length > 0) {
+        initialValue = history[0];
+      }
+    } catch (e) {}
+
+    textarea.value = initialValue;
     container.appendChild(textarea);
 
     // Override editor object for fallback

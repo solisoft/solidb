@@ -2007,10 +2007,25 @@ impl Collection {
 
     /// List all indexes
     pub fn list_indexes(&self) -> Vec<IndexStats> {
-        self.get_all_indexes()
+        let mut stats: Vec<IndexStats> = self.get_all_indexes()
             .iter()
             .filter_map(|idx| self.get_index_stats(&idx.name))
-            .collect()
+            .collect();
+
+        // Include fulltext indexes
+        for idx in self.get_all_fulltext_indexes() {
+            stats.push(IndexStats {
+                name: idx.name,
+                fields: idx.fields.clone(),
+                field: idx.fields.first().cloned().unwrap_or_default(),
+                index_type: IndexType::Fulltext,
+                unique: false,
+                unique_values: 0, // Not calculated for fulltext
+                indexed_documents: 0, // Not calculated for fulltext
+            });
+        }
+
+        stats
     }
 
     /// Rebuild all indexes from existing documents

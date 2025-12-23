@@ -44,6 +44,21 @@ local app = {
         pcall(function() db:CreateIndex("channels", { fields = { "name" }, unique = true }) end)
         pcall(function() db:CreateIndex("users", { fields = { "email" }, unique = true }) end)
         pcall(function() db:CreateIndex("messages", { fields = { "channel_id" }, unique = false }) end)
+        
+        -- Create fulltext index on messages.text for search (if it doesn't exist)
+        local existing_indexes = db:GetAllIndexes("messages")
+        local has_fulltext_index = false
+        if existing_indexes and existing_indexes.identifiers then
+            for _, idx in pairs(existing_indexes.identifiers) do
+                if idx.type == "fulltext" and idx.fields and idx.fields[1] == "text" then
+                    has_fulltext_index = true
+                    break
+                end
+            end
+        end
+        if not has_fulltext_index then
+            pcall(function() db:CreateIndex("messages", { fields = { "text" }, type = "fulltext" }) end)
+        end
 
         _G.APP_INITIALIZED = true
     end
@@ -1169,6 +1184,79 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     SetHeader("Content-Type", "application/json")
     SetHeader("Cache-Control", "public, max-age=3600")
     WriteJSON(og)
+  end,
+
+  -- Search messages across channels
+  search = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local query = GetParam("q") or ""
+    local limit = tonumber(GetParam("limit")) or 50
+
+    if query == "" or #query < 2 then
+      SetStatus(200)
+      WriteJSON({ results = {} })
+      return
+    end
+
+    -- Search messages using fulltext index for better performance
+    -- Returns messages with relevance scoring using BM25
+    local search_query = [[
+      LET my_user_key = @user_key
+      LET accessible_channels = (
+        FOR c IN channels
+        FILTER c.type == "standard" 
+           OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+        RETURN c._id
+      )
+      
+      LET ft_matches = FULLTEXT("messages", "text", @query, 2)
+      
+      FOR match IN ft_matches
+        LET m = match.doc
+        FILTER POSITION(accessible_channels, m.channel_id) >= 0
+        
+        LET channel = FIRST(FOR c IN channels FILTER c._id == m.channel_id RETURN c)
+        LET sender_user = FIRST(FOR u IN users FILTER u._key == m.user_key RETURN u)
+        
+        SORT match.score DESC, m.timestamp DESC
+        LIMIT @limit
+        
+        RETURN {
+          _key: m._key,
+          _id: m._id,
+          text: m.text,
+          sender: m.sender,
+          timestamp: m.timestamp,
+          channel_id: m.channel_id,
+          channel_name: channel.name,
+          channel_type: channel.type,
+          sender_firstname: sender_user.firstname,
+          sender_lastname: sender_user.lastname,
+          score: match.score
+        }
+    ]]
+
+    local res = db:Sdbql(search_query, {
+      user_key = current_user._key,
+      query = query,
+      limit = limit
+    })
+
+    local results = {}
+    if res and res.result then
+      results = res.result
+    end
+
+    SetStatus(200)
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({ results = results, query = query })
   end,
 }
 

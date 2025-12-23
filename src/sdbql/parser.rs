@@ -711,53 +711,46 @@ impl Parser {
     fn parse_sort_clause(&mut self) -> DbResult<SortClause> {
         self.expect(Token::Sort)?;
 
-        // Parse expression (could be field path, function call like BM25(...), etc.)
-        let expression = self.parse_expression()?;
+        let mut fields = Vec::new();
 
-        let ascending = match self.current_token() {
-            Token::Desc => {
-                self.advance();
-                false
-            }
-            Token::Asc => {
-                self.advance();
-                true
-            }
-            _ => true, // Default to ascending
-        };
+        loop {
+            // Parse expression (could be field path, function call like BM25(...), etc.)
+            let expression = self.parse_expression()?;
 
-        Ok(SortClause {
-            expression,
-            ascending,
-        })
+            let ascending = match self.current_token() {
+                Token::Desc => {
+                    self.advance();
+                    false
+                }
+                Token::Asc => {
+                    self.advance();
+                    true
+                }
+                _ => true, // Default to ascending
+            };
+
+            fields.push((expression, ascending));
+
+            if matches!(self.current_token(), Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(SortClause { fields })
     }
 
     fn parse_limit_clause(&mut self) -> DbResult<LimitClause> {
         self.expect(Token::Limit)?;
 
-        let first = if let Token::Integer(n) = self.current_token() {
-            let num = *n as usize;
-            self.advance();
-            num
-        } else {
-            return Err(DbError::ParseError(
-                "Expected integer after LIMIT".to_string(),
-            ));
-        };
+        let first = self.parse_expression()?;
 
         // Check for offset, count syntax
         if matches!(self.current_token(), Token::Comma) {
             self.advance();
 
-            let count = if let Token::Integer(n) = self.current_token() {
-                let num = *n as usize;
-                self.advance();
-                num
-            } else {
-                return Err(DbError::ParseError(
-                    "Expected count (integer) after comma in LIMIT".to_string(),
-                ));
-            };
+            let count = self.parse_expression()?;
 
             Ok(LimitClause {
                 offset: first,
@@ -765,7 +758,7 @@ impl Parser {
             })
         } else {
             Ok(LimitClause {
-                offset: 0,
+                offset: Expression::Literal(Value::Number(serde_json::Number::from(0))),
                 count: first,
             })
         }
@@ -1086,6 +1079,13 @@ impl Parser {
                     self.expect(Token::RightParen)?;
                     Ok(expr)
                 }
+            }
+
+            // Allow unparenthesized subqueries in expression position
+            // This enables: FIRST(FOR x IN col RETURN x) or LET x = FOR ...
+            Token::For | Token::Let => {
+                let subquery = self.parse_query(false)?;
+                Ok(Expression::Subquery(Box::new(subquery)))
             }
 
             _ => Err(DbError::ParseError(format!(

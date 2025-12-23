@@ -3945,12 +3945,23 @@ pub async fn create_index(
         }
     };
 
-    collection.create_index(
-        req.name.clone(),
-        fields.clone(),
-        index_type.clone(),
-        req.unique,
-    )?;
+    match index_type {
+        IndexType::Fulltext => {
+            collection.create_fulltext_index(
+                req.name.clone(),
+                fields.clone(),
+                None, // Use default min_length
+            )?;
+        }
+        _ => {
+            collection.create_index(
+                req.name.clone(),
+                fields.clone(),
+                index_type.clone(),
+                req.unique,
+            )?;
+        }
+    }
 
     Ok(Json(CreateIndexResponse {
         name: req.name,
@@ -3999,9 +4010,32 @@ pub async fn delete_index(
 ) -> Result<StatusCode, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
-    collection.drop_index(&index_name)?;
+    
+    // Try dropping as standard index
+    if collection.drop_index(&index_name).is_ok() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    
+    // Try dropping as fulltext index
+    if collection.drop_fulltext_index(&index_name).is_ok() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
 
-    Ok(StatusCode::NO_CONTENT)
+    // Try dropping as geo index
+    if collection.drop_geo_index(&index_name).is_ok() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // Try dropping as TTL index
+    if collection.drop_ttl_index(&index_name).is_ok() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    // If all attempts failed, it genuinely doesn't exist
+    Err(DbError::InvalidDocument(format!(
+        "Index '{}' not found",
+        index_name
+    )))
 }
 
 // ==================== Geo Index Handlers ====================

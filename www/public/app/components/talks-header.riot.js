@@ -22,6 +22,30 @@ export default {
 
     isDMChannel() {
         return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+    },
+
+    handleSearchInput(e) {
+        const query = e.target.value;
+        // Only clear if empty, don't auto-search while typing
+        if (query.length === 0 && this.props.onSearchClear) {
+            this.props.onSearchClear();
+        }
+    },
+
+    handleSearchKeydown(e) {
+        if (e.key === 'Enter') {
+            const query = e.target.value;
+            if (this.props.onSearch && query.length >= 2) {
+                this.props.onSearch(query);
+            }
+        } else if (e.key === 'Escape') {
+            e.target.value = '';
+            if (this.props.onSearchClear) {
+                this.props.onSearchClear();
+            }
+            // Blur input to allow closing sidebar without clearing if user wants
+            e.target.blur();
+        }
     }
   },
 
@@ -31,11 +55,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<header class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md"><div class="flex items-center min-w-0 flex-1"><h2 expr2682="expr2682" class="text-xl font-bold text-white mr-2 truncate flex items-center"><i expr2683="expr2683" class="fas fa-lock text-sm mr-2 text-gray-400"></i><span expr2684="expr2684" class="mr-1"></span> </h2><button expr2685="expr2685" class="text-gray-400 hover:text-white transition-colors"><i expr2686="expr2686"></i></button></div><div class="flex items-center space-x-4"><div expr2687="expr2687" class="relative"></div><div class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2"><button expr2696="expr2696" class="text-gray-400 hover:text-white p-2\n                    rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call"><i class="fas fa-phone"></i></button><button expr2697="expr2697" class="text-gray-400 hover:text-white p-2\n                    rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call"><i class="fas fa-video"></i></button></div><div class="relative hidden sm:block"><input type="text" placeholder="Search..." class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:border-indigo-500 w-64 transition-all"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header>',
+    '<header class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md"><div class="flex items-center min-w-0 flex-1"><h2 expr0="expr0" class="text-xl font-bold text-white mr-2 truncate flex items-center"><i expr1="expr1" class="fas fa-lock text-sm mr-2 text-gray-400"></i><span expr2="expr2" class="mr-1"></span> </h2><button expr3="expr3" class="text-gray-400 hover:text-white transition-colors"><i expr4="expr4"></i></button></div><div class="flex items-center space-x-4"><div expr5="expr5" class="relative"></div><div class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2"><button expr14="expr14" class="text-gray-400 hover:text-white p-2\n                    rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call"><i class="fas fa-phone"></i></button><button expr15="expr15" class="text-gray-400 hover:text-white p-2\n                    rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call"><i class="fas fa-video"></i></button></div><div class="relative hidden sm:block"><input expr16="expr16" type="text" placeholder="Search messages..." ref="searchInput" class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none\n                focus:border-indigo-500 w-64 transition-all text-gray-200"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header>',
     [
       {
-        redundantAttribute: 'expr2682',
-        selector: '[expr2682]',
+        redundantAttribute: 'expr0',
+        selector: '[expr0]',
 
         expressions: [
           {
@@ -53,8 +77,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type==='private',
-        redundantAttribute: 'expr2683',
-        selector: '[expr2683]',
+        redundantAttribute: 'expr1',
+        selector: '[expr1]',
 
         template: template(
           null,
@@ -64,8 +88,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.props.currentChannelData || (_scope.props.currentChannelData.type !=='private' && _scope.props.currentChannelData.type !=='dm'),
-        redundantAttribute: 'expr2684',
-        selector: '[expr2684]',
+        redundantAttribute: 'expr2',
+        selector: '[expr2]',
 
         template: template(
           '#',
@@ -73,8 +97,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr2685',
-        selector: '[expr2685]',
+        redundantAttribute: 'expr3',
+        selector: '[expr3]',
 
         expressions: [
           {
@@ -85,8 +109,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2686',
-        selector: '[expr2686]',
+        redundantAttribute: 'expr4',
+        selector: '[expr4]',
 
         expressions: [
           {
@@ -100,15 +124,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type==='private',
-        redundantAttribute: 'expr2687',
-        selector: '[expr2687]',
+        redundantAttribute: 'expr5',
+        selector: '[expr5]',
 
         template: template(
-          '<button expr2688="expr2688" class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors"><i class="fas fa-users text-xs"></i><span expr2689="expr2689" class="text-sm"> </span></button><div expr2690="expr2690" class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden"></div>',
+          '<button expr6="expr6" class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors"><i class="fas fa-users text-xs"></i><span expr7="expr7" class="text-sm"> </span></button><div expr8="expr8" class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden"></div>',
           [
             {
-              redundantAttribute: 'expr2688',
-              selector: '[expr2688]',
+              redundantAttribute: 'expr6',
+              selector: '[expr6]',
 
               expressions: [
                 {
@@ -119,8 +143,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2689',
-              selector: '[expr2689]',
+              redundantAttribute: 'expr7',
+              selector: '[expr7]',
 
               expressions: [
                 {
@@ -139,15 +163,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.showMembersPanel,
-              redundantAttribute: 'expr2690',
-              selector: '[expr2690]',
+              redundantAttribute: 'expr8',
+              selector: '[expr8]',
 
               template: template(
-                '<div class="p-3 border-b border-gray-700 flex items-center justify-between"><span class="text-sm font-medium text-white">Channel Members</span><button expr2691="expr2691" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button></div><div class="max-h-64 overflow-y-auto custom-scrollbar p-2"><div expr2692="expr2692" class="flex items-center gap-2 p-2 hover:bg-white/5 rounded"></div></div>',
+                '<div class="p-3 border-b border-gray-700 flex items-center justify-between"><span class="text-sm font-medium text-white">Channel Members</span><button expr9="expr9" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button></div><div class="max-h-64 overflow-y-auto custom-scrollbar p-2"><div expr10="expr10" class="flex items-center gap-2 p-2 hover:bg-white/5 rounded"></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr2691',
-                    selector: '[expr2691]',
+                    redundantAttribute: 'expr9',
+                    selector: '[expr9]',
 
                     expressions: [
                       {
@@ -163,11 +187,11 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<div expr2693="expr2693" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold"> </div><div class="flex-1 min-w-0"><div expr2694="expr2694" class="text-gray-200 text-sm truncate"> </div><div expr2695="expr2695" class="text-gray-500 text-xs truncate"> </div></div>',
+                      '<div expr11="expr11" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold"> </div><div class="flex-1 min-w-0"><div expr12="expr12" class="text-gray-200 text-sm truncate"> </div><div expr13="expr13" class="text-gray-500 text-xs truncate"> </div></div>',
                       [
                         {
-                          redundantAttribute: 'expr2693',
-                          selector: '[expr2693]',
+                          redundantAttribute: 'expr11',
+                          selector: '[expr11]',
 
                           expressions: [
                             {
@@ -185,8 +209,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr2694',
-                          selector: '[expr2694]',
+                          redundantAttribute: 'expr12',
+                          selector: '[expr12]',
 
                           expressions: [
                             {
@@ -205,8 +229,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr2695',
-                          selector: '[expr2695]',
+                          redundantAttribute: 'expr13',
+                          selector: '[expr13]',
 
                           expressions: [
                             {
@@ -222,8 +246,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr2692',
-                    selector: '[expr2692]',
+                    redundantAttribute: 'expr10',
+                    selector: '[expr10]',
                     itemName: 'memberKey',
                     indexName: null,
                     evaluate: _scope => _scope.props.currentChannelData.members || []
@@ -235,8 +259,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr2696',
-        selector: '[expr2696]',
+        redundantAttribute: 'expr14',
+        selector: '[expr14]',
 
         expressions: [
           {
@@ -247,14 +271,36 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2697',
-        selector: '[expr2697]',
+        redundantAttribute: 'expr15',
+        selector: '[expr15]',
 
         expressions: [
           {
             type: expressionTypes.EVENT,
             name: 'onclick',
             evaluate: _scope => () => _scope.props.onStartCall('video')
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr16',
+        selector: '[expr16]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'oninput',
+            evaluate: _scope => _scope.handleSearchInput
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'onkeydown',
+            evaluate: _scope => _scope.handleSearchKeydown
+          },
+          {
+            type: expressionTypes.EVENT,
+            name: 'onfocus',
+            evaluate: _scope => () => _scope.props.onSearchFocus && _scope.props.onSearchFocus()
           }
         ]
       }

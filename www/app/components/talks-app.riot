@@ -13,7 +13,7 @@
                 <talks-header currentChannelData={ state.currentChannelData } currentChannel={ state.currentChannel }
                     showMembersPanel={ state.showMembersPanel } users={ state.users } currentUser={ state.currentUser }
                     onToggleFavorite={ toggleFavorite } onToggleMembersPanel={ toggleMembersPanel } onStartCall={
-                    startCall } isFavorite={ isFavorite } />
+                    startCall } isFavorite={ isFavorite } onSearch={ performSearch } onSearchClear={ clearSearch } />
 
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
@@ -34,6 +34,60 @@
                 state.remoteStreamHasVideo } callPeers={ state.callPeers } onAcceptCall={ acceptCall } onDeclineCall={
                 declineCall } onToggleMute={ toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={
                 toggleScreenShare } onHangup={ hangup } />
+
+            <!-- Search Results Sidebar -->
+            <div if={ state.showSearchSidebar }
+                class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0">
+                <div class="flex items-center justify-between p-4 border-b border-gray-700">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-search text-indigo-400"></i>
+                        <span class="text-white font-semibold">Search Results</span>
+                        <span class="text-gray-500 text-sm">({ state.searchResults.length })</span>
+                    </div>
+                    <button onclick={ clearSearch }
+                        class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div if={ state.searchQuery } class="px-4 py-2 bg-gray-800/50 border-b border-gray-700">
+                    <span class="text-gray-400 text-sm">Searching for: </span>
+                    <span class="text-indigo-400 font-medium">{ state.searchQuery }</span>
+                </div>
+                <div if={ state.searchLoading } class="flex-1 flex items-center justify-center">
+                    <div class="flex flex-col items-center gap-2">
+                        <i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i>
+                        <span class="text-gray-400 text-sm">Searching...</span>
+                    </div>
+                </div>
+                <div if={ showNoResults() } class="flex-1 flex items-center justify-center">
+                    <div class="flex flex-col items-center gap-2 text-gray-400">
+                        <i class="fas fa-search text-4xl text-gray-600"></i>
+                        <span>No results found</span>
+                        <span class="text-sm text-gray-500">Try a different search term</span>
+                    </div>
+                </div>
+                <div if={ hasSearchResults() } class="flex-1 overflow-y-auto custom-scrollbar">
+                    <div each={ result in state.searchResults } onclick={ handleSearchResultClick }
+                        class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors group">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300">{
+                                getChannelLabel(result) }</span>
+                            <span class="text-xs text-gray-500">{ formatSearchTime(result.timestamp) }</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                { getResultInitials(result) }</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm text-gray-200 font-medium truncate">{ getResultSender(result) }
+                                </div>
+                                <div class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300">{
+                                    getResultPreview(result) }</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Fullscreen Image Lightbox -->
             <div if={ state.lightboxImage } onclick={ closeLightbox }
@@ -284,6 +338,31 @@
         .animate-fade-in {
             animation: fade-in 0.2s ease-out;
         }
+
+        /* Search sidebar slide-in animation */
+        @keyframes slide-in-right {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .animate-slide-in-right {
+            animation: slide-in-right 0.3s ease-out;
+        }
+
+        /* Line clamp utility */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
     </style>
 
     <script>
@@ -348,7 +427,12 @@
                     currentChannel: this.props.currentChannel,
                     currentChannelData: this.props.currentChannelData,
                     channelId: this.props.channelId,
-                    connectionStatus: 'connecting'
+                    connectionStatus: 'connecting',
+                    // Search state
+                    showSearchSidebar: false,
+                    searchQuery: '',
+                    searchResults: [],
+                    searchLoading: false
                 }
                 // Ensure favorites array exists and is an array
                 if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -2209,6 +2293,118 @@
             },
             getDmUserIndicatorClass(user) {
                 return 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' + this.getStatusColor(user.status);
+            },
+
+            // --- SEARCH FUNCTIONALITY ---
+            async performSearch(query) {
+                if (!query || query.length < 2) return;
+
+                this.update({
+                    showSearchSidebar: true,
+                    searchQuery: query,
+                    searchLoading: true,
+                    searchResults: []
+                });
+
+                try {
+                    const response = await fetch(`/talks/search?q=${encodeURIComponent(query)}&limit=50`);
+                    const data = await response.json();
+
+                    let results = data.results;
+                    // Handle case where empty result comes back as object {} instead of array []
+                    if (!Array.isArray(results)) {
+                        results = [];
+                    }
+
+                    this.update({
+                        searchResults: results,
+                        searchLoading: false
+                    });
+                } catch (error) {
+                    console.error('Search failed:', error);
+                    this.update({
+                        searchResults: [],
+                        searchLoading: false
+                    });
+                }
+            },
+
+            clearSearch() {
+                this.update({
+                    showSearchSidebar: false,
+                    searchQuery: '',
+                    searchResults: [],
+                    searchLoading: false
+                });
+            },
+
+            navigateToSearchResult(result) {
+                // Navigate to the channel containing the message
+                const channelName = result.channel_name;
+                if (channelName) {
+                    window.location.href = `/talks/${channelName}`;
+                }
+                this.clearSearch();
+            },
+
+            formatSearchTime(timestamp) {
+                if (!timestamp) return '';
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+                if (diffDays === 0) {
+                    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } else if (diffDays === 1) {
+                    return 'Yesterday';
+                } else if (diffDays < 7) {
+                    return date.toLocaleDateString([], { weekday: 'short' });
+                } else {
+                    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                }
+            },
+
+            highlightSearchMatch(text, query) {
+                // For now, just return the text - highlighting would require HTML rendering
+                // which is complex in Riot templates
+                if (!text) return '';
+                return text.length > 200 ? text.substring(0, 200) + '...' : text;
+            },
+
+            // Search sidebar helper functions
+            showNoResults() {
+                return !this.state.searchLoading && this.state.searchResults.length === 0 && this.state.searchQuery;
+            },
+
+            hasSearchResults() {
+                return !this.state.searchLoading && this.state.searchResults.length > 0;
+            },
+
+            handleSearchResultClick(e) {
+                const result = e.item.result;
+                this.navigateToSearchResult(result);
+            },
+
+            getChannelLabel(result) {
+                return result.channel_type === 'dm' ? 'DM' : '#' + result.channel_name;
+            },
+
+            getResultInitials(result) {
+                const name = result.sender_firstname && result.sender_lastname
+                    ? result.sender_firstname + ' ' + result.sender_lastname
+                    : result.sender;
+                return this.getInitials(name);
+            },
+
+            getResultSender(result) {
+                return result.sender_firstname && result.sender_lastname
+                    ? result.sender_firstname + ' ' + result.sender_lastname
+                    : result.sender;
+            },
+
+            getResultPreview(result) {
+                return this.highlightSearchMatch(result.text, this.state.searchQuery);
             },
 
             $nextTick(fn) {

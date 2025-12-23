@@ -158,15 +158,14 @@ pub struct AggregateExpr {
 /// Supports both field-based sorting (SORT doc.age) and function-based sorting (SORT BM25(doc.content, "query"))
 #[derive(Debug, Clone, PartialEq)]
 pub struct SortClause {
-    pub expression: Expression,
-    pub ascending: bool,
+    pub fields: Vec<(Expression, bool)>, // (expression, ascending)
 }
 
 /// LIMIT [offset,] count
 #[derive(Debug, Clone, PartialEq)]
 pub struct LimitClause {
-    pub offset: usize,
-    pub count: usize,
+    pub offset: Expression,
+    pub count: Expression,
 }
 
 /// RETURN expression

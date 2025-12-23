@@ -471,11 +471,20 @@ impl<'a> QueryExecutor<'a> {
         // Check if query is: FOR var IN collection SORT var.field LIMIT n RETURN ...
         if let (Some(sort), Some(limit)) = (&query.sort_clause, &query.limit_clause) {
             // Check if we have a simple FOR loop on a collection
-            if query.body_clauses.len() == 1 {
+            // Only optimize single field sort for now
+            if query.body_clauses.len() == 1 && sort.fields.len() == 1 {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
+                    let (sort_expr, sort_asc) = &sort.fields[0];
+                    
+                    // Evaluate limit expressions
+                    let limit_offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+                    let limit_count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
+                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+
                     // Check if the sort field is on the loop variable
                     // Check if sort expression is a simple field access on the loop variable
-                    if let Expression::FieldAccess(base, field) = &sort.expression {
+                    if let Expression::FieldAccess(base, field) = sort_expr {
                         if let Expression::Variable(var) = base.as_ref() {
                             if var == &for_clause.variable {
                                 // Try to get collection and check for index
@@ -483,12 +492,12 @@ impl<'a> QueryExecutor<'a> {
                                 {
                                     if let Some(docs) = collection.index_sorted(
                                         field,
-                                        sort.ascending,
-                                        Some(limit.offset + limit.count),
+                                        *sort_asc,
+                                        Some(limit_offset + limit_count),
                                     ) {
                                         // Got sorted documents from index! Apply offset and build result
-                                        let start = limit.offset.min(docs.len());
-                                        let end = (start + limit.count).min(docs.len());
+                                        let start = limit_offset.min(docs.len());
+                                        let end = (start + limit_count).min(docs.len());
                                         let docs = &docs[start..end];
 
                                         if let Some(ref return_clause) = query.return_clause {
@@ -534,7 +543,13 @@ impl<'a> QueryExecutor<'a> {
                 .count();
 
             if for_count == 1 && filter_count == 0 {
-                query.limit_clause.as_ref().map(|l| l.offset + l.count)
+                query.limit_clause.as_ref().map(|l| {
+                     let offset = self.evaluate_expr_with_context(&l.offset, &initial_bindings)
+                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+                     let count = self.evaluate_expr_with_context(&l.count, &initial_bindings)
+                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+                     offset + count
+                })
             } else {
                 None
             }
@@ -563,29 +578,37 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
-            let ascending = sort.ascending;
-
             rows.sort_by(|a, b| {
-                let a_val = self
-                    .evaluate_expr_with_context(&sort.expression, a)
-                    .unwrap_or(Value::Null);
-                let b_val = self
-                    .evaluate_expr_with_context(&sort.expression, b)
-                    .unwrap_or(Value::Null);
+                for (expr, ascending) in &sort.fields {
+                    let a_val = self
+                        .evaluate_expr_with_context(expr, a)
+                        .unwrap_or(Value::Null);
+                    let b_val = self
+                        .evaluate_expr_with_context(expr, b)
+                        .unwrap_or(Value::Null);
 
-                let cmp = compare_values(&a_val, &b_val);
-                if ascending {
-                    cmp
-                } else {
-                    cmp.reverse()
+                    let cmp = compare_values(&a_val, &b_val);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return if *ascending {
+                            cmp
+                        } else {
+                            cmp.reverse()
+                        };
+                    }
                 }
+                std::cmp::Ordering::Equal
             });
         }
 
         // Apply LIMIT
         if let Some(limit) = &query.limit_clause {
-            let start = limit.offset.min(rows.len());
-            let end = (start + limit.count).min(rows.len());
+            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+
+            let start = offset.min(rows.len());
+            let end = (start + count).min(rows.len());
             rows = rows[start..end].to_vec();
         }
 
@@ -1792,31 +1815,36 @@ impl<'a> QueryExecutor<'a> {
         // Apply SORT
         let sort_start = Instant::now();
         let sort_info = if let Some(sort) = &query.sort_clause {
-            let ascending = sort.ascending;
-
             rows.sort_by(|a, b| {
-                let a_val = self
-                    .evaluate_expr_with_context(&sort.expression, a)
-                    .unwrap_or(Value::Null);
-                let b_val = self
-                    .evaluate_expr_with_context(&sort.expression, b)
-                    .unwrap_or(Value::Null);
+                for (expr, ascending) in &sort.fields {
+                    let a_val = self
+                        .evaluate_expr_with_context(expr, a)
+                        .unwrap_or(Value::Null);
+                    let b_val = self
+                        .evaluate_expr_with_context(expr, b)
+                        .unwrap_or(Value::Null);
 
-                let cmp = compare_values(&a_val, &b_val);
-                if ascending {
-                    cmp
-                } else {
-                    cmp.reverse()
+                    let cmp = compare_values(&a_val, &b_val);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return if *ascending {
+                            cmp
+                        } else {
+                            cmp.reverse()
+                        };
+                    }
                 }
+                std::cmp::Ordering::Equal
             });
 
+            let field_desc = sort.fields.iter()
+                 .map(|(e, asc)| format!("{} {}", format_expression(e), if *asc { "ASC" } else { "DESC" }))
+                 .collect::<Vec<_>>()
+                 .join(", ");
+
             Some(SortInfo {
-                field: format_expression(&sort.expression),
-                direction: if sort.ascending {
-                    "ASC".to_string()
-                } else {
-                    "DESC".to_string()
-                },
+                field: field_desc,
+                direction: "".to_string(), // Direction included in field description
+
                 time_us: 0, // Will be set below
             })
         } else {
@@ -1832,13 +1860,18 @@ impl<'a> QueryExecutor<'a> {
         // Apply LIMIT
         let limit_start = Instant::now();
         let limit_info = if let Some(limit) = &query.limit_clause {
-            let start = limit.offset.min(rows.len());
-            let end = (start + limit.count).min(rows.len());
+            let offset = self.evaluate_expr_with_context(&limit.offset, &let_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let count = self.evaluate_expr_with_context(&limit.count, &let_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+
+            let start = offset.min(rows.len());
+            let end = (start + count).min(rows.len());
             rows = rows[start..end].to_vec();
 
             Some(LimitInfo {
-                offset: limit.offset,
-                count: limit.count,
+                offset,
+                count,
             })
         } else {
             None
@@ -2211,29 +2244,37 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
-            let ascending = sort.ascending;
-
             rows.sort_by(|a, b| {
-                let a_val = self
-                    .evaluate_expr_with_context(&sort.expression, a)
-                    .unwrap_or(Value::Null);
-                let b_val = self
-                    .evaluate_expr_with_context(&sort.expression, b)
-                    .unwrap_or(Value::Null);
+                for (expr, ascending) in &sort.fields {
+                    let a_val = self
+                        .evaluate_expr_with_context(expr, a)
+                        .unwrap_or(Value::Null);
+                    let b_val = self
+                        .evaluate_expr_with_context(expr, b)
+                        .unwrap_or(Value::Null);
 
-                let cmp = compare_values(&a_val, &b_val);
-                if ascending {
-                    cmp
-                } else {
-                    cmp.reverse()
+                    let cmp = compare_values(&a_val, &b_val);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return if *ascending {
+                            cmp
+                        } else {
+                            cmp.reverse()
+                        };
+                    }
                 }
+                std::cmp::Ordering::Equal
             });
         }
 
         // Apply LIMIT
         if let Some(limit) = &query.limit_clause {
-            let start = limit.offset.min(rows.len());
-            let end = (start + limit.count).min(rows.len());
+            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
+                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+
+            let start = offset.min(rows.len());
+            let end = (start + count).min(rows.len());
             rows = rows[start..end].to_vec();
         }
 

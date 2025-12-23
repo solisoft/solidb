@@ -1023,7 +1023,7 @@ impl ShardCoordinator {
         let my_node_id = self.my_node_id();
         let mut healed_count = 0usize;
 
-        tracing::info!("HEAL: Starting shard healing check. Healthy nodes: {:?}", healthy_nodes);
+        tracing::debug!("HEAL: Starting shard healing check. Healthy nodes: {:?}", healthy_nodes);
 
         // Get all shard tables
         let tables: Vec<(String, ShardTable)> = {
@@ -1034,7 +1034,7 @@ impl ShardCoordinator {
                 .collect()
         };
 
-        tracing::info!("HEAL: Checking {} shard tables", tables.len());
+        tracing::debug!("HEAL: Checking {} shard tables", tables.len());
 
         for (key, table) in &tables {
             let parts: Vec<&str> = key.split('.').collect();
@@ -1213,7 +1213,7 @@ impl ShardCoordinator {
                     continue;
                 }
 
-                tracing::info!(
+                tracing::debug!(
                     "HEAL: Node {} is {} for {}_s{}",
                     my_node_id,
                     if is_primary { "PRIMARY" } else { "REPLICA" },
@@ -1286,7 +1286,7 @@ impl ShardCoordinator {
                 } else { 0 };
 
                 // Log the count comparison for debugging
-                tracing::info!(
+                tracing::debug!(
                     "HEAL: {}_s{}: local_count={}, source_count={}, source_node={}",
                     collection, shard_id, local_count, source_count, source_node
                 );

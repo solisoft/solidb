@@ -29,6 +29,7 @@ CustomRoute("POST", "/talks/signup", "talks#signup")
 CustomRoute("GET", "/talks/logout", "talks#logout")
 CustomRoute("GET", "/talks/channel_data", "talks#channel_data")
 CustomRoute("GET", "/talks/og_metadata", "talks#og_metadata")
+CustomRoute("GET", "/talks/search", "talks#search")
 
 -- File routes
 CustomRoute("POST", "/talks/upload", "talks#upload")
