@@ -617,7 +617,23 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local path = "/_api/blob/" .. db._db_config.db_name .. "/files/" .. key
     local db_url = ""
 
-    local db_host_env = os.getenv("DB_HOST")
+    local get_env = function(k)
+        local v = os.getenv(k)
+        if v then return v end
+        for _, p in ipairs({".env", "www/.env"}) do
+            local f = io.open(p, "r")
+            if f then
+                for l in f:lines() do
+                     local key, val = l:match("^%s*([%w_]+)%s*=%s*(.*)$")
+                     if key == k then f:close(); return val end
+                end
+                f:close()
+            end
+        end
+        return nil
+    end
+
+    local db_host_env = get_env("DB_HOST")
     if db_host_env then
         -- Use configured DB_HOST
         local base = db_host_env:gsub("/+$", "")
