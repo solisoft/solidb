@@ -5813,6 +5813,30 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                 ))
             }
         }
+
+        BinaryOperator::Modulus => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                if b == 0.0 {
+                    Err(DbError::ExecutionError("Division by zero".to_string()))
+                } else {
+                    Ok(Value::Number(number_from_f64(a % b)))
+                }
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot modulus non-numbers".to_string(),
+                ))
+            }
+        }
+
+        BinaryOperator::Exponent => {
+            if let (Some(base), Some(exp)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(number_from_f64(base.powf(exp))))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot exponentiate non-numbers".to_string(),
+                ))
+            }
+        }
     }
 }
 
