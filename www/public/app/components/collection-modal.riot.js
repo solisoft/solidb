@@ -169,11 +169,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr4210="expr4210" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr4211="expr4211" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Collection</h3></div><div class="p-6"><div expr4212="expr4212" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr4214="expr4214"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr4215="expr4215" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g., users, products"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><div class="grid grid-cols-3 gap-3"><button expr4216="expr4216" type="button" data-type="document"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Document\n              </button><button expr4217="expr4217" type="button" data-type="edge"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>\n                Edge\n              </button><button expr4218="expr4218" type="button" data-type="blob"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Blob\n              </button></div><p expr4219="expr4219" class="mt-2 text-xs text-fuchsia-400"></p><p expr4220="expr4220" class="mt-2 text-xs text-amber-400"></p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><div class="flex items-center mb-4"><input expr4221="expr4221" id="enableSharding" type="checkbox" class="h-4 w-4 text-indigo-500 focus:ring-indigo-500 border-gray-600 rounded bg-gray-800 transition-colors"/><label for="enableSharding" class="ml-2 block text-sm text-gray-300">\n                Enable Sharding & Replication\n              </label></div><div expr4222="expr4222" class="space-y-4 pl-6 border-l-2 border-gray-700/50"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr4226="expr4226" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr4227="expr4227" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
+    '<div expr247="expr247" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr248="expr248" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Collection</h3></div><div class="p-6"><div expr249="expr249" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr251="expr251"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr252="expr252" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g., users, products"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><div class="grid grid-cols-3 gap-3"><button expr253="expr253" type="button" data-type="document"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Document\n              </button><button expr254="expr254" type="button" data-type="edge"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>\n                Edge\n              </button><button expr255="expr255" type="button" data-type="blob"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Blob\n              </button></div><p expr256="expr256" class="mt-2 text-xs text-fuchsia-400"></p><p expr257="expr257" class="mt-2 text-xs text-amber-400"></p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><div class="flex items-center mb-4"><input expr258="expr258" id="enableSharding" type="checkbox" class="h-4 w-4 text-indigo-500 focus:ring-indigo-500 border-gray-600 rounded bg-gray-800 transition-colors"/><label for="enableSharding" class="ml-2 block text-sm text-gray-300">\n                Enable Sharding & Replication\n              </label></div><div expr259="expr259" class="space-y-4 pl-6 border-l-2 border-gray-700/50"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr263="expr263" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr264="expr264" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
     [
       {
-        redundantAttribute: 'expr4210',
-        selector: '[expr4210]',
+        redundantAttribute: 'expr247',
+        selector: '[expr247]',
 
         expressions: [
           {
@@ -184,8 +184,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4211',
-        selector: '[expr4211]',
+        redundantAttribute: 'expr248',
+        selector: '[expr248]',
 
         expressions: [
           {
@@ -198,15 +198,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr4212',
-        selector: '[expr4212]',
+        redundantAttribute: 'expr249',
+        selector: '[expr249]',
 
         template: template(
-          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr4213="expr4213" class="text-sm text-red-300"> </p></div>',
+          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr250="expr250" class="text-sm text-red-300"> </p></div>',
           [
             {
-              redundantAttribute: 'expr4213',
-              selector: '[expr4213]',
+              redundantAttribute: 'expr250',
+              selector: '[expr250]',
 
               expressions: [
                 {
@@ -220,8 +220,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr4214',
-        selector: '[expr4214]',
+        redundantAttribute: 'expr251',
+        selector: '[expr251]',
 
         expressions: [
           {
@@ -232,8 +232,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4215',
-        selector: '[expr4215]',
+        redundantAttribute: 'expr252',
+        selector: '[expr252]',
 
         expressions: [
           {
@@ -248,8 +248,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4216',
-        selector: '[expr4216]',
+        redundantAttribute: 'expr253',
+        selector: '[expr253]',
 
         expressions: [
           {
@@ -266,8 +266,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4217',
-        selector: '[expr4217]',
+        redundantAttribute: 'expr254',
+        selector: '[expr254]',
 
         expressions: [
           {
@@ -284,8 +284,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4218',
-        selector: '[expr4218]',
+        redundantAttribute: 'expr255',
+        selector: '[expr255]',
 
         expressions: [
           {
@@ -304,8 +304,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.collectionType === 'edge',
-        redundantAttribute: 'expr4219',
-        selector: '[expr4219]',
+        redundantAttribute: 'expr256',
+        selector: '[expr256]',
 
         template: template(
           '\n              Edge collections require _from and _to fields for graph relationships\n            ',
@@ -315,8 +315,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.collectionType === 'blob',
-        redundantAttribute: 'expr4220',
-        selector: '[expr4220]',
+        redundantAttribute: 'expr257',
+        selector: '[expr257]',
 
         template: template(
           '\n              Blob collections are optimized for file storage and automatically shard large files\n            ',
@@ -324,8 +324,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr4221',
-        selector: '[expr4221]',
+        redundantAttribute: 'expr258',
+        selector: '[expr258]',
 
         expressions: [
           {
@@ -344,15 +344,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.isSharded,
-        redundantAttribute: 'expr4222',
-        selector: '[expr4222]',
+        redundantAttribute: 'expr259',
+        selector: '[expr259]',
 
         template: template(
-          '<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr4223="expr4223" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr4224="expr4224" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr4225="expr4225" type="text" placeholder="_key" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Field to distribute documents (default: _key)</p></div>',
+          '<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr260="expr260" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr261="expr261" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr262="expr262" type="text" placeholder="_key" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Field to distribute documents (default: _key)</p></div>',
           [
             {
-              redundantAttribute: 'expr4223',
-              selector: '[expr4223]',
+              redundantAttribute: 'expr260',
+              selector: '[expr260]',
 
               expressions: [
                 {
@@ -367,8 +367,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr4224',
-              selector: '[expr4224]',
+              redundantAttribute: 'expr261',
+              selector: '[expr261]',
 
               expressions: [
                 {
@@ -383,8 +383,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr4225',
-              selector: '[expr4225]',
+              redundantAttribute: 'expr262',
+              selector: '[expr262]',
 
               expressions: [
                 {
@@ -402,8 +402,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr4226',
-        selector: '[expr4226]',
+        redundantAttribute: 'expr263',
+        selector: '[expr263]',
 
         expressions: [
           {
@@ -414,8 +414,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr4227',
-        selector: '[expr4227]',
+        redundantAttribute: 'expr264',
+        selector: '[expr264]',
 
         expressions: [
           {

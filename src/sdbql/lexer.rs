@@ -56,6 +56,9 @@ pub enum Token {
     Minus,         // -
     Star,          // *
     Slash,         // /
+    Like,          // LIKE
+    RegEx,         // =~
+    NotRegEx,      // !~
 
     // Delimiters
     Dot,          // .
@@ -222,6 +225,7 @@ impl Lexer {
             "AND" => Token::And,
             "OR" => Token::Or,
             "NOT" => Token::Not,
+            "LIKE" => Token::Like,
             "TRUE" => Token::True,
             "FALSE" => Token::False,
             "NULL" => Token::Null,
@@ -299,6 +303,9 @@ impl Lexer {
                 if self.current_char == Some('=') {
                     self.advance();
                     Token::Equal
+                } else if self.current_char == Some('~') {
+                    self.advance();
+                    Token::RegEx
                 } else {
                     Token::Assign
                 }
@@ -309,6 +316,9 @@ impl Lexer {
                 if self.current_char == Some('=') {
                     self.advance();
                     Token::NotEqual
+                } else if self.current_char == Some('~') {
+                    self.advance();
+                    Token::NotRegEx
                 } else {
                     Token::Not
                 }

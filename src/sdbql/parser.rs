@@ -829,8 +829,7 @@ impl Parser {
     fn parse_comparison_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_range_expression()?;
 
-        while let Some(op) = self.parse_comparison_operator() {
-            self.advance();
+        while let Some(op) = self.parse_comparison_operator()? {
             let right = self.parse_range_expression()?;
             left = Expression::BinaryOp {
                 left: Box::new(left),
@@ -842,22 +841,63 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_comparison_operator(&self) -> Option<BinaryOperator> {
+    fn parse_comparison_operator(&mut self) -> DbResult<Option<BinaryOperator>> {
         match self.current_token() {
-            Token::Equal => Some(BinaryOperator::Equal),
-            Token::NotEqual => Some(BinaryOperator::NotEqual),
-            Token::LessThan => Some(BinaryOperator::LessThan),
-            Token::LessThanEq => Some(BinaryOperator::LessThanOrEqual),
-            Token::GreaterThan => Some(BinaryOperator::GreaterThan),
-            Token::GreaterThanEq => Some(BinaryOperator::GreaterThanOrEqual),
+            Token::Equal => {
+                self.advance();
+                Ok(Some(BinaryOperator::Equal))
+            }
+            Token::NotEqual => {
+                self.advance();
+                Ok(Some(BinaryOperator::NotEqual))
+            }
+            Token::LessThan => {
+                self.advance();
+                Ok(Some(BinaryOperator::LessThan))
+            }
+            Token::LessThanEq => {
+                self.advance();
+                Ok(Some(BinaryOperator::LessThanOrEqual))
+            }
+            Token::GreaterThan => {
+                self.advance();
+                Ok(Some(BinaryOperator::GreaterThan))
+            }
+            Token::GreaterThanEq => {
+                self.advance();
+                Ok(Some(BinaryOperator::GreaterThanOrEqual))
+            }
             Token::In => {
                 if self.allow_in_operator {
-                    Some(BinaryOperator::In)
+                    self.advance();
+                    Ok(Some(BinaryOperator::In))
                 } else {
-                    None
+                    Ok(None)
                 }
             }
-            _ => None,
+            Token::Like => {
+                self.advance();
+                Ok(Some(BinaryOperator::Like))
+            }
+            Token::RegEx => {
+                self.advance();
+                Ok(Some(BinaryOperator::RegEx))
+            }
+            Token::NotRegEx => {
+                self.advance();
+                Ok(Some(BinaryOperator::NotRegEx))
+            }
+            Token::Not => {
+                // Check for NOT LIKE
+                if matches!(self.peek_token(1), Token::Like) {
+                    self.advance(); // consume NOT
+                    self.advance(); // consume LIKE
+                    Ok(Some(BinaryOperator::NotLike))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
         }
     }
 

@@ -18,8 +18,8 @@
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
                     fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
-                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker
-                    } />
+                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker }
+                    highlightMessageId={ state.highlightMessageId } />
 
                 <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
                     showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
@@ -67,8 +67,9 @@
                     </div>
                 </div>
                 <div if={ hasSearchResults() } class="flex-1 overflow-y-auto custom-scrollbar">
-                    <div each={ result in state.searchResults } onclick={ handleSearchResultClick }
-                        class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors group">
+                    <div each={ result in state.searchResults } onclick={ ()=> handleSearchResultClick(result) }
+                        class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors
+                        group">
                         <div class="flex items-center gap-2 mb-2">
                             <span class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300">{
                                 getChannelLabel(result) }</span>
@@ -432,7 +433,8 @@
                     showSearchSidebar: false,
                     searchQuery: '',
                     searchResults: [],
-                    searchLoading: false
+                    searchLoading: false,
+                    highlightMessageId: null
                 }
                 // Ensure favorites array exists and is an array
                 if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -695,8 +697,9 @@
                     if (match && match.queryString) {
                         const searchParams = new URLSearchParams(match.queryString);
                         const channel = searchParams.get('channel');
+                        const msgId = searchParams.get('msg');
                         if (channel) {
-                            this.switchChannel(channel);
+                            this.switchChannel(channel, msgId);
                         }
                     }
                 }).resolve();
@@ -713,11 +716,19 @@
                 }
             },
 
-            async switchChannel(channelKey) {
-                if (this.state.currentChannelData && this.state.currentChannelData._key === channelKey) return;
+            async switchChannel(channelKey, highlightMsgId) {
+                if (this.state.currentChannelData && this.state.currentChannelData._key === channelKey) {
+                    if (highlightMsgId) {
+                        this.update({ highlightMessageId: highlightMsgId });
+                    }
+                    return;
+                }
                 if (this.state.currentChannel === channelKey) return;
 
                 console.log('Switching to channel:', channelKey);
+
+                // Clear or set highlight
+                this.update({ highlightMessageId: highlightMsgId || null });
 
                 try {
                     const response = await fetch(`/talks/channel_data?channel=${channelKey}`);
@@ -743,9 +754,10 @@
 
                         // Refocus input
                         setTimeout(() => {
-                            const input = this.root.querySelector('textarea');
                             if (input) input.focus();
-                            this.scrollToBottom(true);
+                            if (!highlightMsgId) {
+                                this.scrollToBottom(true);
+                            }
                         }, 50);
 
                         // Mark as read
@@ -2340,11 +2352,23 @@
 
             navigateToSearchResult(result) {
                 // Navigate to the channel containing the message
-                const channelName = result.channel_name;
-                if (channelName) {
-                    window.location.href = `/talks/${channelName}`;
+                let channelId = result.channel || result.channel_id;
+
+                // Normalize ID (strip database/collection prefix if present)
+                if (channelId && typeof channelId === 'string' && channelId.includes('/')) {
+                    channelId = channelId.split('/').pop();
                 }
-                this.clearSearch();
+
+                if (channelId) {
+                    this.router.navigate(`?channel=${channelId}&msg=${result._key}`);
+                    this.clearSearch();
+                } else if (result.channel_name) {
+                    // Fallback using name if ID not found (though less reliable for router)
+                    // Note: Ideally we resolve name to ID, but let's try strict ID first
+                    window.location.href = `/talks/${result.channel_name}?msg=${result._key}`;
+                } else {
+                    this.clearSearch();
+                }
             },
 
             formatSearchTime(timestamp) {
@@ -2381,8 +2405,7 @@
                 return !this.state.searchLoading && this.state.searchResults.length > 0;
             },
 
-            handleSearchResultClick(e) {
-                const result = e.item.result;
+            handleSearchResultClick(result) {
                 this.navigateToSearchResult(result);
             },
 

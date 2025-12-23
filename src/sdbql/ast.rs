@@ -251,6 +251,14 @@ pub enum BinaryOperator {
     Subtract,
     Multiply,
     Divide,
+    Modulus, // Adding modulo strictly if needed, but standard request is just ops. Adding LIKE/REGEX first.
+    Exponent, // For POW operator ^ or ** if we support it as operator
+
+    // String matching
+    Like,
+    NotLike,
+    RegEx,
+    NotRegEx,
 }
 
 #[derive(Debug, Clone, PartialEq)]

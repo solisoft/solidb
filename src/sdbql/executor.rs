@@ -3589,6 +3589,59 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::String(Uuid::now_v7().to_string()))
             }
 
+            // MD5(string)
+            "MD5" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("MD5 requires 1 argument".to_string()));
+                }
+                let input = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("MD5: argument must be a string".to_string())
+                })?;
+                use md5::{Md5, Digest};
+                let mut hasher = Md5::new();
+                hasher.update(input.as_bytes());
+                Ok(Value::String(hex::encode(hasher.finalize())))
+            }
+
+            // SHA256(string)
+            "SHA256" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SHA256 requires 1 argument".to_string()));
+                }
+                let input = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("SHA256: argument must be a string".to_string())
+                })?;
+                use sha2::{Sha256, Digest};
+                let mut hasher = Sha256::new();
+                hasher.update(input.as_bytes());
+                Ok(Value::String(hex::encode(hasher.finalize())))
+            }
+
+            // SLEEP(ms)
+            "SLEEP" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SLEEP requires 1 argument".to_string()));
+                }
+                let ms = evaluated_args[0].as_u64().ok_or_else(|| {
+                    DbError::ExecutionError("SLEEP: argument must be a positive number".to_string())
+                })?;
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                Ok(Value::Bool(true))
+            }
+
+            // ASSERT(condition, message)
+            "ASSERT" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("ASSERT requires 2 arguments".to_string()));
+                }
+                let condition = to_bool(&evaluated_args[0]);
+                if !condition {
+                    let msg = evaluated_args[1].as_str().unwrap_or("Assertion failed");
+                    return Err(DbError::ExecutionError(msg.to_string()));
+                }
+                Ok(Value::Bool(true))
+            }
+
              // TO_BOOL(value)
             "TO_BOOL" => {
                 if evaluated_args.len() != 1 {
@@ -3892,6 +3945,35 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(
                     number_from_f64(num.abs()),
                 ))
+            }
+
+            // SQRT(n) - square root
+            "SQRT" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SQRT requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                     DbError::ExecutionError("SQRT: argument must be a number".to_string())
+                })?;
+                if num < 0.0 {
+                    return Err(DbError::ExecutionError("SQRT: cannot take square root of negative number".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.sqrt())))
+            }
+
+            // POW(base, exp) - power
+            "POW" | "POWER" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("POW requires 2 arguments".to_string()));
+                }
+                let base = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("POW: base must be a number".to_string())
+                })?;
+                let exp = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("POW: exponent must be a number".to_string())
+                })?;
+                
+                Ok(Value::Number(number_from_f64(base.powf(exp))))
             }
 
             // FLOOR(number) - floor
@@ -5631,6 +5713,57 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                     }
                 }
                 _ => Ok(Value::Bool(false)),
+            }
+        }
+
+        BinaryOperator::Like | BinaryOperator::NotLike => {
+            let s = left.as_str().unwrap_or("");
+            let pattern = right.as_str().unwrap_or("");
+
+            // Convert SQL LIKE pattern to Regex
+            // Escape regex characters
+            let mut regex_pattern = String::new();
+            regex_pattern.push('^');
+            for c in pattern.chars() {
+                match c {
+                    '%' => regex_pattern.push_str(".*"),
+                    '_' => regex_pattern.push('.'),
+                    '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\' => {
+                        regex_pattern.push('\\');
+                        regex_pattern.push(c);
+                    }
+                    _ => regex_pattern.push(c),
+                }
+            }
+            regex_pattern.push('$');
+
+            match regex::Regex::new(&regex_pattern) {
+                Ok(re) => {
+                    let is_match = re.is_match(s);
+                    if matches!(op, BinaryOperator::NotLike) {
+                        Ok(Value::Bool(!is_match))
+                    } else {
+                        Ok(Value::Bool(is_match))
+                    }
+                }
+                Err(_) => Ok(Value::Bool(false)), // Invalid regex (shouldn't happen with escaped pattern)
+            }
+        }
+
+        BinaryOperator::RegEx | BinaryOperator::NotRegEx => {
+            let s = left.as_str().unwrap_or("");
+            let pattern = right.as_str().unwrap_or("");
+
+            match regex::Regex::new(pattern) {
+                Ok(re) => {
+                    let is_match = re.is_match(s);
+                    if matches!(op, BinaryOperator::NotRegEx) {
+                        Ok(Value::Bool(!is_match))
+                    } else {
+                        Ok(Value::Bool(is_match))
+                    }
+                }
+                Err(_) => Ok(Value::Bool(false)), // Invalid regex results in false
             }
         }
 

@@ -327,11 +327,21 @@ FOR i IN 1..n
                   >
                   <span
                     class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >&gt;=</span
+                    >IN</span
                   >
                   <span
                     class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >IN</span
+                    >LIKE</span
+                  >
+                  <span
+                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
+                    title="RegEx match"
+                    >=~</span
+                  >
+                  <span
+                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
+                    title="RegEx not match"
+                    >!~</span
                   >
                 </div>
               </div>
@@ -1169,6 +1179,34 @@ FOR i IN nums
                 Returns a random float between 0 and 1.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANDOM() // 0.54321...</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >SQRT(number)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Returns the square root.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SQRT(16) // 4</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >POW(base, exp)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Returns base raised to exponent.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) // 8</code></pre>
             </div>
           </div>
         </div>
@@ -2641,6 +2679,54 @@ RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]</code></pre>
                 Generates a time-ordered v7 UUID.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN UUIDV7() // "018..."</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >MD5(string)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Calculates MD5 hash.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello")</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >SHA256(string)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Calculates SHA256 hash.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello")</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >SLEEP(ms)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Pauses execution (testing).
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SLEEP(1000)</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3"
+                >ASSERT(cond, msg)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Throws error if condition false.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ASSERT(x > 0, "Fail")</code></pre>
             </div>
           </div>
         </div>

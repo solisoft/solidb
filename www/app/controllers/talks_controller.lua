@@ -615,7 +615,34 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     -- Redirect directly to the blob API with short-lived token
     local path = "/_api/blob/" .. db._db_config.db_name .. "/files/" .. key
-    local url = db:Api_url(path) .. "?token=" .. short_token
+    local db_url = ""
+
+    local db_host_env = os.getenv("DB_HOST")
+    if db_host_env then
+        -- Use configured DB_HOST
+        local base = db_host_env:gsub("/+$", "")
+        if not base:match("^https?://") then
+            base = "https://" .. base
+        end
+        db_url = base .. path
+    else
+        -- Fallback: Use standard Api_url logic with localhost fix
+        db_url = db:Api_url(path)
+
+        -- Adjust hostname if DB is configured as localhost but accessed via remote server
+        local host_header = GetHeader("Host")
+        if host_header then
+            local public_host = host_header:match("([^:]+)")
+            if public_host then
+                local scheme, db_host, db_port_part, rest = db_url:match("^(https?://)([^:/]+)(:?%d*)(/.*)$")
+                if scheme and (db_host == "localhost" or db_host == "127.0.0.1") then
+                    db_url = scheme .. public_host .. db_port_part .. rest
+                end
+            end
+        end
+    end
+
+    local url = db_url .. "?token=" .. short_token
     RedirectTo(url)
   end,
 

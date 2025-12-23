@@ -13,8 +13,9 @@
                         group.label }</span>
                     <div class="flex-grow border-t border-gray-800"></div>
                 </div>
-                <div each={ message in group.messages }
-                    class="flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors">
+                <div each={ message in group.messages } id={ 'msg-' + message._key }
+                    class={ 'flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors ' +
+                    (props.highlightMessageId===message._key ? 'bg-indigo-500/20 ring-1 ring-indigo-500/30' : '' ) }>
                     <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-baseline mb-1">
@@ -150,9 +151,24 @@
             ...TalksMixin,
             onMounted() {
                 this.highlightCode();
+                if (this.props.highlightMessageId) {
+                    this.scrollToMessage(this.props.highlightMessageId);
+                }
             },
             onUpdated() {
                 this.highlightCode();
+                if (this.props.highlightMessageId) {
+                    this.scrollToMessage(this.props.highlightMessageId);
+                }
+            },
+            scrollToMessage(msgId) {
+                // Use setTimeout to ensure DOM is ready
+                setTimeout(() => {
+                    const el = this.root.querySelector('#msg-' + msgId);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 100);
             },
             getMessageContentClass(message) {
                 return 'leading-snug message-content ' + (this.isEmojiOnly(message.text) ? 'text-4xl' : 'text-[#D1D2D3]');
