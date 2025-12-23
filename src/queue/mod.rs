@@ -65,6 +65,8 @@ fn default_max_retries() -> i32 {
     3
 }
 
+use crate::scripting::ScriptStats;
+
 pub struct QueueWorker {
     storage: Arc<StorageEngine>,
     script_engine: Arc<ScriptEngine>,
@@ -74,9 +76,9 @@ pub struct QueueWorker {
 }
 
 impl QueueWorker {
-    pub fn new(storage: Arc<StorageEngine>) -> Self {
+    pub fn new(storage: Arc<StorageEngine>, stats: Arc<ScriptStats>) -> Self {
         let (notifier, _) = broadcast::channel(100);
-        let script_engine = Arc::new(ScriptEngine::new(storage.clone())
+        let script_engine = Arc::new(ScriptEngine::new(storage.clone(), stats)
             .with_queue_notifier(notifier.clone()));
         
         let worker_count = std::env::var("QUEUE_WORKERS")

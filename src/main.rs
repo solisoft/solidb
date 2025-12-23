@@ -2,6 +2,7 @@ use clap::Parser;
 use solidb::{
     cluster::ClusterConfig,
     create_router, StorageEngine,
+    scripting::ScriptStats,
 };
 use std::sync::Arc;
 use sysinfo::{Pid, System};
@@ -403,8 +404,11 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         });
     }
 
+    // Initialize Script Stats
+    let script_stats = Arc::new(ScriptStats::default());
+
     // Initialize Queue Management
-    let queue_worker = Arc::new(solidb::queue::QueueWorker::new(Arc::new(storage.clone())));
+    let queue_worker = Arc::new(solidb::queue::QueueWorker::new(Arc::new(storage.clone()), script_stats.clone()));
     
     let queue_worker_start = queue_worker.clone();
     tokio::spawn(async move {
@@ -425,6 +429,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         Some(replication_log.clone()),
         Some(shared_coordinator.clone()),
         Some(queue_worker),
+        script_stats,
         args.port
     );
     

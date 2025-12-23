@@ -2,27 +2,30 @@
     <div class="space-y-6">
         <!-- List View -->
         <div if={ state.view==='list' } class="space-y-6">
-            <!-- Search and Create Bar -->
+            <!-- Stats and Create Bar -->
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-                <div class="flex-1 max-w-lg">
-                    <div class="relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
-                                fill="currentColor">
-                                <path fill-rule="evenodd"
-                                    d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                                    clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                        <input type="text" oninput={ updateSearch }
-                            class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-600 rounded-md bg-gray-700 text-gray-100 placeholder-gray-400 py-2"
-                            placeholder="Search scripts...">
+                <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 mr-6">
+                    <!-- Stats -->
+                    <div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active Scripts</div>
+                        <div class="text-xl font-bold text-indigo-400 mt-1">{ state.stats.active_scripts }</div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active WS</div>
+                        <div class="text-xl font-bold text-green-400 mt-1">{ state.stats.active_ws }</div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total Scripts</div>
+                        <div class="text-lg font-bold text-gray-200 mt-1">{ state.stats.total_scripts_executed }</div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total WS</div>
+                        <div class="text-lg font-bold text-gray-200 mt-1">{ state.stats.total_ws_connections }</div>
                     </div>
                 </div>
                 <div class="flex items-center space-x-3">
-                    <h2 class="text-xl font-bold text-gray-100 mr-4 sm:hidden">Lua Scripts</h2>
                     <button onclick={ showCreate }
-                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10">
                         <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
                             fill="currentColor">
                             <path fill-rule="evenodd"
@@ -30,6 +33,13 @@
                                 clip-rule="evenodd" />
                         </svg>
                         New Script
+                    </button>
+                    <button onclick={ fetchStats } title="Refresh Stats"
+                        class="inline-flex items-center p-2 border border-gray-600 rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none transition-colors h-10 w-10 justify-center">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -52,7 +62,7 @@
                         </tr>
                     </thead>
                     <tbody class="bg-gray-800 divide-y divide-gray-700">
-                        <tr each={ script in filteredScripts() } class="hover:bg-gray-750 transition-colors">
+                        <tr each={ script in state.scripts } class="hover:bg-gray-750 transition-colors">
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm font-medium text-gray-100">{ script.name }</div>
                                 <div if={ script.description } class="text-xs text-gray-500 truncate max-w-xs">{
@@ -95,7 +105,7 @@
                                 </div>
                             </td>
                         </tr>
-                        <tr if={ filteredScripts().length===0 }>
+                        <tr if={ state.scripts.length===0 }>
                             <td colspan="4" class="px-6 py-16 text-center">
                                 <div class="flex flex-col items-center justify-center">
                                     <svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor"
@@ -200,22 +210,16 @@
                 currentScript: null,
                 loading: false,
                 saving: false,
-                searchTerm: ''
+                stats: {
+                    active_scripts: 0,
+                    active_ws: 0,
+                    total_scripts_executed: 0,
+                    total_ws_connections: 0
+                },
+                statsInterval: null
             },
             editor: null,
 
-            filteredScripts() {
-                if (!this.state.searchTerm) return this.state.scripts;
-                const term = this.state.searchTerm.toLowerCase();
-                return this.state.scripts.filter(s =>
-                    s.name.toLowerCase().includes(term) ||
-                    s.path.toLowerCase().includes(term)
-                );
-            },
-
-            updateSearch(e) {
-                this.update({ searchTerm: e.target.value });
-            },
 
             copyUrl(script) {
                 // getApiUrl returns "http://host:port/_api", we need the base "http://host:port"
@@ -251,6 +255,12 @@
             async onMounted() {
                 await this.fetchCollections();
                 await this.fetchScripts();
+                await this.fetchStats();
+                this.state.statsInterval = setInterval(() => this.fetchStats(), 5000);
+            },
+
+            onUnmounted() {
+                if (this.state.statsInterval) clearInterval(this.state.statsInterval);
             },
 
             async fetchCollections() {
@@ -266,6 +276,22 @@
                     }
                 } catch (e) {
                     console.error("Failed to fetch collections", e);
+                }
+            },
+
+            async fetchStats() {
+                try {
+                    // Use getApiUrl directly for global stats endpoint
+                    const url = `${getApiUrl()}/scripts/stats`;
+                    // Note: authenticatedFetch might fail if user not logged in? Stats might be public?
+                    // Assuming protected as per routes.rs structure (inside api_routes)
+                    const res = await authenticatedFetch(url);
+                    if (res.ok) {
+                        const stats = await res.json();
+                        this.update({ stats });
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch script stats", e);
                 }
             },
 

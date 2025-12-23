@@ -20,6 +20,7 @@ use crate::sdbql::{parse, BodyClause, Query, QueryExecutor};
 use crate::sync::{Operation, LogEntry};
 use crate::sync::blob_replication::replicate_blob_to_node;
 use crate::error::DbError;
+use crate::scripting::ScriptStats;
 
 
 /// Default query execution timeout (30 seconds)
@@ -86,6 +87,7 @@ pub struct AppState {
     pub request_counter: Arc<std::sync::atomic::AtomicU64>,
     pub system_monitor: Arc<std::sync::Mutex<sysinfo::System>>,
     pub queue_worker: Option<Arc<crate::queue::QueueWorker>>,
+    pub script_stats: Arc<ScriptStats>,
 }
 
 // ==================== Auth Types ====================
@@ -4542,6 +4544,15 @@ pub struct ClusterInfoResponse {
     pub node_id: String,
     pub is_cluster_mode: bool,
     pub cluster_config: Option<ClusterConfigInfo>,
+    // System Stats
+    pub cpu_usage: f32,
+    pub memory_usage: u64,
+    pub memory_total: u64,
+    pub uptime: u64,
+    pub os_name: String,
+    pub os_version: String,
+    pub hostname: String,
+    pub num_cpus: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -4561,11 +4572,105 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
         replication_port: c.replication_port,
     });
 
+    // Collect System Stats
+    let (cpu_usage, memory_usage, memory_total, uptime, os_name, os_version, hostname, num_cpus) = {
+        let mut sys = state.system_monitor.lock().unwrap();
+        
+        // Refresh specific stats
+        sys.refresh_cpu();
+        sys.refresh_memory();
+
+        let cpu = sys.global_cpu_info().cpu_usage();
+        let mem_used = sys.used_memory();
+        let mem_total = sys.total_memory();
+        let up = sysinfo::System::uptime();
+        let name = sysinfo::System::name().unwrap_or_else(|| "Unknown".to_string());
+        let version = sysinfo::System::kernel_version().unwrap_or_else(|| "Unknown".to_string());
+        let host = sysinfo::System::host_name().unwrap_or_else(|| "Unknown".to_string());
+        let cores = sys.cpus().len();
+        
+        (cpu, mem_used, mem_total, up, name, version, host, cores)
+    };
+
     Json(ClusterInfoResponse {
         node_id,
         is_cluster_mode,
         cluster_config,
+        cpu_usage,
+        memory_usage,
+        memory_total,
+        uptime,
+        os_name,
+        os_version,
+        hostname,
+        num_cpus,
     })
+}
+
+// ==================== System Monitoring WebSocket ====================
+
+pub async fn monitor_ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> Response {
+    ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
+}
+
+async fn handle_monitor_socket(mut socket: WebSocket, state: AppState) {
+    use std::sync::atomic::Ordering;
+
+    tracing::info!("Monitor WS: Client connected");
+
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+
+    loop {
+        // Wait for next tick
+        interval.tick().await;
+        // tracing::debug!("Monitor WS: Sending stats");
+
+        // Check if client is still alive (optional ping/pong could go here)
+        
+        let stats = {
+            let mut sys = state.system_monitor.lock().unwrap();
+            
+            // Refresh specific stats
+            sys.refresh_cpu();
+            sys.refresh_memory();
+
+            let cpu = sys.global_cpu_info().cpu_usage();
+            let mem_used = sys.used_memory();
+            let mem_total = sys.total_memory();
+            let up = sysinfo::System::uptime();
+            let name = sysinfo::System::name().unwrap_or_else(|| "Unknown".to_string());
+            let version = sysinfo::System::kernel_version().unwrap_or_else(|| "Unknown".to_string());
+            let host = sysinfo::System::host_name().unwrap_or_else(|| "Unknown".to_string());
+            let cores = sys.cpus().len();
+            
+            serde_json::json!({
+                "cpu_usage": cpu,
+                "memory_usage": mem_used,
+                "memory_total": mem_total,
+                "uptime": up,
+                "os_name": name,
+                "os_version": version,
+                "hostname": host,
+                "num_cpus": cores,
+                "pid": std::process::id(),
+                "active_scripts": state.script_stats.active_scripts.load(Ordering::Relaxed),
+                "active_ws": state.script_stats.active_ws.load(Ordering::Relaxed)
+            })
+        };
+
+        let msg = match serde_json::to_string(&stats) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        if socket.send(Message::Text(msg.into())).await.is_err() {
+            // Client disconnected
+            break;
+        }
+    }
 }
 
 // ==================== Cluster Remove Node ====================

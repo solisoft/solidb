@@ -15,23 +15,16 @@ export default {
         currentScript: null,
         loading: false,
         saving: false,
-        searchTerm: ''
+        stats: {
+            active_scripts: 0,
+            active_ws: 0,
+            total_scripts_executed: 0,
+            total_ws_connections: 0
+        },
+        statsInterval: null
     },
 
     editor: null,
-
-    filteredScripts() {
-        if (!this.state.searchTerm) return this.state.scripts;
-        const term = this.state.searchTerm.toLowerCase();
-        return this.state.scripts.filter(s =>
-            s.name.toLowerCase().includes(term) ||
-            s.path.toLowerCase().includes(term)
-        );
-    },
-
-    updateSearch(e) {
-        this.update({ searchTerm: e.target.value });
-    },
 
     copyUrl(script) {
         // getApiUrl returns "http://host:port/_api", we need the base "http://host:port"
@@ -67,6 +60,12 @@ export default {
     async onMounted() {
         await this.fetchCollections();
         await this.fetchScripts();
+        await this.fetchStats();
+        this.state.statsInterval = setInterval(() => this.fetchStats(), 5000);
+    },
+
+    onUnmounted() {
+        if (this.state.statsInterval) clearInterval(this.state.statsInterval);
     },
 
     async fetchCollections() {
@@ -82,6 +81,22 @@ export default {
             }
         } catch (e) {
             console.error("Failed to fetch collections", e);
+        }
+    },
+
+    async fetchStats() {
+        try {
+            // Use getApiUrl directly for global stats endpoint
+            const url = `${getApiUrl()}/scripts/stats`;
+            // Note: authenticatedFetch might fail if user not logged in? Stats might be public?
+            // Assuming protected as per routes.rs structure (inside api_routes)
+            const res = await authenticatedFetch(url);
+            if (res.ok) {
+                const stats = await res.json();
+                this.update({ stats });
+            }
+        } catch (e) {
+            console.error("Failed to fetch script stats", e);
         }
     },
 
@@ -257,32 +272,68 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div class="space-y-6"><div expr2646="expr2646" class="space-y-6"></div><div expr2660="expr2660" class="space-y-6"></div></div>',
+    '<div class="space-y-6"><div expr65="expr65" class="space-y-6"></div><div expr83="expr83" class="space-y-6"></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.view === 'list',
-        redundantAttribute: 'expr2646',
-        selector: '[expr2646]',
+        redundantAttribute: 'expr65',
+        selector: '[expr65]',
 
         template: template(
-          '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0"><div class="flex-1 max-w-lg"><div class="relative rounded-md shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg></div><input expr2647="expr2647" type="text" class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-600 rounded-md bg-gray-700 text-gray-100 placeholder-gray-400 py-2" placeholder="Search scripts..."/></div></div><div class="flex items-center space-x-3"><h2 class="text-xl font-bold text-gray-100 mr-4 sm:hidden">Lua Scripts</h2><button expr2648="expr2648" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>\n                        New Script\n                    </button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/4">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/6">\n                                Methods</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Path</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr2649="expr2649" class="hover:bg-gray-750 transition-colors"></tr><tr expr2658="expr2658"></tr></tbody></table></div>',
+          '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0"><div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 mr-6"><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active Scripts</div><div expr66="expr66" class="text-xl font-bold text-indigo-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active WS</div><div expr67="expr67" class="text-xl font-bold text-green-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total Scripts</div><div expr68="expr68" class="text-lg font-bold text-gray-200 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total WS</div><div expr69="expr69" class="text-lg font-bold text-gray-200 mt-1"> </div></div></div><div class="flex items-center space-x-3"><button expr70="expr70" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>\n                        New Script\n                    </button><button expr71="expr71" title="Refresh Stats" class="inline-flex items-center p-2 border border-gray-600 rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none transition-colors h-10 w-10 justify-center"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/4">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/6">\n                                Methods</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Path</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr72="expr72" class="hover:bg-gray-750 transition-colors"></tr><tr expr81="expr81"></tr></tbody></table></div>',
           [
             {
-              redundantAttribute: 'expr2647',
-              selector: '[expr2647]',
+              redundantAttribute: 'expr66',
+              selector: '[expr66]',
 
               expressions: [
                 {
-                  type: expressionTypes.EVENT,
-                  name: 'oninput',
-                  evaluate: _scope => _scope.updateSearch
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.stats.active_scripts
                 }
               ]
             },
             {
-              redundantAttribute: 'expr2648',
-              selector: '[expr2648]',
+              redundantAttribute: 'expr67',
+              selector: '[expr67]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.stats.active_ws
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr68',
+              selector: '[expr68]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.stats.total_scripts_executed
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr69',
+              selector: '[expr69]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.state.stats.total_ws_connections
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr70',
+              selector: '[expr70]',
 
               expressions: [
                 {
@@ -293,16 +344,28 @@ export default {
               ]
             },
             {
+              redundantAttribute: 'expr71',
+              selector: '[expr71]',
+
+              expressions: [
+                {
+                  type: expressionTypes.EVENT,
+                  name: 'onclick',
+                  evaluate: _scope => _scope.fetchStats
+                }
+              ]
+            },
+            {
               type: bindingTypes.EACH,
               getKey: null,
               condition: null,
 
               template: template(
-                '<td class="px-6 py-4 whitespace-nowrap"><div expr2650="expr2650" class="text-sm font-medium text-gray-100"> </div><div expr2651="expr2651" class="text-xs text-gray-500 truncate max-w-xs"></div></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"><div class="flex flex-wrap gap-2"><span expr2652="expr2652"></span></div></td><td expr2653="expr2653" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono group cursor-pointer" title="Click to copy URL"><span expr2654="expr2654" class="text-gray-600"> </span><span expr2655="expr2655" class="text-indigo-300 group-hover:text-white transition-colors"> </span><span class="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-gray-700 px-1 rounded text-gray-300">Copy</span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div class="flex items-center justify-end space-x-3"><button expr2656="expr2656" class="text-indigo-400\n                                        hover:text-indigo-300 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr2657="expr2657" class="text-red-400 hover:text-red-300\n                                        transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></td>',
+                '<td class="px-6 py-4 whitespace-nowrap"><div expr73="expr73" class="text-sm font-medium text-gray-100"> </div><div expr74="expr74" class="text-xs text-gray-500 truncate max-w-xs"></div></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"><div class="flex flex-wrap gap-2"><span expr75="expr75"></span></div></td><td expr76="expr76" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono group cursor-pointer" title="Click to copy URL"><span expr77="expr77" class="text-gray-600"> </span><span expr78="expr78" class="text-indigo-300 group-hover:text-white transition-colors"> </span><span class="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-gray-700 px-1 rounded text-gray-300">Copy</span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div class="flex items-center justify-end space-x-3"><button expr79="expr79" class="text-indigo-400\n                                        hover:text-indigo-300 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr80="expr80" class="text-red-400 hover:text-red-300\n                                        transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></td>',
                 [
                   {
-                    redundantAttribute: 'expr2650',
-                    selector: '[expr2650]',
+                    redundantAttribute: 'expr73',
+                    selector: '[expr73]',
 
                     expressions: [
                       {
@@ -315,8 +378,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.script.description,
-                    redundantAttribute: 'expr2651',
-                    selector: '[expr2651]',
+                    redundantAttribute: 'expr74',
+                    selector: '[expr74]',
 
                     template: template(
                       ' ',
@@ -372,15 +435,15 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr2652',
-                    selector: '[expr2652]',
+                    redundantAttribute: 'expr75',
+                    selector: '[expr75]',
                     itemName: 'method',
                     indexName: null,
                     evaluate: _scope => _scope.script.methods
                   },
                   {
-                    redundantAttribute: 'expr2653',
-                    selector: '[expr2653]',
+                    redundantAttribute: 'expr76',
+                    selector: '[expr76]',
 
                     expressions: [
                       {
@@ -391,8 +454,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2654',
-                    selector: '[expr2654]',
+                    redundantAttribute: 'expr77',
+                    selector: '[expr77]',
 
                     expressions: [
                       {
@@ -410,8 +473,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2655',
-                    selector: '[expr2655]',
+                    redundantAttribute: 'expr78',
+                    selector: '[expr78]',
 
                     expressions: [
                       {
@@ -422,8 +485,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2656',
-                    selector: '[expr2656]',
+                    redundantAttribute: 'expr79',
+                    selector: '[expr79]',
 
                     expressions: [
                       {
@@ -434,8 +497,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2657',
-                    selector: '[expr2657]',
+                    redundantAttribute: 'expr80',
+                    selector: '[expr80]',
 
                     expressions: [
                       {
@@ -448,24 +511,24 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr2649',
-              selector: '[expr2649]',
+              redundantAttribute: 'expr72',
+              selector: '[expr72]',
               itemName: 'script',
               indexName: null,
-              evaluate: _scope => _scope.filteredScripts()
+              evaluate: _scope => _scope.state.scripts
             },
             {
               type: bindingTypes.IF,
-              evaluate: _scope => _scope.filteredScripts().length === 0,
-              redundantAttribute: 'expr2658',
-              selector: '[expr2658]',
+              evaluate: _scope => _scope.state.scripts.length === 0,
+              redundantAttribute: 'expr81',
+              selector: '[expr81]',
 
               template: template(
-                '<td colspan="4" class="px-6 py-16 text-center"><div class="flex flex-col items-center justify-center"><svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><p class="text-gray-400 text-lg font-medium">No scripts found</p><p class="text-gray-500 text-sm mt-1">Get started by creating a new Lua script.</p><button expr2659="expr2659" class="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium">Create\n                                        your first script &rarr;</button></div></td>',
+                '<td colspan="4" class="px-6 py-16 text-center"><div class="flex flex-col items-center justify-center"><svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><p class="text-gray-400 text-lg font-medium">No scripts found</p><p class="text-gray-500 text-sm mt-1">Get started by creating a new Lua script.</p><button expr82="expr82" class="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium">Create\n                                        your first script &rarr;</button></div></td>',
                 [
                   {
-                    redundantAttribute: 'expr2659',
-                    selector: '[expr2659]',
+                    redundantAttribute: 'expr82',
+                    selector: '[expr82]',
 
                     expressions: [
                       {
@@ -484,15 +547,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.view === 'edit',
-        redundantAttribute: 'expr2660',
-        selector: '[expr2660]',
+        redundantAttribute: 'expr83',
+        selector: '[expr83]',
 
         template: template(
-          '<div class="flex items-center justify-between"><h2 expr2661="expr2661" class="text-2xl font-bold text-gray-100"> </h2></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 p-6 space-y-6"><div class="grid grid-cols-1 gap-6 sm:grid-cols-2"><div><label class="block text-sm font-medium text-gray-300">Name</label><input expr2662="expr2662" type="text" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="My Script"/></div><div><label class="block text-sm font-medium text-gray-300">URL Path</label><div class="mt-1 flex rounded-md shadow-sm"><span expr2663="expr2663" class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-600 bg-gray-700 text-gray-400 sm:text-sm"> </span><input expr2664="expr2664" type="text" class="flex-1 min-w-0 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-none rounded-r-md text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="my-endpoint"/></div></div></div><div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">HTTP Methods</label><div class="flex space-x-4"><label expr2665="expr2665" class="inline-flex items-center cursor-pointer group"></label></div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Lua Code</label><div id="ace-editor" class="h-96 w-full rounded-md border border-gray-600"></div><p class="mt-2 text-sm text-gray-500">Global objects: <code class="text-indigo-400">db</code>, <code class="text-indigo-400">solidb</code>,\n                        <code class="text-indigo-400">request</code></p></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr2668="expr2668" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Cancel</button><button expr2669="expr2669" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"> </button></div></div>',
+          '<div class="flex items-center justify-between"><h2 expr84="expr84" class="text-2xl font-bold text-gray-100"> </h2></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 p-6 space-y-6"><div class="grid grid-cols-1 gap-6 sm:grid-cols-2"><div><label class="block text-sm font-medium text-gray-300">Name</label><input expr85="expr85" type="text" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="My Script"/></div><div><label class="block text-sm font-medium text-gray-300">URL Path</label><div class="mt-1 flex rounded-md shadow-sm"><span expr86="expr86" class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-600 bg-gray-700 text-gray-400 sm:text-sm"> </span><input expr87="expr87" type="text" class="flex-1 min-w-0 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-none rounded-r-md text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="my-endpoint"/></div></div></div><div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">HTTP Methods</label><div class="flex space-x-4"><label expr88="expr88" class="inline-flex items-center cursor-pointer group"></label></div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Lua Code</label><div id="ace-editor" class="h-96 w-full rounded-md border border-gray-600"></div><p class="mt-2 text-sm text-gray-500">Global objects: <code class="text-indigo-400">db</code>, <code class="text-indigo-400">solidb</code>,\n                        <code class="text-indigo-400">request</code></p></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr91="expr91" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Cancel</button><button expr92="expr92" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"> </button></div></div>',
           [
             {
-              redundantAttribute: 'expr2661',
-              selector: '[expr2661]',
+              redundantAttribute: 'expr84',
+              selector: '[expr84]',
 
               expressions: [
                 {
@@ -503,8 +566,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2662',
-              selector: '[expr2662]',
+              redundantAttribute: 'expr85',
+              selector: '[expr85]',
 
               expressions: [
                 {
@@ -522,8 +585,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2663',
-              selector: '[expr2663]',
+              redundantAttribute: 'expr86',
+              selector: '[expr86]',
 
               expressions: [
                 {
@@ -541,8 +604,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2664',
-              selector: '[expr2664]',
+              redundantAttribute: 'expr87',
+              selector: '[expr87]',
 
               expressions: [
                 {
@@ -565,11 +628,11 @@ export default {
               condition: null,
 
               template: template(
-                '<input expr2666="expr2666" type="checkbox" class="h-4 w-4 bg-gray-700 border-gray-600 rounded text-indigo-600 focus:ring-indigo-500"/><span expr2667="expr2667"> </span>',
+                '<input expr89="expr89" type="checkbox" class="h-4 w-4 bg-gray-700 border-gray-600 rounded text-indigo-600 focus:ring-indigo-500"/><span expr90="expr90"> </span>',
                 [
                   {
-                    redundantAttribute: 'expr2666',
-                    selector: '[expr2666]',
+                    redundantAttribute: 'expr89',
+                    selector: '[expr89]',
 
                     expressions: [
                       {
@@ -592,8 +655,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2667',
-                    selector: '[expr2667]',
+                    redundantAttribute: 'expr90',
+                    selector: '[expr90]',
 
                     expressions: [
                       {
@@ -621,8 +684,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr2665',
-              selector: '[expr2665]',
+              redundantAttribute: 'expr88',
+              selector: '[expr88]',
               itemName: 'method',
               indexName: null,
 
@@ -635,8 +698,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2668',
-              selector: '[expr2668]',
+              redundantAttribute: 'expr91',
+              selector: '[expr91]',
 
               expressions: [
                 {
@@ -647,8 +710,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2669',
-              selector: '[expr2669]',
+              redundantAttribute: 'expr92',
+              selector: '[expr92]',
 
               expressions: [
                 {

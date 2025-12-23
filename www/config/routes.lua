@@ -49,6 +49,7 @@ CustomRoute("GET", "/database/:db/apikeys", "dashboard#apikeys")
 CustomRoute("GET", "/database/:db/scripts", "dashboard#scripts")
 CustomRoute("GET", "/database/:db/queues", "dashboard#queues")
 CustomRoute("GET", "/database/:db/sharding", "dashboard#sharding")
+CustomRoute("GET", "/database/:db/monitoring", "dashboard#monitoring")
 
 -- docs pages
 CustomRoute("GET", "/docs/:page", "docs#show")

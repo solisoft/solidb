@@ -51,6 +51,10 @@ local app = {
 
   apikeys = function()
     Page("dashboard/apikeys", "app")
+  end,
+
+  monitoring = function()
+    Page("dashboard/monitoring", "app")
   end
 }
 

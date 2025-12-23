@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::DbError;
 use crate::storage::StorageEngine;
@@ -200,16 +201,30 @@ fn default_database() -> String {
     "_system".to_string()
 }
 
+/// Runtime statistics for the script engine
+#[derive(Debug, Default)]
+pub struct ScriptStats {
+    /// Number of HTTP scripts currently executing
+    pub active_scripts: AtomicUsize,
+    /// Number of active WebSocket connections
+    pub active_ws: AtomicUsize,
+    /// Total number of HTTP scripts executed since start
+    pub total_scripts_executed: AtomicUsize,
+    /// Total number of WebSocket connections handled since start
+    pub total_ws_connections: AtomicUsize,
+}
+
 /// Lua scripting engine
 pub struct ScriptEngine {
     storage: Arc<StorageEngine>,
     queue_notifier: Option<broadcast::Sender<()>>,
+    stats: Arc<ScriptStats>,
 }
 
 impl ScriptEngine {
     /// Create a new script engine with access to the storage layer
-    pub fn new(storage: Arc<StorageEngine>) -> Self {
-        Self { storage, queue_notifier: None }
+    pub fn new(storage: Arc<StorageEngine>, stats: Arc<ScriptStats>) -> Self {
+        Self { storage, queue_notifier: None, stats }
     }
 
     pub fn with_queue_notifier(mut self, notifier: broadcast::Sender<()>) -> Self {
@@ -219,6 +234,18 @@ impl ScriptEngine {
 
     /// Execute a Lua script with the given context
     pub async fn execute(&self, script: &Script, db_name: &str, context: &ScriptContext) -> Result<ScriptResult, DbError> {
+        self.stats.active_scripts.fetch_add(1, Ordering::SeqCst);
+        self.stats.total_scripts_executed.fetch_add(1, Ordering::SeqCst);
+        
+        // Ensure active counter is decremented even on panic or early return
+        struct ActiveScriptGuard(Arc<ScriptStats>);
+        impl Drop for ActiveScriptGuard {
+            fn drop(&mut self) {
+                self.0.active_scripts.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let _guard = ActiveScriptGuard(self.stats.clone());
+
         let lua = Lua::new();
 
         // Secure environment: Remove unsafe standard libraries and functions
@@ -254,6 +281,18 @@ impl ScriptEngine {
 
     /// Execute a Lua script as a WebSocket handler
     pub async fn execute_ws(&self, script: &Script, db_name: &str, context: &ScriptContext, ws: axum::extract::ws::WebSocket) -> Result<(), DbError> {
+        self.stats.active_ws.fetch_add(1, Ordering::SeqCst);
+        self.stats.total_ws_connections.fetch_add(1, Ordering::SeqCst);
+
+        // Ensure active counter is decremented even on panic or early return
+        struct ActiveWsGuard(Arc<ScriptStats>);
+        impl Drop for ActiveWsGuard {
+            fn drop(&mut self) {
+                self.0.active_ws.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let _guard = ActiveWsGuard(self.stats.clone());
+
         let lua = Lua::new();
 
         // Secure environment
@@ -384,6 +423,19 @@ impl ScriptEngine {
         }).map_err(|e| DbError::InternalError(format!("Failed to create log function: {}", e)))?;
         solidb.set("log", log_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set log: {}", e)))?;
+
+        // solidb.stats() -> table
+        let stats_ref = self.stats.clone();
+        let stats_fn = lua.create_function(move |lua, (): ()| {
+            let table = lua.create_table()?;
+            table.set("active_scripts", stats_ref.active_scripts.load(Ordering::SeqCst))?;
+            table.set("active_ws", stats_ref.active_ws.load(Ordering::SeqCst))?;
+            table.set("total_scripts_executed", stats_ref.total_scripts_executed.load(Ordering::SeqCst))?;
+            table.set("total_ws_connections", stats_ref.total_ws_connections.load(Ordering::SeqCst))?;
+            Ok(table)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create stats function: {}", e)))?;
+        solidb.set("stats", stats_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set stats: {}", e)))?;
 
         // solidb.now() -> Unix timestamp
         let now_fn = lua.create_function(|_, (): ()| {

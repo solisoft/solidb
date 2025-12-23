@@ -12,6 +12,7 @@ use tower_http::trace::TraceLayer;
 use super::handlers::*;
 use crate::server::cursor_store::CursorStore;
 use crate::storage::StorageEngine;
+use crate::scripting::ScriptStats;
 
 pub fn create_router(
     storage: StorageEngine,
@@ -19,6 +20,7 @@ pub fn create_router(
     replication_log: Option<Arc<crate::sync::log::SyncLog>>,
     shard_coordinator: Option<Arc<crate::sharding::ShardCoordinator>>,
     queue_worker: Option<Arc<crate::queue::QueueWorker>>,
+    script_stats: Arc<ScriptStats>,
     _api_port: u16
 ) -> Router {
     // Initialize Auth (create default admin if needed)
@@ -57,6 +59,7 @@ pub fn create_router(
         startup_time: std::time::Instant::now(),
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
+        script_stats,
     };
 
 
@@ -219,6 +222,8 @@ pub fn create_router(
         .route("/_api/database/{db}/scripts/{script_id}", get(super::script_handlers::get_script_handler))
         .route("/_api/database/{db}/scripts/{script_id}", put(super::script_handlers::update_script_handler))
         .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler))
+        .route("/_api/scripts/stats", get(super::script_handlers::get_script_stats_handler))
+        .route("/_api/monitoring/ws", get(super::handlers::monitor_ws_handler))
         // Live Query Token (short-lived token for WebSocket connections)
         .route("/_api/livequery/token", get(livequery_token_handler));
         // .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));

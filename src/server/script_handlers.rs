@@ -67,6 +67,14 @@ pub struct DeleteScriptResponse {
     pub deleted: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ScriptStatsResponse {
+    pub active_scripts: usize,
+    pub active_ws: usize,
+    pub total_scripts_executed: usize,
+    pub total_ws_connections: usize,
+}
+
 // ==================== Script Management Handlers ====================
 
 /// Create a new Lua script
@@ -287,6 +295,21 @@ pub async fn delete_script_handler(
     Ok(Json(DeleteScriptResponse { deleted: true }))
 }
 
+/// Get script runtime statistics
+pub async fn get_script_stats_handler(
+    State(state): State<AppState>,
+) -> Result<Json<ScriptStatsResponse>, DbError> {
+    use std::sync::atomic::Ordering;
+
+    let stats = &state.script_stats;
+    Ok(Json(ScriptStatsResponse {
+        active_scripts: stats.active_scripts.load(Ordering::SeqCst),
+        active_ws: stats.active_ws.load(Ordering::SeqCst),
+        total_scripts_executed: stats.total_scripts_executed.load(Ordering::SeqCst),
+        total_ws_connections: stats.total_ws_connections.load(Ordering::SeqCst),
+    }))
+}
+
 // ==================== Script Execution Handler ====================
 
 /// Execute a Lua script based on the URL path
@@ -347,7 +370,7 @@ pub async fn execute_script_handler(
     };
 
     // Execute script
-    let engine = ScriptEngine::new(state.storage.clone());
+    let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
     
     // Handle WebSocket upgrade
     if context.is_websocket {
