@@ -2038,12 +2038,8 @@
                     }).catch(e => console.error("Audio unlock failed", e));
                 }
 
-                // Play a nice success sound if available (optional, purely for feedback)
-                try {
-                    const audio = new Audio('/sounds/notification.mp3');
-                    audio.volume = 0.5;
-                    audio.play().catch(() => { });
-                } catch (e) { }
+                // Play a nice success sound
+                this.playSound('notification');
 
                 this.update({ showSoundPopup: false });
             },

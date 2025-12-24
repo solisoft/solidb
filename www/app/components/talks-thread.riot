@@ -1,5 +1,6 @@
 <talks-thread>
-    <div class="flex flex-col h-full bg-[#1A1D21] border-l border-gray-700">
+    <div class="flex flex-col h-full bg-[#1A1D21] border-l border-gray-700" onDragEnter={ onDragEnter } onDragLeave={
+        onDragLeave } onDragOver={ onDragOver } ondrop={ onDrop }>
         <!-- Thread Header -->
         <div class="flex items-center justify-between p-4 border-b border-gray-700 bg-[#222529]">
             <div class="flex items-center gap-2">
@@ -162,6 +163,48 @@
                 }
             },
 
+            // Drag and Drop Handlers
+            onDragEnter(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.dragCounter++;
+                this.update({ dragging: true });
+            },
+
+            onDragOver(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            },
+
+            onDragLeave(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.dragCounter--;
+                if (this.dragCounter <= 0) {
+                    this.dragCounter = 0;
+                    this.update({ dragging: false });
+                }
+            },
+
+            onDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.dragCounter = 0;
+                this.update({ dragging: false });
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                if (droppedFiles.length > 0) {
+                    this.update({
+                        files: [...this.state.files, ...droppedFiles]
+                    });
+                }
+            },
+
+            removeFile(index) {
+                const newFiles = [...this.state.files];
+                newFiles.splice(index, 1);
+                this.update({ files: newFiles });
+            },
+
             // Emoji Picker
             toggleEmojiPicker(e) {
                 if (e) {
@@ -294,6 +337,25 @@
             getUserPickerItemClass(index) {
                 return 'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-700 ' +
                     (index === this.state.selectedUserIndex ? 'bg-gray-700' : '');
+            },
+
+            // Helper: Upload a single file
+            async uploadFile(file) {
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const response = await fetch('/talks/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) throw new Error('Upload failed');
+                    return await response.json();
+                } catch (err) {
+                    console.error('Error uploading file:', file.name, err);
+                    return null;
+                }
             },
 
             async sendMessage(e) {
