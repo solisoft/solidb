@@ -128,11 +128,43 @@
                                     getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
                                         reaction.users ? reaction.users.length : 0 }</span></button>
                             </div>
+
+                            <!-- Thread indicator (Inline) -->
+                            <div if={ message.thread_count && message.thread_count> 0 }
+                                onclick={ (e)=> props.onOpenThread && props.onOpenThread(message, e) }
+                                class="flex items-center gap-2 text-sm cursor-pointer group/thread ml-1 mr-1">
+                                <!-- Participant avatars (stacked) -->
+                                <div class="flex -space-x-1.5">
+                                    <div each={ (participant, idx) in getThreadParticipants(message).slice(0, 3) }
+                                        class={ 'w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1A1D21] '
+                                        + getParticipantAvatarColor(participant, idx) } title={ participant }>
+                                        { getInitials(participant) }
+                                    </div>
+                                    <div if={ getThreadParticipants(message).length> 3 }
+                                        class="w-5 h-5 rounded-full flex items-center justify-center text-[8px]
+                                        font-bold
+                                        text-white bg-gray-600 border-2 border-[#1A1D21]">
+                                        +{ getThreadParticipants(message).length - 3 }
+                                    </div>
+                                </div>
+                                <!-- Reply count -->
+                                <span class="text-blue-400 text-xs group-hover/thread:underline font-medium">
+                                    { message.thread_count } { message.thread_count === 1 ? 'reply' : 'replies' }
+                                </span>
+                            </div>
+
                             <div class="relative group/emoji">
                                 <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) }
                                     class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700
                                     transition-colors opacity-0 group-hover:opacity-100"><i
                                         class="far fa-smile text-sm"></i></button>
+                            </div>
+                            <!-- Reply to thread button (only if no thread exists) -->
+                            <div if={ !message.thread_count || message.thread_count===0 } class="relative group/reply">
+                                <button onclick={ (e)=> props.onOpenThread && props.onOpenThread(message, e) }
+                                    class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700
+                                    transition-colors opacity-0 group-hover:opacity-100" title="Reply in thread"><i
+                                        class="fas fa-reply text-sm"></i></button>
                             </div>
                         </div>
                     </div>
@@ -269,6 +301,20 @@
             },
             handleImageError(e) {
                 e.target.parentElement.style.display = 'none';
+            },
+            getThreadParticipants(message) {
+                if (!message.thread_participants) return [];
+                return message.thread_participants;
+            },
+            getParticipantAvatarColor(participant, index) {
+                const colors = [
+                    'bg-gradient-to-br from-indigo-500 to-purple-600',
+                    'bg-gradient-to-br from-green-500 to-teal-600',
+                    'bg-gradient-to-br from-orange-500 to-red-600',
+                    'bg-gradient-to-br from-blue-500 to-cyan-600',
+                    'bg-gradient-to-br from-pink-500 to-rose-600'
+                ];
+                return colors[index % colors.length];
             }
         }
     </script>

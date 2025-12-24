@@ -1416,6 +1416,129 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     SetHeader("Content-Type", "application/json")
     WriteJSON({ results = results, query = query })
   end,
+
+  -- Get thread messages for a parent message
+  get_thread_messages = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local parent_id = GetParam("parent_id")
+    if not parent_id or parent_id == "" then
+      SetStatus(400)
+      WriteJSON({ error = "parent_id is required" })
+      return
+    end
+
+    -- Fetch thread messages (messages where thread_parent_id equals this message)
+    local res = db:Sdbql([[
+      FOR m IN messages 
+      FILTER m.thread_parent_id == @parent_id
+      SORT m.timestamp ASC
+      RETURN m
+    ]], { parent_id = parent_id })
+
+    local messages = {}
+    if res and res.result then
+      messages = res.result
+    end
+
+    SetStatus(200)
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({ success = true, messages = messages })
+  end,
+
+  -- Send a reply in a thread
+  send_thread_reply = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local parent_message_id = body.parent_message_id
+    local text = body.text
+
+    if not parent_message_id or parent_message_id == "" then
+      SetStatus(400)
+      WriteJSON({ error = "parent_message_id is required" })
+      return
+    end
+
+    if not text or text == "" then
+      SetStatus(400)
+      WriteJSON({ error = "text is required" })
+      return
+    end
+
+    -- Get the parent message to find the channel
+    local parentRes = db:Sdbql("FOR m IN messages FILTER m._id == @id RETURN m", { id = parent_message_id })
+    if not parentRes or not parentRes.result or #parentRes.result == 0 then
+      SetStatus(404)
+      WriteJSON({ error = "Parent message not found" })
+      return
+    end
+
+    local parent = parentRes.result[1]
+
+    -- Determine sender name
+    local sender = current_user.firstname and current_user.lastname 
+      and (current_user.firstname .. " " .. current_user.lastname)
+      or current_user.email
+
+    -- Create the thread reply message
+    local newMessage = {
+      channel_id = parent.channel_id,
+      thread_parent_id = parent_message_id,
+      sender = sender,
+      user_key = current_user._key,
+      text = text,
+      timestamp = os.time(),
+      attachments = body.attachments or {}
+    }
+
+    local createRes = db:CreateDocument("messages", newMessage)
+    newMessage._key = createRes._key
+    newMessage._id = createRes._id
+
+    -- Update the parent message with thread count and participants
+    -- First, get current thread count and participants
+    local thread_count = (parent.thread_count or 0) + 1
+    local thread_participants = parent.thread_participants or {}
+    
+    -- Add sender if not already in participants
+    local found = false
+    for _, p in ipairs(thread_participants) do
+      if p == sender then
+        found = true
+        break
+      end
+    end
+    if not found then
+      table.insert(thread_participants, sender)
+    end
+
+    -- Update parent message
+    db:Sdbql([[
+      FOR m IN messages 
+      FILTER m._id == @id 
+      UPDATE m WITH { 
+        thread_count: @count, 
+        thread_participants: @participants 
+      } IN messages
+    ]], { id = parent_message_id, count = thread_count, participants = thread_participants })
+
+    SetStatus(201)
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({ success = true, message = newMessage })
+  end,
 }
 
 return BeansEnv == "development" and HandleController(app) or app

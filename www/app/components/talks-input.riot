@@ -16,8 +16,8 @@
                 </div>
             </div>
             <div class="p-4"><textarea ref="messageInput" placeholder="Message" onkeydown={ props.onKeyDown } oninput={
-                    props.onHandleMessageInput }
-                    class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none h-20 placeholder-gray-600"></textarea>
+                    handleInput }
+                    class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none min-h-[5rem] max-h-64 placeholder-gray-600 block overflow-y-auto"></textarea>
             </div>
             <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700">
                 <div class="flex items-center space-x-1">
@@ -34,6 +34,27 @@
     </footer>
     <script>
         export default {
+            onMounted() {
+                this.autoResize();
+            },
+            onUpdated() {
+                const textarea = (this.refs && this.refs.messageInput) || this.root.querySelector('textarea');
+                if (!this.props.sending && textarea && textarea.value === '') {
+                    textarea.style.height = 'auto';
+                }
+            },
+            handleInput(e) {
+                this.autoResize();
+                if (this.props.onHandleMessageInput) {
+                    this.props.onHandleMessageInput(e);
+                }
+            },
+            autoResize() {
+                const textarea = (this.refs && this.refs.messageInput) || this.root.querySelector('textarea');
+                if (!textarea) return;
+                textarea.style.height = 'auto';
+                textarea.style.height = textarea.scrollHeight + 'px';
+            },
             getContainerClass() {
                 return 'border-t border-gray-700 bg-[#222529] transition-colors overflow-hidden ' + (this.props.dragging ? 'bg-gray-700/50 border-blue-500' : '');
             },

@@ -118,6 +118,73 @@ window.TalksMixin = {
             url += '&filename=' + attachment.filename;
         }
         return url;
+    },
+
+    // Upload & Drag-n-Drop Shared Methods
+    async uploadFile(file) {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await fetch('/talks/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (!response.ok) throw new Error('Upload failed');
+            return await response.json();
+        } catch (err) {
+            console.error('Error uploading file:', file.name, err);
+            return null;
+        }
+    },
+
+    onDragEnter(e) {
+        e.preventDefault();
+        this.dragCounter = (this.dragCounter || 0) + 1;
+        this.update({ dragging: true });
+    },
+
+    onDragOver(e) {
+        e.preventDefault();
+    },
+
+    onDragLeave(e) {
+        e.preventDefault();
+        this.dragCounter = (this.dragCounter || 0) - 1;
+        if (this.dragCounter <= 0) {
+            this.dragCounter = 0;
+            this.update({ dragging: false });
+        }
+    },
+
+    onDrop(e) {
+        e.preventDefault();
+        this.dragCounter = 0;
+        this.update({ dragging: false });
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (droppedFiles.length > 0) {
+            this.update({
+                files: [...(this.state.files || []), ...droppedFiles]
+            });
+        }
+    },
+
+    removeFile(index) {
+        const newFiles = [...(this.state.files || [])];
+        newFiles.splice(index, 1);
+        this.update({ files: newFiles });
+    },
+
+    getUsername(user) {
+        if (!user) return 'Unknown';
+        if (user.firstname && user.lastname) return user.firstname + ' ' + user.lastname;
+        if (user.username) return user.username;
+        return user.email || 'Anonymous';
+    },
+
+    getInitials(name) {
+        if (!name) return '?';
+        const matches = name.match(/(\b\S)?/g);
+        return matches ? matches.join("").match(/(^\S|\S$)?/g).join("").toUpperCase() : '?';
     }
 };
 

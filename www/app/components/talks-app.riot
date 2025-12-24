@@ -20,7 +20,7 @@
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
                     fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
                     scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker }
-                    highlightMessageId={ state.highlightMessageId } />
+                    highlightMessageId={ state.highlightMessageId } onOpenThread={ openThread } />
 
                 <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
                     showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
@@ -45,7 +45,7 @@
 
             <!-- Search Results Sidebar -->
             <div if={ state.showSearchSidebar }
-                class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0">
+                class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full flex-shrink-0">
                 <div class="flex items-center justify-between p-4 border-b border-gray-700">
                     <div class="flex items-center gap-2">
                         <i class="fas fa-search text-indigo-400"></i>
@@ -96,6 +96,13 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Thread Sidebar -->
+            <div class={ 'w-96 flex-shrink-0 h-full ' + (state.showThreadSidebar ? '' : 'hidden' ) }>
+                <talks-thread parentMessage={ state.threadParentMessage } threadMessages={ state.threadMessages }
+                    currentUser={ state.currentUser } users={ state.users } onClose={ closeThread } onReplySent={
+                    handleThreadReplySent } />
             </div>
 
             <!-- Fullscreen Image Lightbox -->
@@ -381,6 +388,7 @@
         import Messages from '/app/components/talks-messages.riot.js'
         import Input from '/app/components/talks-input.riot.js'
         import Calls from '/app/components/talks-calls.riot.js'
+        import Thread from '/app/components/talks-thread.riot.js'
 
         export default {
             components: {
@@ -388,7 +396,8 @@
                 'talks-header': Header,
                 'talks-messages': Messages,
                 'talks-input': Input,
-                'talks-calls': Calls
+                'talks-calls': Calls,
+                'talks-thread': Thread
             },
             ...window.TalksMixin,
             onBeforeMount() {
@@ -400,7 +409,7 @@
                     sending: false,
                     audioSuspended: false,
                     allMessages: this.props.messages || [],
-                    messages: this.props.messages || [],
+                    messages: (this.props.messages || []).filter(m => !m.thread_parent_id),
                     ogCache: {}, // Cache for Open Graph metadata
                     lightboxImage: null, // { url, filename } for fullscreen view
                     showEmojiPicker: false, // Toggle for input emoji picker
@@ -444,7 +453,12 @@
                     searchQuery: '',
                     searchResults: [],
                     searchLoading: false,
-                    highlightMessageId: null
+                    highlightMessageId: null,
+                    // Thread state
+                    showThreadSidebar: false,
+                    threadParentMessage: null,
+                    threadMessages: [],
+                    threadLoading: false
                 }
                 // Ensure favorites array exists and is an array
                 if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -625,7 +639,100 @@
             },
 
             toggleMembersPanel() {
-                this.update({ showMembersPanel: !this.state.showMembersPanel });
+                this.update({
+                    showMembersPanel: !this.state.showMembersPanel,
+                    showThreadSidebar: false,
+                    showSearchSidebar: false
+                });
+            },
+
+            // Thread methods
+            async openThread(message, e) {
+                if (e) e.stopPropagation();
+
+                // If already loading this thread, ignore
+                if (this.state.threadLoading && this.state.threadParentMessage && this.state.threadParentMessage._id === message._id) {
+                    return;
+                }
+
+                this.update({
+                    showThreadSidebar: true,
+                    showSearchSidebar: false,
+                    showMembersPanel: false,
+                    threadParentMessage: message,
+                    threadMessages: [],
+                    threadLoading: true
+                });
+
+                try {
+                    const response = await fetch(`/talks/get_thread_messages?parent_id=${message._id}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        this.update({
+                            threadMessages: data.messages || [],
+                            threadLoading: false
+                        });
+                    } else {
+                        console.error('Failed to load thread:', data.error);
+                        this.update({ threadLoading: false });
+                    }
+                } catch (err) {
+                    console.error('Error loading thread:', err);
+                    this.update({ threadLoading: false });
+                }
+            },
+
+            closeThread() {
+                this.update({
+                    showThreadSidebar: false,
+                    threadParentMessage: null,
+                    threadMessages: []
+                });
+            },
+
+            handleThreadReplySent(newMessage) {
+                let threadMessages = this.state.threadMessages;
+                let messagesUpdated = false;
+
+                // Check if message already exists (via Live Query race)
+                if (!threadMessages.some(m => m._id === newMessage._id)) {
+                    threadMessages = [...threadMessages, newMessage];
+                    messagesUpdated = true;
+                }
+
+                // Calculate real count based on threadMessages length
+                // This ensures we sync with actual thread content regardless of race conditions
+                const threadCount = threadMessages.length;
+                const sender = newMessage.sender;
+
+                // Update the parent message's thread count and participants in the main messages list
+                const messages = this.state.messages.map(msg => {
+                    if (msg._id === this.state.threadParentMessage._id) {
+                        const participants = [...(msg.thread_participants || [])];
+                        if (!participants.includes(sender)) {
+                            participants.push(sender);
+                        }
+                        return { ...msg, thread_count: threadCount, thread_participants: participants };
+                    }
+                    return msg;
+                });
+
+                // Also update the parent message in state
+                const updatedParent = {
+                    ...this.state.threadParentMessage,
+                    thread_count: threadCount
+                };
+
+                const updates = {
+                    messages,
+                    threadParentMessage: updatedParent
+                };
+
+                if (messagesUpdated) {
+                    updates.threadMessages = threadMessages;
+                }
+
+                this.update(updates);
             },
 
 
@@ -873,7 +980,7 @@
                             currentChannel: data.currentChannel,
                             currentChannelData: data.currentChannelData,
                             channelId: data.channelId,
-                            messages: data.messages,
+                            messages: data.messages.filter(m => !m.thread_parent_id),
                             allMessages: newAllMessages
                         });
 
@@ -1278,14 +1385,30 @@
                                         });
                                     }
 
-                                    // Filter for current channel display
-                                    const filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId));
+                                    // Filter for current channel display (exclude thread replies)
+                                    const filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId) && !m.thread_parent_id);
+
+                                    // Handle open thread updates
+                                    let threadMessagesUpdate = null;
+                                    if (this.state.showThreadSidebar && this.state.threadParentMessage) {
+                                        const newThreadReplies = newMessages.filter(m => m.thread_parent_id === this.state.threadParentMessage._id);
+                                        if (newThreadReplies.length > 0) {
+                                            const currentThreadIds = new Set(this.state.threadMessages.map(m => m._id));
+                                            const uniqueNew = newThreadReplies.filter(m => !currentThreadIds.has(m._id));
+                                            if (uniqueNew.length > 0) {
+                                                threadMessagesUpdate = [...this.state.threadMessages, ...uniqueNew].sort((a, b) => a.timestamp - b.timestamp);
+                                            }
+                                        }
+                                    }
 
                                     const updateData = {
                                         allMessages: updated,
                                         messages: filtered,
                                         initialSyncDone: true
                                     };
+                                    if (threadMessagesUpdate) {
+                                        updateData.threadMessages = threadMessagesUpdate;
+                                    }
                                     if (unreadChanged) updateData.unreadChannels = unread;
                                     this.update(updateData);
 
@@ -2962,6 +3085,10 @@
 
                 this.update({
                     showSearchSidebar: true,
+                    showThreadSidebar: false, // Close thread
+                    showMembersPanel: false, // Close members
+                    threadParentMessage: null,
+                    threadMessages: [],
                     searchQuery: query,
                     searchLoading: true,
                     searchResults: []
