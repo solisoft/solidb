@@ -76,8 +76,10 @@
 
                     <!-- Remote Peers -->
                     <div each={ peer in props.callPeers }
-                        class="relative bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 transition-all"
-                        style={ getGridStyle(props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
+                        class={ 'relative bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 transition-all group '
+                        + (((state.pinnedPeers || []).length> 0 && !(state.pinnedPeers || []).includes(peer.user._key))
+                        ? 'opacity-80 hover:opacity-100' : '') }
+                        style={ getGridStyle(peer, props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
 
                         <!-- Placeholder -->
                         <div if={ !peer.hasVideo }
@@ -93,10 +95,23 @@
                         <video id={ 'remote-video-' + peer.user._key } autoplay playsinline
                             class={ 'w-full h-full object-cover z-10 ' + (!peer.hasVideo ? 'hidden' : '' ) }></video>
 
+                        <div class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick={ (e)=> togglePin(e, peer.user._key) }
+                                class={ 'w-8 h-8 rounded-full flex items-center justify-center text-white backdrop-blur
+                                transition-colors '
+                                + ((state.pinnedPeers || []).includes(peer.user._key) ? 'bg-blue-600 hover:bg-blue-700'
+                                : 'bg-black/40 hover:bg-black/60') }
+                                title={ (state.pinnedPeers || []).includes(peer.user._key) ? "Unpin" : "Pin" }>
+                                <i class="fas fa-thumbtack text-xs transform rotate-45"></i>
+                            </button>
+                        </div>
+
                         <!-- Name Tag -->
                         <div
                             class="absolute bottom-3 left-3 bg-black/60 px-2.5 py-1 rounded-md text-white text-xs backdrop-blur font-medium z-20">
                             { getUsername(peer.user) }
+                            <i if={ (state.pinnedPeers || []).includes(peer.user._key) }
+                                class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i>
                         </div>
                     </div>
 
@@ -142,9 +157,10 @@
 
                     <div class="w-px h-8 bg-gray-700 mx-2"></div>
 
-                    <!-- Screen Share (Upcoming) -->
-                    <button
-                        class="w-12 h-12 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xl hover:bg-gray-600 hover:text-white transition-all disabled:opacity-50 cursor-not-allowed">
+                    <button onclick={ props.onToggleScreenShare }
+                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
+                        (props.isScreenSharing ? 'bg-green-600 text-white hover:bg-green-500'
+                        : 'bg-gray-700 text-white hover:bg-gray-600' ) } title="Share Screen">
                         <i class="fas fa-desktop"></i>
                     </button>
 
@@ -164,6 +180,9 @@
             ...window.TalksMixin,
             onMounted() {
                 // Initialize popups list animation if needed
+                this.state = {
+                    pinnedPeers: []
+                }
             },
 
             onUpdated() {
@@ -189,11 +208,53 @@
 
 
 
-            getGridStyle(count) {
-                // Adaptive Grid Logic
-                if (count <= 1) return 'width: 100%; height: 100%; max-width: 800px; max-height: 600px;';
-                if (count === 2) return 'width: 45%; aspect-ratio: 16/9;';
-                if (count <= 4) return 'width: 45%; aspect-ratio: 16/9;';
+            togglePin(e, userKey) {
+                e.stopPropagation();
+                let pinned = this.state.pinnedPeers || [];
+
+                if (pinned.includes(userKey)) {
+                    // Unpin
+                    pinned = pinned.filter(k => k !== userKey);
+                } else {
+                    // Pin (Max 2 for side-by-side)
+                    if (pinned.length >= 2) {
+                        pinned.shift(); // Remove oldest pin
+                    }
+                    pinned.push(userKey);
+                }
+                this.update({ pinnedPeers: pinned });
+            },
+
+            getGridStyle(peer, totalCount) {
+                const pinned = this.state.pinnedPeers || [];
+                const isPinned = pinned.includes(peer.user._key);
+                const hasPins = pinned.length > 0;
+
+                // 1. Pinned Mode
+                if (hasPins) {
+                    if (isPinned) {
+                        // Priority order for pinned items
+                        const order = '-1';
+
+                        // Full Screen (1 Pin)
+                        if (pinned.length === 1) {
+                            return `width: 100%; height: 100%; max-height: 80vh; order: ${order};`;
+                        }
+                        // Side-by-Side (2 Pins)
+                        if (pinned.length === 2) {
+                            // Calculate width to fit side-by-side with gap
+                            return `width: calc(50% - 0.5rem); aspect-ratio: 16/9; order: ${order};`;
+                        }
+                    } else {
+                        // Filmstrip mode for unpinned
+                        return 'width: 160px; aspect-ratio: 16/9; order: 1; cursor: pointer;';
+                    }
+                }
+
+                // 2. Default Grid Mode
+                if (totalCount <= 1) return 'width: 100%; height: 100%; max-width: 800px; max-height: 600px;';
+                if (totalCount === 2) return 'width: 45%; aspect-ratio: 16/9;';
+                if (totalCount <= 4) return 'width: 45%; aspect-ratio: 16/9;';
                 return 'width: 30%; aspect-ratio: 16/9;';
             },
 
