@@ -101,6 +101,15 @@
                 const isFav = this.props.currentChannelData && this.props.isFavorite(this.props.currentChannelData._key);
                 return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
             },
+            getInitials(sender) {
+                if (!sender) return '';
+                // Split by any non-alphanumeric character (space, dot, dash, etc)
+                const parts = sender.split(/[^a-zA-Z0-9]+/);
+                if (parts.length >= 2) {
+                    return (parts[0][0] + parts[1][0]).toUpperCase();
+                }
+                return sender.substring(0, 2).toUpperCase();
+            },
             getMemberEmail(memberKey) {
                 const user = this.props.users.find(u => u._key === memberKey);
                 return user ? user.email : '';
