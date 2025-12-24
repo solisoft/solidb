@@ -41,8 +41,9 @@
                     </div>
                 </div>
                 <nav>
-                    <a each={ channel in props.channels } if={ !isFavorite(channel._key) } href={
-                        getChannelHref(channel) } onclick={ props.onNavigate } class={ getChannelClass(channel) }>
+                    <a each={ channel in props.channels } if={ !isFavorite(channel._key) && (channel.type==='standard'
+                        || channel.type==='private' ) } href={ getChannelHref(channel) } onclick={ props.onNavigate }
+                        class={ getChannelClass(channel) }>
                         <span class="mr-2 w-4 text-center inline-block">
                             <i if={ channel.type==='private' } class="fas fa-lock text-xs"></i>
                             <span if={ channel.type !=='private' }>#</span>

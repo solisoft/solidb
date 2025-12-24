@@ -83,7 +83,7 @@
 
 <script type="module">
   // Import dependencies first
-  import { getAuthToken, getApiUrl } from '<%= PublicPath("/api-config.js") %>';
+  import { getAuthToken, getApiUrl, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
   
   console.log('[Live] Script loaded');
 
@@ -208,16 +208,12 @@
   // WebSocket Connection
 
   // Helper to convert HTTP API URL to WebSocket URL
-  const getWsUrl = () => {
-      const apiUrl = getApiUrl(); // e.g., "http://localhost:6745/_api"
+  const getWsUrl = (apiUrl) => {
       const wsProtocol = apiUrl.startsWith('https') ? 'wss:' : 'ws:';
       const wsHost = apiUrl.replace(/^https?:\/\//, '');
       return `${wsProtocol}//${wsHost}/ws/changefeed`;
   };
 
-  // Get token from localStorage using the same logic as the rest of the app
-  const token = getAuthToken();
-  const wsUrl = `${getWsUrl()}?token=${token}`;
   let ws;
   let reconnectTimer;
 
@@ -225,13 +221,7 @@
   window.connect = connect;
   window.clearEvents = clearEvents;
 
-  function connect() {
-    // Check if token exists
-    if (!token) {
-        showError("Authentication missing. Please log in.");
-        return;
-    }
-
+  async function connect() {
     // Check if collection name is valid
     if (!collectionName || collectionName === "nil" || collectionName === "") {
         showError("Invalid Collection Name");
@@ -240,6 +230,25 @@
 
     updateStatus('connecting');
     resetState();
+
+    const apiUrl = getApiUrl();
+    let token;
+    try {
+        const tokenRes = await authenticatedFetch(`${apiUrl}/livequery/token`);
+        if (!tokenRes.ok) {
+            console.error("Failed to get livequery token");
+            showError("Authentication failed");
+            return;
+        }
+        const tokenData = await tokenRes.json();
+        token = tokenData.token;
+    } catch (e) {
+        console.error("Failed to get livequery token", e);
+        showError("Authentication failed");
+        return;
+    }
+
+    const wsUrl = `${getWsUrl(apiUrl)}?token=${token}`;
     
     ws = new WebSocket(wsUrl);
 

@@ -1,33 +1,51 @@
 <talks-calls>
     <div>
-        <!-- Incoming Call Modal -->
-        <div if={ props.incomingCall }
-            class="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center animate-fade-in">
-            <div
-                class="bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full">
-                <div
-                    class="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center mb-6 overflow-hidden border-4 border-gray-700">
-                    <span class="text-3xl font-bold text-gray-400">{
-                        getInitials(getUsername(props.incomingCall.caller)) }</span>
+        <!-- Incoming Calls List (Top Right, below search bar) -->
+        <div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full">
+            <div each={ call in (props.incomingCalls || []) }
+                class="bg-gray-900/90 backdrop-blur border border-gray-700/50 rounded-lg shadow-2xl p-4 flex items-center gap-4 animate-fade-in-down w-full transform transition-all hover:translate-x-1">
+
+                <!-- Avatar -->
+                <div class="relative">
+                    <div
+                        class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden border-2 border-gray-700 shadow-inner">
+                        <span class="text-lg font-bold text-gray-300">{ getInitials(getUsername(call.caller)) }</span>
+                    </div>
+                    <div
+                        class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center animate-ping">
+                    </div>
+                    <div
+                        class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
+                        <i class="fas fa-phone text-[10px] text-white"></i>
+                    </div>
                 </div>
-                <h3 class="w-full text-2xl font-bold text-white mb-2 text-center">{
-                    getUsername(props.incomingCall.caller) }</h3>
-                <p class="text-gray-400 mb-8">{ props.incomingCall.type === "video" ? "Incoming Video Call" :
-                    "Incoming Audio Call" }</p>
-                <div class="flex items-center gap-8">
-                    <button onclick={ props.onDeclineCall } class="flex flex-col items-center gap-2 group">
-                        <div
-                            class="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-red-500 transition-all transform group-hover:scale-110">
-                            <i class="fas fa-phone-slash"></i>
-                        </div>
-                        <span class="text-xs text-gray-400">Decline</span>
+
+                <!-- Info -->
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-white font-bold text-sm truncate leading-tight shadow-black drop-shadow-md">{
+                        getUsername(call.caller) }</h3>
+                    <p class="text-indigo-400 text-xs truncate flex items-center gap-1">
+                        <i class={ call.type==='video' ? 'fas fa-video' : 'fas fa-microphone' }></i>
+                        { call.type === 'video' ? "Incoming Video..." : "Incoming Audio..." }
+                    </p>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2">
+                    <button onclick={ (e)=> handleDecline(e, call) }
+                        class="w-10 h-10 rounded-full bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white flex
+                        items-center justify-center transition-all border border-red-600/50 hover:border-red-600
+                        shadow-lg hover:shadow-red-900/50 group"
+                        title="Decline">
+                        <i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i>
                     </button>
-                    <button onclick={ props.onAcceptCall } class="flex flex-col items-center gap-2 group">
-                        <div
-                            class="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center text-white text-xl shadow-lg group-hover:bg-green-500 transition-all transform group-hover:scale-110 animate-pulse">
-                            <i class="fas fa-phone"></i>
-                        </div>
-                        <span class="text-xs text-gray-400">Accept</span>
+                    <button onclick={ (e)=> handleAccept(e, call) }
+                        class="w-10 h-10 rounded-full bg-green-600/20 hover:bg-green-600 text-green-500 hover:text-white
+                        flex items-center justify-center transition-all border border-green-600/50
+                        hover:border-green-600 shadow-lg hover:shadow-green-900/50 group animate-pulse
+                        hover:animate-none"
+                        title="Accept">
+                        <i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i>
                     </button>
                 </div>
             </div>
@@ -98,83 +116,119 @@
                     <video ref="localVideo" autoplay playsinline muted
                         class="w-full h-full object-cover transform scale-x-[-1]"></video>
                     <div
-                        class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur">
-                        You
-                    </div>
+                        class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">
+                        You</div>
                 </div>
             </div>
 
-            <!-- Controls Toolbar -->
-            <div
-                class="h-20 bg-[#1A1D21] border-t border-gray-800 flex items-center justify-center gap-4 px-6 flex-shrink-0 z-50">
-                <button onclick={ props.onToggleMute } class={ "p-4 rounded-full transition-all " + (props.isMuted
-                    ? "bg-red-600 text-white hover:bg-red-700" : "bg-gray-700 text-white hover:bg-gray-600" ) } title={
-                    props.isMuted ? "Unmute" : "Mute" }>
-                    <i class={ props.isMuted ? "fas fa-microphone-slash" : "fas fa-microphone" }></i>
-                </button>
-                <button onclick={ props.onToggleVideo } class={ "p-4 rounded-full transition-all " +
-                    (!props.isVideoEnabled ? "bg-red-600 text-white hover:bg-red-700"
-                    : "bg-gray-700 text-white hover:bg-gray-600" ) } title={ props.isVideoEnabled ? "Stop Video"
-                    : "Start Video" }>
-                    <i class={ props.isVideoEnabled ? "fas fa-video" : "fas fa-video-slash" }></i>
-                </button>
-                <button onclick={ props.onToggleScreenShare } class={ "p-4 rounded-full transition-all " +
-                    (props.isScreenSharing ? "bg-green-600 text-white hover:bg-green-700"
-                    : "bg-gray-700 text-white hover:bg-gray-600" ) } title="Share Screen">
-                    <i class="fas fa-desktop"></i>
-                </button>
-                <button onclick={ props.onHangup }
-                    class="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white ml-8 transition-all px-8 flex items-center gap-2"
-                    title="End Call">
-                    <i class="fas fa-phone-slash"></i>
-                    <span class="font-bold">End</span>
-                </button>
+            <!-- Controls Footer -->
+            <div class="absolute bottom-6 left-0 right-0 flex justify-center items-center pointer-events-none z-50">
+                <div
+                    class="bg-gray-900/90 backdrop-blur border border-gray-700 rounded-2xl px-6 py-4 flex items-center gap-6 shadow-2xl pointer-events-auto transform transition-transform hover:scale-105">
+
+                    <button onclick={ props.onToggleAudio }
+                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
+                        (props.isAudioEnabled ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-red-500 text-white hover:bg-red-600' ) }>
+                        <i class={ props.isAudioEnabled ? 'fas fa-microphone' : 'fas fa-microphone-slash' }></i>
+                    </button>
+
+                    <button onclick={ props.onToggleVideo }
+                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
+                        (props.isVideoEnabled ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-red-500 text-white hover:bg-red-600' ) }>
+                        <i class={ props.isVideoEnabled ? 'fas fa-video' : 'fas fa-video-slash' }></i>
+                    </button>
+
+                    <div class="w-px h-8 bg-gray-700 mx-2"></div>
+
+                    <!-- Screen Share (Upcoming) -->
+                    <button
+                        class="w-12 h-12 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xl hover:bg-gray-600 hover:text-white transition-all disabled:opacity-50 cursor-not-allowed">
+                        <i class="fas fa-desktop"></i>
+                    </button>
+
+                    <div class="w-px h-8 bg-gray-700 mx-2"></div>
+
+                    <button onclick={ handleHangup }
+                        class="w-16 h-12 rounded-full bg-red-600 flex items-center justify-center text-white text-2xl hover:bg-red-500 transition-all shadow-lg hover:shadow-red-900/50">
+                        <i class="fas fa-phone-slash"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        import TalksMixin from './talks-common.js'
-
         export default {
-            ...TalksMixin,
             onMounted() {
-                console.log("Calls mounted");
+                // Initialize popups list animation if needed
             },
+
             onUpdated() {
                 this.updateStreams();
             },
+
             updateStreams() {
+                // Attach remote streams to video elements
                 if (this.props.callPeers) {
                     this.props.callPeers.forEach(peer => {
                         const videoEl = this.$('#remote-video-' + peer.user._key);
                         if (videoEl && peer.stream && videoEl.srcObject !== peer.stream) {
                             videoEl.srcObject = peer.stream;
+                            // Ensure autoplay
+                            videoEl.play().catch(e => { });
                         }
                     });
                 }
+
+                // Attach local stream if needed (though talks-app usually handles it, redundancy is safe)
+                // Actually talks-app attaches via ID often, but let's leave it to parent or existing logic.
             },
+
+            getInitials(name) {
+                return (name || '').substring(0, 2).toUpperCase();
+            },
+
+            getUsername(user) {
+                if (!user) return 'Unknown';
+                return user.firstname || user.username || user.email || 'User';
+            },
+
+            formatCallDuration(seconds) {
+                if (!seconds) return '00:00';
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            },
+
             getGridStyle(count) {
-                // Return style for flex items to look like a grid
-                // Basic logic:
-                // 1 peer: full size
-                // 2 peers: 50% width
-                // 3-4 peers: 50% width 
-                // 5+ peers: 33% width
+                // Adaptive Grid Logic
+                if (count <= 1) return 'width: 100%; height: 100%; max-width: 800px; max-height: 600px;';
+                if (count === 2) return 'width: 45%; aspect-ratio: 16/9;';
+                if (count <= 4) return 'width: 45%; aspect-ratio: 16/9;';
+                return 'width: 30%; aspect-ratio: 16/9;';
+            },
 
-                let basis = '100%';
-                let maxWidth = '1200px';
-
-                if (count > 1) {
-                    basis = 'calc(50% - 1rem)'; // 2 per row
-                    maxWidth = '600px';
+            handleDecline(e, call) {
+                e.stopPropagation();
+                if (this.props.onDeclineCall) {
+                    this.props.onDeclineCall(call);
                 }
-                if (count > 4) {
-                    basis = 'calc(33.33% - 1rem)'; // 3 per row
-                    maxWidth = '400px';
-                }
+            },
 
-                return `flex: 1 1 ${basis}; max-width: ${maxWidth}; aspect-ratio: 16/9;`;
+            handleAccept(e, call) {
+                e.stopPropagation();
+                if (this.props.onAcceptCall) {
+                    this.props.onAcceptCall(call);
+                }
+            },
+
+            handleHangup(e) {
+                e.stopPropagation();
+                if (this.props.onHangup) {
+                    this.props.onHangup(e);
+                }
             }
         }
     </script>

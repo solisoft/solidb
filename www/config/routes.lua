@@ -35,6 +35,7 @@ CustomRoute("GET", "/talks/search", "talks#search")
 CustomRoute("POST", "/talks/upload", "talks#upload")
 CustomRoute("GET", "/talks/file", "talks#file")
 CustomRoute("POST", "/talks/signal", "talks#send_signal")
+CustomRoute("POST", "/talks/delete_signal", "talks#delete_signal")
 CustomRoute("POST", "/talks/join_call", "talks#join_call")
 CustomRoute("POST", "/talks/leave_call", "talks#leave_call")
 

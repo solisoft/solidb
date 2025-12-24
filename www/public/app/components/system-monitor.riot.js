@@ -43,10 +43,26 @@ export default {
         Object.values(this.state.charts).forEach(c => c.destroy());
     },
 
-    connect() {
+    async connect() {
         const apiUrl = getApiUrl();
+        let token;
+
+        try {
+            // Get a fresh livequery token
+            const tokenRes = await authenticatedFetch(`${apiUrl}/livequery/token`);
+            if (!tokenRes.ok) {
+                console.error("Monitor WS: Failed to get token");
+                return;
+            }
+            const tokenData = await tokenRes.json();
+            token = tokenData.token;
+        } catch (e) {
+            console.error("Monitor WS: Authentication failed", e);
+            return;
+        }
+
         let wsUrl = apiUrl.replace(/^http/, 'ws');
-        const url = `${wsUrl}/monitoring/ws`;
+        const url = `${wsUrl}/monitoring/ws?token=${token}`;
 
         this.ws = new WebSocket(url);
 
@@ -193,13 +209,13 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div><div class="flex items-center justify-between mb-8"><h1 class="text-3xl font-bold leading-tight text-gray-100">System Monitoring</h1><div class="flex items-center space-x-4"><span expr52="expr52" class="flex items-center text-sm text-green-400"></span><span expr53="expr53" class="flex items-center text-sm text-red-400"></span></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>\n                    CPU Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="cpuChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Current Load: <strong expr54="expr54" class="text-indigo-400"> </strong></span><span>Cores: <strong expr55="expr55" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-green-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>\n                    Memory Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="memChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Used: <strong expr56="expr56" class="text-green-400"> </strong></span><span>Total: <strong expr57="expr57" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-yellow-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>\n                    Active Activity\n                </h3><div class="relative h-64 w-full"><canvas id="activityChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span expr58="expr58" class="text-blue-400"> </span><span expr59="expr59" class="text-yellow-400"> </span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>\n                    System Information\n                </h3><dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 text-sm"><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">OS Platform</dt><dd expr60="expr60" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Kernel Version</dt><dd expr61="expr61" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Host Name</dt><dd expr62="expr62" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Uptime</dt><dd expr63="expr63" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">SolidDB Version</dt><dd class="text-gray-200 font-medium">0.3.0</dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Process ID</dt><dd expr64="expr64" class="text-gray-200 font-medium"> </dd></div></dl></div></div></div>',
+    '<div><div class="flex items-center justify-between mb-8"><h1 class="text-3xl font-bold leading-tight text-gray-100">System Monitoring</h1><div class="flex items-center space-x-4"><span expr1221="expr1221" class="flex items-center text-sm text-green-400"></span><span expr1222="expr1222" class="flex items-center text-sm text-red-400"></span></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>\n                    CPU Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="cpuChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Current Load: <strong expr1223="expr1223" class="text-indigo-400"> </strong></span><span>Cores: <strong expr1224="expr1224" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-green-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>\n                    Memory Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="memChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Used: <strong expr1225="expr1225" class="text-green-400"> </strong></span><span>Total: <strong expr1226="expr1226" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-yellow-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>\n                    Active Activity\n                </h3><div class="relative h-64 w-full"><canvas id="activityChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span expr1227="expr1227" class="text-blue-400"> </span><span expr1228="expr1228" class="text-yellow-400"> </span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>\n                    System Information\n                </h3><dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 text-sm"><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">OS Platform</dt><dd expr1229="expr1229" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Kernel Version</dt><dd expr1230="expr1230" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Host Name</dt><dd expr1231="expr1231" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Uptime</dt><dd expr1232="expr1232" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">SolidDB Version</dt><dd class="text-gray-200 font-medium">0.3.0</dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Process ID</dt><dd expr1233="expr1233" class="text-gray-200 font-medium"> </dd></div></dl></div></div></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.connected,
-        redundantAttribute: 'expr52',
-        selector: '[expr52]',
+        redundantAttribute: 'expr1221',
+        selector: '[expr1221]',
 
         template: template(
           '<span class="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>\n                    Live\n                ',
@@ -209,8 +225,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.connected,
-        redundantAttribute: 'expr53',
-        selector: '[expr53]',
+        redundantAttribute: 'expr1222',
+        selector: '[expr1222]',
 
         template: template(
           '<span class="w-2 h-2 bg-red-400 rounded-full mr-2"></span>\n                    Disconnected\n                ',
@@ -218,8 +234,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr54',
-        selector: '[expr54]',
+        redundantAttribute: 'expr1223',
+        selector: '[expr1223]',
 
         expressions: [
           {
@@ -236,8 +252,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr55',
-        selector: '[expr55]',
+        redundantAttribute: 'expr1224',
+        selector: '[expr1224]',
 
         expressions: [
           {
@@ -248,8 +264,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr56',
-        selector: '[expr56]',
+        redundantAttribute: 'expr1225',
+        selector: '[expr1225]',
 
         expressions: [
           {
@@ -263,8 +279,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr57',
-        selector: '[expr57]',
+        redundantAttribute: 'expr1226',
+        selector: '[expr1226]',
 
         expressions: [
           {
@@ -278,8 +294,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr58',
-        selector: '[expr58]',
+        redundantAttribute: 'expr1227',
+        selector: '[expr1227]',
 
         expressions: [
           {
@@ -296,8 +312,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr59',
-        selector: '[expr59]',
+        redundantAttribute: 'expr1228',
+        selector: '[expr1228]',
 
         expressions: [
           {
@@ -314,8 +330,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr60',
-        selector: '[expr60]',
+        redundantAttribute: 'expr1229',
+        selector: '[expr1229]',
 
         expressions: [
           {
@@ -326,8 +342,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr61',
-        selector: '[expr61]',
+        redundantAttribute: 'expr1230',
+        selector: '[expr1230]',
 
         expressions: [
           {
@@ -338,8 +354,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr62',
-        selector: '[expr62]',
+        redundantAttribute: 'expr1231',
+        selector: '[expr1231]',
 
         expressions: [
           {
@@ -350,8 +366,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr63',
-        selector: '[expr63]',
+        redundantAttribute: 'expr1232',
+        selector: '[expr1232]',
 
         expressions: [
           {
@@ -365,8 +381,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr64',
-        selector: '[expr64]',
+        redundantAttribute: 'expr1233',
+        selector: '[expr1233]',
 
         expressions: [
           {

@@ -4611,8 +4611,17 @@ pub async fn cluster_info(State(state): State<AppState>) -> Json<ClusterInfoResp
 
 pub async fn monitor_ws_handler(
     ws: WebSocketUpgrade,
+    AxumQuery(params): AxumQuery<AuthParams>,
     State(state): State<AppState>,
 ) -> Response {
+    if let Err(_) = crate::server::auth::AuthService::validate_token(&params.token) {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::empty())
+            .expect("Valid status code should not fail")
+            .into_response();
+    }
+
     ws.on_upgrade(|socket| handle_monitor_socket(socket, state))
 }
 

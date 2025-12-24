@@ -6,7 +6,7 @@ import Calls from '/app/components/talks-calls.riot.js'
 import TalksMixin from './talks-common.js'
 
 export default {
-  css: `talks-app,[is="talks-app"]{ display: block; height: 100%; }talks-app ::-webkit-scrollbar,[is="talks-app"] ::-webkit-scrollbar{ width: 8px; }talks-app ::-webkit-scrollbar-track,[is="talks-app"] ::-webkit-scrollbar-track{ background: transparent; }talks-app ::-webkit-scrollbar-thumb,[is="talks-app"] ::-webkit-scrollbar-thumb{ background: #36393E; border-radius: 4px; }talks-app ::-webkit-scrollbar-thumb:hover,[is="talks-app"] ::-webkit-scrollbar-thumb:hover{ background: #4B4F54; }talks-app .hover\\:bg-\\[\\#350D36\\]:hover,[is="talks-app"] .hover\\:bg-\\[\\#350D36\\]:hover{ transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }talks-app .ace_editor,[is="talks-app"] .ace_editor{ background-color: transparent !important; }talks-app .ace_gutter,[is="talks-app"] .ace_gutter{ background-color: rgba(26, 29, 33, 0.5) !important; color: #4B4F54 !important; } @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }talks-app .animate-fade-in,[is="talks-app"] .animate-fade-in{ animation: fade-in 0.2s ease-out; } @keyframes slide-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }talks-app .animate-slide-in-right,[is="talks-app"] .animate-slide-in-right{ animation: slide-in-right 0.3s ease-out; }talks-app .line-clamp-2,[is="talks-app"] .line-clamp-2{ display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }`,
+  css: `talks-app,[is="talks-app"]{ display: block; height: 100%; }talks-app ::-webkit-scrollbar,[is="talks-app"] ::-webkit-scrollbar{ width: 8px; }talks-app ::-webkit-scrollbar-track,[is="talks-app"] ::-webkit-scrollbar-track{ background: transparent; }talks-app ::-webkit-scrollbar-thumb,[is="talks-app"] ::-webkit-scrollbar-thumb{ background: #36393E; border-radius: 4px; }talks-app ::-webkit-scrollbar-thumb:hover,[is="talks-app"] ::-webkit-scrollbar-thumb:hover{ background: #4B4F54; }talks-app .hover\\:bg-\\[\\#350D36\\]:hover,[is="talks-app"] .hover\\:bg-\\[\\#350D36\\]:hover{ transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }talks-app .ace_editor,[is="talks-app"] .ace_editor{ background-color: transparent !important; }talks-app .ace_gutter,[is="talks-app"] .ace_gutter{ background-color: rgba(26, 29, 33, 0.5) !important; color: #4B4F54 !important; } @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }talks-app .animate-fade-in,[is="talks-app"] .animate-fade-in{ animation: fade-in 0.2s ease-out; } @keyframes slide-in-right { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }talks-app .animate-slide-in-right,[is="talks-app"] .animate-slide-in-right{ animation: slide-in-right 0.3s ease-out; }talks-app .line-clamp-2,[is="talks-app"] .line-clamp-2{ display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }`,
 
   exports: {
     components: {
@@ -26,6 +26,7 @@ export default {
             dragging: false,
             files: [],
             sending: false,
+            audioSuspended: false,
             allMessages: this.props.messages || [],
             messages: this.props.messages || [],
             ogCache: {}, // Cache for Open Graph metadata
@@ -61,6 +62,7 @@ export default {
             filteredCreateChannelUsers: [],
             showMembersPanel: false,
             currentUser: this.props.currentUser || {},
+            channels: this.props.channels || [],
             currentChannel: this.props.currentChannel,
             currentChannelData: this.props.currentChannelData,
             channelId: this.props.channelId,
@@ -109,7 +111,7 @@ export default {
     calculateUnreadChannels() {
         const unread = {};
         const userSeen = this.state.currentUser.channel_last_seen || {};
-        const allChannels = [...(this.props.channels || []), ...(this.props.dmChannels || [])];
+        const allChannels = [...(this.state.channels || []), ...(this.props.dmChannels || [])];
 
         allChannels.forEach(c => {
             const lastSeen = userSeen[c._id] || 0;
@@ -194,7 +196,7 @@ export default {
         const favItems = [];
         // Check standard channels
         favorites.forEach(key => {
-            const channel = this.props.channels.find(c => c._key === key);
+            const channel = this.state.channels.find(c => c._key === key);
             if (channel) {
                 favItems.push(channel);
                 return;
@@ -314,11 +316,115 @@ export default {
         // Connect to users Live Query for real-time presence UI updates
         this.connectUsersLiveQuery();
 
+        // Connect to channels Live Query
+        this.connectChannelsListLiveQuery();
+
         // Connect to signaling Live Query for calls
         this.connectSignaling();
 
         // SPA Routing
         this.initRouter();
+
+        // Initialize AudioContext and check if suspended
+        this.initAudioContext();
+
+        // Request notification permission
+        this.requestNotificationPermission();
+    },
+
+    initAudioContext() {
+        if (!window.AudioContext && !window.webkitAudioContext) return;
+
+        if (!this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Check if suspended and show banner
+        if (this.audioCtx.state === 'suspended') {
+            this.update({ audioSuspended: true });
+        }
+
+        // Store bound listener so we can remove it later
+        this.resumeAudioListener = () => {
+            // Only enable audio if we actually want to (not from hangup)
+            if (!this.preventAudioResume) {
+                this.enableAudio();
+            }
+            this.removeResumeAudioListeners();
+        };
+
+        document.addEventListener('click', this.resumeAudioListener);
+        document.addEventListener('keydown', this.resumeAudioListener);
+    },
+
+    removeResumeAudioListeners() {
+        if (this.resumeAudioListener) {
+            document.removeEventListener('click', this.resumeAudioListener);
+            document.removeEventListener('keydown', this.resumeAudioListener);
+        }
+    },
+
+    async requestNotificationPermission() {
+        if (!('Notification' in window)) {
+            console.log('[Notifications] Not supported in this browser');
+            return;
+        }
+
+        if (Notification.permission === 'default') {
+            console.log('[Notifications] Requesting permission...');
+            const permission = await Notification.requestPermission();
+            console.log('[Notifications] Permission:', permission);
+        }
+    },
+
+    showCallNotification(caller, callType) {
+        if (!('Notification' in window) || Notification.permission !== 'granted') {
+            return null;
+        }
+
+        const callerName = caller.firstname && caller.lastname
+            ? `${caller.firstname} ${caller.lastname}`
+            : caller._key;
+
+        const notification = new Notification('Incoming Call', {
+            body: `${callerName} is calling you (${callType || 'audio'})`,
+            icon: '/app/assets/images/icon-192x192.png',
+            tag: 'incoming-call',
+            requireInteraction: true
+        });
+
+        notification.onclick = () => {
+            window.focus();
+            notification.close();
+        };
+
+        // Store reference to close it when call is answered/declined
+        this.incomingCallNotification = notification;
+        return notification;
+    },
+
+    closeCallNotification() {
+        if (this.incomingCallNotification) {
+            this.incomingCallNotification.close();
+            this.incomingCallNotification = null;
+        }
+    },
+
+    async enableAudio() {
+        if (!this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (this.audioCtx.state === 'suspended') {
+            try {
+                await this.audioCtx.resume();
+                console.log('[Audio] Context resumed successfully');
+            } catch (e) {
+                console.error('[Audio] Failed to resume context:', e);
+            }
+        }
+
+        this.update({ audioSuspended: false });
     },
 
     initRouter() {
@@ -425,6 +531,11 @@ export default {
             this.signalingWs.close();
             this.signalingWs = null;
         }
+        if (this.channelsListWs) {
+            this.channelsListWs.onclose = null;
+            this.channelsListWs.close();
+            this.channelsListWs = null;
+        }
         this.hangup();
         this.hangup();
     },
@@ -465,6 +576,60 @@ export default {
                 } catch (e) { console.error(e); }
             };
         } catch (e) { console.error(e); }
+
+        // Start polling for huddle state changes (fallback for live query delays)
+        this.startHuddlePolling();
+    },
+
+    startHuddlePolling() {
+        // Clear any existing polling interval
+        if (this.huddlePollingInterval) {
+            clearInterval(this.huddlePollingInterval);
+        }
+
+        // Poll immediately on start
+        this.pollHuddleState();
+
+        // Then poll every 1 second for faster updates
+        this.huddlePollingInterval = setInterval(() => {
+            this.pollHuddleState();
+        }, 1000);
+    },
+
+    async pollHuddleState() {
+        if (!this.state.currentChannelData?._key) return;
+
+        try {
+            const res = await fetch(`/talks/channel_info?channel_id=${this.state.currentChannelData._key}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.channel) {
+                    // Only update if participants changed
+                    const current = JSON.stringify(this.state.currentChannelData?.active_call_participants || []);
+                    const updated = JSON.stringify(data.channel.active_call_participants || []);
+                    if (current !== updated) {
+                        console.log('[Huddle Poll] Participants changed:', current, '->', updated);
+                        this.update({
+                            currentChannelData: {
+                                ...this.state.currentChannelData,
+                                active_call_participants: data.channel.active_call_participants || []
+                            }
+                        });
+                    }
+                }
+            } else {
+                console.log('[Huddle Poll] Error response:', res.status);
+            }
+        } catch (e) {
+            console.log('[Huddle Poll] Fetch error:', e.message);
+        }
+    },
+
+    stopHuddlePolling() {
+        if (this.huddlePollingInterval) {
+            clearInterval(this.huddlePollingInterval);
+            this.huddlePollingInterval = null;
+        }
     },
 
     updateCallParticipants(participants) {
@@ -496,6 +661,68 @@ export default {
         this.presenceWs.onerror = (err) => {
             console.error('Presence WebSocket error:', err);
         };
+    },
+
+    async connectChannelsListLiveQuery() {
+        try {
+            const tokenRes = await fetch('/talks/livequery_token');
+            if (!tokenRes.ok) return;
+            const { token } = await tokenRes.json();
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+            this.channelsListWs = new WebSocket(wsUrl);
+
+            this.channelsListWs.onopen = () => {
+                console.log('Channels List Live Query connected');
+                const my_user_key = this.props.currentUser._key;
+                const query = `
+                    LET my_user_key = "${my_user_key}"
+                    FOR c IN channels
+                        FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                        SORT c.name ASC
+                        RETURN c
+                `;
+                this.channelsListWs.send(JSON.stringify({
+                    type: 'live_query',
+                    database: this.props.dbName || '_system',
+                    query: query
+                }));
+            };
+
+            this.channelsListWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'query_result' && data.result) {
+                        const newChannels = data.result;
+                        const updates = { channels: newChannels };
+
+                        // Update current channel data if it exists in the new list
+                        // This ensures huddle status (active_call_participants) is updated in real-time
+                        if (this.state.channelId) {
+                            const updatedCurrentChannel = newChannels.find(c => c._id === this.state.channelId);
+                            if (updatedCurrentChannel) {
+                                updates.currentChannelData = updatedCurrentChannel;
+                                this.activeCallParticipants = updatedCurrentChannel.active_call_participants || [];
+                            }
+                        }
+
+                        this.update(updates);
+                        this.calculateUnreadChannels();
+                    }
+                } catch (err) {
+                    console.log('Channels List Live Query parse error:', err);
+                }
+            };
+
+            this.channelsListWs.onclose = () => {
+                console.log('Channels List Live Query disconnected');
+                setTimeout(() => this.connectChannelsListLiveQuery(), 5000);
+            };
+        } catch (err) {
+            console.error('Channels List Live Query error:', err);
+            setTimeout(() => this.connectChannelsListLiveQuery(), 5000);
+        }
     },
 
     async connectUsersLiveQuery() {
@@ -617,6 +844,18 @@ export default {
                             if (!currentKeys.has(m._key)) {
                                 updated.push(m);
                                 hasNewItems = true;
+
+                                // Sound notification
+                                if (this.state.initialSyncDone && m.sender !== this.getUsername(this.props.currentUser)) {
+                                    const myUsername = this.getUsername(this.props.currentUser);
+                                    const isMention = m.text && m.text.includes('@' + myUsername);
+
+                                    if (isMention) {
+                                        this.playSound('notification');
+                                    } else if (document.hidden || !document.hasFocus()) {
+                                        this.playSound('discreet');
+                                    }
+                                }
                             }
                         });
 
@@ -1438,6 +1677,191 @@ export default {
         }
     },
 
+    // --- SOUND LOGIC ---
+    async playSound(type) {
+        console.log(`[playSound] Playing ${type}`);
+
+        // Initialize cancellation tracking
+        this.audioCancelled = this.audioCancelled || {};
+        this.audioCancelled[type] = false;
+
+        try {
+            if (!window.AudioContext && !window.webkitAudioContext) {
+                console.warn('[playSound] No AudioContext available');
+                return;
+            }
+
+            if (!this.audioCtx) {
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const ctx = this.audioCtx;
+
+            console.log(`[playSound] AudioContext state: ${ctx.state}`);
+            if (ctx.state === 'suspended') {
+                console.log('[Audio] Attempting to resume context...');
+                try {
+                    await ctx.resume();
+                } catch (e) {
+                    console.warn('[Audio] Resume failed:', e);
+                }
+
+                // Check explicit cancellation
+                if (this.audioCancelled[type]) {
+                    console.log(`[playSound] Sound ${type} was cancelled while resuming. Aborting.`);
+                    return;
+                }
+
+                // Update suspended state if meaningful
+                if (ctx.state === 'running') {
+                    this.update({ audioSuspended: false });
+                }
+
+                // If still suspended after attempting resume, don't create sounds
+                if (ctx.state === 'suspended') {
+                    console.warn('[Audio] Context still suspended, cannot play sound');
+                    return;
+                }
+
+                // RACE CONDITION FIX:
+                // While we were awaiting resume(), the call might have been accepted, declined, or ended.
+                // We must verify if the sound logic is still valid using state.
+                if (type === 'ringtone' && (!this.state.incomingCalls || this.state.incomingCalls.length === 0)) {
+                    console.log('[playSound] Incoming calls ended while resuming audio. Aborting ringtone.');
+                    return;
+                }
+                if (type === 'calling' && !this.state.activeCall) {
+                    console.log('[playSound] Active call ended while resuming audio. Aborting calling sound.');
+                    return;
+                }
+            }
+
+            // Final check for cancellation before starting sound
+            if (this.audioCancelled[type]) return;
+
+            const playTone = (freq, type, duration, volume, startTime = ctx.currentTime) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, startTime);
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(2000, startTime);
+
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(volume, startTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start(startTime);
+                osc.stop(startTime + duration);
+
+                return osc; // Return oscillator for tracking
+            };
+
+            if (type === 'notification') {
+                // Glassy / Marimba style notification
+                const now = ctx.currentTime;
+                playTone(1046.50, 'sine', 0.5, 0.1, now); // C6
+                playTone(1318.51, 'sine', 0.4, 0.05, now + 0.05); // E6
+                playTone(1567.98, 'sine', 0.3, 0.03, now + 0.1); // G6
+            } else if (type === 'ringtone') {
+                if (this.ringtoneInterval) return;
+                this.ringtoneOscillators = [];
+
+                const playRing = () => {
+                    if (this.audioCancelled['ringtone']) {
+                        clearInterval(this.ringtoneInterval);
+                        this.ringtoneInterval = null;
+                        return;
+                    }
+                    const now = ctx.currentTime;
+                    // Authentic 24 CTU style: 4 fast high-pitched beeps
+                    const tones = [1600, 2400, 1600, 2400];
+                    tones.forEach((freq, i) => {
+                        const time = now + (i * 0.12);
+                        const osc = playTone(freq, 'square', 0.07, 0.05, time);
+                        if (osc) this.ringtoneOscillators.push(osc);
+                    });
+                };
+
+                playRing();
+                this.ringtoneInterval = setInterval(playRing, 1000);
+            } else if (type === 'calling') {
+                if (this.callingInterval) return;
+                this.callingOscillators = [];
+
+                const playCalling = () => {
+                    if (this.audioCancelled['calling']) {
+                        clearInterval(this.callingInterval);
+                        this.callingInterval = null;
+                        return;
+                    }
+                    // Clear previous oscillators before adding new ones
+                    this.callingOscillators = [];
+                    const now = ctx.currentTime;
+                    // Standard US ringback: 440Hz + 480Hz combined
+                    [440, 480].forEach(f => {
+                        const osc = playTone(f, 'sine', 2.0, 0.05, now);
+                        if (osc) this.callingOscillators.push(osc);
+                    });
+                };
+
+                playCalling();
+                this.callingInterval = setInterval(playCalling, 6000); // 2s on, 4s off
+            } else if (type === 'discreet') {
+                const now = ctx.currentTime;
+                playTone(392.00, 'sine', 0.1, 0.02, now); // G4
+                playTone(349.23, 'sine', 0.1, 0.02, now + 0.1); // F4
+            }
+        } catch (e) {
+            console.error("Error playing sound:", e);
+        }
+    },
+
+    stopSound(type) {
+        console.log(`[stopSound] Stopping ${type}`);
+
+        // Set cancellation flag
+        this.audioCancelled = this.audioCancelled || {};
+        this.audioCancelled[type] = true;
+
+        if (type === 'ringtone') {
+            if (this.ringtoneInterval) {
+                console.log('[stopSound] Clearing ringtone interval');
+                clearInterval(this.ringtoneInterval);
+                this.ringtoneInterval = null;
+            }
+            // Stop any active ringtone oscillators
+            if (this.ringtoneOscillators && this.ringtoneOscillators.length > 0) {
+                console.log('[stopSound] Stopping', this.ringtoneOscillators.length, 'ringtone oscillators');
+                this.ringtoneOscillators.forEach(osc => {
+                    try { osc.stop(); } catch (e) { }
+                });
+                this.ringtoneOscillators = [];
+            }
+        }
+        if (type === 'calling') {
+            if (this.callingInterval) {
+                console.log('[stopSound] Clearing calling interval');
+                clearInterval(this.callingInterval);
+                this.callingInterval = null;
+            }
+            // Stop any active calling oscillators
+            if (this.callingOscillators && this.callingOscillators.length > 0) {
+                console.log('[stopSound] Stopping', this.callingOscillators.length, 'calling oscillators');
+                this.callingOscillators.forEach(osc => {
+                    try { osc.stop(); } catch (e) { }
+                });
+                this.callingOscillators = [];
+            }
+        }
+    },
+
     // --- CALLING LOGIC ---
 
     async connectSignaling() {
@@ -1452,9 +1876,12 @@ export default {
             this.signalingWs = new WebSocket(wsUrl);
 
             this.signalingWs.onopen = () => {
-                console.log('Signaling connected');
+                console.log('Signaling: Connected');
                 const myKey = this.props.currentUser._key;
-                const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
+                // Be more generous with history (5 minutes) to account for clock skew
+                const since = Date.now() - 300000;
+                const query = `FOR s IN signals FILTER s.to_user == "${myKey}" AND s.timestamp > ${since} RETURN s`;
+                console.log('Signaling: Subscribing with query:', query);
 
                 this.signalingWs.send(JSON.stringify({
                     type: 'live_query',
@@ -1466,10 +1893,17 @@ export default {
             this.signalingWs.onmessage = async (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('Signaling message:', data);
                     if (data.type === 'query_result' && data.result) {
-                        for (const signal of data.result) {
+                        // Sort signals by timestamp ASC explicitly to ensure order (Offer -> Bye)
+                        const sortedSignals = data.result.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+
+                        console.log('[Signaling] Processing batch of', sortedSignals.length, 'signals');
+
+                        for (const signal of sortedSignals) {
                             if (signal._key && this.processedSignalIds.has(signal._key)) continue;
                             if (signal._key) this.processedSignalIds.add(signal._key);
+
                             await this.handleSignal(signal);
                         }
                     }
@@ -1484,16 +1918,42 @@ export default {
     },
 
     async sendSignal(toUser, type, data) {
-        await fetch('/talks/signal', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target_user: toUser, type: type, data: data })
-        });
+        console.log(`[Signaling] Sending ${type} to ${toUser}`, data);
+        try {
+            const res = await fetch('/talks/signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_user: toUser, type: type, data: data })
+            });
+            if (!res.ok) {
+                const err = await res.text();
+                console.error(`[Signaling] Send failed: ${res.status} ${err}`);
+            } else {
+                // Optional: log success if needed for deep debugging
+                // console.log(`[Signaling] Sent successfully`);
+            }
+        } catch (e) {
+            console.error(`[Signaling] Network error sending signal:`, e);
+        }
+    },
+
+    async deleteSignal(signalKey) {
+        if (!signalKey) return;
+        try {
+            await fetch('/talks/delete_signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ signal_key: signalKey })
+            });
+        } catch (e) {
+            console.error('[Signaling] Error deleting signal:', e);
+        }
     },
 
     async startCall(type) {
         if (!this.state.currentChannelData) return;
         const channelKey = this.state.currentChannelData._key;
+        const isDM = this.state.currentChannelData.type === 'dm';
 
         // Join Call API
         const res = await fetch('/talks/join_call', {
@@ -1504,7 +1964,14 @@ export default {
         const data = await res.json();
         if (!res.ok) { console.error("Failed to join call", data); return; }
 
+        // Immediately update currentChannelData with new participants for instant UI refresh
+        const updatedChannelData = {
+            ...this.state.currentChannelData,
+            active_call_participants: data.participants || []
+        };
+
         this.update({
+            currentChannelData: updatedChannelData,
             activeCall: {
                 channelId: channelKey,
                 startDate: new Date(),
@@ -1513,6 +1980,11 @@ export default {
             localStreamHasVideo: type === 'video',
             callDuration: 0
         });
+
+        // Only play calling sound for DM calls (ringing behavior)
+        if (isDM) {
+            this.playSound('calling');
+        }
 
         this.callTimer = setInterval(() => {
             this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
@@ -1530,18 +2002,31 @@ export default {
             const myKey = this.props.currentUser._key;
 
             let peersToConnect = [];
-            participants.forEach(p => { if (p !== myKey) peersToConnect.push(p); });
 
-            // Logic to support Ringing for DMs: Ensure other member is contacted
-            if (this.state.currentChannelData.type === 'dm' && this.state.currentChannelData.members) {
-                const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
-                if (otherMember && !peersToConnect.includes(otherMember)) {
-                    peersToConnect.push(otherMember);
+            if (isDM) {
+                // For DMs: Ring the other member
+                if (this.state.currentChannelData.members) {
+                    const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
+                    if (otherMember) {
+                        console.log('[startCall] DM call - ringing:', otherMember);
+                        peersToConnect.push(otherMember);
+                    }
                 }
+            } else {
+                // For huddles: Only connect to participants who are ALREADY in the call
+                // Don't send offers to people not in the call (no ringing)
+                participants.forEach(p => {
+                    if (p !== myKey) peersToConnect.push(p);
+                });
+                console.log('[startCall] Huddle - connecting to existing participants:', peersToConnect);
+            }
+
+            if (peersToConnect.length === 0) {
+                console.log('[startCall] No peers to connect. Waiting for others to join...');
             }
 
             for (const pKey of peersToConnect) {
-                await this.setupPeerConnection(pKey, true);
+                await this.setupPeerConnection(pKey, true, type);
             }
         } catch (err) {
             console.error('Error accessing media:', err);
@@ -1551,71 +2036,125 @@ export default {
     },
 
     async handleSignal(signal) {
-        if (Date.now() - signal.timestamp > 30000) return;
-        if (signal.from_user === this.props.currentUser._key) return;
+        try {
+            // Signals should be fresh (max 5 minutes)
+            const age = Date.now() - signal.timestamp;
+            if (Math.abs(age) > 300000) {
+                console.log(`[Signaling] Ignoring stale signal (age: ${age}ms, type: ${signal.type})`);
+                // Delete stale signals to clean up
+                this.deleteSignal(signal._key);
+                return;
+            }
+            if (signal.from_user === this.props.currentUser._key) return;
 
-        const data = signal.data;
-        const fromUser = signal.from_user;
+            console.log(`[Signaling] Incoming ${signal.type} from ${signal.from_user} [age: ${age}ms]`);
+            const data = signal.data;
+            const fromUser = signal.from_user;
 
-        if (!this.state.activeCall) {
-            if (signal.type === 'offer') {
-                const caller = this.state.users.find(u => u._key === fromUser) || { _key: fromUser, firstname: 'Unknown', lastname: '' };
-                this.update({
-                    incomingCall: {
+            // Always delete the signal after we've read it to prevent re-processing on reload
+            this.deleteSignal(signal._key);
+
+            if (!this.state.activeCall) {
+                if (signal.type === 'offer') {
+                    let caller = this.state.users.find(u => u._key === fromUser);
+                    if (!caller) {
+                        caller = { _key: fromUser, firstname: 'Unknown', lastname: 'Caller' };
+                    }
+
+                    console.log('[Signaling] Displaying incoming call from', caller.firstname);
+
+                    const newCall = {
                         caller: caller,
                         type: data.call_type,
                         offer: data.sdp,
                         from_user: fromUser
-                    }
-                });
-            }
-            return;
-        }
+                    };
 
-        switch (signal.type) {
-            case 'offer':
-                if (data.call_type === 'renegotiation') {
+                    // Add to list of incoming calls if not already there
+                    const currentCalls = this.state.incomingCalls || [];
+                    if (!currentCalls.some(c => c.from_user === fromUser)) {
+                        this.update({
+                            incomingCalls: [...currentCalls, newCall]
+                        });
+                        this.playSound('ringtone');
+                        this.showCallNotification(caller, data.call_type);
+                    }
+                }
+                return;
+            }
+
+            switch (signal.type) {
+                case 'offer':
+                    if (data.call_type === 'renegotiation') {
+                        const pc = this.peerConnections[fromUser];
+                        if (pc) {
+                            try {
+                                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+                                await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                            } catch (e) { console.error("Renegotiation failed", e); }
+                        }
+                        break;
+                    }
+
+                    await this.setupPeerConnection(fromUser, false, null);
                     const pc = this.peerConnections[fromUser];
                     if (pc) {
-                        try {
-                            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            const answer = await pc.createAnswer();
-                            await pc.setLocalDescription(answer);
-                            await this.sendSignal(fromUser, 'answer', { sdp: answer });
-                        } catch (e) { console.error("Renegotiation failed", e); }
+                        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                        this.processIceQueue(fromUser);
                     }
                     break;
-                }
+                case 'answer':
+                    this.stopSound('calling');
+                    const pc2 = this.peerConnections[fromUser];
+                    if (pc2) {
+                        await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        this.processIceQueue(fromUser);
+                    }
+                    break;
+                case 'candidate':
+                    const pc3 = this.peerConnections[fromUser];
+                    if (pc3 && pc3.remoteDescription) {
+                        if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    } else {
+                        if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
+                        this.iceCandidatesQueue[fromUser].push(data.candidate);
+                    }
+                    break;
+                case 'bye':
+                    console.log('[Signaling] Peer disconnected:', fromUser);
 
-                await this.setupPeerConnection(fromUser, false);
-                const pc = this.peerConnections[fromUser];
-                if (pc) {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await this.sendSignal(fromUser, 'answer', { sdp: answer });
-                    this.processIceQueue(fromUser);
-                }
-                break;
-            case 'answer':
-                const pc2 = this.peerConnections[fromUser];
-                if (pc2) {
-                    await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                    this.processIceQueue(fromUser);
-                }
-                break;
-            case 'candidate':
-                const pc3 = this.peerConnections[fromUser];
-                if (pc3 && pc3.remoteDescription) {
-                    if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } else {
-                    if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
-                    this.iceCandidatesQueue[fromUser].push(data.candidate);
-                }
-                break;
-            case 'bye':
-                this.closePeerConnection(fromUser);
-                break;
+                    // Check if it was an incoming call that disconnected
+                    if (this.state.incomingCalls && this.state.incomingCalls.length > 0) {
+                        const remaining = this.state.incomingCalls.filter(c => c.from_user !== fromUser);
+                        if (remaining.length !== this.state.incomingCalls.length) {
+                            console.log('[Signaling] Removed incoming call from list');
+                            this.update({ incomingCalls: remaining });
+                            if (remaining.length === 0) {
+                                this.stopSound('ringtone');
+                            }
+                        }
+                    }
+
+                    this.closePeerConnection(fromUser);
+
+                    // If this was the last peer, auto-hangup ONLY for DM calls (1-on-1)
+                    // For huddles, the user stays in the call waiting for others
+                    const remainingPeers = Object.keys(this.peerConnections).length;
+                    const isDMCall = this.state.currentChannelData?.type === 'dm';
+                    if (remainingPeers === 0 && this.state.activeCall && isDMCall) {
+                        console.log('[Signaling] Last peer disconnected from DM call, ending call');
+                        this.hangup();
+                    }
+                    break;
+            }
+        } catch (e) {
+            console.error('[handleSignal] Error:', e);
+            this.update({ lastDebugError: e.message });
         }
     },
 
@@ -1629,9 +2168,20 @@ export default {
         }
     },
 
-    async acceptCall() {
-        const incoming = this.state.incomingCall;
+    async acceptCall(call) {
+        const incoming = call;
         if (!incoming) return;
+
+        // Remove this call from the list
+        const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
+        this.update({ incomingCalls: remaining });
+
+        // If no more incoming calls, stop ringtone
+        if (remaining.length === 0) {
+            this.stopSound('ringtone');
+        }
+
+        this.closeCallNotification();
 
         let channelId = this.state.channelId;
         if (this.state.usersChannels && this.state.usersChannels[incoming.from_user]) {
@@ -1648,7 +2198,6 @@ export default {
         }
 
         this.update({
-            incomingCall: null,
             activeCall: {
                 startDate: new Date(),
                 channelId: channelId
@@ -1669,7 +2218,7 @@ export default {
             this.localStream = stream;
             this.attachLocalStream();
 
-            await this.setupPeerConnection(incoming.from_user, false);
+            await this.setupPeerConnection(incoming.from_user, false, null);
             const pc = this.peerConnections[incoming.from_user];
 
             await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));
@@ -1685,12 +2234,25 @@ export default {
         }
     },
 
-    declineCall() {
-        this.update({ incomingCall: null });
+    declineCall(call) {
+        const incoming = call;
+        // Remove from list
+        const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
+        this.update({ incomingCalls: remaining });
+
+        if (remaining.length === 0) {
+            this.stopSound('ringtone');
+        }
+
+        this.closeCallNotification();
     },
 
-    async setupPeerConnection(remoteUserKey, isInitiator) {
-        if (this.peerConnections[remoteUserKey]) return;
+    async setupPeerConnection(remoteUserKey, isInitiator, callType) {
+        console.log(`[setupPeerConnection] Setting up connection to ${remoteUserKey} (initiator: ${isInitiator})`);
+        if (this.peerConnections[remoteUserKey]) {
+            console.log(`[setupPeerConnection] Connection to ${remoteUserKey} already exists`);
+            return;
+        }
 
         const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
         const pc = new RTCPeerConnection(config);
@@ -1712,24 +2274,43 @@ export default {
         };
 
         pc.onconnectionstatechange = () => {
+            console.log(`[PeerConnection] State change for ${remoteUserKey}: ${pc.connectionState}`);
             if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 this.closePeerConnection(remoteUserKey);
             }
         };
 
         pc.onnegotiationneeded = async () => {
-            // Check signaling state to avoid glare? Strict check only allows stable state.
+            // Only handle renegotiation if the connection is already established (stable)
+            // and we are NOT in the middle of the initial setup (which we handle manually below)
             if (pc.signalingState !== 'stable') return;
 
             try {
+                console.log(`[PeerConnection] Renegotiation needed for ${remoteUserKey}`);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 await this.sendSignal(remoteUserKey, 'offer', {
                     sdp: offer,
                     call_type: 'renegotiation'
                 });
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error('Renegotiation error:', e); }
         };
+
+        // Explicitly create the initial offer if we are the caller
+        if (isInitiator) {
+            console.log(`[setupPeerConnection] Creating initial offer for ${remoteUserKey}`);
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                console.log(`[setupPeerConnection] Sending offer to ${remoteUserKey}`);
+                await this.sendSignal(remoteUserKey, 'offer', {
+                    sdp: offer,
+                    call_type: callType || 'audio'
+                });
+            } catch (e) {
+                console.error('Error creating initial offer:', e);
+            }
+        }
     },
 
     closePeerConnection(key) {
@@ -1768,10 +2349,19 @@ export default {
     },
 
     async hangup() {
-        if (this.state.activeCall && this.state.activeCall.channelId) {
+        // Prevent the click on hangup from enabling audio
+        this.preventAudioResume = true;
+
+        console.log('[hangup] Stopping all sounds, ringtoneInterval:', !!this.ringtoneInterval, 'callingInterval:', !!this.callingInterval);
+        this.stopSound('ringtone');
+        this.stopSound('calling');
+
+        const channelId = this.state.activeCall?.channelId;
+
+        if (channelId) {
             fetch('/talks/leave_call', {
                 method: 'POST',
-                body: JSON.stringify({ channel_id: this.state.activeCall.channelId })
+                body: JSON.stringify({ channel_id: channelId })
             }).catch(e => { });
         }
 
@@ -1787,7 +2377,24 @@ export default {
 
         if (this.callTimer) clearInterval(this.callTimer);
 
+        // Close any browser notification
+        this.closeCallNotification();
+
+        // Ensure no sound arrays are pending
+        this.ringtoneOscillators = [];
+        this.callingOscillators = [];
+
+        // Immediately update currentChannelData to remove current user from participants
+        const myKey = this.props.currentUser?._key;
+        const currentParticipants = this.state.currentChannelData?.active_call_participants || [];
+        const updatedParticipants = currentParticipants.filter(p => p !== myKey);
+        const updatedChannelData = this.state.currentChannelData ? {
+            ...this.state.currentChannelData,
+            active_call_participants: updatedParticipants
+        } : null;
+
         this.update({
+            currentChannelData: updatedChannelData,
             activeCall: null,
             incomingCall: null,
             callDuration: 0,
@@ -2076,11 +2683,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr181="expr181" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr182="expr182"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr183="expr183"></talks-header><talks-messages expr184="expr184"></talks-messages><talks-input expr185="expr185"></talks-input></main><talks-calls expr186="expr186"></talks-calls><div expr187="expr187" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0"></div><div expr201="expr201" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr207="expr207" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr212="expr212" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr216="expr216" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr235="expr235" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
+    '<div expr2766="expr2766" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr2767="expr2767"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr2768="expr2768"></talks-header><talks-messages expr2769="expr2769"></talks-messages><talks-input expr2770="expr2770"></talks-input></main><talks-calls expr2771="expr2771"></talks-calls><div expr2772="expr2772" class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in"></div><div expr2773="expr2773" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0"></div><div expr2787="expr2787" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr2793="expr2793" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr2798="expr2798" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr2802="expr2802" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr2821="expr2821" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
     [
       {
-        redundantAttribute: 'expr181',
-        selector: '[expr181]',
+        redundantAttribute: 'expr2766',
+        selector: '[expr2766]',
 
         expressions: [
           {
@@ -2122,7 +2729,7 @@ export default {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
             name: 'channels',
-            evaluate: _scope => _scope.props.channels
+            evaluate: _scope => _scope.state.channels
           },
           {
             type: expressionTypes.ATTRIBUTE,
@@ -2205,8 +2812,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr182',
-        selector: '[expr182]'
+        redundantAttribute: 'expr2767',
+        selector: '[expr2767]'
       },
       {
         type: bindingTypes.TAG,
@@ -2261,6 +2868,11 @@ export default {
             evaluate: _scope => _scope.startCall
           },
           {
+            type: expressionTypes.EVENT,
+            name: 'onHangup',
+            evaluate: _scope => _scope.hangup
+          },
+          {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
             name: 'isFavorite',
@@ -2278,8 +2890,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr183',
-        selector: '[expr183]'
+        redundantAttribute: 'expr2768',
+        selector: '[expr2768]'
       },
       {
         type: bindingTypes.TAG,
@@ -2365,8 +2977,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr184',
-        selector: '[expr184]'
+        redundantAttribute: 'expr2769',
+        selector: '[expr2769]'
       },
       {
         type: bindingTypes.TAG,
@@ -2446,8 +3058,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr185',
-        selector: '[expr185]'
+        redundantAttribute: 'expr2770',
+        selector: '[expr2770]'
       },
       {
         type: bindingTypes.TAG,
@@ -2459,104 +3071,125 @@ export default {
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'incomingCall',
-            evaluate: _scope => _scope.state.incomingCall
+            name: 'incoming-calls',
+            evaluate: _scope => _scope.state.incomingCalls
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'activeCall',
+            name: 'active-call',
             evaluate: _scope => _scope.state.activeCall
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'callDuration',
+            name: 'call-duration',
             evaluate: _scope => _scope.state.callDuration
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'isMuted',
-            evaluate: _scope => _scope.state.isMuted
+            name: 'is-audio-enabled',
+            evaluate: _scope => !_scope.state.isMuted
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'isVideoEnabled',
+            name: 'is-video-enabled',
             evaluate: _scope => _scope.state.isVideoEnabled
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'isScreenSharing',
+            name: 'is-screen-sharing',
             evaluate: _scope => _scope.state.isScreenSharing
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'localStreamHasVideo',
+            name: 'local-stream-has-video',
             evaluate: _scope => _scope.state.localStreamHasVideo
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'remoteStreamHasVideo',
+            name: 'remote-stream-has-video',
             evaluate: _scope => _scope.state.remoteStreamHasVideo
           },
           {
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
-            name: 'callPeers',
+            name: 'call-peers',
             evaluate: _scope => _scope.state.callPeers
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onAcceptCall',
+            name: 'on-accept-call',
             evaluate: _scope => _scope.acceptCall
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onDeclineCall',
+            name: 'on-decline-call',
             evaluate: _scope => _scope.declineCall
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onToggleMute',
+            name: 'on-toggle-audio',
             evaluate: _scope => _scope.toggleMute
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onToggleVideo',
+            name: 'on-toggle-video',
             evaluate: _scope => _scope.toggleVideo
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onToggleScreenShare',
+            name: 'on-toggle-screen-share',
             evaluate: _scope => _scope.toggleScreenShare
           },
           {
             type: expressionTypes.EVENT,
-            name: 'onHangup',
+            name: 'on-hangup',
             evaluate: _scope => _scope.hangup
           }
         ],
 
-        redundantAttribute: 'expr186',
-        selector: '[expr186]'
+        redundantAttribute: 'expr2771',
+        selector: '[expr2771]'
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.state.audioSuspended,
+        redundantAttribute: 'expr2772',
+        selector: '[expr2772]',
+
+        template: template(
+          '<i class="fas fa-volume-mute"></i><span>Click anywhere to enable call sounds</span>',
+          [
+            {
+              expressions: [
+                {
+                  type: expressionTypes.EVENT,
+                  name: 'onclick',
+                  evaluate: _scope => _scope.enableAudio
+                }
+              ]
+            }
+          ]
+        )
       },
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showSearchSidebar,
-        redundantAttribute: 'expr187',
-        selector: '[expr187]',
+        redundantAttribute: 'expr2773',
+        selector: '[expr2773]',
 
         template: template(
-          '<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr188="expr188" class="text-gray-500 text-sm"> </span></div><button expr189="expr189" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr190="expr190" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr192="expr192" class="flex-1 flex items-center justify-center"></div><div expr193="expr193" class="flex-1 flex items-center justify-center"></div><div expr194="expr194" class="flex-1 overflow-y-auto custom-scrollbar"></div>',
+          '<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr2774="expr2774" class="text-gray-500 text-sm"> </span></div><button expr2775="expr2775" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr2776="expr2776" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr2778="expr2778" class="flex-1 flex items-center justify-center"></div><div expr2779="expr2779" class="flex-1 flex items-center justify-center"></div><div expr2780="expr2780" class="flex-1 overflow-y-auto custom-scrollbar"></div>',
           [
             {
-              redundantAttribute: 'expr188',
-              selector: '[expr188]',
+              redundantAttribute: 'expr2774',
+              selector: '[expr2774]',
 
               expressions: [
                 {
@@ -2574,8 +3207,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr189',
-              selector: '[expr189]',
+              redundantAttribute: 'expr2775',
+              selector: '[expr2775]',
 
               expressions: [
                 {
@@ -2588,15 +3221,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.searchQuery,
-              redundantAttribute: 'expr190',
-              selector: '[expr190]',
+              redundantAttribute: 'expr2776',
+              selector: '[expr2776]',
 
               template: template(
-                '<span class="text-gray-400 text-sm">Searching for: </span><span expr191="expr191" class="text-indigo-400 font-medium"> </span>',
+                '<span class="text-gray-400 text-sm">Searching for: </span><span expr2777="expr2777" class="text-indigo-400 font-medium"> </span>',
                 [
                   {
-                    redundantAttribute: 'expr191',
-                    selector: '[expr191]',
+                    redundantAttribute: 'expr2777',
+                    selector: '[expr2777]',
 
                     expressions: [
                       {
@@ -2612,8 +3245,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.searchLoading,
-              redundantAttribute: 'expr192',
-              selector: '[expr192]',
+              redundantAttribute: 'expr2778',
+              selector: '[expr2778]',
 
               template: template(
                 '<div class="flex flex-col items-center gap-2"><i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i><span class="text-gray-400 text-sm">Searching...</span></div>',
@@ -2623,8 +3256,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.showNoResults(),
-              redundantAttribute: 'expr193',
-              selector: '[expr193]',
+              redundantAttribute: 'expr2779',
+              selector: '[expr2779]',
 
               template: template(
                 '<div class="flex flex-col items-center gap-2 text-gray-400"><i class="fas fa-search text-4xl text-gray-600"></i><span>No results found</span><span class="text-sm text-gray-500">Try a different search term</span></div>',
@@ -2634,11 +3267,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.hasSearchResults(),
-              redundantAttribute: 'expr194',
-              selector: '[expr194]',
+              redundantAttribute: 'expr2780',
+              selector: '[expr2780]',
 
               template: template(
-                '<div expr195="expr195" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>',
+                '<div expr2781="expr2781" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -2646,7 +3279,7 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<div class="flex items-center gap-2 mb-2"><span expr196="expr196" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr197="expr197" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr198="expr198" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr199="expr199" class="text-sm text-gray-200 font-medium truncate"> </div><div expr200="expr200" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>',
+                      '<div class="flex items-center gap-2 mb-2"><span expr2782="expr2782" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr2783="expr2783" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr2784="expr2784" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr2785="expr2785" class="text-sm text-gray-200 font-medium truncate"> </div><div expr2786="expr2786" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>',
                       [
                         {
                           expressions: [
@@ -2658,8 +3291,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr196',
-                          selector: '[expr196]',
+                          redundantAttribute: 'expr2782',
+                          selector: '[expr2782]',
 
                           expressions: [
                             {
@@ -2673,8 +3306,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr197',
-                          selector: '[expr197]',
+                          redundantAttribute: 'expr2783',
+                          selector: '[expr2783]',
 
                           expressions: [
                             {
@@ -2688,8 +3321,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr198',
-                          selector: '[expr198]',
+                          redundantAttribute: 'expr2784',
+                          selector: '[expr2784]',
 
                           expressions: [
                             {
@@ -2707,8 +3340,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr199',
-                          selector: '[expr199]',
+                          redundantAttribute: 'expr2785',
+                          selector: '[expr2785]',
 
                           expressions: [
                             {
@@ -2726,8 +3359,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr200',
-                          selector: '[expr200]',
+                          redundantAttribute: 'expr2786',
+                          selector: '[expr2786]',
 
                           expressions: [
                             {
@@ -2743,8 +3376,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr195',
-                    selector: '[expr195]',
+                    redundantAttribute: 'expr2781',
+                    selector: '[expr2781]',
                     itemName: 'result',
                     indexName: null,
                     evaluate: _scope => _scope.state.searchResults
@@ -2758,11 +3391,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.lightboxImage,
-        redundantAttribute: 'expr201',
-        selector: '[expr201]',
+        redundantAttribute: 'expr2787',
+        selector: '[expr2787]',
 
         template: template(
-          '<div expr202="expr202" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr203="expr203" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr204="expr204" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr205="expr205" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr206="expr206" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
+          '<div expr2788="expr2788" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr2789="expr2789" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr2790="expr2790" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr2791="expr2791" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr2792="expr2792" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
           [
             {
               expressions: [
@@ -2774,8 +3407,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr202',
-              selector: '[expr202]',
+              redundantAttribute: 'expr2788',
+              selector: '[expr2788]',
 
               expressions: [
                 {
@@ -2786,8 +3419,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr203',
-              selector: '[expr203]',
+              redundantAttribute: 'expr2789',
+              selector: '[expr2789]',
 
               expressions: [
                 {
@@ -2805,8 +3438,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr204',
-              selector: '[expr204]',
+              redundantAttribute: 'expr2790',
+              selector: '[expr2790]',
 
               expressions: [
                 {
@@ -2817,8 +3450,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr205',
-              selector: '[expr205]',
+              redundantAttribute: 'expr2791',
+              selector: '[expr2791]',
 
               expressions: [
                 {
@@ -2836,8 +3469,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr206',
-              selector: '[expr206]',
+              redundantAttribute: 'expr2792',
+              selector: '[expr2792]',
 
               expressions: [
                 {
@@ -2853,11 +3486,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showEmojiPicker,
-        redundantAttribute: 'expr207',
-        selector: '[expr207]',
+        redundantAttribute: 'expr2793',
+        selector: '[expr2793]',
 
         template: template(
-          '<div expr208="expr208" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr209="expr209" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr210="expr210" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr211="expr211" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
+          '<div expr2794="expr2794" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr2795="expr2795" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr2796="expr2796" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr2797="expr2797" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
           [
             {
               expressions: [
@@ -2870,8 +3503,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr208',
-              selector: '[expr208]',
+              redundantAttribute: 'expr2794',
+              selector: '[expr2794]',
 
               expressions: [
                 {
@@ -2906,8 +3539,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr209',
-              selector: '[expr209]',
+              redundantAttribute: 'expr2795',
+              selector: '[expr2795]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().smileys
@@ -2937,8 +3570,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr210',
-              selector: '[expr210]',
+              redundantAttribute: 'expr2796',
+              selector: '[expr2796]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().gestures
@@ -2968,8 +3601,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr211',
-              selector: '[expr211]',
+              redundantAttribute: 'expr2797',
+              selector: '[expr2797]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().objects
@@ -2980,11 +3613,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showUserPicker,
-        redundantAttribute: 'expr212',
-        selector: '[expr212]',
+        redundantAttribute: 'expr2798',
+        selector: '[expr2798]',
 
         template: template(
-          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr213="expr213"></div></div>',
+          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr2799="expr2799"></div></div>',
           [
             {
               expressions: [
@@ -3002,7 +3635,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr214="expr214" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr215="expr215" class="text-sm truncate font-medium"> </span>',
+                '<div expr2800="expr2800" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr2801="expr2801" class="text-sm truncate font-medium"> </span>',
                 [
                   {
                     expressions: [
@@ -3023,8 +3656,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr214',
-                    selector: '[expr214]',
+                    redundantAttribute: 'expr2800',
+                    selector: '[expr2800]',
 
                     expressions: [
                       {
@@ -3042,8 +3675,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr215',
-                    selector: '[expr215]',
+                    redundantAttribute: 'expr2801',
+                    selector: '[expr2801]',
 
                     expressions: [
                       {
@@ -3059,8 +3692,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr213',
-              selector: '[expr213]',
+              redundantAttribute: 'expr2799',
+              selector: '[expr2799]',
               itemName: 'user',
               indexName: 'index',
               evaluate: _scope => _scope.state.filteredUsers
@@ -3071,15 +3704,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showCreateChannelModal,
-        redundantAttribute: 'expr216',
-        selector: '[expr216]',
+        redundantAttribute: 'expr2802',
+        selector: '[expr2802]',
 
         template: template(
-          '<div expr217="expr217" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr218="expr218" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr219="expr219" type="checkbox" class="sr-only"/><div expr220="expr220"></div><div expr221="expr221"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr222="expr222" class="mb-4 animate-fade-in"></div><div expr232="expr232" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr233="expr233" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr234="expr234" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
+          '<div expr2803="expr2803" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr2804="expr2804" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr2805="expr2805" type="checkbox" class="sr-only"/><div expr2806="expr2806"></div><div expr2807="expr2807"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr2808="expr2808" class="mb-4 animate-fade-in"></div><div expr2818="expr2818" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr2819="expr2819" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr2820="expr2820" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
           [
             {
-              redundantAttribute: 'expr217',
-              selector: '[expr217]',
+              redundantAttribute: 'expr2803',
+              selector: '[expr2803]',
 
               expressions: [
                 {
@@ -3092,8 +3725,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr218',
-              selector: '[expr218]',
+              redundantAttribute: 'expr2804',
+              selector: '[expr2804]',
 
               expressions: [
                 {
@@ -3109,8 +3742,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr219',
-              selector: '[expr219]',
+              redundantAttribute: 'expr2805',
+              selector: '[expr2805]',
 
               expressions: [
                 {
@@ -3127,8 +3760,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr220',
-              selector: '[expr220]',
+              redundantAttribute: 'expr2806',
+              selector: '[expr2806]',
 
               expressions: [
                 {
@@ -3140,8 +3773,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr221',
-              selector: '[expr221]',
+              redundantAttribute: 'expr2807',
+              selector: '[expr2807]',
 
               expressions: [
                 {
@@ -3155,15 +3788,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.isCreatingPrivate,
-              redundantAttribute: 'expr222',
-              selector: '[expr222]',
+              redundantAttribute: 'expr2808',
+              selector: '[expr2808]',
 
               template: template(
-                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr223="expr223" class="flex flex-wrap gap-2 mb-2"><span expr224="expr224" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr226="expr226" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr227="expr227" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr228="expr228" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
+                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr2809="expr2809" class="flex flex-wrap gap-2 mb-2"><span expr2810="expr2810" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr2812="expr2812" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr2813="expr2813" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr2814="expr2814" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr223',
-                    selector: '[expr223]',
+                    redundantAttribute: 'expr2809',
+                    selector: '[expr2809]',
 
                     expressions: [
                       {
@@ -3180,7 +3813,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      ' <button expr225="expr225" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
+                      ' <button expr2811="expr2811" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
                       [
                         {
                           expressions: [
@@ -3199,8 +3832,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr225',
-                          selector: '[expr225]',
+                          redundantAttribute: 'expr2811',
+                          selector: '[expr2811]',
 
                           expressions: [
                             {
@@ -3213,15 +3846,15 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr224',
-                    selector: '[expr224]',
+                    redundantAttribute: 'expr2810',
+                    selector: '[expr2810]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.createChannelMembers
                   },
                   {
-                    redundantAttribute: 'expr226',
-                    selector: '[expr226]',
+                    redundantAttribute: 'expr2812',
+                    selector: '[expr2812]',
 
                     expressions: [
                       {
@@ -3232,8 +3865,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr227',
-                    selector: '[expr227]',
+                    redundantAttribute: 'expr2813',
+                    selector: '[expr2813]',
 
                     expressions: [
                       {
@@ -3250,7 +3883,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      '<div expr229="expr229" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr230="expr230" class="text-gray-300 text-sm font-medium truncate"> </div><div expr231="expr231" class="text-gray-500 text-xs truncate"> </div></div>',
+                      '<div expr2815="expr2815" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr2816="expr2816" class="text-gray-300 text-sm font-medium truncate"> </div><div expr2817="expr2817" class="text-gray-500 text-xs truncate"> </div></div>',
                       [
                         {
                           expressions: [
@@ -3262,8 +3895,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr229',
-                          selector: '[expr229]',
+                          redundantAttribute: 'expr2815',
+                          selector: '[expr2815]',
 
                           expressions: [
                             {
@@ -3281,8 +3914,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr230',
-                          selector: '[expr230]',
+                          redundantAttribute: 'expr2816',
+                          selector: '[expr2816]',
 
                           expressions: [
                             {
@@ -3296,8 +3929,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr231',
-                          selector: '[expr231]',
+                          redundantAttribute: 'expr2817',
+                          selector: '[expr2817]',
 
                           expressions: [
                             {
@@ -3310,8 +3943,8 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr228',
-                    selector: '[expr228]',
+                    redundantAttribute: 'expr2814',
+                    selector: '[expr2814]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.filteredCreateChannelUsers
@@ -3322,8 +3955,8 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.createChannelError,
-              redundantAttribute: 'expr232',
-              selector: '[expr232]',
+              redundantAttribute: 'expr2818',
+              selector: '[expr2818]',
 
               template: template(
                 ' ',
@@ -3341,8 +3974,8 @@ showCreateChannelModal: false })
               )
             },
             {
-              redundantAttribute: 'expr233',
-              selector: '[expr233]',
+              redundantAttribute: 'expr2819',
+              selector: '[expr2819]',
 
               expressions: [
                 {
@@ -3353,8 +3986,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr234',
-              selector: '[expr234]',
+              redundantAttribute: 'expr2820',
+              selector: '[expr2820]',
 
               expressions: [
                 {
@@ -3381,15 +4014,15 @@ showCreateChannelModal: false })
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showDmPopup,
-        redundantAttribute: 'expr235',
-        selector: '[expr235]',
+        redundantAttribute: 'expr2821',
+        selector: '[expr2821]',
 
         template: template(
-          '<div expr236="expr236" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr237="expr237" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr238="expr238" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr239="expr239" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr245="expr245" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
+          '<div expr2822="expr2822" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr2823="expr2823" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr2824="expr2824" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr2825="expr2825" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr2831="expr2831" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
           [
             {
-              redundantAttribute: 'expr236',
-              selector: '[expr236]',
+              redundantAttribute: 'expr2822',
+              selector: '[expr2822]',
 
               expressions: [
                 {
@@ -3400,8 +4033,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr237',
-              selector: '[expr237]',
+              redundantAttribute: 'expr2823',
+              selector: '[expr2823]',
 
               expressions: [
                 {
@@ -3412,8 +4045,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr238',
-              selector: '[expr238]',
+              redundantAttribute: 'expr2824',
+              selector: '[expr2824]',
 
               expressions: [
                 {
@@ -3429,7 +4062,7 @@ showCreateChannelModal: false })
               condition: null,
 
               template: template(
-                '<div class="relative"><div expr240="expr240" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr241="expr241"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr242="expr242" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr243="expr243" class="text-xs text-gray-500 italic"></span></div><div expr244="expr244" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
+                '<div class="relative"><div expr2826="expr2826" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr2827="expr2827"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr2828="expr2828" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr2829="expr2829" class="text-xs text-gray-500 italic"></span></div><div expr2830="expr2830" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
                 [
                   {
                     expressions: [
@@ -3441,8 +4074,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr240',
-                    selector: '[expr240]',
+                    redundantAttribute: 'expr2826',
+                    selector: '[expr2826]',
 
                     expressions: [
                       {
@@ -3460,8 +4093,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr241',
-                    selector: '[expr241]',
+                    redundantAttribute: 'expr2827',
+                    selector: '[expr2827]',
 
                     expressions: [
                       {
@@ -3473,8 +4106,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr242',
-                    selector: '[expr242]',
+                    redundantAttribute: 'expr2828',
+                    selector: '[expr2828]',
 
                     expressions: [
                       {
@@ -3490,8 +4123,8 @@ showCreateChannelModal: false })
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.user._key === _scope.props.currentUser._key,
-                    redundantAttribute: 'expr243',
-                    selector: '[expr243]',
+                    redundantAttribute: 'expr2829',
+                    selector: '[expr2829]',
 
                     template: template(
                       'You',
@@ -3499,8 +4132,8 @@ showCreateChannelModal: false })
                     )
                   },
                   {
-                    redundantAttribute: 'expr244',
-                    selector: '[expr244]',
+                    redundantAttribute: 'expr2830',
+                    selector: '[expr2830]',
 
                     expressions: [
                       {
@@ -3513,8 +4146,8 @@ showCreateChannelModal: false })
                 ]
               ),
 
-              redundantAttribute: 'expr239',
-              selector: '[expr239]',
+              redundantAttribute: 'expr2825',
+              selector: '[expr2825]',
               itemName: 'user',
               indexName: null,
               evaluate: _scope => _scope.state.dmPopupUsers
@@ -3522,15 +4155,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.dmPopupUsers.length === 0,
-              redundantAttribute: 'expr245',
-              selector: '[expr245]',
+              redundantAttribute: 'expr2831',
+              selector: '[expr2831]',
 
               template: template(
-                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr246="expr246"> </p>',
+                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr2832="expr2832"> </p>',
                 [
                   {
-                    redundantAttribute: 'expr246',
-                    selector: '[expr246]',
+                    redundantAttribute: 'expr2832',
+                    selector: '[expr2832]',
 
                     expressions: [
                       {

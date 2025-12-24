@@ -44,6 +44,7 @@ local app = {
         pcall(function() db:CreateIndex("channels", { fields = { "name" }, unique = true }) end)
         pcall(function() db:CreateIndex("users", { fields = { "email" }, unique = true }) end)
         pcall(function() db:CreateIndex("messages", { fields = { "channel_id" }, unique = false }) end)
+        pcall(function() db:CreateIndex("signals", { fields = { "timestamp" }, type = "ttl", expireAfter = 3600 }) end)
         
         -- Create fulltext index on messages.text for search (if it doesn't exist)
         local existing_indexes = db:GetAllIndexes("messages")
@@ -987,6 +988,45 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     WriteJSON({ success = true, channel = channelName })
   end,
 
+  -- Get channel info (for huddle polling)
+  channel_info = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local channel_id = GetParam("channel_id")
+    if not channel_id or channel_id == "" then
+        SetStatus(400)
+        WriteJSON({ error = "channel_id required" })
+        return
+    end
+
+    local res = db:Sdbql("FOR c IN channels FILTER c._key == @key RETURN c", { key = channel_id })
+    local channel = res and res.result and res.result[1]
+    
+    if not channel then
+        SetStatus(404)
+        WriteJSON({ error = "Channel not found" })
+        return
+    end
+
+    -- Fetch ACTUAL participants from call_participants collection (source of truth)
+    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+    local pres = db:Sdbql(query, { channel_id = channel_id })
+    local actual_participants = pres and pres.result or {}
+    
+    -- Override channel's active_call_participants with actual data
+    channel.active_call_participants = actual_participants
+
+    SetStatus(200)
+    SetHeader("Content-Type", "application/json")
+    WriteJSON({ channel = channel })
+  end,
+
   join_call = function()
     local db = SoliDB.primary
     local current_user = get_current_user()
@@ -1013,17 +1053,54 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         return
     end
 
-    -- Update participants
-    local participants = channel.active_call_participants or {}
-    local exists = false
-    for _, p in ipairs(participants) do
-        if p == current_user._key then exists = true break end
+    -- Ensure collection and indexes exist
+    pcall(function() db:CreateCollection("call_participants") end)
+    pcall(function() db:CreateIndex("call_participants", { fields = {"channel_id"}, type = "hash" }) end)
+    -- Auto-expire participants after 2 hours effectively acting as a keep-alive/max duration
+    pcall(function() db:CreateIndex("call_participants", { fields = {"timestamp"}, type = "ttl", expireAfterSeconds = 7200 }) end)
+
+    -- MIGRATION: Backfill existing participants from channel document to collection
+    -- This ensures users already in the call (pre-update) are visible to new joiners
+    local old_participants = channel.active_call_participants or {}
+    for _, uid in ipairs(old_participants) do
+        local pid_key = channel_id .. "_" .. uid
+        local p_doc = {
+            _key = pid_key,
+            channel_id = channel_id,
+            user_id = uid,
+            timestamp = os.time()
+        }
+        -- Upsert
+        local s, _ = pcall(function() db:CreateDocument("call_participants", p_doc) end)
+        if not s then db:UpdateDocument("call_participants/" .. pid_key, p_doc) end
     end
 
-    if not exists then
-        table.insert(participants, current_user._key)
-        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+    -- Register CURRENT participant (Upsert logic)
+    -- This happens after migration loop, so if we were in the list, we just update timestamp again (redundant but safe)
+    local doc_key = channel_id .. "_" .. current_user._key
+    local participant_doc = {
+        _key = doc_key,
+        channel_id = channel_id,
+        user_id = current_user._key,
+        timestamp = os.time()
+    }
+    
+    local success, err = pcall(function() db:CreateDocument("call_participants", participant_doc) end)
+    if not success then
+        -- If create failed (exists), update it to refresh timestamp
+        db:UpdateDocument("call_participants/" .. doc_key, participant_doc)
     end
+
+    -- Fetch all current participants from the dedicated collection
+    -- This ensures we get everyone, regardless of race conditions on the channel doc
+    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+    local res = db:Sdbql(query, { channel_id = channel_id })
+    local participants = res.result or {}
+
+    -- Sync back to channel for UI (Best Effort)
+    pcall(function() 
+        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+    end)
     
     SetStatus(200)
     WriteJSON({ success = true, participants = participants })
@@ -1047,24 +1124,19 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         return
     end
 
-    -- Get channel
-    local channel = db:GetDocument("channels/" .. channel_id)
-    if not channel then
-        SetStatus(404)
-        WriteJSON({ error = "Channel not found" })
-        return
-    end
+    -- Remove from participants collection
+    local doc_key = channel_id .. "_" .. current_user._key
+    pcall(function() db:DeleteDocument("call_participants/" .. doc_key) end)
 
-    -- Remove from participants
-    local participants = channel.active_call_participants or {}
-    local new_participants = {}
-    for _, p in ipairs(participants) do
-        if p ~= current_user._key then
-            table.insert(new_participants, p)
-        end
-    end
+    -- Fetch remaining participants to update channel doc
+    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+    local res = db:Sdbql(query, { channel_id = channel_id })
+    local participants = res.result or {}
 
-    db:UpdateDocument("channels/" .. channel_id, { active_call_participants = new_participants })
+    -- Sync back to channel for UI (Best Effort)
+    pcall(function() 
+        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+    end)
 
     SetStatus(200)
     WriteJSON({ success = true })
@@ -1091,6 +1163,9 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       return
     end
 
+    -- Ensure collection exists
+    pcall(function() db:CreateCollection("signals") end)
+
     -- Create signal document
     -- We include a timestamp so the receiver can ignore old signals
     local signal = {
@@ -1098,10 +1173,50 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         to_user = target_user,
         type = type,
         data = data,
-        timestamp = os.time() * 1000 -- ms precision if possible, or just os.time()
+        timestamp = os.time() * 1000 -- ms precision
     }
 
-    db:CreateDocument("signals", signal)
+    Logger("Signaling: Creating signal from " .. signal.from_user .. " to " .. signal.to_user .. " type: " .. signal.type)
+    local ok, res = pcall(function() return db:CreateDocument("signals", signal) end)
+    
+    if not ok then
+        Logger("Signaling ERROR: " .. tostring(res))
+        SetStatus(500)
+        WriteJSON({ error = "Internal Error: " .. tostring(res) })
+        return
+    end
+
+    SetStatus(200)
+    WriteJSON({ success = true, result = res })
+  end,
+
+  -- Delete a signal document (called after signal is processed)
+  delete_signal = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local signal_key = body.signal_key
+
+    if not signal_key then
+      SetStatus(400)
+      WriteJSON({ error = "signal_key is required" })
+      return
+    end
+
+    -- Delete the signal - only allow deletion of signals addressed to the current user
+    local ok, err = pcall(function()
+      db:Sdbql("FOR s IN signals FILTER s._key == @key AND s.to_user == @me REMOVE s IN signals", { key = signal_key, me = current_user._key })
+    end)
+
+    if not ok then
+      Logger("Error deleting signal: " .. tostring(err))
+    end
 
     SetStatus(200)
     WriteJSON({ success = true })

@@ -151,10 +151,26 @@
                 Object.values(this.state.charts).forEach(c => c.destroy());
             },
 
-            connect() {
+            async connect() {
                 const apiUrl = getApiUrl();
+                let token;
+
+                try {
+                    // Get a fresh livequery token
+                    const tokenRes = await authenticatedFetch(`${apiUrl}/livequery/token`);
+                    if (!tokenRes.ok) {
+                        console.error("Monitor WS: Failed to get token");
+                        return;
+                    }
+                    const tokenData = await tokenRes.json();
+                    token = tokenData.token;
+                } catch (e) {
+                    console.error("Monitor WS: Authentication failed", e);
+                    return;
+                }
+
                 let wsUrl = apiUrl.replace(/^http/, 'ws');
-                const url = `${wsUrl}/monitoring/ws`;
+                const url = `${wsUrl}/monitoring/ws?token=${token}`;
 
                 this.ws = new WebSocket(url);
 

@@ -1,7 +1,7 @@
 <talks-app>
     <div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden" ondragenter={ onDragEnter }
         ondragleave={ onDragLeave } ondragover={ onDragOver } ondrop={ onDrop }>
-        <talks-sidebar currentUser={ state.currentUser } channels={ props.channels } users={ state.users }
+        <talks-sidebar currentUser={ state.currentUser } channels={ state.channels } users={ state.users }
             unreadChannels={ state.unreadChannels } usersChannels={ state.usersChannels } favorites={ getFavorites() }
             connectionStatus={ state.connectionStatus } showStatusMenu={ state.showStatusMenu } getDMUrl={ getDMUrl }
             onNavigate={ onNavigate } onShowCreateChannel={ ()=> update({ showCreateChannelModal: true }) }
@@ -13,7 +13,8 @@
                 <talks-header currentChannelData={ state.currentChannelData } currentChannel={ state.currentChannel }
                     showMembersPanel={ state.showMembersPanel } users={ state.users } currentUser={ state.currentUser }
                     onToggleFavorite={ toggleFavorite } onToggleMembersPanel={ toggleMembersPanel } onStartCall={
-                    startCall } isFavorite={ isFavorite } onSearch={ performSearch } onSearchClear={ clearSearch } />
+                    startCall } onHangup={ hangup } isFavorite={ isFavorite } onSearch={ performSearch } onSearchClear={
+                    clearSearch } />
 
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
@@ -28,12 +29,19 @@
                     onSendMessage={ sendMessage } />
             </main>
 
-            <talks-calls incomingCall={ state.incomingCall } activeCall={ state.activeCall } callDuration={
-                state.callDuration } isMuted={ state.isMuted } isVideoEnabled={ state.isVideoEnabled } isScreenSharing={
-                state.isScreenSharing } localStreamHasVideo={ state.localStreamHasVideo } remoteStreamHasVideo={
-                state.remoteStreamHasVideo } callPeers={ state.callPeers } onAcceptCall={ acceptCall } onDeclineCall={
-                declineCall } onToggleMute={ toggleMute } onToggleVideo={ toggleVideo } onToggleScreenShare={
-                toggleScreenShare } onHangup={ hangup } />
+            <talks-calls incoming-calls={ state.incomingCalls } active-call={ state.activeCall } call-duration={
+                state.callDuration } is-audio-enabled={ !state.isMuted } is-video-enabled={ state.isVideoEnabled }
+                is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
+                remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } on-accept-call={
+                acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={
+                toggleVideo } on-toggle-screen-share={ toggleScreenShare } on-hangup={ hangup } />
+
+            <!-- Audio Suspended Banner -->
+            <div if={ state.audioSuspended } onclick={ enableAudio }
+                class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in">
+                <i class="fas fa-volume-mute"></i>
+                <span>Click anywhere to enable call sounds</span>
+            </div>
 
             <!-- Search Results Sidebar -->
             <div if={ state.showSearchSidebar }
@@ -361,6 +369,7 @@
         .line-clamp-2 {
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
@@ -390,6 +399,7 @@
                     dragging: false,
                     files: [],
                     sending: false,
+                    audioSuspended: false,
                     allMessages: this.props.messages || [],
                     messages: this.props.messages || [],
                     ogCache: {}, // Cache for Open Graph metadata
@@ -425,6 +435,7 @@
                     filteredCreateChannelUsers: [],
                     showMembersPanel: false,
                     currentUser: this.props.currentUser || {},
+                    channels: this.props.channels || [],
                     currentChannel: this.props.currentChannel,
                     currentChannelData: this.props.currentChannelData,
                     channelId: this.props.channelId,
@@ -473,7 +484,7 @@
             calculateUnreadChannels() {
                 const unread = {};
                 const userSeen = this.state.currentUser.channel_last_seen || {};
-                const allChannels = [...(this.props.channels || []), ...(this.props.dmChannels || [])];
+                const allChannels = [...(this.state.channels || []), ...(this.props.dmChannels || [])];
 
                 allChannels.forEach(c => {
                     const lastSeen = userSeen[c._id] || 0;
@@ -558,7 +569,7 @@
                 const favItems = [];
                 // Check standard channels
                 favorites.forEach(key => {
-                    const channel = this.props.channels.find(c => c._key === key);
+                    const channel = this.state.channels.find(c => c._key === key);
                     if (channel) {
                         favItems.push(channel);
                         return;
@@ -683,11 +694,115 @@
                 // Connect to users Live Query for real-time presence UI updates
                 this.connectUsersLiveQuery();
 
+                // Connect to channels Live Query
+                this.connectChannelsListLiveQuery();
+
                 // Connect to signaling Live Query for calls
                 this.connectSignaling();
 
                 // SPA Routing
                 this.initRouter();
+
+                // Initialize AudioContext and check if suspended
+                this.initAudioContext();
+
+                // Request notification permission
+                this.requestNotificationPermission();
+            },
+
+            initAudioContext() {
+                if (!window.AudioContext && !window.webkitAudioContext) return;
+
+                if (!this.audioCtx) {
+                    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                // Check if suspended and show banner
+                if (this.audioCtx.state === 'suspended') {
+                    this.update({ audioSuspended: true });
+                }
+
+                // Store bound listener so we can remove it later
+                this.resumeAudioListener = () => {
+                    // Only enable audio if we actually want to (not from hangup)
+                    if (!this.preventAudioResume) {
+                        this.enableAudio();
+                    }
+                    this.removeResumeAudioListeners();
+                };
+
+                document.addEventListener('click', this.resumeAudioListener);
+                document.addEventListener('keydown', this.resumeAudioListener);
+            },
+
+            removeResumeAudioListeners() {
+                if (this.resumeAudioListener) {
+                    document.removeEventListener('click', this.resumeAudioListener);
+                    document.removeEventListener('keydown', this.resumeAudioListener);
+                }
+            },
+
+            async requestNotificationPermission() {
+                if (!('Notification' in window)) {
+                    console.log('[Notifications] Not supported in this browser');
+                    return;
+                }
+
+                if (Notification.permission === 'default') {
+                    console.log('[Notifications] Requesting permission...');
+                    const permission = await Notification.requestPermission();
+                    console.log('[Notifications] Permission:', permission);
+                }
+            },
+
+            showCallNotification(caller, callType) {
+                if (!('Notification' in window) || Notification.permission !== 'granted') {
+                    return null;
+                }
+
+                const callerName = caller.firstname && caller.lastname
+                    ? `${caller.firstname} ${caller.lastname}`
+                    : caller._key;
+
+                const notification = new Notification('Incoming Call', {
+                    body: `${callerName} is calling you (${callType || 'audio'})`,
+                    icon: '/app/assets/images/icon-192x192.png',
+                    tag: 'incoming-call',
+                    requireInteraction: true
+                });
+
+                notification.onclick = () => {
+                    window.focus();
+                    notification.close();
+                };
+
+                // Store reference to close it when call is answered/declined
+                this.incomingCallNotification = notification;
+                return notification;
+            },
+
+            closeCallNotification() {
+                if (this.incomingCallNotification) {
+                    this.incomingCallNotification.close();
+                    this.incomingCallNotification = null;
+                }
+            },
+
+            async enableAudio() {
+                if (!this.audioCtx) {
+                    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                if (this.audioCtx.state === 'suspended') {
+                    try {
+                        await this.audioCtx.resume();
+                        console.log('[Audio] Context resumed successfully');
+                    } catch (e) {
+                        console.error('[Audio] Failed to resume context:', e);
+                    }
+                }
+
+                this.update({ audioSuspended: false });
             },
 
             initRouter() {
@@ -794,6 +909,11 @@
                     this.signalingWs.close();
                     this.signalingWs = null;
                 }
+                if (this.channelsListWs) {
+                    this.channelsListWs.onclose = null;
+                    this.channelsListWs.close();
+                    this.channelsListWs = null;
+                }
                 this.hangup();
                 this.hangup();
             },
@@ -833,6 +953,60 @@
                         } catch (e) { console.error(e); }
                     };
                 } catch (e) { console.error(e); }
+
+                // Start polling for huddle state changes (fallback for live query delays)
+                this.startHuddlePolling();
+            },
+
+            startHuddlePolling() {
+                // Clear any existing polling interval
+                if (this.huddlePollingInterval) {
+                    clearInterval(this.huddlePollingInterval);
+                }
+
+                // Poll immediately on start
+                this.pollHuddleState();
+
+                // Then poll every 1 second for faster updates
+                this.huddlePollingInterval = setInterval(() => {
+                    this.pollHuddleState();
+                }, 1000);
+            },
+
+            async pollHuddleState() {
+                if (!this.state.currentChannelData?._key) return;
+
+                try {
+                    const res = await fetch(`/talks/channel_info?channel_id=${this.state.currentChannelData._key}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.channel) {
+                            // Only update if participants changed
+                            const current = JSON.stringify(this.state.currentChannelData?.active_call_participants || []);
+                            const updated = JSON.stringify(data.channel.active_call_participants || []);
+                            if (current !== updated) {
+                                console.log('[Huddle Poll] Participants changed:', current, '->', updated);
+                                this.update({
+                                    currentChannelData: {
+                                        ...this.state.currentChannelData,
+                                        active_call_participants: data.channel.active_call_participants || []
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        console.log('[Huddle Poll] Error response:', res.status);
+                    }
+                } catch (e) {
+                    console.log('[Huddle Poll] Fetch error:', e.message);
+                }
+            },
+
+            stopHuddlePolling() {
+                if (this.huddlePollingInterval) {
+                    clearInterval(this.huddlePollingInterval);
+                    this.huddlePollingInterval = null;
+                }
             },
 
             updateCallParticipants(participants) {
@@ -864,6 +1038,67 @@
                 this.presenceWs.onerror = (err) => {
                     console.error('Presence WebSocket error:', err);
                 };
+            },
+            async connectChannelsListLiveQuery() {
+                try {
+                    const tokenRes = await fetch('/talks/livequery_token');
+                    if (!tokenRes.ok) return;
+                    const { token } = await tokenRes.json();
+
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+                    this.channelsListWs = new WebSocket(wsUrl);
+
+                    this.channelsListWs.onopen = () => {
+                        console.log('Channels List Live Query connected');
+                        const my_user_key = this.props.currentUser._key;
+                        const query = `
+                            LET my_user_key = "${my_user_key}"
+                            FOR c IN channels
+                                FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                                SORT c.name ASC
+                                RETURN c
+                        `;
+                        this.channelsListWs.send(JSON.stringify({
+                            type: 'live_query',
+                            database: this.props.dbName || '_system',
+                            query: query
+                        }));
+                    };
+
+                    this.channelsListWs.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'query_result' && data.result) {
+                                const newChannels = data.result;
+                                const updates = { channels: newChannels };
+
+                                // Update current channel data if it exists in the new list
+                                // This ensures huddle status (active_call_participants) is updated in real-time
+                                if (this.state.channelId) {
+                                    const updatedCurrentChannel = newChannels.find(c => c._id === this.state.channelId);
+                                    if (updatedCurrentChannel) {
+                                        updates.currentChannelData = updatedCurrentChannel;
+                                        this.activeCallParticipants = updatedCurrentChannel.active_call_participants || [];
+                                    }
+                                }
+
+                                this.update(updates);
+                                this.calculateUnreadChannels();
+                            }
+                        } catch (err) {
+                            console.log('Channels List Live Query parse error:', err);
+                        }
+                    };
+
+                    this.channelsListWs.onclose = () => {
+                        console.log('Channels List Live Query disconnected');
+                        setTimeout(() => this.connectChannelsListLiveQuery(), 5000);
+                    };
+                } catch (err) {
+                    console.error('Channels List Live Query error:', err);
+                    setTimeout(() => this.connectChannelsListLiveQuery(), 5000);
+                }
             },
             async connectUsersLiveQuery() {
                 try {
@@ -983,6 +1218,18 @@
                                     if (!currentKeys.has(m._key)) {
                                         updated.push(m);
                                         hasNewItems = true;
+
+                                        // Sound notification
+                                        if (this.state.initialSyncDone && m.sender !== this.getUsername(this.props.currentUser)) {
+                                            const myUsername = this.getUsername(this.props.currentUser);
+                                            const isMention = m.text && m.text.includes('@' + myUsername);
+
+                                            if (isMention) {
+                                                this.playSound('notification');
+                                            } else if (document.hidden || !document.hasFocus()) {
+                                                this.playSound('discreet');
+                                            }
+                                        }
                                     }
                                 });
 
@@ -1808,6 +2055,191 @@
                 }
             },
 
+            // --- SOUND LOGIC ---
+            async playSound(type) {
+                console.log(`[playSound] Playing ${type}`);
+
+                // Initialize cancellation tracking
+                this.audioCancelled = this.audioCancelled || {};
+                this.audioCancelled[type] = false;
+
+                try {
+                    if (!window.AudioContext && !window.webkitAudioContext) {
+                        console.warn('[playSound] No AudioContext available');
+                        return;
+                    }
+
+                    if (!this.audioCtx) {
+                        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    const ctx = this.audioCtx;
+
+                    console.log(`[playSound] AudioContext state: ${ctx.state}`);
+                    if (ctx.state === 'suspended') {
+                        console.log('[Audio] Attempting to resume context...');
+                        try {
+                            await ctx.resume();
+                        } catch (e) {
+                            console.warn('[Audio] Resume failed:', e);
+                        }
+
+                        // Check explicit cancellation
+                        if (this.audioCancelled[type]) {
+                            console.log(`[playSound] Sound ${type} was cancelled while resuming. Aborting.`);
+                            return;
+                        }
+
+                        // Update suspended state if meaningful
+                        if (ctx.state === 'running') {
+                            this.update({ audioSuspended: false });
+                        }
+
+                        // If still suspended after attempting resume, don't create sounds
+                        if (ctx.state === 'suspended') {
+                            console.warn('[Audio] Context still suspended, cannot play sound');
+                            return;
+                        }
+
+                        // RACE CONDITION FIX:
+                        // While we were awaiting resume(), the call might have been accepted, declined, or ended.
+                        // We must verify if the sound logic is still valid using state.
+                        if (type === 'ringtone' && (!this.state.incomingCalls || this.state.incomingCalls.length === 0)) {
+                            console.log('[playSound] Incoming calls ended while resuming audio. Aborting ringtone.');
+                            return;
+                        }
+                        if (type === 'calling' && !this.state.activeCall) {
+                            console.log('[playSound] Active call ended while resuming audio. Aborting calling sound.');
+                            return;
+                        }
+                    }
+
+                    // Final check for cancellation before starting sound
+                    if (this.audioCancelled[type]) return;
+
+                    const playTone = (freq, type, duration, volume, startTime = ctx.currentTime) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        const filter = ctx.createBiquadFilter();
+
+                        osc.type = type;
+                        osc.frequency.setValueAtTime(freq, startTime);
+
+                        filter.type = 'lowpass';
+                        filter.frequency.setValueAtTime(2000, startTime);
+
+                        gain.gain.setValueAtTime(0, startTime);
+                        gain.gain.linearRampToValueAtTime(volume, startTime + 0.05);
+                        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+                        osc.connect(filter);
+                        filter.connect(gain);
+                        gain.connect(ctx.destination);
+
+                        osc.start(startTime);
+                        osc.stop(startTime + duration);
+
+                        return osc; // Return oscillator for tracking
+                    };
+
+                    if (type === 'notification') {
+                        // Glassy / Marimba style notification
+                        const now = ctx.currentTime;
+                        playTone(1046.50, 'sine', 0.5, 0.1, now); // C6
+                        playTone(1318.51, 'sine', 0.4, 0.05, now + 0.05); // E6
+                        playTone(1567.98, 'sine', 0.3, 0.03, now + 0.1); // G6
+                    } else if (type === 'ringtone') {
+                        if (this.ringtoneInterval) return;
+                        this.ringtoneOscillators = [];
+
+                        const playRing = () => {
+                            if (this.audioCancelled['ringtone']) {
+                                clearInterval(this.ringtoneInterval);
+                                this.ringtoneInterval = null;
+                                return;
+                            }
+                            const now = ctx.currentTime;
+                            // Authentic 24 CTU style: 4 fast high-pitched beeps
+                            const tones = [1600, 2400, 1600, 2400];
+                            tones.forEach((freq, i) => {
+                                const time = now + (i * 0.12);
+                                const osc = playTone(freq, 'square', 0.07, 0.05, time);
+                                if (osc) this.ringtoneOscillators.push(osc);
+                            });
+                        };
+
+                        playRing();
+                        this.ringtoneInterval = setInterval(playRing, 1000);
+                    } else if (type === 'calling') {
+                        if (this.callingInterval) return;
+                        this.callingOscillators = [];
+
+                        const playCalling = () => {
+                            if (this.audioCancelled['calling']) {
+                                clearInterval(this.callingInterval);
+                                this.callingInterval = null;
+                                return;
+                            }
+                            // Clear previous oscillators before adding new ones
+                            this.callingOscillators = [];
+                            const now = ctx.currentTime;
+                            // Standard US ringback: 440Hz + 480Hz combined
+                            [440, 480].forEach(f => {
+                                const osc = playTone(f, 'sine', 2.0, 0.05, now);
+                                if (osc) this.callingOscillators.push(osc);
+                            });
+                        };
+
+                        playCalling();
+                        this.callingInterval = setInterval(playCalling, 6000); // 2s on, 4s off
+                    } else if (type === 'discreet') {
+                        const now = ctx.currentTime;
+                        playTone(392.00, 'sine', 0.1, 0.02, now); // G4
+                        playTone(349.23, 'sine', 0.1, 0.02, now + 0.1); // F4
+                    }
+                } catch (e) {
+                    console.error("Error playing sound:", e);
+                }
+            },
+
+            stopSound(type) {
+                console.log(`[stopSound] Stopping ${type}`);
+
+                // Set cancellation flag
+                this.audioCancelled = this.audioCancelled || {};
+                this.audioCancelled[type] = true;
+
+                if (type === 'ringtone') {
+                    if (this.ringtoneInterval) {
+                        console.log('[stopSound] Clearing ringtone interval');
+                        clearInterval(this.ringtoneInterval);
+                        this.ringtoneInterval = null;
+                    }
+                    // Stop any active ringtone oscillators
+                    if (this.ringtoneOscillators && this.ringtoneOscillators.length > 0) {
+                        console.log('[stopSound] Stopping', this.ringtoneOscillators.length, 'ringtone oscillators');
+                        this.ringtoneOscillators.forEach(osc => {
+                            try { osc.stop(); } catch (e) { }
+                        });
+                        this.ringtoneOscillators = [];
+                    }
+                }
+                if (type === 'calling') {
+                    if (this.callingInterval) {
+                        console.log('[stopSound] Clearing calling interval');
+                        clearInterval(this.callingInterval);
+                        this.callingInterval = null;
+                    }
+                    // Stop any active calling oscillators
+                    if (this.callingOscillators && this.callingOscillators.length > 0) {
+                        console.log('[stopSound] Stopping', this.callingOscillators.length, 'calling oscillators');
+                        this.callingOscillators.forEach(osc => {
+                            try { osc.stop(); } catch (e) { }
+                        });
+                        this.callingOscillators = [];
+                    }
+                }
+            },
+
             // --- CALLING LOGIC ---
 
             async connectSignaling() {
@@ -1822,9 +2254,12 @@
                     this.signalingWs = new WebSocket(wsUrl);
 
                     this.signalingWs.onopen = () => {
-                        console.log('Signaling connected');
+                        console.log('Signaling: Connected');
                         const myKey = this.props.currentUser._key;
-                        const query = `FOR s IN signals FILTER s.to_user == "${myKey}" RETURN s`;
+                        // Be more generous with history (5 minutes) to account for clock skew
+                        const since = Date.now() - 300000;
+                        const query = `FOR s IN signals FILTER s.to_user == "${myKey}" AND s.timestamp > ${since} RETURN s`;
+                        console.log('Signaling: Subscribing with query:', query);
 
                         this.signalingWs.send(JSON.stringify({
                             type: 'live_query',
@@ -1836,10 +2271,17 @@
                     this.signalingWs.onmessage = async (event) => {
                         try {
                             const data = JSON.parse(event.data);
+                            console.log('Signaling message:', data);
                             if (data.type === 'query_result' && data.result) {
-                                for (const signal of data.result) {
+                                // Sort signals by timestamp ASC explicitly to ensure order (Offer -> Bye)
+                                const sortedSignals = data.result.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+
+                                console.log('[Signaling] Processing batch of', sortedSignals.length, 'signals');
+
+                                for (const signal of sortedSignals) {
                                     if (signal._key && this.processedSignalIds.has(signal._key)) continue;
                                     if (signal._key) this.processedSignalIds.add(signal._key);
+
                                     await this.handleSignal(signal);
                                 }
                             }
@@ -1854,16 +2296,42 @@
             },
 
             async sendSignal(toUser, type, data) {
-                await fetch('/talks/signal', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ target_user: toUser, type: type, data: data })
-                });
+                console.log(`[Signaling] Sending ${type} to ${toUser}`, data);
+                try {
+                    const res = await fetch('/talks/signal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ target_user: toUser, type: type, data: data })
+                    });
+                    if (!res.ok) {
+                        const err = await res.text();
+                        console.error(`[Signaling] Send failed: ${res.status} ${err}`);
+                    } else {
+                        // Optional: log success if needed for deep debugging
+                        // console.log(`[Signaling] Sent successfully`);
+                    }
+                } catch (e) {
+                    console.error(`[Signaling] Network error sending signal:`, e);
+                }
+            },
+
+            async deleteSignal(signalKey) {
+                if (!signalKey) return;
+                try {
+                    await fetch('/talks/delete_signal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ signal_key: signalKey })
+                    });
+                } catch (e) {
+                    console.error('[Signaling] Error deleting signal:', e);
+                }
             },
 
             async startCall(type) {
                 if (!this.state.currentChannelData) return;
                 const channelKey = this.state.currentChannelData._key;
+                const isDM = this.state.currentChannelData.type === 'dm';
 
                 // Join Call API
                 const res = await fetch('/talks/join_call', {
@@ -1874,7 +2342,14 @@
                 const data = await res.json();
                 if (!res.ok) { console.error("Failed to join call", data); return; }
 
+                // Immediately update currentChannelData with new participants for instant UI refresh
+                const updatedChannelData = {
+                    ...this.state.currentChannelData,
+                    active_call_participants: data.participants || []
+                };
+
                 this.update({
+                    currentChannelData: updatedChannelData,
                     activeCall: {
                         channelId: channelKey,
                         startDate: new Date(),
@@ -1883,6 +2358,11 @@
                     localStreamHasVideo: type === 'video',
                     callDuration: 0
                 });
+
+                // Only play calling sound for DM calls (ringing behavior)
+                if (isDM) {
+                    this.playSound('calling');
+                }
 
                 this.callTimer = setInterval(() => {
                     this.update({ callDuration: (new Date() - this.state.activeCall.startDate) / 1000 });
@@ -1900,18 +2380,31 @@
                     const myKey = this.props.currentUser._key;
 
                     let peersToConnect = [];
-                    participants.forEach(p => { if (p !== myKey) peersToConnect.push(p); });
 
-                    // Logic to support Ringing for DMs: Ensure other member is contacted
-                    if (this.state.currentChannelData.type === 'dm' && this.state.currentChannelData.members) {
-                        const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
-                        if (otherMember && !peersToConnect.includes(otherMember)) {
-                            peersToConnect.push(otherMember);
+                    if (isDM) {
+                        // For DMs: Ring the other member
+                        if (this.state.currentChannelData.members) {
+                            const otherMember = this.state.currentChannelData.members.find(m => m !== myKey);
+                            if (otherMember) {
+                                console.log('[startCall] DM call - ringing:', otherMember);
+                                peersToConnect.push(otherMember);
+                            }
                         }
+                    } else {
+                        // For huddles: Only connect to participants who are ALREADY in the call
+                        // Don't send offers to people not in the call (no ringing)
+                        participants.forEach(p => {
+                            if (p !== myKey) peersToConnect.push(p);
+                        });
+                        console.log('[startCall] Huddle - connecting to existing participants:', peersToConnect);
+                    }
+
+                    if (peersToConnect.length === 0) {
+                        console.log('[startCall] No peers to connect. Waiting for others to join...');
                     }
 
                     for (const pKey of peersToConnect) {
-                        await this.setupPeerConnection(pKey, true);
+                        await this.setupPeerConnection(pKey, true, type);
                     }
                 } catch (err) {
                     console.error('Error accessing media:', err);
@@ -1921,71 +2414,125 @@
             },
 
             async handleSignal(signal) {
-                if (Date.now() - signal.timestamp > 30000) return;
-                if (signal.from_user === this.props.currentUser._key) return;
+                try {
+                    // Signals should be fresh (max 5 minutes)
+                    const age = Date.now() - signal.timestamp;
+                    if (Math.abs(age) > 300000) {
+                        console.log(`[Signaling] Ignoring stale signal (age: ${age}ms, type: ${signal.type})`);
+                        // Delete stale signals to clean up
+                        this.deleteSignal(signal._key);
+                        return;
+                    }
+                    if (signal.from_user === this.props.currentUser._key) return;
 
-                const data = signal.data;
-                const fromUser = signal.from_user;
+                    console.log(`[Signaling] Incoming ${signal.type} from ${signal.from_user} [age: ${age}ms]`);
+                    const data = signal.data;
+                    const fromUser = signal.from_user;
 
-                if (!this.state.activeCall) {
-                    if (signal.type === 'offer') {
-                        const caller = this.state.users.find(u => u._key === fromUser) || { _key: fromUser, firstname: 'Unknown', lastname: '' };
-                        this.update({
-                            incomingCall: {
+                    // Always delete the signal after we've read it to prevent re-processing on reload
+                    this.deleteSignal(signal._key);
+
+                    if (!this.state.activeCall) {
+                        if (signal.type === 'offer') {
+                            let caller = this.state.users.find(u => u._key === fromUser);
+                            if (!caller) {
+                                caller = { _key: fromUser, firstname: 'Unknown', lastname: 'Caller' };
+                            }
+
+                            console.log('[Signaling] Displaying incoming call from', caller.firstname);
+
+                            const newCall = {
                                 caller: caller,
                                 type: data.call_type,
                                 offer: data.sdp,
                                 from_user: fromUser
-                            }
-                        });
-                    }
-                    return;
-                }
+                            };
 
-                switch (signal.type) {
-                    case 'offer':
-                        if (data.call_type === 'renegotiation') {
+                            // Add to list of incoming calls if not already there
+                            const currentCalls = this.state.incomingCalls || [];
+                            if (!currentCalls.some(c => c.from_user === fromUser)) {
+                                this.update({
+                                    incomingCalls: [...currentCalls, newCall]
+                                });
+                                this.playSound('ringtone');
+                                this.showCallNotification(caller, data.call_type);
+                            }
+                        }
+                        return;
+                    }
+
+                    switch (signal.type) {
+                        case 'offer':
+                            if (data.call_type === 'renegotiation') {
+                                const pc = this.peerConnections[fromUser];
+                                if (pc) {
+                                    try {
+                                        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                        const answer = await pc.createAnswer();
+                                        await pc.setLocalDescription(answer);
+                                        await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                                    } catch (e) { console.error("Renegotiation failed", e); }
+                                }
+                                break;
+                            }
+
+                            await this.setupPeerConnection(fromUser, false, null);
                             const pc = this.peerConnections[fromUser];
                             if (pc) {
-                                try {
-                                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                                    const answer = await pc.createAnswer();
-                                    await pc.setLocalDescription(answer);
-                                    await this.sendSignal(fromUser, 'answer', { sdp: answer });
-                                } catch (e) { console.error("Renegotiation failed", e); }
+                                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+                                await this.sendSignal(fromUser, 'answer', { sdp: answer });
+                                this.processIceQueue(fromUser);
                             }
                             break;
-                        }
+                        case 'answer':
+                            this.stopSound('calling');
+                            const pc2 = this.peerConnections[fromUser];
+                            if (pc2) {
+                                await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                this.processIceQueue(fromUser);
+                            }
+                            break;
+                        case 'candidate':
+                            const pc3 = this.peerConnections[fromUser];
+                            if (pc3 && pc3.remoteDescription) {
+                                if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            } else {
+                                if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
+                                this.iceCandidatesQueue[fromUser].push(data.candidate);
+                            }
+                            break;
+                        case 'bye':
+                            console.log('[Signaling] Peer disconnected:', fromUser);
 
-                        await this.setupPeerConnection(fromUser, false);
-                        const pc = this.peerConnections[fromUser];
-                        if (pc) {
-                            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            const answer = await pc.createAnswer();
-                            await pc.setLocalDescription(answer);
-                            await this.sendSignal(fromUser, 'answer', { sdp: answer });
-                            this.processIceQueue(fromUser);
-                        }
-                        break;
-                    case 'answer':
-                        const pc2 = this.peerConnections[fromUser];
-                        if (pc2) {
-                            await pc2.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            this.processIceQueue(fromUser);
-                        }
-                        break;
-                    case 'candidate':
-                        const pc3 = this.peerConnections[fromUser];
-                        if (pc3 && pc3.remoteDescription) {
-                            if (data.candidate) await pc3.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        } else {
-                            if (!this.iceCandidatesQueue[fromUser]) this.iceCandidatesQueue[fromUser] = [];
-                            this.iceCandidatesQueue[fromUser].push(data.candidate);
-                        }
-                        break;
-                    case 'bye':
-                        this.closePeerConnection(fromUser);
-                        break;
+                            // Check if it was an incoming call that disconnected
+                            if (this.state.incomingCalls && this.state.incomingCalls.length > 0) {
+                                const remaining = this.state.incomingCalls.filter(c => c.from_user !== fromUser);
+                                if (remaining.length !== this.state.incomingCalls.length) {
+                                    console.log('[Signaling] Removed incoming call from list');
+                                    this.update({ incomingCalls: remaining });
+                                    if (remaining.length === 0) {
+                                        this.stopSound('ringtone');
+                                    }
+                                }
+                            }
+
+                            this.closePeerConnection(fromUser);
+
+                            // If this was the last peer, auto-hangup ONLY for DM calls (1-on-1)
+                            // For huddles, the user stays in the call waiting for others
+                            const remainingPeers = Object.keys(this.peerConnections).length;
+                            const isDMCall = this.state.currentChannelData?.type === 'dm';
+                            if (remainingPeers === 0 && this.state.activeCall && isDMCall) {
+                                console.log('[Signaling] Last peer disconnected from DM call, ending call');
+                                this.hangup();
+                            }
+                            break;
+                    }
+                } catch (e) {
+                    console.error('[handleSignal] Error:', e);
+                    this.update({ lastDebugError: e.message });
                 }
             },
 
@@ -1999,9 +2546,20 @@
                 }
             },
 
-            async acceptCall() {
-                const incoming = this.state.incomingCall;
+            async acceptCall(call) {
+                const incoming = call;
                 if (!incoming) return;
+
+                // Remove this call from the list
+                const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
+                this.update({ incomingCalls: remaining });
+
+                // If no more incoming calls, stop ringtone
+                if (remaining.length === 0) {
+                    this.stopSound('ringtone');
+                }
+
+                this.closeCallNotification();
 
                 let channelId = this.state.channelId;
                 if (this.state.usersChannels && this.state.usersChannels[incoming.from_user]) {
@@ -2018,7 +2576,6 @@
                 }
 
                 this.update({
-                    incomingCall: null,
                     activeCall: {
                         startDate: new Date(),
                         channelId: channelId
@@ -2039,7 +2596,7 @@
                     this.localStream = stream;
                     this.attachLocalStream();
 
-                    await this.setupPeerConnection(incoming.from_user, false);
+                    await this.setupPeerConnection(incoming.from_user, false, null);
                     const pc = this.peerConnections[incoming.from_user];
 
                     await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));
@@ -2055,12 +2612,25 @@
                 }
             },
 
-            declineCall() {
-                this.update({ incomingCall: null });
+            declineCall(call) {
+                const incoming = call;
+                // Remove from list
+                const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
+                this.update({ incomingCalls: remaining });
+
+                if (remaining.length === 0) {
+                    this.stopSound('ringtone');
+                }
+
+                this.closeCallNotification();
             },
 
-            async setupPeerConnection(remoteUserKey, isInitiator) {
-                if (this.peerConnections[remoteUserKey]) return;
+            async setupPeerConnection(remoteUserKey, isInitiator, callType) {
+                console.log(`[setupPeerConnection] Setting up connection to ${remoteUserKey} (initiator: ${isInitiator})`);
+                if (this.peerConnections[remoteUserKey]) {
+                    console.log(`[setupPeerConnection] Connection to ${remoteUserKey} already exists`);
+                    return;
+                }
 
                 const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
                 const pc = new RTCPeerConnection(config);
@@ -2082,24 +2652,43 @@
                 };
 
                 pc.onconnectionstatechange = () => {
+                    console.log(`[PeerConnection] State change for ${remoteUserKey}: ${pc.connectionState}`);
                     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                         this.closePeerConnection(remoteUserKey);
                     }
                 };
 
                 pc.onnegotiationneeded = async () => {
-                    // Check signaling state to avoid glare? Strict check only allows stable state.
+                    // Only handle renegotiation if the connection is already established (stable)
+                    // and we are NOT in the middle of the initial setup (which we handle manually below)
                     if (pc.signalingState !== 'stable') return;
 
                     try {
+                        console.log(`[PeerConnection] Renegotiation needed for ${remoteUserKey}`);
                         const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
                         await this.sendSignal(remoteUserKey, 'offer', {
                             sdp: offer,
                             call_type: 'renegotiation'
                         });
-                    } catch (e) { console.error(e); }
+                    } catch (e) { console.error('Renegotiation error:', e); }
                 };
+
+                // Explicitly create the initial offer if we are the caller
+                if (isInitiator) {
+                    console.log(`[setupPeerConnection] Creating initial offer for ${remoteUserKey}`);
+                    try {
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        console.log(`[setupPeerConnection] Sending offer to ${remoteUserKey}`);
+                        await this.sendSignal(remoteUserKey, 'offer', {
+                            sdp: offer,
+                            call_type: callType || 'audio'
+                        });
+                    } catch (e) {
+                        console.error('Error creating initial offer:', e);
+                    }
+                }
             },
 
             closePeerConnection(key) {
@@ -2138,10 +2727,19 @@
             },
 
             async hangup() {
-                if (this.state.activeCall && this.state.activeCall.channelId) {
+                // Prevent the click on hangup from enabling audio
+                this.preventAudioResume = true;
+
+                console.log('[hangup] Stopping all sounds, ringtoneInterval:', !!this.ringtoneInterval, 'callingInterval:', !!this.callingInterval);
+                this.stopSound('ringtone');
+                this.stopSound('calling');
+
+                const channelId = this.state.activeCall?.channelId;
+
+                if (channelId) {
                     fetch('/talks/leave_call', {
                         method: 'POST',
-                        body: JSON.stringify({ channel_id: this.state.activeCall.channelId })
+                        body: JSON.stringify({ channel_id: channelId })
                     }).catch(e => { });
                 }
 
@@ -2157,7 +2755,24 @@
 
                 if (this.callTimer) clearInterval(this.callTimer);
 
+                // Close any browser notification
+                this.closeCallNotification();
+
+                // Ensure no sound arrays are pending
+                this.ringtoneOscillators = [];
+                this.callingOscillators = [];
+
+                // Immediately update currentChannelData to remove current user from participants
+                const myKey = this.props.currentUser?._key;
+                const currentParticipants = this.state.currentChannelData?.active_call_participants || [];
+                const updatedParticipants = currentParticipants.filter(p => p !== myKey);
+                const updatedChannelData = this.state.currentChannelData ? {
+                    ...this.state.currentChannelData,
+                    active_call_participants: updatedParticipants
+                } : null;
+
                 this.update({
+                    currentChannelData: updatedChannelData,
                     activeCall: null,
                     incomingCall: null,
                     callDuration: 0,
