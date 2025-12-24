@@ -32,19 +32,16 @@
 
                 <!-- Actions -->
                 <div class="flex items-center gap-2">
-                    <button onclick={ (e)=> handleDecline(e, call) }
-                        class="w-10 h-10 rounded-full bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white flex
-                        items-center justify-center transition-all border border-red-600/50 hover:border-red-600
-                        shadow-lg hover:shadow-red-900/50 group"
+                    <button onclick={ (e)=> handleDecline(e, call) } class="w-10 h-10 rounded-full bg-red-600/20
+                        hover:bg-red-600 text-red-500 hover:text-white flex items-center justify-center transition-all
+                        border border-red-600/50 hover:border-red-600 shadow-lg hover:shadow-red-900/50 group"
                         title="Decline">
                         <i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i>
                     </button>
-                    <button onclick={ (e)=> handleAccept(e, call) }
-                        class="w-10 h-10 rounded-full bg-green-600/20 hover:bg-green-600 text-green-500 hover:text-white
-                        flex items-center justify-center transition-all border border-green-600/50
-                        hover:border-green-600 shadow-lg hover:shadow-green-900/50 group animate-pulse
-                        hover:animate-none"
-                        title="Accept">
+                    <button onclick={ (e)=> handleAccept(e, call) } class="w-10 h-10 rounded-full bg-green-600/20
+                        hover:bg-green-600 text-green-500 hover:text-white flex items-center justify-center
+                        transition-all border border-green-600/50 hover:border-green-600 shadow-lg
+                        hover:shadow-green-900/50 group animate-pulse hover:animate-none" title="Accept">
                         <i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i>
                     </button>
                 </div>
@@ -60,12 +57,9 @@
                     <div
                         class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3 shadow-lg">
                         <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                        <span class="text-white font-medium text-sm">{ formatCallDuration(props.callDuration)
-                            }</span>
+                        <span class="text-white font-medium text-sm">{ formatCallDuration(props.callDuration) }</span>
                     </div>
-                    <div class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow">
-                        { (props.callPeers && props.callPeers.length > 0) ? props.callPeers.length + 1 + ' participants'
-                        : 'Calling...' }
+                    <div class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow">{ getParticipantText() }
                     </div>
                 </div>
             </div>
@@ -75,19 +69,15 @@
                 <div class="flex flex-wrap justify-center items-center gap-4 w-full h-full content-center">
 
                     <!-- Remote Peers -->
-                    <div each={ peer in props.callPeers }
-                        class={ 'relative bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 transition-all group '
-                        + (((state.pinnedPeers || []).length> 0 && !(state.pinnedPeers || []).includes(peer.user._key))
-                        ? 'opacity-80 hover:opacity-100' : '') }
-                        style={ getGridStyle(peer, props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
+                    <div each={ peer in props.callPeers } class={ getPeerContainerClass(peer) } style={
+                        getGridStyle(peer, props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
 
                         <!-- Placeholder -->
                         <div if={ !peer.hasVideo }
                             class="absolute inset-0 flex flex-col items-center justify-center z-0">
                             <div
                                 class="w-20 h-20 rounded-full bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg">
-                                { getInitials(getUsername(peer.user)) }
-                            </div>
+                                { getInitials(getUsername(peer.user)) }</div>
                             <div class="text-white font-bold text-lg">{ getUsername(peer.user) }</div>
                         </div>
 
@@ -96,12 +86,9 @@
                             class={ 'w-full h-full object-cover z-10 ' + (!peer.hasVideo ? 'hidden' : '' ) }></video>
 
                         <div class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onclick={ (e)=> togglePin(e, peer.user._key) }
-                                class={ 'w-8 h-8 rounded-full flex items-center justify-center text-white backdrop-blur
-                                transition-colors '
-                                + ((state.pinnedPeers || []).includes(peer.user._key) ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-black/40 hover:bg-black/60') }
-                                title={ (state.pinnedPeers || []).includes(peer.user._key) ? "Unpin" : "Pin" }>
+                            <button onclick={ (e)=> togglePin(e, peer.user._key) } class={
+                                getPinButtonClass(peer.user._key) } title={ isPinned(peer.user._key) ? 'Unpin' : 'Pin'
+                                }>
                                 <i class="fas fa-thumbtack text-xs transform rotate-45"></i>
                             </button>
                         </div>
@@ -110,18 +97,10 @@
                         <div
                             class="absolute bottom-3 left-3 bg-black/60 px-2.5 py-1 rounded-md text-white text-xs backdrop-blur font-medium z-20">
                             { getUsername(peer.user) }
-                            <i if={ (state.pinnedPeers || []).includes(peer.user._key) }
+                            <i if={ isPinned(peer.user._key) }
                                 class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i>
                         </div>
                     </div>
-
-                    <!-- Local User (if grid view preferred, or keep as PiP) -->
-                    <!-- Let's put local user in grid if it's a group call, or PiP if 1-on-1? 
-                         Actually, standardizing on grid is easier for now, calls like Zoom/Meet do grid.
-                         But let's keep PiP for 1-on-1 feel if preferred, or just always PiP.
-                         Wait, if I have 3 people, I want to see 3 people.
-                         Let's keep Local Video as PiP for now to minimize disruption, unless requested.
-                    -->
 
                 </div>
 
@@ -141,26 +120,17 @@
                 <div
                     class="bg-gray-900/90 backdrop-blur border border-gray-700 rounded-2xl px-6 py-4 flex items-center gap-6 shadow-2xl pointer-events-auto transform transition-transform hover:scale-105">
 
-                    <button onclick={ props.onToggleAudio }
-                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
-                        (props.isAudioEnabled ? 'bg-gray-700 text-white hover:bg-gray-600'
-                        : 'bg-red-500 text-white hover:bg-red-600' ) }>
+                    <button onclick={ props.onToggleAudio } class={ getAudioButtonClass() }>
                         <i class={ props.isAudioEnabled ? 'fas fa-microphone' : 'fas fa-microphone-slash' }></i>
                     </button>
 
-                    <button onclick={ props.onToggleVideo }
-                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
-                        (props.isVideoEnabled ? 'bg-gray-700 text-white hover:bg-gray-600'
-                        : 'bg-red-500 text-white hover:bg-red-600' ) }>
+                    <button onclick={ props.onToggleVideo } class={ getVideoButtonClass() }>
                         <i class={ props.isVideoEnabled ? 'fas fa-video' : 'fas fa-video-slash' }></i>
                     </button>
 
                     <div class="w-px h-8 bg-gray-700 mx-2"></div>
 
-                    <button onclick={ props.onToggleScreenShare }
-                        class={ 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ' +
-                        (props.isScreenSharing ? 'bg-green-600 text-white hover:bg-green-500'
-                        : 'bg-gray-700 text-white hover:bg-gray-600' ) } title="Share Screen">
+                    <button onclick={ handleScreenShare } class={ getScreenShareButtonClass() } title="Share Screen">
                         <i class="fas fa-desktop"></i>
                     </button>
 
@@ -179,7 +149,6 @@
         export default {
             ...window.TalksMixin,
             onMounted() {
-                // Initialize popups list animation if needed
                 this.state = {
                     pinnedPeers: []
                 }
@@ -190,35 +159,79 @@
             },
 
             updateStreams() {
-                // Attach remote streams to video elements
                 if (this.props.callPeers) {
                     this.props.callPeers.forEach(peer => {
                         const videoEl = this.$('#remote-video-' + peer.user._key);
                         if (videoEl && peer.stream && videoEl.srcObject !== peer.stream) {
                             videoEl.srcObject = peer.stream;
-                            // Ensure autoplay
                             videoEl.play().catch(e => { });
                         }
                     });
                 }
-
-                // Attach local stream if needed (though talks-app usually handles it, redundancy is safe)
-                // Actually talks-app attaches via ID often, but let's leave it to parent or existing logic.
             },
 
+            getParticipantText() {
+                if (this.props.callPeers && this.props.callPeers.length > 0) {
+                    return (this.props.callPeers.length + 1) + ' participants';
+                }
+                return 'Calling...';
+            },
 
+            getPeerContainerClass(peer) {
+                const base = 'relative bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700 transition-all group ';
+                const pinned = this.state.pinnedPeers || [];
+                if (pinned.length > 0 && !pinned.includes(peer.user._key)) {
+                    return base + 'opacity-80 hover:opacity-100';
+                }
+                return base;
+            },
+
+            isPinned(userKey) {
+                const pinned = this.state.pinnedPeers || [];
+                return pinned.includes(userKey);
+            },
+
+            getPinButtonClass(userKey) {
+                const base = 'w-8 h-8 rounded-full flex items-center justify-center text-white backdrop-blur transition-colors ';
+                if (this.isPinned(userKey)) {
+                    return base + 'bg-blue-600 hover:bg-blue-700';
+                }
+                return base + 'bg-black/40 hover:bg-black/60';
+            },
+
+            getAudioButtonClass() {
+                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                if (this.props.isAudioEnabled) {
+                    return base + 'bg-gray-700 text-white hover:bg-gray-600';
+                }
+                return base + 'bg-red-500 text-white hover:bg-red-600';
+            },
+
+            getVideoButtonClass() {
+                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                if (this.props.isVideoEnabled) {
+                    return base + 'bg-gray-700 text-white hover:bg-gray-600';
+                }
+                return base + 'bg-red-500 text-white hover:bg-red-600';
+            },
+
+            getScreenShareButtonClass() {
+                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                if (this.props.isScreenSharing) {
+                    return base + 'bg-green-600 text-white hover:bg-green-500';
+                }
+                return base + 'bg-gray-700 text-white hover:bg-gray-600';
+            },
 
             togglePin(e, userKey) {
                 e.stopPropagation();
                 let pinned = this.state.pinnedPeers || [];
 
                 if (pinned.includes(userKey)) {
-                    // Unpin
                     pinned = pinned.filter(k => k !== userKey);
                 } else {
-                    // Pin (Max 2 for side-by-side)
                     if (pinned.length >= 2) {
-                        pinned.shift(); // Remove oldest pin
+                        pinned.shift();
                     }
                     pinned.push(userKey);
                 }
@@ -230,28 +243,20 @@
                 const isPinned = pinned.includes(peer.user._key);
                 const hasPins = pinned.length > 0;
 
-                // 1. Pinned Mode
                 if (hasPins) {
                     if (isPinned) {
-                        // Priority order for pinned items
                         const order = '-1';
-
-                        // Full Screen (1 Pin)
                         if (pinned.length === 1) {
-                            return `width: 100%; height: 100%; max-height: 80vh; order: ${order};`;
+                            return 'width: 100%; height: 100%; max-height: 80vh; order: ' + order + ';';
                         }
-                        // Side-by-Side (2 Pins)
                         if (pinned.length === 2) {
-                            // Calculate width to fit side-by-side with gap
-                            return `width: calc(50% - 0.5rem); aspect-ratio: 16/9; order: ${order};`;
+                            return 'width: calc(50% - 0.5rem); aspect-ratio: 16/9; order: ' + order + ';';
                         }
                     } else {
-                        // Filmstrip mode for unpinned
                         return 'width: 160px; aspect-ratio: 16/9; order: 1; cursor: pointer;';
                     }
                 }
 
-                // 2. Default Grid Mode
                 if (totalCount <= 1) return 'width: 100%; height: 100%; max-width: 800px; max-height: 600px;';
                 if (totalCount === 2) return 'width: 45%; aspect-ratio: 16/9;';
                 if (totalCount <= 4) return 'width: 45%; aspect-ratio: 16/9;';
@@ -276,6 +281,15 @@
                 e.stopPropagation();
                 if (this.props.onHangup) {
                     this.props.onHangup(e);
+                }
+            },
+
+            handleScreenShare(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('[talks-calls] handleScreenShare clicked');
+                if (this.props.onshare) {
+                    this.props.onshare(e);
                 }
             }
         }

@@ -22,7 +22,12 @@
                             </template>
                         </span>
                         <span class="truncate">{ getChannelName(item, props.currentUser, props.users) }</span>
-                        <div if={ props.unreadChannels[item._id] }
+                        <div if={ hasActiveHuddle(item) } class="ml-auto flex items-center gap-1 text-green-400"
+                            title="Huddle in progress">
+                            <i class="fas fa-headphones text-[10px] animate-pulse"></i>
+                            <span class="text-[10px]">{ getHuddleCount(item) }</span>
+                        </div>
+                        <div if={ !hasActiveHuddle(item) && props.unreadChannels[item._id] }
                             class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
                         </div>
                     </a>
@@ -49,7 +54,12 @@
                             <span if={ channel.type !=='private' }>#</span>
                         </span>
                         { channel.name }
-                        <div if={ props.unreadChannels[channel._id] }
+                        <div if={ hasActiveHuddle(channel) } class="ml-auto flex items-center gap-1 text-green-400"
+                            title="Huddle in progress">
+                            <i class="fas fa-headphones text-[10px] animate-pulse"></i>
+                            <span class="text-[10px]">{ getHuddleCount(channel) }</span>
+                        </div>
+                        <div if={ !hasActiveHuddle(channel) && props.unreadChannels[channel._id] }
                             class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse">
                         </div>
                     </a>
@@ -166,6 +176,13 @@
             isFavorite(key) {
                 if (!this.props.currentUser || !Array.isArray(this.props.currentUser.favorites)) return false;
                 return this.props.currentUser.favorites.includes(key);
+            },
+            hasActiveHuddle(channel) {
+                return channel && channel.active_call_participants && channel.active_call_participants.length > 0;
+            },
+            getHuddleCount(channel) {
+                if (!channel || !channel.active_call_participants) return 0;
+                return channel.active_call_participants.length;
             }
         }
     </script>

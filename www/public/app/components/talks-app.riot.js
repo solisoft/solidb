@@ -329,6 +329,20 @@ export default {
 
         // Request notification permission
         this.requestNotificationPermission();
+
+        // Ensure hangup on window close
+        this._beforeUnloadHandler = () => {
+            if (this.state.activeCall) {
+                this.hangup();
+            }
+        };
+        window.addEventListener('beforeunload', this._beforeUnloadHandler);
+    },
+
+    onUnmounted() {
+        if (this._beforeUnloadHandler) {
+            window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+        }
     },
 
     initAudioContext() {
@@ -702,7 +716,18 @@ export default {
                             const updatedCurrentChannel = newChannels.find(c => c._id === this.state.channelId);
                             if (updatedCurrentChannel) {
                                 updates.currentChannelData = updatedCurrentChannel;
-                                this.activeCallParticipants = updatedCurrentChannel.active_call_participants || [];
+                                const newParticipants = updatedCurrentChannel.active_call_participants || [];
+                                this.activeCallParticipants = newParticipants;
+
+                                // Reconcile: If we are in a call, remove peers who are no longer in the participants list
+                                if (this.state.activeCall) {
+                                    Object.keys(this.peerConnections).forEach(peerKey => {
+                                        if (!newParticipants.includes(peerKey)) {
+                                            console.log(`[Call] User ${peerKey} removed from server list. Closing connection.`);
+                                            this.closePeerConnection(peerKey);
+                                        }
+                                    });
+                                }
                             }
                         }
 
@@ -2358,10 +2383,19 @@ export default {
         const channelId = this.state.activeCall?.channelId;
 
         if (channelId) {
-            fetch('/talks/leave_call', {
-                method: 'POST',
-                body: JSON.stringify({ channel_id: channelId })
-            }).catch(e => { });
+            const payload = { channel_id: channelId };
+            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json; charset=UTF-8' });
+
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('/talks/leave_call', blob);
+            } else {
+                fetch('/talks/leave_call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    keepalive: true
+                }).catch(e => { });
+            }
         }
 
         Object.keys(this.peerConnections).forEach(key => {
@@ -2449,6 +2483,7 @@ export default {
     },
 
     async toggleScreenShare() {
+        console.log('[talks-app] toggleScreenShare called');
         if (this.state.isScreenSharing) {
             // Stop screen share
             const videoTrack = this.localStream.getVideoTracks()[0];
@@ -2682,11 +2717,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr567="expr567" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr568="expr568"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr569="expr569"></talks-header><talks-messages expr570="expr570"></talks-messages><talks-input expr571="expr571"></talks-input></main><talks-calls expr572="expr572"></talks-calls><div expr573="expr573" class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in"></div><div expr574="expr574" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0"></div><div expr588="expr588" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr594="expr594" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr599="expr599" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr603="expr603" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr622="expr622" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
+    '<div expr957="expr957" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr958="expr958"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr959="expr959"></talks-header><talks-messages expr960="expr960"></talks-messages><talks-input expr961="expr961"></talks-input></main><talks-calls expr962="expr962"></talks-calls><div expr963="expr963" class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in"></div><div expr964="expr964" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0"></div><div expr978="expr978" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr984="expr984" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr989="expr989" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr993="expr993" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr1012="expr1012" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>',
     [
       {
-        redundantAttribute: 'expr567',
-        selector: '[expr567]',
+        redundantAttribute: 'expr957',
+        selector: '[expr957]',
 
         expressions: [
           {
@@ -2811,8 +2846,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr568',
-        selector: '[expr568]'
+        redundantAttribute: 'expr958',
+        selector: '[expr958]'
       },
       {
         type: bindingTypes.TAG,
@@ -2889,8 +2924,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr569',
-        selector: '[expr569]'
+        redundantAttribute: 'expr959',
+        selector: '[expr959]'
       },
       {
         type: bindingTypes.TAG,
@@ -2976,8 +3011,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr570',
-        selector: '[expr570]'
+        redundantAttribute: 'expr960',
+        selector: '[expr960]'
       },
       {
         type: bindingTypes.TAG,
@@ -3057,8 +3092,8 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr571',
-        selector: '[expr571]'
+        redundantAttribute: 'expr961',
+        selector: '[expr961]'
       },
       {
         type: bindingTypes.TAG,
@@ -3143,7 +3178,7 @@ export default {
           },
           {
             type: expressionTypes.EVENT,
-            name: 'on-toggle-screen-share',
+            name: 'onshare',
             evaluate: _scope => _scope.toggleScreenShare
           },
           {
@@ -3153,14 +3188,14 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr572',
-        selector: '[expr572]'
+        redundantAttribute: 'expr962',
+        selector: '[expr962]'
       },
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.audioSuspended,
-        redundantAttribute: 'expr573',
-        selector: '[expr573]',
+        redundantAttribute: 'expr963',
+        selector: '[expr963]',
 
         template: template(
           '<i class="fas fa-volume-mute"></i><span>Click anywhere to enable call sounds</span>',
@@ -3180,15 +3215,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showSearchSidebar,
-        redundantAttribute: 'expr574',
-        selector: '[expr574]',
+        redundantAttribute: 'expr964',
+        selector: '[expr964]',
 
         template: template(
-          '<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr575="expr575" class="text-gray-500 text-sm"> </span></div><button expr576="expr576" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr577="expr577" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr579="expr579" class="flex-1 flex items-center justify-center"></div><div expr580="expr580" class="flex-1 flex items-center justify-center"></div><div expr581="expr581" class="flex-1 overflow-y-auto custom-scrollbar"></div>',
+          '<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr965="expr965" class="text-gray-500 text-sm"> </span></div><button expr966="expr966" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr967="expr967" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr969="expr969" class="flex-1 flex items-center justify-center"></div><div expr970="expr970" class="flex-1 flex items-center justify-center"></div><div expr971="expr971" class="flex-1 overflow-y-auto custom-scrollbar"></div>',
           [
             {
-              redundantAttribute: 'expr575',
-              selector: '[expr575]',
+              redundantAttribute: 'expr965',
+              selector: '[expr965]',
 
               expressions: [
                 {
@@ -3206,8 +3241,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr576',
-              selector: '[expr576]',
+              redundantAttribute: 'expr966',
+              selector: '[expr966]',
 
               expressions: [
                 {
@@ -3220,15 +3255,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.searchQuery,
-              redundantAttribute: 'expr577',
-              selector: '[expr577]',
+              redundantAttribute: 'expr967',
+              selector: '[expr967]',
 
               template: template(
-                '<span class="text-gray-400 text-sm">Searching for: </span><span expr578="expr578" class="text-indigo-400 font-medium"> </span>',
+                '<span class="text-gray-400 text-sm">Searching for: </span><span expr968="expr968" class="text-indigo-400 font-medium"> </span>',
                 [
                   {
-                    redundantAttribute: 'expr578',
-                    selector: '[expr578]',
+                    redundantAttribute: 'expr968',
+                    selector: '[expr968]',
 
                     expressions: [
                       {
@@ -3244,8 +3279,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.searchLoading,
-              redundantAttribute: 'expr579',
-              selector: '[expr579]',
+              redundantAttribute: 'expr969',
+              selector: '[expr969]',
 
               template: template(
                 '<div class="flex flex-col items-center gap-2"><i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i><span class="text-gray-400 text-sm">Searching...</span></div>',
@@ -3255,8 +3290,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.showNoResults(),
-              redundantAttribute: 'expr580',
-              selector: '[expr580]',
+              redundantAttribute: 'expr970',
+              selector: '[expr970]',
 
               template: template(
                 '<div class="flex flex-col items-center gap-2 text-gray-400"><i class="fas fa-search text-4xl text-gray-600"></i><span>No results found</span><span class="text-sm text-gray-500">Try a different search term</span></div>',
@@ -3266,11 +3301,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.hasSearchResults(),
-              redundantAttribute: 'expr581',
-              selector: '[expr581]',
+              redundantAttribute: 'expr971',
+              selector: '[expr971]',
 
               template: template(
-                '<div expr582="expr582" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>',
+                '<div expr972="expr972" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -3278,7 +3313,7 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<div class="flex items-center gap-2 mb-2"><span expr583="expr583" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr584="expr584" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr585="expr585" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr586="expr586" class="text-sm text-gray-200 font-medium truncate"> </div><div expr587="expr587" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>',
+                      '<div class="flex items-center gap-2 mb-2"><span expr973="expr973" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr974="expr974" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr975="expr975" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr976="expr976" class="text-sm text-gray-200 font-medium truncate"> </div><div expr977="expr977" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>',
                       [
                         {
                           expressions: [
@@ -3290,8 +3325,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr583',
-                          selector: '[expr583]',
+                          redundantAttribute: 'expr973',
+                          selector: '[expr973]',
 
                           expressions: [
                             {
@@ -3305,8 +3340,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr584',
-                          selector: '[expr584]',
+                          redundantAttribute: 'expr974',
+                          selector: '[expr974]',
 
                           expressions: [
                             {
@@ -3320,8 +3355,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr585',
-                          selector: '[expr585]',
+                          redundantAttribute: 'expr975',
+                          selector: '[expr975]',
 
                           expressions: [
                             {
@@ -3339,8 +3374,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr586',
-                          selector: '[expr586]',
+                          redundantAttribute: 'expr976',
+                          selector: '[expr976]',
 
                           expressions: [
                             {
@@ -3358,8 +3393,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr587',
-                          selector: '[expr587]',
+                          redundantAttribute: 'expr977',
+                          selector: '[expr977]',
 
                           expressions: [
                             {
@@ -3375,8 +3410,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr582',
-                    selector: '[expr582]',
+                    redundantAttribute: 'expr972',
+                    selector: '[expr972]',
                     itemName: 'result',
                     indexName: null,
                     evaluate: _scope => _scope.state.searchResults
@@ -3390,11 +3425,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.lightboxImage,
-        redundantAttribute: 'expr588',
-        selector: '[expr588]',
+        redundantAttribute: 'expr978',
+        selector: '[expr978]',
 
         template: template(
-          '<div expr589="expr589" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr590="expr590" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr591="expr591" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr592="expr592" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr593="expr593" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
+          '<div expr979="expr979" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr980="expr980" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr981="expr981" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr982="expr982" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr983="expr983" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>',
           [
             {
               expressions: [
@@ -3406,8 +3441,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr589',
-              selector: '[expr589]',
+              redundantAttribute: 'expr979',
+              selector: '[expr979]',
 
               expressions: [
                 {
@@ -3418,8 +3453,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr590',
-              selector: '[expr590]',
+              redundantAttribute: 'expr980',
+              selector: '[expr980]',
 
               expressions: [
                 {
@@ -3437,8 +3472,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr591',
-              selector: '[expr591]',
+              redundantAttribute: 'expr981',
+              selector: '[expr981]',
 
               expressions: [
                 {
@@ -3449,8 +3484,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr592',
-              selector: '[expr592]',
+              redundantAttribute: 'expr982',
+              selector: '[expr982]',
 
               expressions: [
                 {
@@ -3468,8 +3503,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr593',
-              selector: '[expr593]',
+              redundantAttribute: 'expr983',
+              selector: '[expr983]',
 
               expressions: [
                 {
@@ -3485,11 +3520,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showEmojiPicker,
-        redundantAttribute: 'expr594',
-        selector: '[expr594]',
+        redundantAttribute: 'expr984',
+        selector: '[expr984]',
 
         template: template(
-          '<div expr595="expr595" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr596="expr596" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr597="expr597" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr598="expr598" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
+          '<div expr985="expr985" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr986="expr986" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr987="expr987" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr988="expr988" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>',
           [
             {
               expressions: [
@@ -3502,8 +3537,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr595',
-              selector: '[expr595]',
+              redundantAttribute: 'expr985',
+              selector: '[expr985]',
 
               expressions: [
                 {
@@ -3538,8 +3573,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr596',
-              selector: '[expr596]',
+              redundantAttribute: 'expr986',
+              selector: '[expr986]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().smileys
@@ -3569,8 +3604,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr597',
-              selector: '[expr597]',
+              redundantAttribute: 'expr987',
+              selector: '[expr987]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().gestures
@@ -3600,8 +3635,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr598',
-              selector: '[expr598]',
+              redundantAttribute: 'expr988',
+              selector: '[expr988]',
               itemName: 'emoji',
               indexName: null,
               evaluate: _scope => _scope.getInputEmojis().objects
@@ -3612,11 +3647,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showUserPicker,
-        redundantAttribute: 'expr599',
-        selector: '[expr599]',
+        redundantAttribute: 'expr989',
+        selector: '[expr989]',
 
         template: template(
-          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr600="expr600"></div></div>',
+          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr990="expr990"></div></div>',
           [
             {
               expressions: [
@@ -3634,7 +3669,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr601="expr601" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr602="expr602" class="text-sm truncate font-medium"> </span>',
+                '<div expr991="expr991" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr992="expr992" class="text-sm truncate font-medium"> </span>',
                 [
                   {
                     expressions: [
@@ -3655,8 +3690,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr601',
-                    selector: '[expr601]',
+                    redundantAttribute: 'expr991',
+                    selector: '[expr991]',
 
                     expressions: [
                       {
@@ -3674,8 +3709,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr602',
-                    selector: '[expr602]',
+                    redundantAttribute: 'expr992',
+                    selector: '[expr992]',
 
                     expressions: [
                       {
@@ -3691,8 +3726,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr600',
-              selector: '[expr600]',
+              redundantAttribute: 'expr990',
+              selector: '[expr990]',
               itemName: 'user',
               indexName: 'index',
               evaluate: _scope => _scope.state.filteredUsers
@@ -3703,15 +3738,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showCreateChannelModal,
-        redundantAttribute: 'expr603',
-        selector: '[expr603]',
+        redundantAttribute: 'expr993',
+        selector: '[expr993]',
 
         template: template(
-          '<div expr604="expr604" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr605="expr605" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr606="expr606" type="checkbox" class="sr-only"/><div expr607="expr607"></div><div expr608="expr608"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr609="expr609" class="mb-4 animate-fade-in"></div><div expr619="expr619" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr620="expr620" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr621="expr621" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
+          '<div expr994="expr994" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr995="expr995" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr996="expr996" type="checkbox" class="sr-only"/><div expr997="expr997"></div><div expr998="expr998"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr999="expr999" class="mb-4 animate-fade-in"></div><div expr1009="expr1009" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr1010="expr1010" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr1011="expr1011" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>',
           [
             {
-              redundantAttribute: 'expr604',
-              selector: '[expr604]',
+              redundantAttribute: 'expr994',
+              selector: '[expr994]',
 
               expressions: [
                 {
@@ -3724,8 +3759,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr605',
-              selector: '[expr605]',
+              redundantAttribute: 'expr995',
+              selector: '[expr995]',
 
               expressions: [
                 {
@@ -3741,8 +3776,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr606',
-              selector: '[expr606]',
+              redundantAttribute: 'expr996',
+              selector: '[expr996]',
 
               expressions: [
                 {
@@ -3759,8 +3794,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr607',
-              selector: '[expr607]',
+              redundantAttribute: 'expr997',
+              selector: '[expr997]',
 
               expressions: [
                 {
@@ -3772,8 +3807,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr608',
-              selector: '[expr608]',
+              redundantAttribute: 'expr998',
+              selector: '[expr998]',
 
               expressions: [
                 {
@@ -3787,15 +3822,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.isCreatingPrivate,
-              redundantAttribute: 'expr609',
-              selector: '[expr609]',
+              redundantAttribute: 'expr999',
+              selector: '[expr999]',
 
               template: template(
-                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr610="expr610" class="flex flex-wrap gap-2 mb-2"><span expr611="expr611" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr613="expr613" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr614="expr614" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr615="expr615" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
+                '<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr1000="expr1000" class="flex flex-wrap gap-2 mb-2"><span expr1001="expr1001" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr1003="expr1003" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr1004="expr1004" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr1005="expr1005" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr610',
-                    selector: '[expr610]',
+                    redundantAttribute: 'expr1000',
+                    selector: '[expr1000]',
 
                     expressions: [
                       {
@@ -3812,7 +3847,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      ' <button expr612="expr612" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
+                      ' <button expr1002="expr1002" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>',
                       [
                         {
                           expressions: [
@@ -3831,8 +3866,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr612',
-                          selector: '[expr612]',
+                          redundantAttribute: 'expr1002',
+                          selector: '[expr1002]',
 
                           expressions: [
                             {
@@ -3845,15 +3880,15 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr611',
-                    selector: '[expr611]',
+                    redundantAttribute: 'expr1001',
+                    selector: '[expr1001]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.createChannelMembers
                   },
                   {
-                    redundantAttribute: 'expr613',
-                    selector: '[expr613]',
+                    redundantAttribute: 'expr1003',
+                    selector: '[expr1003]',
 
                     expressions: [
                       {
@@ -3864,8 +3899,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr614',
-                    selector: '[expr614]',
+                    redundantAttribute: 'expr1004',
+                    selector: '[expr1004]',
 
                     expressions: [
                       {
@@ -3882,7 +3917,7 @@ showCreateChannelModal: false })
                     condition: null,
 
                     template: template(
-                      '<div expr616="expr616" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr617="expr617" class="text-gray-300 text-sm font-medium truncate"> </div><div expr618="expr618" class="text-gray-500 text-xs truncate"> </div></div>',
+                      '<div expr1006="expr1006" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr1007="expr1007" class="text-gray-300 text-sm font-medium truncate"> </div><div expr1008="expr1008" class="text-gray-500 text-xs truncate"> </div></div>',
                       [
                         {
                           expressions: [
@@ -3894,8 +3929,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr616',
-                          selector: '[expr616]',
+                          redundantAttribute: 'expr1006',
+                          selector: '[expr1006]',
 
                           expressions: [
                             {
@@ -3913,8 +3948,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr617',
-                          selector: '[expr617]',
+                          redundantAttribute: 'expr1007',
+                          selector: '[expr1007]',
 
                           expressions: [
                             {
@@ -3928,8 +3963,8 @@ showCreateChannelModal: false })
                           ]
                         },
                         {
-                          redundantAttribute: 'expr618',
-                          selector: '[expr618]',
+                          redundantAttribute: 'expr1008',
+                          selector: '[expr1008]',
 
                           expressions: [
                             {
@@ -3942,8 +3977,8 @@ showCreateChannelModal: false })
                       ]
                     ),
 
-                    redundantAttribute: 'expr615',
-                    selector: '[expr615]',
+                    redundantAttribute: 'expr1005',
+                    selector: '[expr1005]',
                     itemName: 'user',
                     indexName: null,
                     evaluate: _scope => _scope.state.filteredCreateChannelUsers
@@ -3954,8 +3989,8 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.createChannelError,
-              redundantAttribute: 'expr619',
-              selector: '[expr619]',
+              redundantAttribute: 'expr1009',
+              selector: '[expr1009]',
 
               template: template(
                 ' ',
@@ -3973,8 +4008,8 @@ showCreateChannelModal: false })
               )
             },
             {
-              redundantAttribute: 'expr620',
-              selector: '[expr620]',
+              redundantAttribute: 'expr1010',
+              selector: '[expr1010]',
 
               expressions: [
                 {
@@ -3985,8 +4020,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr621',
-              selector: '[expr621]',
+              redundantAttribute: 'expr1011',
+              selector: '[expr1011]',
 
               expressions: [
                 {
@@ -4013,15 +4048,15 @@ showCreateChannelModal: false })
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showDmPopup,
-        redundantAttribute: 'expr622',
-        selector: '[expr622]',
+        redundantAttribute: 'expr1012',
+        selector: '[expr1012]',
 
         template: template(
-          '<div expr623="expr623" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr624="expr624" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr625="expr625" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr626="expr626" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr632="expr632" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
+          '<div expr1013="expr1013" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr1014="expr1014" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr1015="expr1015" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr1016="expr1016" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr1022="expr1022" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>',
           [
             {
-              redundantAttribute: 'expr623',
-              selector: '[expr623]',
+              redundantAttribute: 'expr1013',
+              selector: '[expr1013]',
 
               expressions: [
                 {
@@ -4032,8 +4067,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr624',
-              selector: '[expr624]',
+              redundantAttribute: 'expr1014',
+              selector: '[expr1014]',
 
               expressions: [
                 {
@@ -4044,8 +4079,8 @@ showCreateChannelModal: false })
               ]
             },
             {
-              redundantAttribute: 'expr625',
-              selector: '[expr625]',
+              redundantAttribute: 'expr1015',
+              selector: '[expr1015]',
 
               expressions: [
                 {
@@ -4061,7 +4096,7 @@ showCreateChannelModal: false })
               condition: null,
 
               template: template(
-                '<div class="relative"><div expr627="expr627" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr628="expr628"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr629="expr629" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr630="expr630" class="text-xs text-gray-500 italic"></span></div><div expr631="expr631" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
+                '<div class="relative"><div expr1017="expr1017" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr1018="expr1018"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr1019="expr1019" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr1020="expr1020" class="text-xs text-gray-500 italic"></span></div><div expr1021="expr1021" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>',
                 [
                   {
                     expressions: [
@@ -4073,8 +4108,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr627',
-                    selector: '[expr627]',
+                    redundantAttribute: 'expr1017',
+                    selector: '[expr1017]',
 
                     expressions: [
                       {
@@ -4092,8 +4127,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr628',
-                    selector: '[expr628]',
+                    redundantAttribute: 'expr1018',
+                    selector: '[expr1018]',
 
                     expressions: [
                       {
@@ -4105,8 +4140,8 @@ showCreateChannelModal: false })
                     ]
                   },
                   {
-                    redundantAttribute: 'expr629',
-                    selector: '[expr629]',
+                    redundantAttribute: 'expr1019',
+                    selector: '[expr1019]',
 
                     expressions: [
                       {
@@ -4122,8 +4157,8 @@ showCreateChannelModal: false })
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.user._key === _scope.props.currentUser._key,
-                    redundantAttribute: 'expr630',
-                    selector: '[expr630]',
+                    redundantAttribute: 'expr1020',
+                    selector: '[expr1020]',
 
                     template: template(
                       'You',
@@ -4131,8 +4166,8 @@ showCreateChannelModal: false })
                     )
                   },
                   {
-                    redundantAttribute: 'expr631',
-                    selector: '[expr631]',
+                    redundantAttribute: 'expr1021',
+                    selector: '[expr1021]',
 
                     expressions: [
                       {
@@ -4145,8 +4180,8 @@ showCreateChannelModal: false })
                 ]
               ),
 
-              redundantAttribute: 'expr626',
-              selector: '[expr626]',
+              redundantAttribute: 'expr1016',
+              selector: '[expr1016]',
               itemName: 'user',
               indexName: null,
               evaluate: _scope => _scope.state.dmPopupUsers
@@ -4154,15 +4189,15 @@ showCreateChannelModal: false })
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.dmPopupUsers.length === 0,
-              redundantAttribute: 'expr632',
-              selector: '[expr632]',
+              redundantAttribute: 'expr1022',
+              selector: '[expr1022]',
 
               template: template(
-                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr633="expr633"> </p>',
+                '<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr1023="expr1023"> </p>',
                 [
                   {
-                    redundantAttribute: 'expr633',
-                    selector: '[expr633]',
+                    redundantAttribute: 'expr1023',
+                    selector: '[expr1023]',
 
                     expressions: [
                       {

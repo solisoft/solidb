@@ -34,7 +34,7 @@
                 is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
                 remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } on-accept-call={
                 acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={
-                toggleVideo } on-toggle-screen-share={ toggleScreenShare } on-hangup={ hangup } />
+                toggleVideo } onshare={ toggleScreenShare } on-hangup={ hangup } />
 
             <!-- Audio Suspended Banner -->
             <div if={ state.audioSuspended } onclick={ enableAudio }
@@ -707,6 +707,20 @@
 
                 // Request notification permission
                 this.requestNotificationPermission();
+
+                // Ensure hangup on window close
+                this._beforeUnloadHandler = () => {
+                    if (this.state.activeCall) {
+                        this.hangup();
+                    }
+                };
+                window.addEventListener('beforeunload', this._beforeUnloadHandler);
+            },
+
+            onUnmounted() {
+                if (this._beforeUnloadHandler) {
+                    window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+                }
             },
 
             initAudioContext() {
@@ -1078,7 +1092,18 @@
                                     const updatedCurrentChannel = newChannels.find(c => c._id === this.state.channelId);
                                     if (updatedCurrentChannel) {
                                         updates.currentChannelData = updatedCurrentChannel;
-                                        this.activeCallParticipants = updatedCurrentChannel.active_call_participants || [];
+                                        const newParticipants = updatedCurrentChannel.active_call_participants || [];
+                                        this.activeCallParticipants = newParticipants;
+
+                                        // Reconcile: If we are in a call, remove peers who are no longer in the participants list
+                                        if (this.state.activeCall) {
+                                            Object.keys(this.peerConnections).forEach(peerKey => {
+                                                if (!newParticipants.includes(peerKey)) {
+                                                    console.log(`[Call] User ${peerKey} removed from server list. Closing connection.`);
+                                                    this.closePeerConnection(peerKey);
+                                                }
+                                            });
+                                        }
                                     }
                                 }
 
@@ -2736,10 +2761,19 @@
                 const channelId = this.state.activeCall?.channelId;
 
                 if (channelId) {
-                    fetch('/talks/leave_call', {
-                        method: 'POST',
-                        body: JSON.stringify({ channel_id: channelId })
-                    }).catch(e => { });
+                    const payload = { channel_id: channelId };
+                    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json; charset=UTF-8' });
+
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon('/talks/leave_call', blob);
+                    } else {
+                        fetch('/talks/leave_call', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                            keepalive: true
+                        }).catch(e => { });
+                    }
                 }
 
                 Object.keys(this.peerConnections).forEach(key => {
@@ -2827,6 +2861,7 @@
             },
 
             async toggleScreenShare() {
+                console.log('[talks-app] toggleScreenShare called');
                 if (this.state.isScreenSharing) {
                     // Stop screen share
                     const videoTrack = this.localStream.getVideoTracks()[0];
