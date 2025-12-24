@@ -187,10 +187,24 @@
                             </div>
                             <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
                                 <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
-                                    <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
-                                        getReactionClass(reaction) }>{ reaction.emoji } <span
-                                            class="ml-1 text-gray-400">{
-                                            reaction.users ? reaction.users.length : 0 }</span></button>
+                                    <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) }
+                                        class={ getReactionClass(reaction) }
+                                        title={ reaction.users ? reaction.users.join(', ') : '' }>
+                                        { reaction.emoji }
+                                        <span class="ml-1 text-gray-400">{ reaction.users ? reaction.users.length : 0
+                                            }</span>
+                                    </button>
+                                    <!-- Reaction Tooltip -->
+                                    <div if={ reaction.users && reaction.users.length> 0 }
+                                        class="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-gray-900 border
+                                        border-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded shadow-xl opacity-0
+                                        group-hover/reaction:opacity-100 transition-opacity pointer-events-none
+                                        whitespace-nowrap z-50">
+                                        { reaction.users.join(', ') }
+                                        <div
+                                            class="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-gray-700">
+                                        </div>
+                                    </div>
                                 </div>
                                 <div if={ message.thread_count && message.thread_count> 0 } onclick={ (e) =>
                                     handleThreadClick(message, e) } class="flex items-center gap-2 text-sm
@@ -300,7 +314,12 @@
                 return 'leading-snug message-content ' + (this.isEmojiOnly(message.text) ? 'text-4xl' : 'text-[#D1D2D3]');
             },
             getReactionClass(reaction) {
-                const isMe = reaction.users && reaction.users.includes(this.getUsername(this.props.currentUser));
+                if (!reaction.users || !this.props.currentUser) return 'px-2 py-0.5 rounded text-xs flex items-center border transition-colors bg-[#222529] hover:bg-gray-700 border-gray-700';
+
+                const normalize = s => s ? s.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+                const myName = normalize(this.getUsername(this.props.currentUser));
+                const isMe = reaction.users.some(u => normalize(u) === myName);
+
                 return 'px-2 py-0.5 rounded text-xs flex items-center border transition-colors ' + (isMe ? 'bg-blue-900/50 border-blue-500 text-blue-300' : 'bg-[#222529] hover:bg-gray-700 border-gray-700');
             },
             getMessagesByDay() {

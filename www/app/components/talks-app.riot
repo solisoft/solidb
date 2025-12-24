@@ -1276,8 +1276,6 @@
                             )
                             FOR m IN messages
                                 FILTER POSITION(my_channels, m.channel_id) >= 0
-                                SORT m.timestamp DESC
-                                LIMIT 10
                                 RETURN m
                         `;
 
