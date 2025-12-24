@@ -90,7 +90,8 @@
         <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending } showEmojiPicker={
             state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave } onDragOver={ onDragOver }
             ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown } onHandleMessageInput={
-            handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker } onSendMessage={ sendMessage } />
+            handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker } onSendMessage={ sendMessage } onAddFiles={
+            addFiles } />
 
         <!-- User Mention Picker -->
         <div if={ state.showUserPicker }

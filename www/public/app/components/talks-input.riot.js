@@ -20,6 +20,18 @@ export default {
         }
     },
 
+    triggerFileUpload() {
+        const input = (this.refs && this.refs.fileInput) || this.root.querySelector('input[type="file"]');
+        if (input) input.click();
+    },
+
+    handleFileSelect(e) {
+        if (this.props.onAddFiles && e.target.files.length > 0) {
+            this.props.onAddFiles(e.target.files);
+        }
+        e.target.value = '';
+    },
+
     autoResize() {
         const textarea = (this.refs && this.refs.messageInput) || this.root.querySelector('textarea');
         if (!textarea) return;
@@ -51,11 +63,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<footer class="p-0 flex-shrink-0"><div expr426="expr426"><div expr427="expr427" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-4"><textarea expr432="expr432" ref="messageInput" placeholder="Message" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none min-h-[5rem] max-h-64 placeholder-gray-600 block overflow-y-auto"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700"><div class="flex items-center space-x-1"><button expr433="expr433"><i class="far fa-smile"></i></button></div><button expr434="expr434" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr435="expr435"></i> </button></div></div></footer>',
+    '<footer class="p-0 flex-shrink-0"><div expr1041="expr1041"><div expr1042="expr1042" class="mx-4 mt-3 pl-4 pr-3 py-2.5 bg-[#1A1D21] border border-gray-700/50 border-l-[3px] border-l-indigo-500 rounded-r-lg relative animate-fade-in shadow-sm group/preview"></div><div expr1046="expr1046" class="flex flex-wrap gap-2 p-3 pb-0"></div><div class="p-4"><textarea expr1051="expr1051" ref="messageInput" placeholder="Message" class="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-[#D1D2D3] resize-none min-h-[5rem] max-h-64 placeholder-gray-600 block overflow-y-auto"></textarea></div><div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700"><div class="flex items-center space-x-1"><button expr1052="expr1052" class="p-2 text-gray-500 hover:text-white transition-colors" title="Attach file"><i class="fas fa-paperclip"></i></button><button expr1053="expr1053"><i class="far fa-smile"></i></button></div><button expr1054="expr1054" class="bg-[#007A5A] hover:bg-[#148567] text-white px-3 py-1.5 rounded font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"><i expr1055="expr1055"></i> </button></div><input expr1056="expr1056" type="file" ref="fileInput" class="hidden" multiple/></div></footer>',
     [
       {
-        redundantAttribute: 'expr426',
-        selector: '[expr426]',
+        redundantAttribute: 'expr1041',
+        selector: '[expr1041]',
 
         expressions: [
           {
@@ -88,12 +100,66 @@ export default {
       },
       {
         type: bindingTypes.IF,
-        evaluate: _scope => _scope.props.files.length > 0,
-        redundantAttribute: 'expr427',
-        selector: '[expr427]',
+        evaluate: _scope => _scope.props.quotedMessage,
+        redundantAttribute: 'expr1042',
+        selector: '[expr1042]',
 
         template: template(
-          '<div expr428="expr428" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>',
+          '<div class="flex items-center justify-between mb-1.5"><span expr1043="expr1043" class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5"><i class="fas fa-reply"></i> </span><button expr1044="expr1044" class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors"><i class="fas fa-times"></i></button></div><div expr1045="expr1045" class="text-gray-300/80 line-clamp-2 italic text-sm"> </div><i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>',
+          [
+            {
+              redundantAttribute: 'expr1043',
+              selector: '[expr1043]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 1,
+
+                  evaluate: _scope => [
+                    'Replying to ',
+                    _scope.props.quotedMessage.sender
+                  ].join(
+                    ''
+                  )
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr1044',
+              selector: '[expr1044]',
+
+              expressions: [
+                {
+                  type: expressionTypes.EVENT,
+                  name: 'onclick',
+                  evaluate: _scope => _scope.props.onCancelQuote
+                }
+              ]
+            },
+            {
+              redundantAttribute: 'expr1045',
+              selector: '[expr1045]',
+
+              expressions: [
+                {
+                  type: expressionTypes.TEXT,
+                  childNodeIndex: 0,
+                  evaluate: _scope => _scope.props.quotedMessage.text
+                }
+              ]
+            }
+          ]
+        )
+      },
+      {
+        type: bindingTypes.IF,
+        evaluate: _scope => _scope.props.files.length > 0,
+        redundantAttribute: 'expr1046',
+        selector: '[expr1046]',
+
+        template: template(
+          '<div expr1047="expr1047" class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group"></div>',
           [
             {
               type: bindingTypes.EACH,
@@ -101,11 +167,11 @@ export default {
               condition: null,
 
               template: template(
-                '<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr429="expr429" class="text-xs text-gray-200 truncate font-medium"> </span><span expr430="expr430" class="text-[10px] text-gray-500"> </span></div><button expr431="expr431" class="ml-2 text-gray-500 hover:text-red-400\n                        opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-times"></i></button>',
+                '<div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center mr-2 text-blue-400"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr1048="expr1048" class="text-xs text-gray-200 truncate font-medium"> </span><span expr1049="expr1049" class="text-[10px] text-gray-500"> </span></div><button expr1050="expr1050" class="ml-2 text-gray-500 hover:text-red-400\n                        opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-times"></i></button>',
                 [
                   {
-                    redundantAttribute: 'expr429',
-                    selector: '[expr429]',
+                    redundantAttribute: 'expr1048',
+                    selector: '[expr1048]',
 
                     expressions: [
                       {
@@ -116,8 +182,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr430',
-                    selector: '[expr430]',
+                    redundantAttribute: 'expr1049',
+                    selector: '[expr1049]',
 
                     expressions: [
                       {
@@ -131,8 +197,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr431',
-                    selector: '[expr431]',
+                    redundantAttribute: 'expr1050',
+                    selector: '[expr1050]',
 
                     expressions: [
                       {
@@ -145,8 +211,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr428',
-              selector: '[expr428]',
+              redundantAttribute: 'expr1047',
+              selector: '[expr1047]',
               itemName: 'file',
               indexName: 'index',
               evaluate: _scope => _scope.props.files
@@ -155,8 +221,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr432',
-        selector: '[expr432]',
+        redundantAttribute: 'expr1051',
+        selector: '[expr1051]',
 
         expressions: [
           {
@@ -172,8 +238,20 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr433',
-        selector: '[expr433]',
+        redundantAttribute: 'expr1052',
+        selector: '[expr1052]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onclick',
+            evaluate: _scope => _scope.triggerFileUpload
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr1053',
+        selector: '[expr1053]',
 
         expressions: [
           {
@@ -190,8 +268,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr434',
-        selector: '[expr434]',
+        redundantAttribute: 'expr1054',
+        selector: '[expr1054]',
 
         expressions: [
           {
@@ -218,8 +296,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr435',
-        selector: '[expr435]',
+        redundantAttribute: 'expr1055',
+        selector: '[expr1055]',
 
         expressions: [
           {
@@ -227,6 +305,18 @@ export default {
             isBoolean: false,
             name: 'class',
             evaluate: _scope => _scope.getSendIconClass()
+          }
+        ]
+      },
+      {
+        redundantAttribute: 'expr1056',
+        selector: '[expr1056]',
+
+        expressions: [
+          {
+            type: expressionTypes.EVENT,
+            name: 'onchange',
+            evaluate: _scope => _scope.handleFileSelect
           }
         ]
       }

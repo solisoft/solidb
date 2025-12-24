@@ -2,6 +2,20 @@
     <footer class="p-0 flex-shrink-0">
         <div ondragenter={ props.onDragEnter } ondragleave={ props.onDragLeave } ondragover={ props.onDragOver }
             ondrop={ props.onDrop } class={ getContainerClass() }>
+            <div if={ props.quotedMessage }
+                class="mx-4 mt-3 pl-4 pr-3 py-2.5 bg-[#1A1D21] border border-gray-700/50 border-l-[3px] border-l-indigo-500 rounded-r-lg relative animate-fade-in shadow-sm group/preview">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5">
+                        <i class="fas fa-reply"></i> Replying to { props.quotedMessage.sender }
+                    </span>
+                    <button onclick={ props.onCancelQuote }
+                        class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="text-gray-300/80 line-clamp-2 italic text-sm">{ props.quotedMessage.text }</div>
+                <i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>
+            </div>
             <div if={ props.files.length> 0 } class="flex flex-wrap gap-2 p-3 pb-0">
                 <div each={ (file, index) in props.files }
                     class="flex items-center bg-[#2b2f36] border border-gray-700 rounded p-1.5 pr-2 group">
@@ -21,6 +35,10 @@
             </div>
             <div class="flex items-center justify-between px-3 py-2 bg-[#1A1D21] border-t border-gray-700">
                 <div class="flex items-center space-x-1">
+                    <button onclick={ triggerFileUpload } class="p-2 text-gray-500 hover:text-white transition-colors"
+                        title="Attach file">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
                     <button onclick={ props.onToggleEmojiPicker } class={ getEmojiPickerBtnClass() }><i
                             class="far fa-smile"></i></button>
                 </div>
@@ -30,6 +48,7 @@
                     { props.sending ? 'Sending...' : 'Send' }
                 </button>
             </div>
+            <input type="file" ref="fileInput" onchange={ handleFileSelect } class="hidden" multiple />
         </div>
     </footer>
     <script>
@@ -48,6 +67,16 @@
                 if (this.props.onHandleMessageInput) {
                     this.props.onHandleMessageInput(e);
                 }
+            },
+            triggerFileUpload() {
+                const input = (this.refs && this.refs.fileInput) || this.root.querySelector('input[type="file"]');
+                if (input) input.click();
+            },
+            handleFileSelect(e) {
+                if (this.props.onAddFiles && e.target.files.length > 0) {
+                    this.props.onAddFiles(e.target.files);
+                }
+                e.target.value = '';
             },
             autoResize() {
                 const textarea = (this.refs && this.refs.messageInput) || this.root.querySelector('textarea');

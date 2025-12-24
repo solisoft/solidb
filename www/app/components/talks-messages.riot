@@ -5,112 +5,167 @@
                 <i class="fas fa-comments text-4xl mb-4"></i>
                 <p>No messages yet. Start the conversation!</p>
             </div>
-            <template each={ group in getMessagesByDay() }>
-                <div class="relative flex items-center py-4">
-                    <div class="flex-grow border-t border-gray-800"></div>
-                    <span
-                        class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">{
-                        group.label }</span>
-                    <div class="flex-grow border-t border-gray-800"></div>
-                </div>
-                <div each={ message in group.messages } id={ 'msg-' + message._key }
-                    class={ 'flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors ' +
-                    (props.highlightMessageId===message._key ? 'bg-indigo-500/20 ring-1 ring-indigo-500/30' : '' ) }>
-                    <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-baseline mb-1">
-                            <span class="font-bold text-white mr-2 hover:underline cursor-pointer">{ message.sender
-                                }</span>
-                            <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
-                        </div>
-                        <div class={ getMessageContentClass(message) }>
-                            <span each={ part in parseMessage(message.text) }>
-                                <span if={ part.type==='text' }>
-                                    <span each={ segment in parseTextWithLinks(part.content) }>
-                                        <span if={ segment.type==='text' }>{ segment.content }</span>
-                                        <span if={ segment.type==='mention' } onclick={ ()=>
-                                            props.goToDm(segment.content)
-                                            } class="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer
-                                            font-medium bg-blue-500/10 px-0.5 rounded transition-colors" title={ `DM
-                                            @${segment.content}` }>@{ segment.content }</span>
-                                        <a if={ segment.type==='link' } href={ segment.url } target="_blank"
-                                            rel="noopener noreferrer"
-                                            class="text-blue-400 hover:text-blue-300 hover:underline">{ segment.display
-                                            }</a>
-                                        <code if={ segment.type==='code' }
-                                            class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{ segment.content }</code>
-                                        <strong if={ segment.type==='bold' } class="font-bold text-gray-200">{
-                                            segment.content }</strong>
-                                        <em if={ segment.type==='italic' } class="italic text-gray-300">{
-                                            segment.content
-                                            }</em>
-                                        <span if={ segment.type==='strike' } class="line-through text-gray-500">{
-                                            segment.content }</span>
-                                    </span>
-                                </span>
-                                <div if={ part.type==='code' }
-                                    class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+            <virtual each={ group in getMessagesByDay() }>
+                <div class="contents">
+                    <div class="relative flex items-center py-4">
+                        <div class="flex-grow border-t border-gray-800"></div>
+                        <span
+                            class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider">{
+                            group.label }</span>
+                        <div class="flex-grow border-t border-gray-800"></div>
+                    </div>
+                    <div each={ message in group.messages } id={ 'msg-' + message._key } class={ getMessageRowClass(message)
+                        }>
+                        <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-baseline mb-1">
+                                <span class="font-bold text-white mr-2 hover:underline cursor-pointer">{ message.sender
+                                    }</span>
+                                <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
+                                <span if={ props.currentChannel==='mentions' && message.channel_id }
+                                    class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">#{
+                                    message.channel_id }</span>
+                            </div>
+                            <div class={ getMessageContentClass(message) }>
+                                <div if={ message.quoted_message }
+                                    class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block">
+                                    <div if={ message.quoted_message.sender }
+                                        class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide">
+                                        <i class="fas fa-reply text-[9px]"></i> { message.quoted_message.sender }
+                                    </div>
                                     <div
-                                        class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                        <span class="text-xs font-mono text-gray-500">code</span>
-                                        <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                            part.lang || 'text' }</span>
+                                        class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words">
+                                        <span each={ segment in parseTextWithLinks(message.quoted_message.text) }>
+                                            <span if={ segment.type==='text' }>{ segment.content }</span>
+                                            <span if={ segment.type==='mention' } onclick={ (e)=> handleMentionClick(e,
+                                                segment.content) } class="text-indigo-400 hover:text-indigo-300
+                                                hover:underline cursor-pointer font-medium" title={
+                                                getMentionTitle(segment.content) }>@{ segment.content }</span>
+                                            <a if={ segment.type==='link' } href={ segment.url } target="_blank"
+                                                rel="noopener noreferrer" onclick={ (e)=> e.stopPropagation() }
+                                                class="text-indigo-400 hover:text-indigo-300 hover:underline
+                                                decoration-indigo-500/30">{ segment.display }</a>
+                                            <code if={ segment.type==='code' }
+                                                class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20">{ segment.content }</code>
+                                            <strong if={ segment.type==='bold' } class="font-semibold text-indigo-200">{
+                                                segment.content }</strong>
+                                            <em if={ segment.type==='italic' } class="italic text-indigo-200/80">{
+                                                segment.content }</em>
+                                            <span if={ segment.type==='strike' } class="line-through text-gray-500">{
+                                                segment.content }</span>
+                                        </span>
                                     </div>
-                                    <pre
-                                        class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${part.lang || 'text'}` }>{ part.content }</code></pre>
                                 </div>
-                            </span>
-                        </div>
-                        <div each={ url in getMessageUrls(message.text) } class="mt-3">
-                            <div if={ props.ogCache[url] && !props.ogCache[url].error && message.text.trim()===url }
-                                class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg">
-                                <a href={ url } target="_blank" rel="noopener noreferrer" class="block">
-                                    <div if={ props.ogCache[url].image }
-                                        class="w-full h-48 bg-gray-800 border-b border-gray-700">
-                                        <img src={ props.ogCache[url].image } class="w-full h-full object-cover"
-                                            onerror={ handleImageError } />
-                                    </div>
-                                    <div class="p-3">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon }
-                                                class="w-4 h-4 rounded" onerror={ (e)=> e.target.style.display='none' }
-                                            />
-                                            <span class="text-xs text-gray-500">{ props.ogCache[url].site_name ||
-                                                getDomain(url) }</span>
+                                <span each={ part in parseMessage(message.text) }>
+                                    <span if={ part.type==='text' }>
+                                        <span each={ segment in parseTextWithLinks(part.content) }>
+                                            <span if={ segment.type==='text' }>{ segment.content }</span>
+                                            <span if={ segment.type==='mention' } onclick={ (e)=> handleMentionClick(e,
+                                                segment.content) } class="text-blue-400 hover:text-blue-300 hover:underline
+                                                cursor-pointer font-medium bg-blue-500/10 px-0.5 rounded transition-colors"
+                                                title={ getMentionTitle(segment.content) }>@{ segment.content }</span>
+                                            <a if={ segment.type==='link' } href={ segment.url } target="_blank"
+                                                rel="noopener noreferrer"
+                                                class="text-blue-400 hover:text-blue-300 hover:underline">{ segment.display
+                                                }</a>
+                                            <code if={ segment.type==='code' }
+                                                class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{ segment.content }</code>
+                                            <strong if={ segment.type==='bold' } class="font-bold text-gray-200">{
+                                                segment.content }</strong>
+                                            <em if={ segment.type==='italic' } class="italic text-gray-300">{
+                                                segment.content }</em>
+                                            <span if={ segment.type==='strike' } class="line-through text-gray-500">{
+                                                segment.content }</span>
+                                        </span>
+                                    </span>
+                                    <div if={ part.type==='code' }
+                                        class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+                                        <div
+                                            class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                                            <span class="text-xs font-mono text-gray-500">code</span>
+                                            <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
+                                                part.lang || 'text' }</span>
                                         </div>
-                                        <h4 class="text-sm font-semibold text-white line-clamp-1">{
-                                            props.ogCache[url].title
-                                            || url }</h4>
-                                        <p if={ props.ogCache[url].description }
-                                            class="text-xs text-gray-400 line-clamp-2 mt-1">{
-                                            props.ogCache[url].description
-                                            }</p>
+                                        <pre
+                                            class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ getCodeBlockClass(part.lang) }>{ part.content }</code></pre>
                                     </div>
-                                </a>
+                                    <div if={ part.type==='quote' }
+                                        class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block">
+                                        <div if={ part.sender }
+                                            class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide">
+                                            <i class="fas fa-reply text-[9px]"></i> { part.sender }
+                                        </div>
+                                        <div
+                                            class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words">
+                                            <span each={ segment in parseTextWithLinks(part.content) }>
+                                                <span if={ segment.type==='text' }>{ segment.content }</span>
+                                                <span if={ segment.type==='mention' } onclick={ (e)=> handleMentionClick(e,
+                                                    segment.content) } class="text-indigo-400 hover:text-indigo-300
+                                                    hover:underline cursor-pointer font-medium" title={
+                                                    getMentionTitle(segment.content) }>@{ segment.content }</span>
+                                                <a if={ segment.type==='link' } href={ segment.url } target="_blank"
+                                                    rel="noopener noreferrer" onclick={ (e)=> e.stopPropagation() }
+                                                    class="text-indigo-400 hover:text-indigo-300 hover:underline
+                                                    decoration-indigo-500/30">{ segment.display }</a>
+                                                <code if={ segment.type==='code' }
+                                                    class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20">{ segment.content }</code>
+                                                <strong if={ segment.type==='bold' } class="font-semibold text-indigo-200">{
+                                                    segment.content }</strong>
+                                                <em if={ segment.type==='italic' } class="italic text-indigo-200/80">{
+                                                    segment.content }</em>
+                                                <span if={ segment.type==='strike' } class="line-through text-gray-500">{
+                                                    segment.content }</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </span>
                             </div>
-                        </div>
-                        <div if={ message.code_sample }
-                            class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
-                            <div
-                                class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename }</span>
-                                <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
-                                    message.code_sample.language }</span>
+                            <div each={ url in getMessageUrls(message.text) } class="mt-3">
+                                <div if={ props.ogCache[url] && !props.ogCache[url].error && message.text.trim()===url }
+                                    class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg">
+                                    <a href={ url } target="_blank" rel="noopener noreferrer" class="block">
+                                        <div if={ props.ogCache[url].image }
+                                            class="w-full h-48 bg-gray-800 border-b border-gray-700">
+                                            <img src={ props.ogCache[url].image } class="w-full h-full object-cover"
+                                                onerror={ handleImageError } />
+                                        </div>
+                                        <div class="p-3">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon }
+                                                    class="w-4 h-4 rounded" onerror={ (e)=> e.target.style.display='none' }
+                                                />
+                                                <span class="text-xs text-gray-500">{ props.ogCache[url].site_name ||
+                                                    getDomain(url) }</span>
+                                            </div>
+                                            <h4 class="text-sm font-semibold text-white line-clamp-1">{
+                                                props.ogCache[url].title || url }</h4>
+                                            <p if={ props.ogCache[url].description }
+                                                class="text-xs text-gray-400 line-clamp-2 mt-1">{
+                                                props.ogCache[url].description }</p>
+                                        </div>
+                                    </a>
+                                </div>
                             </div>
-                            <pre
-                                class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ `block p-4 language-${message.code_sample.language || 'text'}` }>{ message.code_sample.code }</code></pre>
-                        </div>
-                        <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap
-                            gap-2">
-                            <div each={ attachment in message.attachments } class="relative group/attachment">
-                                <template if={ isImage(attachment) }>
-                                    <div onclick={ (e)=> props.openLightbox(attachment, e) } class="block
-                                        cursor-pointer"><img src={ getFileUrl(attachment) } alt={ attachment.filename }
+                            <div if={ message.code_sample }
+                                class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
+                                <div
+                                    class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                                    <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename }</span>
+                                    <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
+                                        message.code_sample.language }</span>
+                                </div>
+                                <pre
+                                    class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code class={ getCodeBlockClass(message.code_sample.language) }>{ message.code_sample.code }</code></pre>
+                            </div>
+                            <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap
+                                gap-2">
+                                <div each={ attachment in message.attachments } class="relative group/attachment">
+                                    <div if={ isImage(attachment) } onclick={ (e)=> props.openLightbox(attachment, e) }
+                                        class="block cursor-pointer">
+                                        <img src={ getFileUrl(attachment) } alt={ attachment.filename }
                                             class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90" />
                                     </div>
-                                </template>
-                                <template if={ !isImage(attachment) }>
-                                    <a href={ getFileUrl(attachment) } target="_blank"
+                                    <a if={ !isImage(attachment) } href={ getFileUrl(attachment) } target="_blank"
                                         class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300">
                                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -119,62 +174,56 @@
                                         </svg>
                                         <span class="text-sm truncate max-w-[150px]">{ attachment.filename }</span>
                                     </a>
-                                </template>
-                            </div>
-                        </div>
-                        <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
-                            <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
-                                <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
-                                    getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
-                                        reaction.users ? reaction.users.length : 0 }</span></button>
-                            </div>
-
-                            <!-- Thread indicator (Inline) -->
-                            <div if={ message.thread_count && message.thread_count> 0 }
-                                onclick={ (e)=> props.onOpenThread && props.onOpenThread(message, e) }
-                                class="flex items-center gap-2 text-sm cursor-pointer group/thread ml-1 mr-1">
-                                <!-- Participant avatars (stacked) -->
-                                <div class="flex -space-x-1.5">
-                                    <div each={ (participant, idx) in getThreadParticipants(message).slice(0, 3) }
-                                        class={ 'w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1A1D21] '
-                                        + getParticipantAvatarColor(participant, idx) } title={ participant }>
-                                        { getInitials(participant) }
-                                    </div>
-                                    <div if={ getThreadParticipants(message).length> 3 }
-                                        class="w-5 h-5 rounded-full flex items-center justify-center text-[8px]
-                                        font-bold
-                                        text-white bg-gray-600 border-2 border-[#1A1D21]">
-                                        +{ getThreadParticipants(message).length - 3 }
-                                    </div>
                                 </div>
-                                <!-- Reply count -->
-                                <span class="text-blue-400 text-xs group-hover/thread:underline font-medium">
-                                    { message.thread_count } { message.thread_count === 1 ? 'reply' : 'replies' }
-                                </span>
                             </div>
-
-                            <div class="relative group/emoji">
-                                <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) }
-                                    class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700
-                                    transition-colors opacity-0 group-hover:opacity-100"><i
-                                        class="far fa-smile text-sm"></i></button>
-                            </div>
-                            <!-- Reply to thread button (only if no thread exists) -->
-                            <div if={ !message.thread_count || message.thread_count===0 } class="relative group/reply">
-                                <button onclick={ (e)=> props.onOpenThread && props.onOpenThread(message, e) }
-                                    class="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700
-                                    transition-colors opacity-0 group-hover:opacity-100" title="Reply in thread"><i
-                                        class="fas fa-reply text-sm"></i></button>
+                            <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
+                                <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
+                                    <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
+                                        getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
+                                            reaction.users ? reaction.users.length : 0 }</span></button>
+                                </div>
+                                <div if={ message.thread_count && message.thread_count> 0 } onclick={ (e) =>
+                                    handleThreadClick(message, e) } class="flex items-center gap-2 text-sm cursor-pointer
+                                    group/thread ml-1 mr-1">
+                                    <div class="flex -space-x-1.5">
+                                        <div each={ (participant, idx) in getThreadParticipants(message).slice(0, 3) }
+                                            class={ getParticipantClass(participant, idx) } title={ participant }>{
+                                            getInitials(participant) }</div>
+                                        <div if={ getThreadParticipants(message).length> 3 } class="w-5 h-5 rounded-full
+                                            flex items-center justify-center text-[8px] font-bold text-white bg-gray-600
+                                            border-2 border-[#1A1D21]">+{ getThreadParticipants(message).length - 3 }</div>
+                                    </div>
+                                    <span class="text-blue-400 text-xs group-hover/thread:underline font-medium">{
+                                        message.thread_count } { message.thread_count === 1 ? 'reply' : 'replies' }</span>
+                                </div>
+                                <div class="relative group/emoji">
+                                    <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) } class="p-1.5 rounded
+                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
+                                        group-hover:opacity-100"><i class="far fa-smile text-sm"></i></button>
+                                </div>
+                                <div if={ !message.thread_count || message.thread_count===0 } class="relative group/reply">
+                                    <button onclick={ (e)=> handleThreadClick(message, e) } class="p-1.5 rounded
+                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
+                                        group-hover:opacity-100" title="Reply in thread"><i
+                                            class="fas fa-reply text-sm"></i></button>
+                                </div>
+                                <div if={ props.currentChannel !=="mentions" } class="relative group/quote">
+                                    <button onclick={ (e)=> props.onQuoteMessage(message, e) } class="p-1.5 rounded
+                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
+                                        group-hover:opacity-100" title="Quote message"><i
+                                            class="fas fa-quote-right text-sm"></i></button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </template>
+            </virtual>
         </div>
-        <div if={ props.hasNewMessages } class="absolute bottom-6 right-8 z-10 animate-fade-in"><button onclick={
-                props.scrollToLatest }
+        <div if={ props.hasNewMessages } class="absolute bottom-6 right-8 z-10 animate-fade-in">
+            <button onclick={ props.scrollToLatest }
                 class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium"><span>Read
-                    latest messages</span><i class="fas fa-arrow-down"></i></button></div>
+                    latest messages</span><i class="fas fa-arrow-down"></i></button>
+        </div>
     </div>
     <script>
         export default {
@@ -192,13 +241,22 @@
                 }
             },
             scrollToMessage(msgId) {
-                // Use setTimeout to ensure DOM is ready
                 setTimeout(() => {
                     const el = this.root.querySelector('#msg-' + msgId);
                     if (el) {
                         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                 }, 100);
+            },
+            getMessageRowClass(message) {
+                let classes = 'flex items-start group mb-1 hover:bg-[#222529]/30 -mx-6 px-6 py-0.5 transition-colors ';
+                if (this.props.highlightMessageId === message._key) {
+                    classes += 'bg-indigo-500/20 ring-1 ring-indigo-500/30 ';
+                }
+                if (this.props.currentChannel === 'mentions') {
+                    classes += 'cursor-pointer ';
+                }
+                return classes;
             },
             getMessageContentClass(message) {
                 return 'leading-snug message-content ' + (this.isEmojiOnly(message.text) ? 'text-4xl' : 'text-[#D1D2D3]');
@@ -209,19 +267,16 @@
             },
             getMessagesByDay() {
                 if (!this.props.messages || this.props.messages.length === 0) return [];
-
                 const groups = new Map();
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const yesterday = new Date(today);
                 yesterday.setDate(yesterday.getDate() - 1);
-
                 this.props.messages.forEach(message => {
                     const msgDate = new Date(message.timestamp * 1000);
                     const msgDay = new Date(msgDate);
                     msgDay.setHours(0, 0, 0, 0);
                     const dateKey = msgDay.getTime();
-
                     if (!groups.has(dateKey)) {
                         let label;
                         if (msgDay.getTime() === today.getTime()) {
@@ -240,8 +295,6 @@
                     }
                     groups.get(dateKey).messages.push(message);
                 });
-
-                // Sort by date (oldest first)
                 return Array.from(groups.values()).sort((a, b) => a.timestamp - b.timestamp);
             },
             parseTextWithLinks(text) {
@@ -281,7 +334,6 @@
                 while ((match = urlRegex.exec(text)) !== null) {
                     if (!urls.includes(match[1])) {
                         urls.push(match[1]);
-                        // Notify parent to fetch metadata if not already doing so
                         if (this.props.onFetchOgMetadata) this.props.onFetchOgMetadata(match[1]);
                     }
                 }
@@ -315,6 +367,24 @@
                     'bg-gradient-to-br from-pink-500 to-rose-600'
                 ];
                 return colors[index % colors.length];
+            },
+            getParticipantClass(participant, idx) {
+                return 'w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1A1D21] ' + this.getParticipantAvatarColor(participant, idx);
+            },
+            getCodeBlockClass(lang) {
+                return 'block p-4 language-' + (lang || 'text');
+            },
+            getMentionTitle(content) {
+                return 'DM @' + content;
+            },
+            handleMentionClick(e, content) {
+                e.stopPropagation();
+                this.props.goToDm(content);
+            },
+            handleThreadClick(message, e) {
+                if (this.props.onOpenThread) {
+                    this.props.onOpenThread(message, e);
+                }
             }
         }
     </script>

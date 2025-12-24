@@ -20,13 +20,16 @@
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
                     fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
                     scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker }
-                    highlightMessageId={ state.highlightMessageId } onOpenThread={ openThread } />
+                    highlightMessageId={ state.highlightMessageId } onOpenThread={ openThread } onQuoteMessage={
+                    handleQuoteMessage } currentChannel={ state.currentChannel } onMessageClick={ navigateToSearchResult
+                    } />
 
                 <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
                     showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
                     onDragOver={ onDragOver } ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown }
                     onHandleMessageInput={ handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker }
-                    onSendMessage={ sendMessage } />
+                    onSendMessage={ sendMessage } quotedMessage={ state.quotedMessage } onCancelQuote={ cancelQuote }
+                    onAddFiles={ addFiles } />
             </main>
 
             <talks-calls incoming-calls={ state.incomingCalls } active-call={ state.activeCall } call-duration={
@@ -36,12 +39,7 @@
                 acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={
                 toggleVideo } onshare={ toggleScreenShare } on-hangup={ hangup } />
 
-            <!-- Audio Suspended Banner -->
-            <div if={ state.audioSuspended } onclick={ enableAudio }
-                class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in">
-                <i class="fas fa-volume-mute"></i>
-                <span>Click anywhere to enable call sounds</span>
-            </div>
+
 
             <!-- Search Results Sidebar -->
             <div if={ state.showSearchSidebar }
@@ -301,6 +299,25 @@
                     </div>
                 </div>
             </div>
+            <!-- Sound Activation Popup -->
+            <div if={ state.showSoundPopup } class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+                <div
+                    class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in-up text-center p-8">
+                    <div
+                        class="w-16 h-16 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <i class="fas fa-volume-up text-3xl"></i>
+                    </div>
+                    <h2 class="text-xl font-bold text-white mb-2">Enable Sounds</h2>
+                    <p class="text-gray-400 mb-8">Talks uses sounds for new messages and calls. Please click Enable to
+                        ensure you don't miss anything.</p>
+                    <div class="flex gap-3 justify-center">
+                        <button onclick={ activateSounds }
+                            class="px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors font-medium shadow-lg shadow-blue-900/20">Enable
+                            Sounds</button>
+                    </div>
+                </div>
+            </div>
     </div>
 
     <style>
@@ -458,7 +475,12 @@
                     showThreadSidebar: false,
                     threadParentMessage: null,
                     threadMessages: [],
-                    threadLoading: false
+                    threadParentMessage: null,
+                    threadMessages: [],
+                    threadLoading: false,
+                    // Quote State
+                    quotedMessage: null,
+                    showSoundPopup: false
                 }
                 // Ensure favorites array exists and is an array
                 if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -791,6 +813,12 @@
                 // Highlight existing code blocks
                 this.highlightCode();
 
+                // Sound permission popup always on load
+                // Small delay to ensure smooth entry visual
+                // Sound permission popup always on load
+                this.update({ showSoundPopup: true });
+
+
                 // Connect to live query WebSocket for real-time updates
                 this.connectLiveQuery();
 
@@ -980,7 +1008,7 @@
                             currentChannel: data.currentChannel,
                             currentChannelData: data.currentChannelData,
                             channelId: data.channelId,
-                            messages: data.messages.filter(m => !m.thread_parent_id),
+                            messages: data.currentChannel === 'mentions' ? data.messages : data.messages.filter(m => !m.thread_parent_id),
                             allMessages: newAllMessages
                         });
 
@@ -989,6 +1017,7 @@
 
                         // Refocus input
                         setTimeout(() => {
+                            const input = this.root.querySelector('textarea');
                             if (input) input.focus();
                             if (!highlightMsgId) {
                                 this.scrollToBottom(true);
@@ -1074,59 +1103,7 @@
                     };
                 } catch (e) { console.error(e); }
 
-                // Start polling for huddle state changes (fallback for live query delays)
-                this.startHuddlePolling();
-            },
-
-            startHuddlePolling() {
-                // Clear any existing polling interval
-                if (this.huddlePollingInterval) {
-                    clearInterval(this.huddlePollingInterval);
-                }
-
-                // Poll immediately on start
-                this.pollHuddleState();
-
-                // Then poll every 1 second for faster updates
-                this.huddlePollingInterval = setInterval(() => {
-                    this.pollHuddleState();
-                }, 1000);
-            },
-
-            async pollHuddleState() {
-                if (!this.state.currentChannelData?._key) return;
-
-                try {
-                    const res = await fetch(`/talks/channel_info?channel_id=${this.state.currentChannelData._key}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.channel) {
-                            // Only update if participants changed
-                            const current = JSON.stringify(this.state.currentChannelData?.active_call_participants || []);
-                            const updated = JSON.stringify(data.channel.active_call_participants || []);
-                            if (current !== updated) {
-                                console.log('[Huddle Poll] Participants changed:', current, '->', updated);
-                                this.update({
-                                    currentChannelData: {
-                                        ...this.state.currentChannelData,
-                                        active_call_participants: data.channel.active_call_participants || []
-                                    }
-                                });
-                            }
-                        }
-                    } else {
-                        console.log('[Huddle Poll] Error response:', res.status);
-                    }
-                } catch (e) {
-                    console.log('[Huddle Poll] Fetch error:', e.message);
-                }
-            },
-
-            stopHuddlePolling() {
-                if (this.huddlePollingInterval) {
-                    clearInterval(this.huddlePollingInterval);
-                    this.huddlePollingInterval = null;
-                }
+                // Huddle polling removed in favor of live query
             },
 
             updateCallParticipants(participants) {
@@ -1175,8 +1152,8 @@
                         const query = `
                             LET my_user_key = "${my_user_key}"
                             FOR c IN channels
-                                FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
-                                SORT c.name ASC
+                                FILTER c.type == "system" OR c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                                SORT c.type DESC, c.name ASC
                                 RETURN c
                         `;
                         this.channelsListWs.send(JSON.stringify({
@@ -1353,9 +1330,13 @@
                                         // Sound notification
                                         if (this.state.initialSyncDone && m.sender !== this.getUsername(this.props.currentUser)) {
                                             const myUsername = this.getUsername(this.props.currentUser);
-                                            const isMention = m.text && m.text.includes('@' + myUsername);
+                                            const myEmail = this.props.currentUser.email;
 
-                                            if (isMention) {
+                                            // Matches mentions channel logic
+                                            const isMention = m.text && m.text.includes('@' + myUsername);
+                                            const isQuote = m.quoted_message && (m.quoted_message.sender === myUsername || m.quoted_message.sender === myEmail);
+
+                                            if (isMention || isQuote) {
                                                 this.playSound('notification');
                                             } else if (document.hidden || !document.hasFocus()) {
                                                 this.playSound('discreet');
@@ -1374,6 +1355,12 @@
                                     let unreadChanged = false;
 
                                     if (hasNewItems && this.state.initialSyncDone) {
+                                        let mentionsChannelId = null;
+                                        if (this.state.channels) {
+                                            const mChannel = this.state.channels.find(c => c.name === 'mentions' && c.type === 'system');
+                                            if (mChannel) mentionsChannelId = mChannel._id;
+                                        }
+
                                         newMessages.forEach(m => {
                                             if (!currentKeys.has(m._key)) {
                                                 // If message is NOT in current channel, mark channel as unread
@@ -1381,12 +1368,71 @@
                                                     unread[m.channel_id] = true;
                                                     unreadChanged = true;
                                                 }
+
+                                                // Also mark 'mentions' channel as unread if it's a mention/quote
+                                                // And we are not currently looking at the mentions channel
+                                                if (mentionsChannelId && this.state.currentChannel !== 'mentions') {
+                                                    const username = this.getUsername(this.props.currentUser);
+                                                    const email = this.props.currentUser.email;
+                                                    const emailPrefix = email.split('@')[0];
+                                                    const isMention = m.text && (
+                                                        m.text.includes('@' + username) ||
+                                                        m.text.includes('@' + email) ||
+                                                        m.text.includes('@' + emailPrefix)
+                                                    );
+                                                    const isQuote = m.quoted_message && (m.quoted_message.sender === username || m.quoted_message.sender === email);
+
+                                                    if (isMention || isQuote) {
+                                                        unread[mentionsChannelId] = true;
+                                                        unreadChanged = true;
+                                                    }
+                                                }
                                             }
                                         });
                                     }
 
                                     // Filter for current channel display (exclude thread replies)
-                                    const filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId) && !m.thread_parent_id);
+                                    let filtered;
+                                    if (this.state.currentChannel === 'mentions') {
+                                        // For mentions, we can't just filter 'updated' (allMessages) because it might not contain
+                                        // historical mentions from other channels that were loaded via API but not in allMessages cache.
+                                        // So we merge updates into the current 'this.state.messages'.
+
+                                        const username = this.getUsername(this.props.currentUser);
+                                        const email = this.props.currentUser.email;
+
+                                        // Start with current view messages
+                                        const currentViewMap = new Map((this.state.messages || []).map(m => [m._key, m]));
+
+                                        // Apply updates from newMap (which contains WS payload)
+                                        // But only if they match the mention criteria
+                                        newMessages.forEach(m => {
+                                            // For mentions channel, we DO want thread replies if they are mentions
+                                            // So we remove the early return for thread_parent_id
+
+                                            const emailPrefix = email.split('@')[0];
+                                            const isMention = m.text && (
+                                                m.text.includes('@' + username) ||
+                                                m.text.includes('@' + email) ||
+                                                m.text.includes('@' + emailPrefix)
+                                            );
+                                            const isQuote = m.quoted_message && (m.quoted_message.sender === username || m.quoted_message.sender === email);
+
+                                            if (isMention || isQuote) {
+                                                currentViewMap.set(m._key, m);
+                                            } else if (currentViewMap.has(m._key)) {
+                                                // If it was a mention but edited to no longer be one?
+                                                // Or if we just got an update for a message we show.
+                                                // If it's an update to an existing message in our view, update it.
+                                                currentViewMap.set(m._key, m);
+                                            }
+                                        });
+
+                                        filtered = Array.from(currentViewMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+                                    } else {
+                                        filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId) && !m.thread_parent_id);
+                                    }
 
                                     // Handle open thread updates
                                     let threadMessagesUpdate = null;
@@ -1403,9 +1449,22 @@
 
                                     const updateData = {
                                         allMessages: updated,
-                                        messages: filtered,
+                                        messages: filtered, // This needs to be a new array reference for Riot to detect change
                                         initialSyncDone: true
                                     };
+
+                                    // Force update trigger for deep changes (like reactions)
+                                    // Riot generally handles new object references, so filtered (new array) should work.
+                                    // But we also need to ensure we don't block it in onBeforeUpdate if we were relying on that.
+
+                                    // Force emoji reaction updates by ensuring deep clone or new reference if needed
+                                    // effectively 'filtered' variable above is already a new array of objects (some new, some old references)
+                                    // If 'updated' contains new object references for changed messages (from line 1347), then 'filtered' will too.
+                                    // Line 1347: return newData; -> newData comes from newMap which comes from the WebSocket payload (new object).
+                                    // So references ARE updated.
+
+                                    // Issue might be onBeforeUpdate overriding 'messages' derived from 'state.allMessages'.
+                                    // Let's ensure we are setting it here correctly.
                                     if (threadMessagesUpdate) {
                                         updateData.threadMessages = threadMessagesUpdate;
                                     }
@@ -1469,8 +1528,15 @@
                 }
 
                 // Update filtered messages if allMessages changed (WebSocket update)
-                if (state.allMessages !== this.state.allMessages) {
-                    state.messages = state.allMessages.filter(m => String(m.channel_id) === String(state.channelId));
+                // BUT only if we haven't already updated 'messages' in the incoming state (e.g. from connectLiveQuery)
+                // AND we are not in the 'mentions' channel (which has complex filtering logic not easily replicated here synchronously)
+                if (state.allMessages !== this.state.allMessages && state.messages === this.state.messages) {
+                    if (state.currentChannel !== 'mentions') {
+                        state.messages = state.allMessages.filter(m => String(m.channel_id) === String(state.channelId));
+                    }
+                    // For 'mentions' channel, we rely on the controller or manual updates for now,
+                    // or we would need to replicate the complex filter logic here.
+                    // Live updates for mentions channel might be tricky without full data.
                 }
 
                 // Pre-calculate user channels for DM unread dots if users changed
@@ -1587,6 +1653,17 @@
                 }
             },
 
+            handleQuoteMessage(message, e) {
+                if (e) e.stopPropagation();
+                this.update({ quotedMessage: message });
+                const textarea = this.root.querySelector('textarea');
+                if (textarea) textarea.focus();
+            },
+
+            cancelQuote() {
+                this.update({ quotedMessage: null });
+            },
+
             // Send a new message to the API
             async sendMessage(textareaElOrEvent) {
                 // Get textarea from passed element, refs, or querySelector
@@ -1595,9 +1672,20 @@
                     ? textareaElOrEvent
                     : (this.refs && this.refs.messageInput) ||
                     this.root.querySelector('[ref="messageInput"]');
-                const text = textarea?.value?.trim();
+                const text = textarea?.value?.trim() || '';
+                let quotedMessagePayload = null;
 
-                if ((!text && this.state.files.length === 0) || this.state.sending) return;
+                if (this.state.quotedMessage) {
+                    quotedMessagePayload = {
+                        _id: this.state.quotedMessage._id,
+                        sender: this.state.quotedMessage.sender,
+                        text: this.state.quotedMessage.text
+                    };
+                }
+
+                const textToCheck = text; // Check user input only
+
+                if ((!textToCheck && this.state.files.length === 0) || this.state.sending) return;
 
                 this.update({ sending: true });
 
@@ -1623,9 +1711,11 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             channel: this.state.channelId,
+                            channel: this.state.channelId,
                             text: text,
                             sender: this.getUsername(this.props.currentUser),
-                            attachments: attachments
+                            attachments: attachments,
+                            quoted_message: quotedMessagePayload
                         })
                     });
 
@@ -1633,7 +1723,8 @@
                         const data = await response.json();
                         this.update({
                             sending: false,
-                            files: [] // Clear files after send
+                            files: [], // Clear files after send
+                            quotedMessage: null // Clear quote
                         });
                         textarea.value = '';
                         this.scrollToBottom(true);
@@ -1923,6 +2014,39 @@
                 }
             },
 
+
+            dismissSoundPopup() {
+                localStorage.setItem('talks_sound_enabled', 'dismissed');
+                this.update({ showSoundPopup: false });
+            },
+
+            activateSounds() {
+                localStorage.setItem('talks_sound_enabled', 'true');
+
+                // Try to unlock audio context if one exists or just play a dummy sound
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    const ctx = new AudioContext();
+                    ctx.resume().then(() => {
+                        // Play a silent short beep to ensure unlocking
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(0);
+                        osc.stop(0.001);
+                    }).catch(e => console.error("Audio unlock failed", e));
+                }
+
+                // Play a nice success sound if available (optional, purely for feedback)
+                try {
+                    const audio = new Audio('/sounds/notification.mp3');
+                    audio.volume = 0.5;
+                    audio.play().catch(() => { });
+                } catch (e) { }
+
+                this.update({ showSoundPopup: false });
+            },
 
             scrollToBottom(force = false) {
                 if (this.isUserScrolledUp && !force) return;
@@ -2604,6 +2728,20 @@
                                 this.playSound('ringtone');
                                 this.showCallNotification(caller, data.call_type);
                             }
+                        } else if (signal.type === 'bye') {
+                            // Handle cancellation of incoming call (caller hung up before we answered)
+                            console.log('[Signaling] Incoming call cancelled by', fromUser);
+                            if (this.state.incomingCalls && this.state.incomingCalls.length > 0) {
+                                const remaining = this.state.incomingCalls.filter(c => c.from_user !== fromUser);
+                                if (remaining.length !== this.state.incomingCalls.length) {
+                                    console.log('[Signaling] Removed cancelled incoming call');
+                                    this.update({ incomingCalls: remaining });
+                                    if (remaining.length === 0) {
+                                        this.stopSound('ringtone');
+                                        this.closeCallNotification();
+                                    }
+                                }
+                            }
                         }
                         return;
                     }
@@ -2667,13 +2805,19 @@
 
                             this.closePeerConnection(fromUser);
 
-                            // If this was the last peer, auto-hangup ONLY for DM calls (1-on-1)
-                            // For huddles, the user stays in the call waiting for others
-                            const remainingPeers = Object.keys(this.peerConnections).length;
+                            // If this was a DM call, auto-hangup immediately when peer leaves
+                            // For group calls (huddles), stay connected until user hangs up explicitly
                             const isDMCall = this.state.currentChannelData?.type === 'dm';
-                            if (remainingPeers === 0 && this.state.activeCall && isDMCall) {
-                                console.log('[Signaling] Last peer disconnected from DM call, ending call');
+                            if (this.state.activeCall && isDMCall) {
+                                console.log('[Signaling] Peer disconnected from DM call, ending call locally');
                                 this.hangup();
+                            } else {
+                                // For group calls, just remove the peer connection
+                                // If no peers left, we stay in the room waiting for others (standard huddle behavior)
+                                const remainingPeers = Object.keys(this.peerConnections).length;
+                                if (remainingPeers === 0 && this.state.activeCall && !isDMCall) {
+                                    // Optional: could auto-leave empty group calls if desired, but huddles usually persist
+                                }
                             }
                             break;
                     }
@@ -2761,6 +2905,9 @@
 
             declineCall(call) {
                 const incoming = call;
+                // Send bye signal so the caller stops ringing
+                this.sendSignal(incoming.from_user, 'bye', {});
+
                 // Remove from list
                 const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
                 this.update({ incomingCalls: remaining });
@@ -2880,6 +3027,19 @@
                 console.log('[hangup] Stopping all sounds, ringtoneInterval:', !!this.ringtoneInterval, 'callingInterval:', !!this.callingInterval);
                 this.stopSound('ringtone');
                 this.stopSound('calling');
+
+                // If DM, ensure we send bye to the other user even if not connected (canceling ring)
+                if (this.state.currentChannelData?.type === 'dm' && this.state.currentChannelData.name) {
+                    const parts = this.state.currentChannelData.name.split('_');
+                    if (parts.length === 3) {
+                        const myKey = this.props.currentUser._key;
+                        const otherKey = parts[1] === myKey ? parts[2] : parts[1];
+                        // If we are not connected to them (e.g. still ringing), we must send bye
+                        if (otherKey && !this.peerConnections[otherKey]) {
+                            this.sendSignal(otherKey, 'bye', {});
+                        }
+                    }
+                }
 
                 const channelId = this.state.activeCall?.channelId;
 

@@ -97,13 +97,69 @@ window.TalksMixin = {
         let match;
         while ((match = codeBlockRegex.exec(text)) !== null) {
             if (match.index > lastIndex) {
-                parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+                const textBefore = text.substring(lastIndex, match.index);
+                parts.push(...this.parseQuotes(textBefore));
             }
             parts.push({ type: 'code', lang: match[1] || 'text', content: match[2].trim() });
             lastIndex = match.index + match[0].length;
         }
-        if (lastIndex < text.length) parts.push({ type: 'text', content: text.substring(lastIndex) });
+        if (lastIndex < text.length) {
+            const textAfter = text.substring(lastIndex);
+            parts.push(...this.parseQuotes(textAfter));
+        }
         if (parts.length === 0) parts.push({ type: 'text', content: text });
+        return parts;
+    },
+
+    parseQuotes(text) {
+        if (!text) return [{ type: 'text', content: '' }];
+
+        const lines = text.split('\n');
+        const parts = [];
+        let buffer = [];
+        let inQuote = false;
+
+        const flush = () => {
+            if (buffer.length === 0) return;
+
+            if (inQuote) {
+                // Process quote block
+                let sender = null;
+                const contentLines = buffer.map(l => {
+                    let c = l.trim().substring(1);
+                    return c.startsWith(' ') ? c.substring(1) : c;
+                });
+
+                // Extract sender from first line if matches "From User:"
+                if (contentLines.length > 0 && contentLines[0].startsWith('From ') && contentLines[0].endsWith(':')) {
+                    sender = contentLines[0].substring(5, contentLines[0].length - 1);
+                    contentLines.shift();
+                }
+
+                parts.push({
+                    type: 'quote',
+                    content: contentLines.join('\n'),
+                    sender: sender
+                });
+            } else {
+                parts.push({ type: 'text', content: buffer.join('\n') });
+            }
+            buffer = [];
+        };
+
+        lines.forEach(line => {
+            const isQuote = line.trim().startsWith('>');
+
+            if (isQuote !== inQuote) {
+                // State change
+                if (buffer.length > 0) flush();
+                inQuote = isQuote;
+            }
+            buffer.push(line);
+        });
+
+        flush();
+
         return parts;
     },
 
@@ -164,6 +220,15 @@ window.TalksMixin = {
         if (droppedFiles.length > 0) {
             this.update({
                 files: [...(this.state.files || []), ...droppedFiles]
+            });
+        }
+    },
+
+    addFiles(fileList) {
+        const files = Array.from(fileList);
+        if (files.length > 0) {
+            this.update({
+                files: [...(this.state.files || []), ...files]
             });
         }
     },

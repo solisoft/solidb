@@ -192,9 +192,17 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       return
     end
 
-    -- Fetch all channels (standard + private where user is member)
-    local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR (c.type == 'private' AND @me IN c.members) SORT c.name ASC RETURN c", { me = current_user._key })
+    -- Seed mentions channel if not exists
+    local mentionsRes = db:Sdbql("FOR c IN channels FILTER c.name == 'mentions' RETURN c")
+    if mentionsRes and mentionsRes.result and #mentionsRes.result == 0 then
+        db:CreateDocument("channels", { name = "mentions", type = "system" })
+    end
+
+    -- Fetch all channels (standard + private where user is member + system)
+    local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR c.type == 'system' OR (c.type == 'private' AND @me IN c.members) SORT c.type DESC, c.name ASC RETURN c", { me = current_user._key })
     local channels = (channelsRes and channelsRes.result) or {}
+    
+    -- (mentions channel removed from virtual injection)
 
     -- Get current channel (default to first channel from DB)
     local currentChannel = GetParam("channel") or "general"
@@ -287,14 +295,60 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
 
     -- Fetch messages for current channel using the resolved channel ID
-    local messagesRes = db:Sdbql(
-      [[
-        FOR m IN messages FILTER m.channel_id == @channelId
-        SORT m.timestamp ASC RETURN m
-      ]],
-      { channelId = channelRes._id }
-    )
-    local messages = (messagesRes and messagesRes.result) or {}
+    -- Fetch messages for current channel
+    local messages = {}
+    if channelRes.name == "mentions" then
+        -- Consolidated query for mentions:
+        -- 1. Messages where the text contains "@username"
+        -- 2. Messages that are quotes of the user's messages (quoted_message.sender == user.username (or email logic))
+        -- 3. Thread replies in threads the user participated in (this is harder to track without an index, maybe skip for now or rely on thread_participants attribute if we added it)
+        -- Let's focus on text mentions and quotes.
+        
+        -- Determine user identifier for mentions/quotes
+        local username = current_user.firstname and current_user.lastname 
+                        and (current_user.firstname .. " " .. current_user.lastname)
+                        or current_user.email
+        
+        local email_handle = string.match(current_user.email, "^[^@]+")
+        
+        local mentionsQuery = [[
+            LET username = @username
+            LET user_email = @email
+            LET handle = @handle
+            
+            FOR m IN messages 
+            FILTER (
+                CONTAINS(m.text, CONCAT("@", username))
+                OR
+                CONTAINS(m.text, CONCAT("@", user_email))
+                OR
+                CONTAINS(m.text, CONCAT("@", handle))
+                OR
+                (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
+                OR
+                (m.thread_participants != null AND POSITION(m.thread_participants, username))
+            )
+            SORT m.timestamp ASC 
+            RETURN m
+        ]]
+        
+        local mentionsRes = db:Sdbql(mentionsQuery, { 
+            username = username,
+            email = current_user.email,
+            handle = email_handle
+        })
+        messages = (mentionsRes and mentionsRes.result) or {}
+    else
+        -- Standard channel messages
+        local messagesRes = db:Sdbql(
+          [[
+            FOR m IN messages FILTER m.channel_id == @channelId
+            SORT m.timestamp ASC RETURN m
+          ]],
+          { channelId = channelRes._id }
+        )
+        messages = (messagesRes and messagesRes.result) or {}
+    end
 
     -- Fetch all users for the sidebar
     local usersRes = db:Sdbql("FOR u IN users RETURN { _key: u._key, _id: u._id, firstname: u.firstname, lastname: u.lastname, email: u.email, status: u.status, connection_count: u.connection_count }")
@@ -390,14 +444,54 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
 
     -- Fetch messages for this channel
-    local messagesRes = db:Sdbql(
-      [[
-        FOR m IN messages FILTER m.channel_id == @channelId
-        SORT m.timestamp ASC RETURN m
-      ]],
-      { channelId = channelRes._id }
-    )
-    local messages = (messagesRes and messagesRes.result) or {}
+    -- Fetch messages for this channel
+    local messages = {}
+    
+    if channelRes.name == "mentions" then
+         -- Determine user identifier for mentions/quotes
+        local username = current_user.firstname and current_user.lastname 
+                        and (current_user.firstname .. " " .. current_user.lastname)
+                        or current_user.email
+        
+        local email_handle = string.match(current_user.email, "^[^@]+")
+        
+        local mentionsQuery = [[
+            LET username = @username
+            LET user_email = @email
+            LET handle = @handle
+            
+            FOR m IN messages 
+            FILTER (
+                CONTAINS(m.text, CONCAT("@", username))
+                OR
+                CONTAINS(m.text, CONCAT("@", user_email))
+                OR
+                CONTAINS(m.text, CONCAT("@", handle))
+                OR
+                (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
+                OR
+                (m.thread_participants != null AND POSITION(m.thread_participants, username))
+            )
+            SORT m.timestamp ASC 
+            RETURN m
+        ]]
+        
+        local mentionsRes = db:Sdbql(mentionsQuery, { 
+            username = username,
+            email = current_user.email,
+            handle = email_handle
+        })
+        messages = (mentionsRes and mentionsRes.result) or {}
+    else
+        local messagesRes = db:Sdbql(
+          [[
+            FOR m IN messages FILTER m.channel_id == @channelId
+            SORT m.timestamp ASC RETURN m
+          ]],
+          { channelId = channelRes._id }
+        )
+        messages = (messagesRes and messagesRes.result) or {}
+    end
 
     -- Update user's last seen for this channel
     local seen = current_user.channel_last_seen or {}
@@ -835,16 +929,24 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       return
     end
 
+    local quoted_message = body.quoted_message
+    
     -- Create the message
     local timestamp = os.time()
-    local result = db:CreateDocument("messages", {
+    local doc = {
        channel_id = channel,
        sender = sender,
        text = text,
        timestamp = timestamp,
        attachments = attachments,
        reactions = {}
-    })
+    }
+
+    if quoted_message then
+        doc.quoted_message = quoted_message
+    end
+
+    local result = db:CreateDocument("messages", doc)
 
     -- Update channel's latest_message_received
     -- We filter by _id (if channel arg is an ID) or _key
