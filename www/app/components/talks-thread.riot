@@ -120,6 +120,15 @@
                 'talks-input': Input
             },
             ...window.TalksMixin,
+            getInitials(sender) {
+                if (!sender) return '';
+                // Split by dot, underscore, dash, OR SPACE
+                const parts = sender.split(/[._\-\s]+/);
+                if (parts.length >= 2) {
+                    return (parts[0][0] + parts[1][0]).toUpperCase();
+                }
+                return sender.substring(0, 2).toUpperCase();
+            },
             state: {
                 sending: false,
                 files: [],

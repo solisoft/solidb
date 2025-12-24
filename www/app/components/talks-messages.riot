@@ -14,8 +14,8 @@
                             group.label }</span>
                         <div class="flex-grow border-t border-gray-800"></div>
                     </div>
-                    <div each={ message in group.messages } id={ 'msg-' + message._key } class={ getMessageRowClass(message)
-                        }>
+                    <div each={ message in group.messages } id={ 'msg-' + message._key } class={
+                        getMessageRowClass(message) }>
                         <div class={ getAvatarClass(message.sender) }>{ getInitials(message.sender) }</div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-baseline mb-1">
@@ -61,12 +61,15 @@
                                         <span each={ segment in parseTextWithLinks(part.content) }>
                                             <span if={ segment.type==='text' }>{ segment.content }</span>
                                             <span if={ segment.type==='mention' } onclick={ (e)=> handleMentionClick(e,
-                                                segment.content) } class="text-blue-400 hover:text-blue-300 hover:underline
-                                                cursor-pointer font-medium bg-blue-500/10 px-0.5 rounded transition-colors"
+                                                segment.content) } class="text-blue-400 hover:text-blue-300
+                                                hover:underline
+                                                cursor-pointer font-medium bg-blue-500/10 px-0.5 rounded
+                                                transition-colors"
                                                 title={ getMentionTitle(segment.content) }>@{ segment.content }</span>
                                             <a if={ segment.type==='link' } href={ segment.url } target="_blank"
                                                 rel="noopener noreferrer"
-                                                class="text-blue-400 hover:text-blue-300 hover:underline">{ segment.display
+                                                class="text-blue-400 hover:text-blue-300 hover:underline">{
+                                                segment.display
                                                 }</a>
                                             <code if={ segment.type==='code' }
                                                 class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700">{ segment.content }</code>
@@ -83,7 +86,8 @@
                                         <div
                                             class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
                                             <span class="text-xs font-mono text-gray-500">code</span>
-                                            <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
+                                            <span
+                                                class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
                                                 part.lang || 'text' }</span>
                                         </div>
                                         <pre
@@ -99,7 +103,8 @@
                                             class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words">
                                             <span each={ segment in parseTextWithLinks(part.content) }>
                                                 <span if={ segment.type==='text' }>{ segment.content }</span>
-                                                <span if={ segment.type==='mention' } onclick={ (e)=> handleMentionClick(e,
+                                                <span if={ segment.type==='mention' } onclick={ (e)=>
+                                                    handleMentionClick(e,
                                                     segment.content) } class="text-indigo-400 hover:text-indigo-300
                                                     hover:underline cursor-pointer font-medium" title={
                                                     getMentionTitle(segment.content) }>@{ segment.content }</span>
@@ -109,11 +114,13 @@
                                                     decoration-indigo-500/30">{ segment.display }</a>
                                                 <code if={ segment.type==='code' }
                                                     class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20">{ segment.content }</code>
-                                                <strong if={ segment.type==='bold' } class="font-semibold text-indigo-200">{
+                                                <strong if={ segment.type==='bold' }
+                                                    class="font-semibold text-indigo-200">{
                                                     segment.content }</strong>
                                                 <em if={ segment.type==='italic' } class="italic text-indigo-200/80">{
                                                     segment.content }</em>
-                                                <span if={ segment.type==='strike' } class="line-through text-gray-500">{
+                                                <span if={ segment.type==='strike' }
+                                                    class="line-through text-gray-500">{
                                                     segment.content }</span>
                                             </span>
                                         </div>
@@ -131,8 +138,9 @@
                                         </div>
                                         <div class="p-3">
                                             <div class="flex items-center gap-2 mb-1">
-                                                <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon }
-                                                    class="w-4 h-4 rounded" onerror={ (e)=> e.target.style.display='none' }
+                                                <img if={ props.ogCache[url].favicon } src={ props.ogCache[url].favicon
+                                                    } class="w-4 h-4 rounded" onerror={ (e)=>
+                                                e.target.style.display='none' }
                                                 />
                                                 <span class="text-xs text-gray-500">{ props.ogCache[url].site_name ||
                                                     getDomain(url) }</span>
@@ -150,7 +158,8 @@
                                 class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner">
                                 <div
                                     class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                                    <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename }</span>
+                                    <span class="text-xs font-mono text-gray-500">{ message.code_sample.filename
+                                        }</span>
                                     <span class="text-[10px] text-gray-600 uppercase tracking-widest font-bold">{
                                         message.code_sample.language }</span>
                                 </div>
@@ -179,11 +188,13 @@
                             <div class="mt-0.5 flex flex-wrap gap-1.5 items-center">
                                 <div each={ reaction in (message.reactions || []) } class="relative group/reaction">
                                     <button onclick={ (e)=> props.toggleReaction(message, reaction.emoji, e) } class={
-                                        getReactionClass(reaction) }>{ reaction.emoji } <span class="ml-1 text-gray-400">{
+                                        getReactionClass(reaction) }>{ reaction.emoji } <span
+                                            class="ml-1 text-gray-400">{
                                             reaction.users ? reaction.users.length : 0 }</span></button>
                                 </div>
                                 <div if={ message.thread_count && message.thread_count> 0 } onclick={ (e) =>
-                                    handleThreadClick(message, e) } class="flex items-center gap-2 text-sm cursor-pointer
+                                    handleThreadClick(message, e) } class="flex items-center gap-2 text-sm
+                                    cursor-pointer
                                     group/thread ml-1 mr-1">
                                     <div class="flex -space-x-1.5">
                                         <div each={ (participant, idx) in getThreadParticipants(message).slice(0, 3) }
@@ -191,17 +202,20 @@
                                             getInitials(participant) }</div>
                                         <div if={ getThreadParticipants(message).length> 3 } class="w-5 h-5 rounded-full
                                             flex items-center justify-center text-[8px] font-bold text-white bg-gray-600
-                                            border-2 border-[#1A1D21]">+{ getThreadParticipants(message).length - 3 }</div>
+                                            border-2 border-[#1A1D21]">+{ getThreadParticipants(message).length - 3 }
+                                        </div>
                                     </div>
                                     <span class="text-blue-400 text-xs group-hover/thread:underline font-medium">{
-                                        message.thread_count } { message.thread_count === 1 ? 'reply' : 'replies' }</span>
+                                        message.thread_count } { message.thread_count === 1 ? 'reply' : 'replies'
+                                        }</span>
                                 </div>
                                 <div class="relative group/emoji">
                                     <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) } class="p-1.5 rounded
                                         text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
                                         group-hover:opacity-100"><i class="far fa-smile text-sm"></i></button>
                                 </div>
-                                <div if={ !message.thread_count || message.thread_count===0 } class="relative group/reply">
+                                <div if={ !message.thread_count || message.thread_count===0 }
+                                    class="relative group/reply">
                                     <button onclick={ (e)=> handleThreadClick(message, e) } class="p-1.5 rounded
                                         text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
                                         group-hover:opacity-100" title="Reply in thread"><i
@@ -228,6 +242,15 @@
     <script>
         export default {
             ...window.TalksMixin,
+            getInitials(sender) {
+                if (!sender) return '';
+                // Split by any non-alphanumeric character (space, dot, dash, etc)
+                const parts = sender.split(/[^a-zA-Z0-9]+/);
+                if (parts.length >= 2) {
+                    return (parts[0][0] + parts[1][0]).toUpperCase();
+                }
+                return sender.substring(0, 2).toUpperCase();
+            },
             onMounted() {
                 this.highlightCode();
                 if (this.props.highlightMessageId) {
@@ -358,18 +381,21 @@
                 if (!message.thread_participants) return [];
                 return message.thread_participants;
             },
-            getParticipantAvatarColor(participant, index) {
+            getParticipantAvatarColor(participant) {
                 const colors = [
-                    'bg-gradient-to-br from-indigo-500 to-purple-600',
-                    'bg-gradient-to-br from-green-500 to-teal-600',
-                    'bg-gradient-to-br from-orange-500 to-red-600',
-                    'bg-gradient-to-br from-blue-500 to-cyan-600',
-                    'bg-gradient-to-br from-pink-500 to-rose-600'
+                    'bg-purple-600', 'bg-indigo-600', 'bg-green-600',
+                    'bg-blue-600', 'bg-pink-600', 'bg-yellow-600', 'bg-red-600'
                 ];
-                return colors[index % colors.length];
+                let hash = 0;
+                if (participant) {
+                    for (let i = 0; i < participant.length; i++) {
+                        hash = participant.charCodeAt(i) + ((hash << 5) - hash);
+                    }
+                }
+                return colors[Math.abs(hash) % colors.length];
             },
             getParticipantClass(participant, idx) {
-                return 'w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1A1D21] ' + this.getParticipantAvatarColor(participant, idx);
+                return 'w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1A1D21] ' + this.getParticipantAvatarColor(participant);
             },
             getCodeBlockClass(lang) {
                 return 'block p-4 language-' + (lang || 'text');

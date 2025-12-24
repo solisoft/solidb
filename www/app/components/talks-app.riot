@@ -2289,9 +2289,10 @@
 
 
             // Helper: Get initials from sender name
+            // Helper: Get initials from sender name
             getInitials(sender) {
                 if (!sender) return '';
-                const parts = sender.split(/[._-]/);
+                const parts = sender.split(/[._\-\s]+/);
                 if (parts.length >= 2) {
                     return (parts[0][0] + parts[1][0]).toUpperCase();
                 }
