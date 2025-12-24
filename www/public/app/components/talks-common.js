@@ -1,4 +1,4 @@
-export default {
+window.TalksMixin = {
     getUsername(user) {
         if (!user) return 'anonymous';
         if (user.username) return user.username;

@@ -120,10 +120,8 @@
         </div>
     </aside>
     <script>
-        import TalksMixin from './talks-common.js'
-
         export default {
-            ...TalksMixin,
+            ...window.TalksMixin,
             onMounted() {
                 console.log('Sidebar mounted');
             },

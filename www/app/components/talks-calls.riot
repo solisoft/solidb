@@ -161,6 +161,7 @@
 
     <script>
         export default {
+            ...window.TalksMixin,
             onMounted() {
                 // Initialize popups list animation if needed
             },
@@ -186,21 +187,7 @@
                 // Actually talks-app attaches via ID often, but let's leave it to parent or existing logic.
             },
 
-            getInitials(name) {
-                return (name || '').substring(0, 2).toUpperCase();
-            },
 
-            getUsername(user) {
-                if (!user) return 'Unknown';
-                return user.firstname || user.username || user.email || 'User';
-            },
-
-            formatCallDuration(seconds) {
-                if (!seconds) return '00:00';
-                const mins = Math.floor(seconds / 60);
-                const secs = Math.floor(seconds % 60);
-                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            },
 
             getGridStyle(count) {
                 // Adaptive Grid Logic

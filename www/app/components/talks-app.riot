@@ -381,7 +381,6 @@
         import Messages from '/app/components/talks-messages.riot.js'
         import Input from '/app/components/talks-input.riot.js'
         import Calls from '/app/components/talks-calls.riot.js'
-        import TalksMixin from './talks-common.js'
 
         export default {
             components: {
@@ -391,7 +390,7 @@
                 'talks-input': Input,
                 'talks-calls': Calls
             },
-            ...TalksMixin,
+            ...window.TalksMixin,
             onBeforeMount() {
                 this.dragCounter = 0;
                 this.isUserScrolledUp = false;

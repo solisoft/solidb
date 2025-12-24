@@ -1,4 +1,4 @@
-export default {
+window.TalksMixin = {
     getUsername(user) {
         if (!user) return 'anonymous';
         if (user.username) return user.username;
@@ -119,4 +119,7 @@ export default {
         }
         return url;
     }
-}
+};
+
+// Export for browser-side imports (ES modules) - REMOVED to support standard script loading
+// export default talksCommon;
