@@ -2023,22 +2023,8 @@
             activateSounds() {
                 localStorage.setItem('talks_sound_enabled', 'true');
 
-                // Try to unlock audio context if one exists or just play a dummy sound
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (AudioContext) {
-                    const ctx = new AudioContext();
-                    ctx.resume().then(() => {
-                        // Play a silent short beep to ensure unlocking
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.connect(gain);
-                        gain.connect(ctx.destination);
-                        osc.start(0);
-                        osc.stop(0.001);
-                    }).catch(e => console.error("Audio unlock failed", e));
-                }
-
-                // Play a nice success sound
+                // Play a nice success sound - this will also unlock the AudioContext
+                // since we are in a user interaction event
                 this.playSound('notification');
 
                 this.update({ showSoundPopup: false });
