@@ -26,7 +26,7 @@ var talksApp = {
         sending: false,
         audioSuspended: false,
         allMessages: this.props.messages || [],
-        messages: this.props.messages || [],
+        messages: (this.props.messages || []).filter(m => !m.thread_parent_id),
         ogCache: {},
         // Cache for Open Graph metadata
         lightboxImage: null,
@@ -93,7 +93,12 @@ var talksApp = {
         showThreadSidebar: false,
         threadParentMessage: null,
         threadMessages: [],
-        threadLoading: false
+        threadLoading: false,
+        // Call state
+        isCallFullscreen: false,
+        // Quote State
+        quotedMessage: null,
+        showSoundPopup: false
       };
       // Ensure favorites array exists and is an array
       if (!Array.isArray(this.state.currentUser.favorites)) {
@@ -266,14 +271,23 @@ var talksApp = {
     },
     toggleMembersPanel() {
       this.update({
-        showMembersPanel: !this.state.showMembersPanel
+        showMembersPanel: !this.state.showMembersPanel,
+        showThreadSidebar: false,
+        showSearchSidebar: false
       });
     },
     // Thread methods
     async openThread(message, e) {
       if (e) e.stopPropagation();
+
+      // If already loading this thread, ignore
+      if (this.state.threadLoading && this.state.threadParentMessage && this.state.threadParentMessage._id === message._id) {
+        return;
+      }
       this.update({
         showThreadSidebar: true,
+        showSearchSidebar: false,
+        showMembersPanel: false,
         threadParentMessage: message,
         threadMessages: [],
         threadLoading: true
@@ -307,24 +321,30 @@ var talksApp = {
       });
     },
     handleThreadReplySent(newMessage) {
-      // Add the new message to thread messages
-      const threadMessages = [...this.state.threadMessages, newMessage];
-      this.update({
-        threadMessages
-      });
+      let threadMessages = this.state.threadMessages;
+      let messagesUpdated = false;
+
+      // Check if message already exists (via Live Query race)
+      if (!threadMessages.some(m => m._id === newMessage._id)) {
+        threadMessages = [...threadMessages, newMessage];
+        messagesUpdated = true;
+      }
+
+      // Calculate real count based on threadMessages length
+      // This ensures we sync with actual thread content regardless of race conditions
+      const threadCount = threadMessages.length;
+      const sender = newMessage.sender;
 
       // Update the parent message's thread count and participants in the main messages list
       const messages = this.state.messages.map(msg => {
         if (msg._id === this.state.threadParentMessage._id) {
-          const newCount = (msg.thread_count || 0) + 1;
-          const participants = msg.thread_participants || [];
-          const sender = newMessage.sender;
+          const participants = [...(msg.thread_participants || [])];
           if (!participants.includes(sender)) {
             participants.push(sender);
           }
           return {
             ...msg,
-            thread_count: newCount,
+            thread_count: threadCount,
             thread_participants: participants
           };
         }
@@ -334,12 +354,16 @@ var talksApp = {
       // Also update the parent message in state
       const updatedParent = {
         ...this.state.threadParentMessage,
-        thread_count: (this.state.threadParentMessage.thread_count || 0) + 1
+        thread_count: threadCount
       };
-      this.update({
+      const updates = {
         messages,
         threadParentMessage: updatedParent
-      });
+      };
+      if (messagesUpdated) {
+        updates.threadMessages = threadMessages;
+      }
+      this.update(updates);
     },
     async createChannel() {
       const input = this.refs && this.refs.newChannelInput || this.root.querySelector('[ref="newChannelInput"]');
@@ -392,6 +416,13 @@ var talksApp = {
 
       // Highlight existing code blocks
       this.highlightCode();
+
+      // Sound permission popup always on load
+      // Small delay to ensure smooth entry visual
+      // Sound permission popup always on load
+      this.update({
+        showSoundPopup: true
+      });
 
       // Connect to live query WebSocket for real-time updates
       this.connectLiveQuery();
@@ -568,7 +599,7 @@ var talksApp = {
             currentChannel: data.currentChannel,
             currentChannelData: data.currentChannelData,
             channelId: data.channelId,
-            messages: data.messages,
+            messages: data.currentChannel === 'mentions' ? data.messages : data.messages.filter(m => !m.thread_parent_id),
             allMessages: newAllMessages
           });
 
@@ -577,6 +608,7 @@ var talksApp = {
 
           // Refocus input
           setTimeout(() => {
+            const input = this.root.querySelector('textarea');
             if (input) input.focus();
             if (!highlightMsgId) {
               this.scrollToBottom(true);
@@ -669,55 +701,7 @@ var talksApp = {
         console.error(e);
       }
 
-      // Start polling for huddle state changes (fallback for live query delays)
-      this.startHuddlePolling();
-    },
-    startHuddlePolling() {
-      // Clear any existing polling interval
-      if (this.huddlePollingInterval) {
-        clearInterval(this.huddlePollingInterval);
-      }
-
-      // Poll immediately on start
-      this.pollHuddleState();
-
-      // Then poll every 1 second for faster updates
-      this.huddlePollingInterval = setInterval(() => {
-        this.pollHuddleState();
-      }, 1000);
-    },
-    async pollHuddleState() {
-      if (!this.state.currentChannelData?._key) return;
-      try {
-        const res = await fetch(`/talks/channel_info?channel_id=${this.state.currentChannelData._key}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.channel) {
-            // Only update if participants changed
-            const current = JSON.stringify(this.state.currentChannelData?.active_call_participants || []);
-            const updated = JSON.stringify(data.channel.active_call_participants || []);
-            if (current !== updated) {
-              console.log('[Huddle Poll] Participants changed:', current, '->', updated);
-              this.update({
-                currentChannelData: {
-                  ...this.state.currentChannelData,
-                  active_call_participants: data.channel.active_call_participants || []
-                }
-              });
-            }
-          }
-        } else {
-          console.log('[Huddle Poll] Error response:', res.status);
-        }
-      } catch (e) {
-        console.log('[Huddle Poll] Fetch error:', e.message);
-      }
-    },
-    stopHuddlePolling() {
-      if (this.huddlePollingInterval) {
-        clearInterval(this.huddlePollingInterval);
-        this.huddlePollingInterval = null;
-      }
+      // Huddle polling removed in favor of live query
     },
     updateCallParticipants(participants) {
       this.activeCallParticipants = participants;
@@ -759,8 +743,8 @@ var talksApp = {
           const query = `
                     LET my_user_key = "${my_user_key}"
                     FOR c IN channels
-                        FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
-                        SORT c.name ASC
+                        FILTER c.type == "system" OR c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                        SORT c.type DESC, c.name ASC
                         RETURN c
                 `;
           this.channelsListWs.send(JSON.stringify({
@@ -885,8 +869,8 @@ var talksApp = {
                     )
                     FOR m IN messages
                         FILTER POSITION(my_channels, m.channel_id) >= 0
-                        SORT m.timestamp DESC
-                        LIMIT 10
+                        SORT m._updated_at DESC
+                        LIMIT 50
                         RETURN m
                 `;
           this.ws.send(JSON.stringify({
@@ -915,18 +899,34 @@ var talksApp = {
               const newMap = new Map(newMessages.map(m => [m._key, m]));
               let hasNewItems = false;
               let hasUpdates = false;
+              let hasDeletions = false;
 
-              // Update existing messages in place
-              const updated = currentMessages.map(m => {
+              // Determine window of the query result to detect deletions
+              let minTS = Infinity;
+              newMessages.forEach(m => {
+                const ts = m._updated_at || m.timestamp;
+                if (ts < minTS) minTS = ts;
+              });
+
+              // Support deletion: remove messages that SHOULD be in the result but aren't
+              const updated = currentMessages.filter(m => {
+                if (newMap.has(m._key)) return true;
+                const mTS = m._updated_at || m.timestamp;
+                if (mTS >= minTS && newMessages.length > 0) {
+                  // If it's newer than the oldest message in the top 50 but not in the result, it's deleted
+                  hasDeletions = true;
+                  return false;
+                }
+                return true;
+              }).map(m => {
                 if (newMap.has(m._key)) {
                   const newData = newMap.get(m._key);
-                  // Check if actually changed
                   if (JSON.stringify(m) !== JSON.stringify(newData)) {
                     hasUpdates = true;
                     return newData;
                   }
                 }
-                return m; // Keep as-is (no removal)
+                return m;
               });
 
               // Add new messages that don't exist in current list
@@ -938,8 +938,12 @@ var talksApp = {
                   // Sound notification
                   if (this.state.initialSyncDone && m.sender !== this.getUsername(this.props.currentUser)) {
                     const myUsername = this.getUsername(this.props.currentUser);
+                    const myEmail = this.props.currentUser.email;
+
+                    // Matches mentions channel logic
                     const isMention = m.text && m.text.includes('@' + myUsername);
-                    if (isMention) {
+                    const isQuote = m.quoted_message && (m.quoted_message.sender === myUsername || m.quoted_message.sender === myEmail);
+                    if (isMention || isQuote) {
                       this.playSound('notification');
                     } else if (document.hidden || !document.hasFocus()) {
                       this.playSound('discreet');
@@ -949,7 +953,7 @@ var talksApp = {
               });
 
               // Only update UI if something changed
-              if (hasNewItems || hasUpdates) {
+              if (hasNewItems || hasUpdates || hasDeletions) {
                 // Sort by timestamp
                 updated.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -959,6 +963,11 @@ var talksApp = {
                 };
                 let unreadChanged = false;
                 if (hasNewItems && this.state.initialSyncDone) {
+                  let mentionsChannelId = null;
+                  if (this.state.channels) {
+                    const mChannel = this.state.channels.find(c => c.name === 'mentions' && c.type === 'system');
+                    if (mChannel) mentionsChannelId = mChannel._id;
+                  }
                   newMessages.forEach(m => {
                     if (!currentKeys.has(m._key)) {
                       // If message is NOT in current channel, mark channel as unread
@@ -966,17 +975,94 @@ var talksApp = {
                         unread[m.channel_id] = true;
                         unreadChanged = true;
                       }
+
+                      // Also mark 'mentions' channel as unread if it's a mention/quote
+                      // And we are not currently looking at the mentions channel
+                      if (mentionsChannelId && this.state.currentChannel !== 'mentions') {
+                        const username = this.getUsername(this.props.currentUser);
+                        const email = this.props.currentUser.email;
+                        const emailPrefix = email.split('@')[0];
+                        const isMention = m.text && (m.text.includes('@' + username) || m.text.includes('@' + email) || m.text.includes('@' + emailPrefix));
+                        const isQuote = m.quoted_message && (m.quoted_message.sender === username || m.quoted_message.sender === email);
+                        if (isMention || isQuote) {
+                          unread[mentionsChannelId] = true;
+                          unreadChanged = true;
+                        }
+                      }
                     }
                   });
                 }
 
-                // Filter for current channel display
-                const filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId));
+                // Filter for current channel display (exclude thread replies)
+                let filtered;
+                if (this.state.currentChannel === 'mentions') {
+                  // For mentions, we can't just filter 'updated' (allMessages) because it might not contain
+                  // historical mentions from other channels that were loaded via API but not in allMessages cache.
+                  // So we merge updates into the current 'this.state.messages'.
+
+                  const username = this.getUsername(this.props.currentUser);
+                  const email = this.props.currentUser.email;
+
+                  // Start with current view messages
+                  const currentViewMap = new Map((this.state.messages || []).map(m => [m._key, m]));
+
+                  // Apply updates from newMap (which contains WS payload)
+                  // But only if they match the mention criteria
+                  newMessages.forEach(m => {
+                    // For mentions channel, we DO want thread replies if they are mentions
+                    // So we remove the early return for thread_parent_id
+
+                    const emailPrefix = email.split('@')[0];
+                    const isMention = m.text && (m.text.includes('@' + username) || m.text.includes('@' + email) || m.text.includes('@' + emailPrefix));
+                    const isQuote = m.quoted_message && (m.quoted_message.sender === username || m.quoted_message.sender === email);
+                    if (isMention || isQuote) {
+                      currentViewMap.set(m._key, m);
+                    } else if (currentViewMap.has(m._key)) {
+                      // If it was a mention but edited to no longer be one?
+                      // Or if we just got an update for a message we show.
+                      // If it's an update to an existing message in our view, update it.
+                      currentViewMap.set(m._key, m);
+                    }
+                  });
+                  filtered = Array.from(currentViewMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+                } else {
+                  filtered = updated.filter(m => String(m.channel_id) === String(this.state.channelId) && !m.thread_parent_id);
+                }
+
+                // Handle open thread updates
+                let threadMessagesUpdate = null;
+                if (this.state.showThreadSidebar && this.state.threadParentMessage) {
+                  const newThreadReplies = newMessages.filter(m => m.thread_parent_id === this.state.threadParentMessage._id);
+                  if (newThreadReplies.length > 0) {
+                    const currentThreadIds = new Set(this.state.threadMessages.map(m => m._id));
+                    const uniqueNew = newThreadReplies.filter(m => !currentThreadIds.has(m._id));
+                    if (uniqueNew.length > 0) {
+                      threadMessagesUpdate = [...this.state.threadMessages, ...uniqueNew].sort((a, b) => a.timestamp - b.timestamp);
+                    }
+                  }
+                }
                 const updateData = {
                   allMessages: updated,
                   messages: filtered,
+                  // This needs to be a new array reference for Riot to detect change
                   initialSyncDone: true
                 };
+
+                // Force update trigger for deep changes (like reactions)
+                // Riot generally handles new object references, so filtered (new array) should work.
+                // But we also need to ensure we don't block it in onBeforeUpdate if we were relying on that.
+
+                // Force emoji reaction updates by ensuring deep clone or new reference if needed
+                // effectively 'filtered' variable above is already a new array of objects (some new, some old references)
+                // If 'updated' contains new object references for changed messages (from line 1347), then 'filtered' will too.
+                // Line 1347: return newData; -> newData comes from newMap which comes from the WebSocket payload (new object).
+                // So references ARE updated.
+
+                // Issue might be onBeforeUpdate overriding 'messages' derived from 'state.allMessages'.
+                // Let's ensure we are setting it here correctly.
+                if (threadMessagesUpdate) {
+                  updateData.threadMessages = threadMessagesUpdate;
+                }
                 if (unreadChanged) updateData.unreadChannels = unread;
                 this.update(updateData);
 
@@ -1039,8 +1125,15 @@ var talksApp = {
       }
 
       // Update filtered messages if allMessages changed (WebSocket update)
-      if (state.allMessages !== this.state.allMessages) {
-        state.messages = state.allMessages.filter(m => String(m.channel_id) === String(state.channelId));
+      // BUT only if we haven't already updated 'messages' in the incoming state (e.g. from connectLiveQuery)
+      // AND we are not in the 'mentions' channel (which has complex filtering logic not easily replicated here synchronously)
+      if (state.allMessages !== this.state.allMessages && state.messages === this.state.messages) {
+        if (state.currentChannel !== 'mentions') {
+          state.messages = state.allMessages.filter(m => String(m.channel_id) === String(state.channelId));
+        }
+        // For 'mentions' channel, we rely on the controller or manual updates for now,
+        // or we would need to replicate the complex filter logic here.
+        // Live updates for mentions channel might be tricky without full data.
       }
 
       // Pre-calculate user channels for DM unread dots if users changed
@@ -1163,13 +1256,36 @@ var talksApp = {
         this.sendMessage(e.target);
       }
     },
+    handleQuoteMessage(message, e) {
+      if (e) e.stopPropagation();
+      this.update({
+        quotedMessage: message
+      });
+      const textarea = this.root.querySelector('textarea');
+      if (textarea) textarea.focus();
+    },
+    cancelQuote() {
+      this.update({
+        quotedMessage: null
+      });
+    },
     // Send a new message to the API
     async sendMessage(textareaElOrEvent) {
       // Get textarea from passed element, refs, or querySelector
       // If called from button click, textareaElOrEvent is an event, not an element
       const textarea = textareaElOrEvent && textareaElOrEvent.tagName === 'TEXTAREA' ? textareaElOrEvent : this.refs && this.refs.messageInput || this.root.querySelector('[ref="messageInput"]');
-      const text = textarea?.value?.trim();
-      if (!text && this.state.files.length === 0 || this.state.sending) return;
+      const text = textarea?.value?.trim() || '';
+      let quotedMessagePayload = null;
+      if (this.state.quotedMessage) {
+        quotedMessagePayload = {
+          _id: this.state.quotedMessage._id,
+          sender: this.state.quotedMessage.sender,
+          text: this.state.quotedMessage.text
+        };
+      }
+      const textToCheck = text; // Check user input only
+
+      if (!textToCheck && this.state.files.length === 0 || this.state.sending) return;
       this.update({
         sending: true
       });
@@ -1196,16 +1312,20 @@ var talksApp = {
           },
           body: JSON.stringify({
             channel: this.state.channelId,
+            channel: this.state.channelId,
             text: text,
             sender: this.getUsername(this.props.currentUser),
-            attachments: attachments
+            attachments: attachments,
+            quoted_message: quotedMessagePayload
           })
         });
         if (response.ok) {
           const data = await response.json();
           this.update({
             sending: false,
-            files: [] // Clear files after send
+            files: [],
+            // Clear files after send
+            quotedMessage: null // Clear quote
           });
           textarea.value = '';
           this.scrollToBottom(true);
@@ -1488,6 +1608,125 @@ var talksApp = {
         console.error('Error toggling reaction:', err);
       }
     },
+    async updateMessage(messageKey, text) {
+      try {
+        const response = await fetch('/talks/update_message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message_key: messageKey,
+            text: text
+          })
+        });
+        if (response.ok) {
+          // Immediate local update
+          const allMessages = this.state.allMessages.map(m => m._key === messageKey ? {
+            ...m,
+            text: text,
+            updated_at: Math.floor(Date.now() / 1000)
+          } : m);
+          const messages = this.state.messages.map(m => m._key === messageKey ? {
+            ...m,
+            text: text,
+            updated_at: Math.floor(Date.now() / 1000)
+          } : m);
+          this.update({
+            allMessages,
+            messages
+          });
+        } else {
+          const err = await response.json();
+          alert(err.error || 'Failed to update message');
+        }
+      } catch (err) {
+        console.error('Error updating message:', err);
+      }
+    },
+    async deleteMessage(messageKey) {
+      if (!confirm('Are you sure you want to delete this message?')) return;
+      try {
+        const response = await fetch('/talks/delete_message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message_key: messageKey
+          })
+        });
+        if (response.ok) {
+          // Immediate local update
+          let allMessages = this.state.allMessages.filter(m => m._key !== messageKey);
+          let messages = this.state.messages.filter(m => m._key !== messageKey);
+          const updateData = {};
+
+          // If it's the currently open thread parent, close thread
+          if (this.state.threadParentMessage && (this.state.threadParentMessage._key === messageKey || this.state.threadParentMessage._id === messageKey)) {
+            updateData.showThreadSidebar = false;
+            updateData.threadParentMessage = null;
+            updateData.threadMessages = [];
+          } else if (this.state.threadMessages) {
+            // If it's a reply in the current thread, remove it
+            const initialLength = this.state.threadMessages.length;
+            const newThreadMessages = this.state.threadMessages.filter(m => m._key !== messageKey);
+            if (newThreadMessages.length < initialLength) {
+              updateData.threadMessages = newThreadMessages;
+
+              // Update parent message count
+              if (this.state.threadParentMessage) {
+                const parentKey = this.state.threadParentMessage._key;
+
+                // Find authoritative count from the main list first
+                // Use the already filtered list effectively
+                const parentInList = allMessages.find(m => m._key === parentKey);
+                const currentCount = parentInList ? parentInList.thread_count || 0 : this.state.threadParentMessage.thread_count || 0;
+                const newCount = Math.max(0, currentCount - 1);
+                updateData.threadParentMessage = {
+                  ...this.state.threadParentMessage,
+                  thread_count: newCount
+                };
+
+                // Update in main lists
+                allMessages = allMessages.map(m => m._key === parentKey ? {
+                  ...m,
+                  thread_count: newCount
+                } : m);
+                messages = messages.map(m => m._key === parentKey ? {
+                  ...m,
+                  thread_count: newCount
+                } : m);
+              }
+            }
+          }
+          updateData.allMessages = allMessages;
+          updateData.messages = messages;
+          this.update(updateData);
+        } else {
+          const err = await response.json();
+          alert(err.error || 'Failed to delete message');
+        }
+      } catch (err) {
+        console.error('Error deleting message:', err);
+      }
+    },
+    dismissSoundPopup() {
+      localStorage.setItem('talks_sound_enabled', 'dismissed');
+      this.update({
+        showSoundPopup: false
+      });
+    },
+    activateSounds() {
+      localStorage.setItem('talks_sound_enabled', 'true');
+
+      // Play a nice success sound - this will also unlock the AudioContext
+      // since we are in a user interaction event
+      this.playSound('notification');
+      this.update({
+        showSoundPopup: false
+      });
+    },
     scrollToBottom(force = false) {
       if (this.isUserScrolledUp && !force) return;
 
@@ -1560,7 +1799,7 @@ var talksApp = {
     },
     // Helper: Get avatar background color class based on sender name
     getAvatarClass(sender) {
-      const colors = ['bg-purple-600', 'bg-indigo-600', 'bg-green-600', 'bg-blue-600', 'bg-pink-600', 'bg-yellow-600', 'bg-red-600'];
+      const colors = ['bg-purple-600', 'bg-indigo-600', 'bg-green-600', 'bg-blue-600', 'bg-pink-600', 'bg-yellow-600', 'bg-red-600', 'bg-orange-600', 'bg-teal-600', 'bg-cyan-600'];
       let hash = 0;
       for (let i = 0; i < sender.length; i++) {
         hash = sender.charCodeAt(i) + ((hash << 5) - hash);
@@ -1728,21 +1967,6 @@ var talksApp = {
     },
     // Helper: Extract domain from URL
 
-    // Helper: Get initials from sender name
-    getInitials(sender) {
-      if (!sender) return '';
-      const parts = sender.split(/[._-]/);
-      if (parts.length >= 2) {
-        return (parts[0][0] + parts[1][0]).toUpperCase();
-      }
-      return sender.substring(0, 2).toUpperCase();
-    },
-    // Helper: Get username from user object
-    getUsername(user) {
-      if (!user) return 'anonymous';
-      if (user.username) return user.username; // legacy or if added later
-      return (user.firstname + '.' + user.lastname).toLowerCase();
-    },
     // Helper: Format timestamp to human-readable time
 
     handleImageError(e) {
@@ -2059,7 +2283,11 @@ var talksApp = {
         },
         isVideoEnabled: type === 'video',
         localStreamHasVideo: type === 'video',
-        callDuration: 0
+        callDuration: 0,
+        showThreadSidebar: false,
+        showSearchSidebar: false,
+        showMembersPanel: false,
+        isCallFullscreen: false
       });
 
       // Only play calling sound for DM calls (ringing behavior)
@@ -2102,7 +2330,7 @@ var talksApp = {
           console.log('[startCall] No peers to connect. Waiting for others to join...');
         }
         for (const pKey of peersToConnect) {
-          await this.setupPeerConnection(pKey, true, type);
+          await this.setupPeerConnection(pKey, true, type, !isDM);
         }
       } catch (err) {
         console.error('Error accessing media:', err);
@@ -2151,8 +2379,27 @@ var talksApp = {
               this.update({
                 incomingCalls: [...currentCalls, newCall]
               });
-              this.playSound('ringtone');
-              this.showCallNotification(caller, data.call_type);
+              // Only ring and notify if it's NOT a huddle (i.e. it's a direct call/DM)
+              if (!data.is_huddle) {
+                this.playSound('ringtone');
+                this.showCallNotification(caller, data.call_type);
+              }
+            }
+          } else if (signal.type === 'bye') {
+            // Handle cancellation of incoming call (caller hung up before we answered)
+            console.log('[Signaling] Incoming call cancelled by', fromUser);
+            if (this.state.incomingCalls && this.state.incomingCalls.length > 0) {
+              const remaining = this.state.incomingCalls.filter(c => c.from_user !== fromUser);
+              if (remaining.length !== this.state.incomingCalls.length) {
+                console.log('[Signaling] Removed cancelled incoming call');
+                this.update({
+                  incomingCalls: remaining
+                });
+                if (remaining.length === 0) {
+                  this.stopSound('ringtone');
+                  this.closeCallNotification();
+                }
+              }
             }
           }
           return;
@@ -2163,17 +2410,22 @@ var talksApp = {
               const pc = this.peerConnections[fromUser];
               if (pc) {
                 try {
+                  // Store screen sharing state if provided
+                  if (this.remotePeerStates === undefined) this.remotePeerStates = {};
+                  if (!this.remotePeerStates[fromUser]) this.remotePeerStates[fromUser] = {};
+                  this.remotePeerStates[fromUser].isScreenSharing = !!data.is_screen_sharing;
                   await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                   const answer = await pc.createAnswer();
                   await pc.setLocalDescription(answer);
                   await this.sendSignal(fromUser, 'answer', {
                     sdp: answer
                   });
+                  this.updateCallPeers();
                 } catch (e) {
-                  console.error("Renegotiation failed", e);
+                  console.error('Error handling renegotiation:', e);
                 }
               }
-              break;
+              return;
             }
             await this.setupPeerConnection(fromUser, false, null);
             const pc = this.peerConnections[fromUser];
@@ -2222,13 +2474,19 @@ var talksApp = {
             }
             this.closePeerConnection(fromUser);
 
-            // If this was the last peer, auto-hangup ONLY for DM calls (1-on-1)
-            // For huddles, the user stays in the call waiting for others
-            const remainingPeers = Object.keys(this.peerConnections).length;
+            // If this was a DM call, auto-hangup immediately when peer leaves
+            // For group calls (huddles), stay connected until user hangs up explicitly
             const isDMCall = this.state.currentChannelData?.type === 'dm';
-            if (remainingPeers === 0 && this.state.activeCall && isDMCall) {
-              console.log('[Signaling] Last peer disconnected from DM call, ending call');
+            if (this.state.activeCall && isDMCall) {
+              console.log('[Signaling] Peer disconnected from DM call, ending call locally');
               this.hangup();
+            } else {
+              // For group calls, just remove the peer connection
+              // If no peers left, we stay in the room waiting for others (standard huddle behavior)
+              const remainingPeers = Object.keys(this.peerConnections).length;
+              if (remainingPeers === 0 && this.state.activeCall && !isDMCall) {
+                // Optional: could auto-leave empty group calls if desired, but huddles usually persist
+              }
             }
             break;
         }
@@ -2283,7 +2541,11 @@ var talksApp = {
           channelId: channelId
         },
         isVideoEnabled: incoming.type === 'video',
-        localStreamHasVideo: incoming.type === 'video'
+        localStreamHasVideo: incoming.type === 'video',
+        showThreadSidebar: false,
+        showSearchSidebar: false,
+        showMembersPanel: false,
+        isCallFullscreen: false
       });
       this.callTimer = setInterval(() => {
         this.update({
@@ -2313,6 +2575,9 @@ var talksApp = {
     },
     declineCall(call) {
       const incoming = call;
+      // Send bye signal so the caller stops ringing
+      this.sendSignal(incoming.from_user, 'bye', {});
+
       // Remove from list
       const remaining = (this.state.incomingCalls || []).filter(c => c !== incoming);
       this.update({
@@ -2323,7 +2588,7 @@ var talksApp = {
       }
       this.closeCallNotification();
     },
-    async setupPeerConnection(remoteUserKey, isInitiator, callType) {
+    async setupPeerConnection(remoteUserKey, isInitiator, callType, isHuddle = false) {
       console.log(`[setupPeerConnection] Setting up connection to ${remoteUserKey} (initiator: ${isInitiator})`);
       if (this.peerConnections[remoteUserKey]) {
         console.log(`[setupPeerConnection] Connection to ${remoteUserKey} already exists`);
@@ -2382,7 +2647,8 @@ var talksApp = {
           console.log(`[setupPeerConnection] Sending offer to ${remoteUserKey}`);
           await this.sendSignal(remoteUserKey, 'offer', {
             sdp: offer,
-            call_type: callType || 'audio'
+            call_type: callType || 'audio',
+            is_huddle: isHuddle
           });
         } catch (e) {
           console.error('Error creating initial offer:', e);
@@ -2398,6 +2664,10 @@ var talksApp = {
       if (this.remoteStreams[key]) {
         delete this.remoteStreams[key];
       }
+      // Also clear remote peer state
+      if (this.remotePeerStates && this.remotePeerStates[key]) {
+        delete this.remotePeerStates[key];
+      }
       this.updateCallPeers();
     },
     updateCallPeers() {
@@ -2409,10 +2679,12 @@ var talksApp = {
           lastname: key
         };
         const stream = this.remoteStreams[key];
+        const peerState = this.remotePeerStates && this.remotePeerStates[key] || {};
         peers.push({
           user: user,
           stream: stream,
-          hasVideo: stream ? stream.getVideoTracks().length > 0 : false
+          hasVideo: stream ? stream.getVideoTracks().length > 0 : false,
+          isScreenSharing: !!peerState.isScreenSharing
         });
       });
       this.update({
@@ -2433,6 +2705,19 @@ var talksApp = {
       console.log('[hangup] Stopping all sounds, ringtoneInterval:', !!this.ringtoneInterval, 'callingInterval:', !!this.callingInterval);
       this.stopSound('ringtone');
       this.stopSound('calling');
+
+      // If DM, ensure we send bye to the other user even if not connected (canceling ring)
+      if (this.state.currentChannelData?.type === 'dm' && this.state.currentChannelData.name) {
+        const parts = this.state.currentChannelData.name.split('_');
+        if (parts.length === 3) {
+          const myKey = this.props.currentUser._key;
+          const otherKey = parts[1] === myKey ? parts[2] : parts[1];
+          // If we are not connected to them (e.g. still ringing), we must send bye
+          if (otherKey && !this.peerConnections[otherKey]) {
+            this.sendSignal(otherKey, 'bye', {});
+          }
+        }
+      }
       const channelId = this.state.activeCall?.channelId;
       if (channelId) {
         const payload = {
@@ -2486,7 +2771,13 @@ var talksApp = {
         callDuration: 0,
         callPeers: [],
         isScreenSharing: false,
-        localStreamHasVideo: false
+        localStreamHasVideo: false,
+        isCallFullscreen: false
+      });
+    },
+    toggleCallFullscreen() {
+      this.update({
+        isCallFullscreen: !this.state.isCallFullscreen
       });
     },
     toggleMute() {
@@ -2571,6 +2862,12 @@ var talksApp = {
               } else {
                 pc.addTrack(newTrack, this.localStream);
               }
+              // Notify peer that we are NOT screen sharing (and potentially restored camera)
+              this.sendSignal(key, 'offer', {
+                sdp: pc.localDescription,
+                call_type: 'renegotiation',
+                is_screen_sharing: false
+              });
             });
             this.update({
               localStreamHasVideo: true
@@ -2584,6 +2881,12 @@ var talksApp = {
             const pc = this.peerConnections[key];
             const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
             if (sender) pc.removeTrack(sender);
+            // Notify peer that we are NOT screen sharing
+            this.sendSignal(key, 'offer', {
+              sdp: pc.localDescription,
+              call_type: 'renegotiation',
+              is_screen_sharing: false
+            });
           });
         }
         return;
@@ -2612,6 +2915,12 @@ var talksApp = {
           } else {
             pc.addTrack(screenTrack, this.localStream);
           }
+          // Notify peer that we are screen sharing
+          this.sendSignal(key, 'offer', {
+            sdp: pc.localDescription,
+            call_type: 'renegotiation',
+            is_screen_sharing: true
+          });
         });
         this.update({
           isScreenSharing: true,
@@ -2648,6 +2957,12 @@ var talksApp = {
       if (!query || query.length < 2) return;
       this.update({
         showSearchSidebar: true,
+        showThreadSidebar: false,
+        // Close thread
+        showMembersPanel: false,
+        // Close members
+        threadParentMessage: null,
+        threadMessages: [],
         searchQuery: query,
         searchLoading: true,
         searchResults: []
@@ -2756,9 +3071,9 @@ var talksApp = {
       setTimeout(fn, 0);
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr198="expr198" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr199="expr199"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr200="expr200"></talks-header><talks-messages expr201="expr201"></talks-messages><talks-input expr202="expr202"></talks-input></main><talks-calls expr203="expr203"></talks-calls><div expr204="expr204" class="fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-amber-500 transition-colors z-50 flex items-center gap-2 animate-fade-in"></div><div expr205="expr205" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full animate-slide-in-right flex-shrink-0"></div><div expr219="expr219" class="w-96 flex-shrink-0 h-full animate-slide-in-right"></div><div expr221="expr221" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr227="expr227" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr232="expr232" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr236="expr236" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr255="expr255" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div></div>', [{
-    redundantAttribute: 'expr198',
-    selector: '[expr198]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr110="expr110" class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden"><talks-sidebar expr111="expr111"></talks-sidebar><main class="flex-1 flex flex-col min-w-0 h-full relative"><talks-header expr112="expr112"></talks-header><talks-messages expr113="expr113"></talks-messages><talks-input expr114="expr114"></talks-input></main><talks-calls expr115="expr115"></talks-calls><div expr116="expr116" class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full flex-shrink-0"></div><div expr130="expr130"><talks-thread expr131="expr131"></talks-thread></div><div expr132="expr132" class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-fade-in"></div><div expr138="expr138" class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"></div><div expr143="expr143" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div><div expr147="expr147" class="fixed inset-0 z-50 flex items-center justify-center p-4"></div><div expr166="expr166" class="fixed inset-0 z-[100] flex items-center justify-center p-4"></div><div expr178="expr178" class="fixed inset-0 z-[200] flex items-center justify-center p-4"></div></div>', [{
+    redundantAttribute: 'expr110',
+    selector: '[expr110]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'ondragenter',
@@ -2859,8 +3174,8 @@ var talksApp = {
       name: 'currentChannelData',
       evaluate: _scope => _scope.state.currentChannelData
     }],
-    redundantAttribute: 'expr199',
-    selector: '[expr199]'
+    redundantAttribute: 'expr111',
+    selector: '[expr111]'
   }, {
     type: bindingTypes.TAG,
     getComponent: getComponent,
@@ -2921,8 +3236,8 @@ var talksApp = {
       name: 'onSearchClear',
       evaluate: _scope => _scope.clearSearch
     }],
-    redundantAttribute: 'expr200',
-    selector: '[expr200]'
+    redundantAttribute: 'expr112',
+    selector: '[expr112]'
   }, {
     type: bindingTypes.TAG,
     getComponent: getComponent,
@@ -2986,17 +3301,33 @@ var talksApp = {
       name: 'onToggleEmojiPicker',
       evaluate: _scope => _scope.toggleEmojiPicker
     }, {
-      type: expressionTypes.ATTRIBUTE,
-      isBoolean: false,
-      name: 'highlightMessageId',
-      evaluate: _scope => _scope.state.highlightMessageId
+      type: expressionTypes.EVENT,
+      name: 'onQuoteMessage',
+      evaluate: _scope => _scope.handleQuoteMessage
     }, {
       type: expressionTypes.EVENT,
       name: 'onOpenThread',
-      evaluate: _scope => _scope.openThread
+      evaluate: _scope => (m, e) => _scope.openThread(m, e)
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'currentChannel',
+      evaluate: _scope => _scope.state.currentChannel
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onUpdateMessage',
+      evaluate: _scope => _scope.updateMessage
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onDeleteMessage',
+      evaluate: _scope => _scope.deleteMessage
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onMessageClick',
+      evaluate: _scope => _scope.navigateToSearchResult
     }],
-    redundantAttribute: 'expr201',
-    selector: '[expr201]'
+    redundantAttribute: 'expr113',
+    selector: '[expr113]'
   }, {
     type: bindingTypes.TAG,
     getComponent: getComponent,
@@ -3058,9 +3389,22 @@ var talksApp = {
       type: expressionTypes.EVENT,
       name: 'onSendMessage',
       evaluate: _scope => _scope.sendMessage
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'quotedMessage',
+      evaluate: _scope => _scope.state.quotedMessage
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onCancelQuote',
+      evaluate: _scope => _scope.cancelQuote
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onAddFiles',
+      evaluate: _scope => _scope.addFiles
     }],
-    redundantAttribute: 'expr202',
-    selector: '[expr202]'
+    redundantAttribute: 'expr114',
+    selector: '[expr114]'
   }, {
     type: bindingTypes.TAG,
     getComponent: getComponent,
@@ -3112,6 +3456,15 @@ var talksApp = {
       name: 'call-peers',
       evaluate: _scope => _scope.state.callPeers
     }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'is-fullscreen',
+      evaluate: _scope => _scope.state.isCallFullscreen
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'on-toggle-fullscreen',
+      evaluate: _scope => _scope.toggleCallFullscreen
+    }, {
       type: expressionTypes.EVENT,
       name: 'on-accept-call',
       evaluate: _scope => _scope.acceptCall
@@ -3136,36 +3489,24 @@ var talksApp = {
       name: 'on-hangup',
       evaluate: _scope => _scope.hangup
     }],
-    redundantAttribute: 'expr203',
-    selector: '[expr203]'
-  }, {
-    type: bindingTypes.IF,
-    evaluate: _scope => _scope.state.audioSuspended,
-    redundantAttribute: 'expr204',
-    selector: '[expr204]',
-    template: template('<i class="fas fa-volume-mute"></i><span>Click anywhere to enable call sounds</span>', [{
-      expressions: [{
-        type: expressionTypes.EVENT,
-        name: 'onclick',
-        evaluate: _scope => _scope.enableAudio
-      }]
-    }])
+    redundantAttribute: 'expr115',
+    selector: '[expr115]'
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showSearchSidebar,
-    redundantAttribute: 'expr205',
-    selector: '[expr205]',
-    template: template('<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr206="expr206" class="text-gray-500 text-sm"> </span></div><button expr207="expr207" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr208="expr208" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr210="expr210" class="flex-1 flex items-center justify-center"></div><div expr211="expr211" class="flex-1 flex items-center justify-center"></div><div expr212="expr212" class="flex-1 overflow-y-auto custom-scrollbar"></div>', [{
-      redundantAttribute: 'expr206',
-      selector: '[expr206]',
+    redundantAttribute: 'expr116',
+    selector: '[expr116]',
+    template: template('<div class="flex items-center justify-between p-4 border-b border-gray-700"><div class="flex items-center gap-2"><i class="fas fa-search text-indigo-400"></i><span class="text-white font-semibold">Search Results</span><span expr117="expr117" class="text-gray-500 text-sm"> </span></div><button expr118="expr118" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors"><i class="fas fa-times"></i></button></div><div expr119="expr119" class="px-4 py-2 bg-gray-800/50 border-b border-gray-700"></div><div expr121="expr121" class="flex-1 flex items-center justify-center"></div><div expr122="expr122" class="flex-1 flex items-center justify-center"></div><div expr123="expr123" class="flex-1 overflow-y-auto custom-scrollbar"></div>', [{
+      redundantAttribute: 'expr117',
+      selector: '[expr117]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['(', _scope.state.searchResults.length, ')'].join('')
       }]
     }, {
-      redundantAttribute: 'expr207',
-      selector: '[expr207]',
+      redundantAttribute: 'expr118',
+      selector: '[expr118]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -3174,11 +3515,11 @@ var talksApp = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.searchQuery,
-      redundantAttribute: 'expr208',
-      selector: '[expr208]',
-      template: template('<span class="text-gray-400 text-sm">Searching for: </span><span expr209="expr209" class="text-indigo-400 font-medium"> </span>', [{
-        redundantAttribute: 'expr209',
-        selector: '[expr209]',
+      redundantAttribute: 'expr119',
+      selector: '[expr119]',
+      template: template('<span class="text-gray-400 text-sm">Searching for: </span><span expr120="expr120" class="text-indigo-400 font-medium"> </span>', [{
+        redundantAttribute: 'expr120',
+        selector: '[expr120]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -3188,142 +3529,153 @@ var talksApp = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.searchLoading,
-      redundantAttribute: 'expr210',
-      selector: '[expr210]',
+      redundantAttribute: 'expr121',
+      selector: '[expr121]',
       template: template('<div class="flex flex-col items-center gap-2"><i class="fas fa-spinner fa-spin text-2xl text-indigo-500"></i><span class="text-gray-400 text-sm">Searching...</span></div>', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.showNoResults(),
-      redundantAttribute: 'expr211',
-      selector: '[expr211]',
+      redundantAttribute: 'expr122',
+      selector: '[expr122]',
       template: template('<div class="flex flex-col items-center gap-2 text-gray-400"><i class="fas fa-search text-4xl text-gray-600"></i><span>No results found</span><span class="text-sm text-gray-500">Try a different search term</span></div>', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.hasSearchResults(),
-      redundantAttribute: 'expr212',
-      selector: '[expr212]',
-      template: template('<div expr213="expr213" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>', [{
+      redundantAttribute: 'expr123',
+      selector: '[expr123]',
+      template: template('<div expr124="expr124" class="p-4 border-b border-gray-700/50 hover:bg-gray-800/50 cursor-pointer transition-colors\n                        group"></div>', [{
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<div class="flex items-center gap-2 mb-2"><span expr214="expr214" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr215="expr215" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr216="expr216" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr217="expr217" class="text-sm text-gray-200 font-medium truncate"> </div><div expr218="expr218" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>', [{
+        template: template('<div class="flex items-center gap-2 mb-2"><span expr125="expr125" class="text-xs px-2 py-0.5 rounded bg-indigo-600/30 text-indigo-300"> </span><span expr126="expr126" class="text-xs text-gray-500"> </span></div><div class="flex items-start gap-3"><div expr127="expr127" class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr128="expr128" class="text-sm text-gray-200 font-medium truncate"> </div><div expr129="expr129" class="text-sm text-gray-400 line-clamp-2 group-hover:text-gray-300"> </div></div></div>', [{
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
             evaluate: _scope => () => _scope.handleSearchResultClick(_scope.result)
           }]
         }, {
-          redundantAttribute: 'expr214',
-          selector: '[expr214]',
+          redundantAttribute: 'expr125',
+          selector: '[expr125]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.getChannelLabel(_scope.result)
           }]
         }, {
-          redundantAttribute: 'expr215',
-          selector: '[expr215]',
+          redundantAttribute: 'expr126',
+          selector: '[expr126]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.formatSearchTime(_scope.result.timestamp)
           }]
         }, {
-          redundantAttribute: 'expr216',
-          selector: '[expr216]',
+          redundantAttribute: 'expr127',
+          selector: '[expr127]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.getResultInitials(_scope.result)].join('')
           }]
         }, {
-          redundantAttribute: 'expr217',
-          selector: '[expr217]',
+          redundantAttribute: 'expr128',
+          selector: '[expr128]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.getResultSender(_scope.result)].join('')
           }]
         }, {
-          redundantAttribute: 'expr218',
-          selector: '[expr218]',
+          redundantAttribute: 'expr129',
+          selector: '[expr129]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.getResultPreview(_scope.result)
           }]
         }]),
-        redundantAttribute: 'expr213',
-        selector: '[expr213]',
+        redundantAttribute: 'expr124',
+        selector: '[expr124]',
         itemName: 'result',
         indexName: null,
         evaluate: _scope => _scope.state.searchResults
       }])
     }])
   }, {
-    type: bindingTypes.IF,
-    evaluate: _scope => _scope.state.showThreadSidebar,
-    redundantAttribute: 'expr219',
-    selector: '[expr219]',
-    template: template('<talks-thread expr220="expr220"></talks-thread>', [{
-      type: bindingTypes.TAG,
-      getComponent: getComponent,
-      evaluate: _scope => 'talks-thread',
-      slots: [],
-      attributes: [{
-        type: expressionTypes.ATTRIBUTE,
-        isBoolean: false,
-        name: 'parentMessage',
-        evaluate: _scope => _scope.state.threadParentMessage
-      }, {
-        type: expressionTypes.ATTRIBUTE,
-        isBoolean: false,
-        name: 'threadMessages',
-        evaluate: _scope => _scope.state.threadMessages
-      }, {
-        type: expressionTypes.ATTRIBUTE,
-        isBoolean: false,
-        name: 'currentUser',
-        evaluate: _scope => _scope.state.currentUser
-      }, {
-        type: expressionTypes.ATTRIBUTE,
-        isBoolean: false,
-        name: 'users',
-        evaluate: _scope => _scope.state.users
-      }, {
-        type: expressionTypes.EVENT,
-        name: 'onClose',
-        evaluate: _scope => _scope.closeThread
-      }, {
-        type: expressionTypes.EVENT,
-        name: 'onReplySent',
-        evaluate: _scope => _scope.handleThreadReplySent
-      }],
-      redundantAttribute: 'expr220',
-      selector: '[expr220]'
-    }])
+    redundantAttribute: 'expr130',
+    selector: '[expr130]',
+    expressions: [{
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'class',
+      evaluate: _scope => 'w-96 flex-shrink-0 h-full ' + (_scope.state.showThreadSidebar ? '' : 'hidden')
+    }]
+  }, {
+    type: bindingTypes.TAG,
+    getComponent: getComponent,
+    evaluate: _scope => 'talks-thread',
+    slots: [],
+    attributes: [{
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'parentMessage',
+      evaluate: _scope => _scope.state.threadParentMessage
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'threadMessages',
+      evaluate: _scope => _scope.state.threadMessages
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'currentUser',
+      evaluate: _scope => _scope.state.currentUser
+    }, {
+      type: expressionTypes.ATTRIBUTE,
+      isBoolean: false,
+      name: 'users',
+      evaluate: _scope => _scope.state.users
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onClose',
+      evaluate: _scope => _scope.closeThread
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onReplySent',
+      evaluate: _scope => _scope.handleThreadReplySent
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onUpdateMessage',
+      evaluate: _scope => _scope.updateMessage
+    }, {
+      type: expressionTypes.EVENT,
+      name: 'onDeleteMessage',
+      evaluate: _scope => _scope.deleteMessage
+    }],
+    redundantAttribute: 'expr131',
+    selector: '[expr131]'
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.lightboxImage,
-    redundantAttribute: 'expr221',
-    selector: '[expr221]',
-    template: template('<div expr222="expr222" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr223="expr223" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr224="expr224" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr225="expr225" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr226="expr226" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>', [{
+    redundantAttribute: 'expr132',
+    selector: '[expr132]',
+    template: template('<div expr133="expr133" class="flex flex-col max-w-[90vw] max-h-[90vh]"><img expr134="expr134" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"/><div class="flex items-center justify-between mt-4 px-1"><div expr135="expr135" class="text-white/70 text-sm truncate max-w-[60%]"> </div><div class="flex items-center gap-2"><a expr136="expr136" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors text-sm"><i class="fas fa-download"></i> Download\n                            </a><button expr137="expr137" class="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"><i class="fas fa-times"></i> Close\n                            </button></div></div></div>', [{
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.closeLightbox
       }]
     }, {
-      redundantAttribute: 'expr222',
-      selector: '[expr222]',
+      redundantAttribute: 'expr133',
+      selector: '[expr133]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => e.stopPropagation()
       }]
     }, {
-      redundantAttribute: 'expr223',
-      selector: '[expr223]',
+      redundantAttribute: 'expr134',
+      selector: '[expr134]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3336,16 +3688,16 @@ var talksApp = {
         evaluate: _scope => _scope.state.lightboxImage.filename
       }]
     }, {
-      redundantAttribute: 'expr224',
-      selector: '[expr224]',
+      redundantAttribute: 'expr135',
+      selector: '[expr135]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.lightboxImage.filename
       }]
     }, {
-      redundantAttribute: 'expr225',
-      selector: '[expr225]',
+      redundantAttribute: 'expr136',
+      selector: '[expr136]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3358,8 +3710,8 @@ var talksApp = {
         evaluate: _scope => _scope.state.lightboxImage.filename
       }]
     }, {
-      redundantAttribute: 'expr226',
-      selector: '[expr226]',
+      redundantAttribute: 'expr137',
+      selector: '[expr137]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -3369,9 +3721,9 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showEmojiPicker,
-    redundantAttribute: 'expr227',
-    selector: '[expr227]',
-    template: template('<div expr228="expr228" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr229="expr229" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr230="expr230" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr231="expr231" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>', [{
+    redundantAttribute: 'expr138',
+    selector: '[expr138]',
+    template: template('<div expr139="expr139" class="fixed inset-0 z-[-1]"></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div><div class="flex flex-wrap gap-1 mb-3"><button expr140="expr140" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Gestures</div><div class="flex flex-wrap gap-1 mb-3"><button expr141="expr141" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div><div class="text-xs text-gray-500 uppercase font-bold mb-2">Objects</div><div class="flex flex-wrap gap-1 mb-3"><button expr142="expr142" class="p-1.5 text-xl hover:bg-gray-700 rounded transition-colors"></button></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3379,8 +3731,8 @@ var talksApp = {
         evaluate: _scope => _scope.getEmojiPickerStyle()
       }]
     }, {
-      redundantAttribute: 'expr228',
-      selector: '[expr228]',
+      redundantAttribute: 'expr139',
+      selector: '[expr139]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -3403,8 +3755,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr229',
-      selector: '[expr229]',
+      redundantAttribute: 'expr140',
+      selector: '[expr140]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().smileys
@@ -3423,8 +3775,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr230',
-      selector: '[expr230]',
+      redundantAttribute: 'expr141',
+      selector: '[expr141]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().gestures
@@ -3443,8 +3795,8 @@ var talksApp = {
           evaluate: _scope => e => _scope.handleEmojiClick(_scope.emoji, e)
         }]
       }]),
-      redundantAttribute: 'expr231',
-      selector: '[expr231]',
+      redundantAttribute: 'expr142',
+      selector: '[expr142]',
       itemName: 'emoji',
       indexName: null,
       evaluate: _scope => _scope.getInputEmojis().objects
@@ -3452,9 +3804,9 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showUserPicker,
-    redundantAttribute: 'expr232',
-    selector: '[expr232]',
-    template: template('<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr233="expr233"></div></div>', [{
+    redundantAttribute: 'expr143',
+    selector: '[expr143]',
+    template: template('<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                    People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr144="expr144"></div></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3465,7 +3817,7 @@ var talksApp = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div expr234="expr234" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr235="expr235" class="text-sm truncate font-medium"> </span>', [{
+      template: template('<div expr145="expr145" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr146="expr146" class="text-sm truncate font-medium"> </span>', [{
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -3477,24 +3829,24 @@ var talksApp = {
           evaluate: _scope => _scope.getUserPickerItemClass(_scope.index)
         }]
       }, {
-        redundantAttribute: 'expr234',
-        selector: '[expr234]',
+        redundantAttribute: 'expr145',
+        selector: '[expr145]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
         }]
       }, {
-        redundantAttribute: 'expr235',
-        selector: '[expr235]',
+        redundantAttribute: 'expr146',
+        selector: '[expr146]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.getUsername(_scope.user)
         }]
       }]),
-      redundantAttribute: 'expr233',
-      selector: '[expr233]',
+      redundantAttribute: 'expr144',
+      selector: '[expr144]',
       itemName: 'user',
       indexName: 'index',
       evaluate: _scope => _scope.state.filteredUsers
@@ -3502,11 +3854,11 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showCreateChannelModal,
-    redundantAttribute: 'expr236',
-    selector: '[expr236]',
-    template: template('<div expr237="expr237" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr238="expr238" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr239="expr239" type="checkbox" class="sr-only"/><div expr240="expr240"></div><div expr241="expr241"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr242="expr242" class="mb-4 animate-fade-in"></div><div expr252="expr252" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr253="expr253" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr254="expr254" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>', [{
-      redundantAttribute: 'expr237',
-      selector: '[expr237]',
+    redundantAttribute: 'expr147',
+    selector: '[expr147]',
+    template: template('<div expr148="expr148" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up"><div class="p-6"><h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2><p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They\'re best\n                            when organized around a topic.</p><div class="mb-4"><label class="block text-gray-300 text-sm font-bold mb-2">Name</label><div class="relative"><span class="absolute left-3 top-2.5 text-gray-500">#</span><input expr149="expr149" ref="newChannelInput" type="text" class="w-full bg-[#222529] border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-8 p-2.5" placeholder="e.g. plan-budget"/></div><p class="mt-2 text-xs text-gray-500">Lowercase, numbers, and hyphens only.</p></div><div class="mb-4"><label class="flex items-center cursor-pointer select-none"><div class="relative"><input expr150="expr150" type="checkbox" class="sr-only"/><div expr151="expr151"></div><div expr152="expr152"></div></div><div class="ml-3 text-sm font-medium text-gray-300 flex items-center">\n                                    Private Channel <i class="fas fa-lock text-xs ml-2 text-gray-500"></i></div></label><p class="text-xs text-gray-500 mt-1 ml-14">Only invited members can view this channel.</p></div><div expr153="expr153" class="mb-4 animate-fade-in"></div><div expr163="expr163" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm"></div></div><div class="px-6 py-4 bg-[#222529] border-t border-gray-700 flex justify-end gap-3"><button expr164="expr164" class="px-4 py-2 text-sm\n                            font-medium text-gray-300 hover:text-white transition-colors">Cancel</button><button expr165="expr165" class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></div>', [{
+      redundantAttribute: 'expr148',
+      selector: '[expr148]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -3515,8 +3867,8 @@ var talksApp = {
         })
       }]
     }, {
-      redundantAttribute: 'expr238',
-      selector: '[expr238]',
+      redundantAttribute: 'expr149',
+      selector: '[expr149]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onkeyup',
@@ -3527,8 +3879,8 @@ var talksApp = {
         evaluate: _scope => e => e.keyCode === 13 && _scope.createChannel()
       }]
     }, {
-      redundantAttribute: 'expr239',
-      selector: '[expr239]',
+      redundantAttribute: 'expr150',
+      selector: '[expr150]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -3540,8 +3892,8 @@ var talksApp = {
         evaluate: _scope => _scope.state.isCreatingPrivate
       }]
     }, {
-      redundantAttribute: 'expr240',
-      selector: '[expr240]',
+      redundantAttribute: 'expr151',
+      selector: '[expr151]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3549,8 +3901,8 @@ var talksApp = {
         evaluate: _scope => _scope.getPrivateToggleBgClass()
       }]
     }, {
-      redundantAttribute: 'expr241',
-      selector: '[expr241]',
+      redundantAttribute: 'expr152',
+      selector: '[expr152]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -3560,11 +3912,11 @@ var talksApp = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.isCreatingPrivate,
-      redundantAttribute: 'expr242',
-      selector: '[expr242]',
-      template: template('<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr243="expr243" class="flex flex-wrap gap-2 mb-2"><span expr244="expr244" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr246="expr246" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr247="expr247" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr248="expr248" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>', [{
-        redundantAttribute: 'expr243',
-        selector: '[expr243]',
+      redundantAttribute: 'expr153',
+      selector: '[expr153]',
+      template: template('<label class="block text-gray-300 text-sm font-bold mb-2">Add Members</label><div class="bg-[#222529] border border-gray-700 rounded-lg p-2"><div expr154="expr154" class="flex flex-wrap gap-2 mb-2"><span expr155="expr155" class="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded flex items-center border border-blue-500/30"></span></div><input expr157="expr157" type="text" ref="createChannelMemberInput" placeholder="Search users..." class="w-full bg-transparent text-sm text-gray-200 focus:outline-none placeholder-gray-500 py-1"/><div expr158="expr158" class="mt-2 border-t border-gray-700\n                                    pt-2 max-h-32 overflow-y-auto custom-scrollbar"><div expr159="expr159" class="flex items-center p-2 hover:bg-white/5\n                                        rounded cursor-pointer"></div></div></div>', [{
+        redundantAttribute: 'expr154',
+        selector: '[expr154]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -3575,37 +3927,37 @@ var talksApp = {
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template(' <button expr245="expr245" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>', [{
+        template: template(' <button expr156="expr156" class="ml-1\n                                            hover:text-white"><i class="fas fa-times"></i></button>', [{
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.getUsername(_scope.user)].join('')
           }]
         }, {
-          redundantAttribute: 'expr245',
-          selector: '[expr245]',
+          redundantAttribute: 'expr156',
+          selector: '[expr156]',
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
             evaluate: _scope => () => _scope.removeCreateChannelMember(_scope.user)
           }]
         }]),
-        redundantAttribute: 'expr244',
-        selector: '[expr244]',
+        redundantAttribute: 'expr155',
+        selector: '[expr155]',
         itemName: 'user',
         indexName: null,
         evaluate: _scope => _scope.state.createChannelMembers
       }, {
-        redundantAttribute: 'expr246',
-        selector: '[expr246]',
+        redundantAttribute: 'expr157',
+        selector: '[expr157]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'oninput',
           evaluate: _scope => _scope.handleCreateChannelMemberInput
         }]
       }, {
-        redundantAttribute: 'expr247',
-        selector: '[expr247]',
+        redundantAttribute: 'expr158',
+        selector: '[expr158]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -3616,39 +3968,39 @@ var talksApp = {
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<div expr249="expr249" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr250="expr250" class="text-gray-300 text-sm font-medium truncate"> </div><div expr251="expr251" class="text-gray-500 text-xs truncate"> </div></div>', [{
+        template: template('<div expr160="expr160" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold mr-3 flex-shrink-0"> </div><div class="flex-1 min-w-0"><div expr161="expr161" class="text-gray-300 text-sm font-medium truncate"> </div><div expr162="expr162" class="text-gray-500 text-xs truncate"> </div></div>', [{
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
             evaluate: _scope => () => _scope.addCreateChannelMember(_scope.user)
           }]
         }, {
-          redundantAttribute: 'expr249',
-          selector: '[expr249]',
+          redundantAttribute: 'expr160',
+          selector: '[expr160]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
           }]
         }, {
-          redundantAttribute: 'expr250',
-          selector: '[expr250]',
+          redundantAttribute: 'expr161',
+          selector: '[expr161]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.getUsername(_scope.user)
           }]
         }, {
-          redundantAttribute: 'expr251',
-          selector: '[expr251]',
+          redundantAttribute: 'expr162',
+          selector: '[expr162]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.user.email
           }]
         }]),
-        redundantAttribute: 'expr248',
-        selector: '[expr248]',
+        redundantAttribute: 'expr159',
+        selector: '[expr159]',
         itemName: 'user',
         indexName: null,
         evaluate: _scope => _scope.state.filteredCreateChannelUsers
@@ -3656,8 +4008,8 @@ var talksApp = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.createChannelError,
-      redundantAttribute: 'expr252',
-      selector: '[expr252]',
+      redundantAttribute: 'expr163',
+      selector: '[expr163]',
       template: template(' ', [{
         expressions: [{
           type: expressionTypes.TEXT,
@@ -3666,8 +4018,8 @@ var talksApp = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr253',
-      selector: '[expr253]',
+      redundantAttribute: 'expr164',
+      selector: '[expr164]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -3676,8 +4028,8 @@ var talksApp = {
         })
       }]
     }, {
-      redundantAttribute: 'expr254',
-      selector: '[expr254]',
+      redundantAttribute: 'expr165',
+      selector: '[expr165]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -3696,27 +4048,27 @@ var talksApp = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showDmPopup,
-    redundantAttribute: 'expr255',
-    selector: '[expr255]',
-    template: template('<div expr256="expr256" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr257="expr257" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr258="expr258" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr259="expr259" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr265="expr265" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>', [{
-      redundantAttribute: 'expr256',
-      selector: '[expr256]',
+    redundantAttribute: 'expr166',
+    selector: '[expr166]',
+    template: template('<div expr167="expr167" class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"></div><div class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]"><div class="p-4 border-b border-gray-700 flex flex-col gap-3"><div class="flex items-center justify-between"><h2 class="text-lg font-bold text-white">New Conversation</h2><button expr168="expr168" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times"></i></button></div><div class="relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i><input expr169="expr169" type="text" placeholder="Find people..." class="w-full bg-[#0D0B0E] text-gray-200 rounded-lg pl-10 pr-4 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-gray-600" ref="dmFilterInput"/></div></div><div class="overflow-y-auto custom-scrollbar p-2"><div expr170="expr170" class="flex items-center\n                            gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group"></div><div expr176="expr176" class="p-8 text-center text-gray-500 flex flex-col items-center"></div></div></div>', [{
+      redundantAttribute: 'expr167',
+      selector: '[expr167]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.toggleDmPopup
       }]
     }, {
-      redundantAttribute: 'expr257',
-      selector: '[expr257]',
+      redundantAttribute: 'expr168',
+      selector: '[expr168]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.toggleDmPopup
       }]
     }, {
-      redundantAttribute: 'expr258',
-      selector: '[expr258]',
+      redundantAttribute: 'expr169',
+      selector: '[expr169]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -3726,23 +4078,23 @@ var talksApp = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div class="relative"><div expr260="expr260" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr261="expr261"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr262="expr262" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr263="expr263" class="text-xs text-gray-500 italic"></span></div><div expr264="expr264" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>', [{
+      template: template('<div class="relative"><div expr171="expr171" class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-lg"> </div><div expr172="expr172"></div></div><div class="flex-1 min-w-0"><div class="flex items-center justify-between"><span expr173="expr173" class="text-gray-200 font-medium group-hover:text-white transition-colors truncate"> </span><span expr174="expr174" class="text-xs text-gray-500 italic"></span></div><div expr175="expr175" class="text-xs text-gray-500 truncate"> </div></div><i class="fas fa-chevron-right text-gray-600 group-hover:text-gray-400 transition-colors"></i>', [{
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.startDm(_scope.user)
         }]
       }, {
-        redundantAttribute: 'expr260',
-        selector: '[expr260]',
+        redundantAttribute: 'expr171',
+        selector: '[expr171]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.user))].join('')
         }]
       }, {
-        redundantAttribute: 'expr261',
-        selector: '[expr261]',
+        redundantAttribute: 'expr172',
+        selector: '[expr172]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -3750,8 +4102,8 @@ var talksApp = {
           evaluate: _scope => 'absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#1A1D21] rounded-full ' + _scope.getStatusColor(_scope.user.status)
         }]
       }, {
-        redundantAttribute: 'expr262',
-        selector: '[expr262]',
+        redundantAttribute: 'expr173',
+        selector: '[expr173]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -3760,37 +4112,51 @@ var talksApp = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.user._key === _scope.props.currentUser._key,
-        redundantAttribute: 'expr263',
-        selector: '[expr263]',
+        redundantAttribute: 'expr174',
+        selector: '[expr174]',
         template: template('You', [])
       }, {
-        redundantAttribute: 'expr264',
-        selector: '[expr264]',
+        redundantAttribute: 'expr175',
+        selector: '[expr175]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.user.email
         }]
       }]),
-      redundantAttribute: 'expr259',
-      selector: '[expr259]',
+      redundantAttribute: 'expr170',
+      selector: '[expr170]',
       itemName: 'user',
       indexName: null,
       evaluate: _scope => _scope.state.dmPopupUsers
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.dmPopupUsers.length === 0,
-      redundantAttribute: 'expr265',
-      selector: '[expr265]',
-      template: template('<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr266="expr266"> </p>', [{
-        redundantAttribute: 'expr266',
-        selector: '[expr266]',
+      redundantAttribute: 'expr176',
+      selector: '[expr176]',
+      template: template('<i class="fas fa-user-slash text-4xl mb-3 opacity-50"></i><p expr177="expr177"> </p>', [{
+        redundantAttribute: 'expr177',
+        selector: '[expr177]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => ['No users found matching "', _scope.state.dmFilterQuery, '"'].join('')
         }]
       }])
+    }])
+  }, {
+    type: bindingTypes.IF,
+    evaluate: _scope => _scope.state.showSoundPopup,
+    redundantAttribute: 'expr178',
+    selector: '[expr178]',
+    template: template('<div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div><div class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in-up text-center p-8"><div class="w-16 h-16 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6"><i class="fas fa-volume-up text-3xl"></i></div><h2 class="text-xl font-bold text-white mb-2">Enable Sounds</h2><p class="text-gray-400 mb-8">Talks uses sounds for new messages and calls. Please click Enable to\n                        ensure you don\'t miss anything.</p><div class="flex gap-3 justify-center"><button expr179="expr179" class="px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors font-medium shadow-lg shadow-blue-900/20">Enable\n                            Sounds</button></div></div>', [{
+      redundantAttribute: 'expr179',
+      selector: '[expr179]',
+      expressions: [{
+        type: expressionTypes.EVENT,
+        name: 'onclick',
+        evaluate: _scope => _scope.activateSounds
+      }]
     }])
   }]),
   name: 'talks-app'

@@ -1,5 +1,10 @@
 <talks-calls>
-    <div>
+    <div class={ getWrapperClass() }>
+        <style>
+            :host {
+                display: contents;
+            }
+        </style>
         <!-- Incoming Calls List (Top Right, below search bar) -->
         <div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full">
             <div each={ call in (props.incomingCalls || []) }
@@ -48,25 +53,25 @@
             </div>
         </div>
 
-        <!-- Active Call Overlay -->
-        <div if={ props.activeCall } class="fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in">
+        <!-- Active Call Overlay (Fullscreen or Sidebar) -->
+        <div if={ props.activeCall } class={ getCallContainerClass() }>
             <!-- Header -->
-            <div
-                class="absolute top-0 left-0 right-0 p-4 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start pointer-events-none">
+            <div class={ getHeaderClass() }>
                 <div class="flex items-center gap-3 pointer-events-auto">
-                    <div
-                        class="bg-gray-800/80 backdrop-blur px-4 py-2 rounded-full border border-white/10 flex items-center gap-3 shadow-lg">
+                    <div class={ getDurationBadgeClass() }>
                         <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
                         <span class="text-white font-medium text-sm">{ formatCallDuration(props.callDuration) }</span>
                     </div>
-                    <div class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow">{ getParticipantText() }
-                    </div>
+                </div>
+                <div if={ props.isFullscreen }
+                    class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow pointer-events-auto">{
+                    getParticipantText() }
                 </div>
             </div>
 
             <!-- Video Grid -->
-            <div class="flex-1 bg-black overflow-y-auto custom-scrollbar p-4 flex items-center justify-center">
-                <div class="flex flex-wrap justify-center items-center gap-4 w-full h-full content-center">
+            <div class={ getVideoGridClass() }>
+                <div class={ getInnerGridClass() }>
 
                     <!-- Remote Peers -->
                     <div each={ peer in props.callPeers } class={ getPeerContainerClass(peer) } style={
@@ -75,17 +80,18 @@
                         <!-- Placeholder -->
                         <div if={ !peer.hasVideo }
                             class="absolute inset-0 flex flex-col items-center justify-center z-0">
-                            <div
-                                class="w-20 h-20 rounded-full bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg">
+                            <div class={ getPlaceholderClass() }>
                                 { getInitials(getUsername(peer.user)) }</div>
-                            <div class="text-white font-bold text-lg">{ getUsername(peer.user) }</div>
+                            <div class={ getPlaceholderTextClass() }>{
+                                getUsername(peer.user) }</div>
                         </div>
 
                         <!-- Video -->
-                        <video id={ 'remote-video-' + peer.user._key } autoplay playsinline
-                            class={ 'w-full h-full object-cover z-10 ' + (!peer.hasVideo ? 'hidden' : '' ) }></video>
+                        <video id={ 'remote-video-' + peer.user._key } autoplay playsinline class={ getVideoClass(peer)
+                            }></video>
 
-                        <div class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div if={ props.isFullscreen }
+                            class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onclick={ (e)=> togglePin(e, peer.user._key) } class={
                                 getPinButtonClass(peer.user._key) } title={ isPinned(peer.user._key) ? 'Unpin' : 'Pin'
                                 }>
@@ -94,8 +100,7 @@
                         </div>
 
                         <!-- Name Tag -->
-                        <div
-                            class="absolute bottom-3 left-3 bg-black/60 px-2.5 py-1 rounded-md text-white text-xs backdrop-blur font-medium z-20">
+                        <div class={ getNameTagClass() }>
                             { getUsername(peer.user) }
                             <i if={ isPinned(peer.user._key) }
                                 class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i>
@@ -105,10 +110,8 @@
                 </div>
 
                 <!-- Local Video (PiP) -->
-                <div class={ 'absolute bottom-24 right-6 w-56 aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-600 transition-all hover:scale-105 '
-                    + (!props.localStreamHasVideo ? 'hidden' : '' ) }>
-                    <video ref="localVideo" autoplay playsinline muted
-                        class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                <div class={ getLocalVideoContainerClass() }>
+                    <video ref="localVideo" autoplay playsinline muted class={ getLocalVideoClass() }></video>
                     <div
                         class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">
                         You</div>
@@ -116,9 +119,8 @@
             </div>
 
             <!-- Controls Footer -->
-            <div class="absolute bottom-6 left-0 right-0 flex justify-center items-center pointer-events-none z-50">
-                <div
-                    class="bg-gray-900/90 backdrop-blur border border-gray-700 rounded-2xl px-6 py-4 flex items-center gap-6 shadow-2xl pointer-events-auto transform transition-transform hover:scale-105">
+            <div class={ getControlsFooterClass() }>
+                <div class={ getControlsContainerClass() }>
 
                     <button onclick={ props.onToggleAudio } class={ getAudioButtonClass() }>
                         <i class={ props.isAudioEnabled ? 'fas fa-microphone' : 'fas fa-microphone-slash' }></i>
@@ -128,21 +130,26 @@
                         <i class={ props.isVideoEnabled ? 'fas fa-video' : 'fas fa-video-slash' }></i>
                     </button>
 
-                    <div class="w-px h-8 bg-gray-700 mx-2"></div>
+                    <div class="w-px h-8 bg-gray-700 mx-1"></div>
 
                     <button onclick={ handleScreenShare } class={ getScreenShareButtonClass() } title="Share Screen">
                         <i class="fas fa-desktop"></i>
                     </button>
 
-                    <div class="w-px h-8 bg-gray-700 mx-2"></div>
+                    <button onclick={ props.onToggleFullscreen } class={ getFullscreenButtonClass() } title={
+                        props.isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen" }>
+                        <i class={ props.isFullscreen ? 'fas fa-compress' : 'fas fa-expand' }></i>
+                    </button>
 
-                    <button onclick={ handleHangup }
-                        class="w-16 h-12 rounded-full bg-red-600 flex items-center justify-center text-white text-2xl hover:bg-red-500 transition-all shadow-lg hover:shadow-red-900/50">
+                    <div class="w-px h-8 bg-gray-700 mx-1"></div>
+
+                    <button onclick={ handleHangup } class={ getHangupButtonClass() }>
                         <i class="fas fa-phone-slash"></i>
                     </button>
                 </div>
             </div>
         </div>
+
     </div>
 
     <script>
@@ -168,6 +175,13 @@
                         }
                     });
                 }
+            },
+
+            getWrapperClass() {
+                if (this.props.activeCall && !this.props.isFullscreen) {
+                    return 'h-full flex flex-col flex-shrink-0';
+                }
+                return '';
             },
 
             getParticipantText() {
@@ -200,7 +214,7 @@
             },
 
             getAudioButtonClass() {
-                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                const base = (this.props.isFullscreen ? 'w-12 h-12 text-xl ' : 'w-10 h-10 text-lg ') + 'rounded-full flex items-center justify-center transition-all ';
                 if (this.props.isAudioEnabled) {
                     return base + 'bg-gray-700 text-white hover:bg-gray-600';
                 }
@@ -208,7 +222,7 @@
             },
 
             getVideoButtonClass() {
-                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                const base = (this.props.isFullscreen ? 'w-12 h-12 text-xl ' : 'w-10 h-10 text-lg ') + 'rounded-full flex items-center justify-center transition-all ';
                 if (this.props.isVideoEnabled) {
                     return base + 'bg-gray-700 text-white hover:bg-gray-600';
                 }
@@ -216,11 +230,95 @@
             },
 
             getScreenShareButtonClass() {
-                const base = 'w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all ';
+                const base = (this.props.isFullscreen ? 'w-12 h-12 text-xl ' : 'w-10 h-10 text-lg ') + 'rounded-full flex items-center justify-center transition-all ';
                 if (this.props.isScreenSharing) {
                     return base + 'bg-green-600 text-white hover:bg-green-500';
                 }
                 return base + 'bg-gray-700 text-white hover:bg-gray-600';
+            },
+
+            getFullscreenButtonClass() {
+                const base = (this.props.isFullscreen ? 'w-12 h-12 text-xl ' : 'w-10 h-10 text-lg ') + 'rounded-full flex items-center justify-center transition-all ';
+                return base + 'bg-gray-700 text-white hover:bg-gray-600';
+            },
+
+            getCallContainerClass() {
+                return this.props.isFullscreen
+                    ? 'fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in'
+                    : 'w-96 flex-shrink-0 h-full bg-gray-900 border-l border-gray-700 flex flex-col relative animate-fade-in overflow-hidden z-[1]';
+            },
+
+            getHeaderClass() {
+                return "absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/50 to-transparent flex justify-between items-start pointer-events-none "
+                    + (this.props.isFullscreen ? "p-4" : "p-2");
+            },
+
+            getDurationBadgeClass() {
+                return "bg-gray-800/80 backdrop-blur rounded-full border border-white/10 flex items-center gap-2 shadow-lg "
+                    + (this.props.isFullscreen ? "px-4 py-2" : "px-2 py-1");
+            },
+
+            getVideoClass(peer) {
+                const base = 'w-full h-full z-10 ';
+                const visibility = !peer.hasVideo ? 'hidden ' : '';
+                const fit = peer.isScreenSharing ? 'object-contain bg-black ' : 'object-cover ';
+                return base + visibility + fit;
+            },
+
+            getLocalVideoClass() {
+                const base = 'w-full h-full transform scale-x-[-1] ';
+                const fit = this.props.isScreenSharing ? 'object-contain bg-black ' : 'object-cover ';
+                return base + fit;
+            },
+
+            getVideoGridClass() {
+                return "flex-1 bg-black overflow-y-auto custom-scrollbar flex items-center justify-center " +
+                    (this.props.isFullscreen ? "p-4" : "p-2");
+            },
+
+            getInnerGridClass() {
+                return "flex flex-wrap justify-center items-center w-full h-full content-center " +
+                    (this.props.isFullscreen ? "gap-4" : "gap-2");
+            },
+
+            getPlaceholderClass() {
+                return "rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shadow-lg "
+                    + (this.props.isFullscreen ? "w-20 h-20 text-2xl mb-3" : "w-12 h-12 text-sm mb-1");
+            },
+
+            getPlaceholderTextClass() {
+                return "text-white font-bold " + (this.props.isFullscreen ? "text-lg" : "text-xs");
+            },
+
+            getNameTagClass() {
+                return "absolute bottom-3 left-3 bg-black/60 rounded-md text-white text-xs backdrop-blur font-medium z-20 "
+                    + (this.props.isFullscreen ? "px-2.5 py-1" : "px-1.5 py-0.5 text-[10px]");
+            },
+
+            getLocalVideoContainerClass() {
+                const visibility = !this.props.localStreamHasVideo ? 'hidden' : '';
+                const position = this.props.isFullscreen
+                    ? ' absolute bottom-24 right-6 w-56 aspect-video'
+                    : ' fixed bottom-20 right-4 w-32 aspect-video z-50';
+                return 'bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-600 transition-all hover:scale-105 ' + visibility + position;
+            },
+
+            getControlsFooterClass() {
+                const base = "flex justify-center items-center pointer-events-none z-50 ";
+                const pos = this.props.isFullscreen ? "absolute bottom-6 left-0 right-0" : "p-4 border-t border-gray-700 bg-gray-900";
+                return base + pos;
+            },
+
+            getControlsContainerClass() {
+                const base = "bg-gray-900/90 backdrop-blur border border-gray-700 rounded-2xl flex items-center pointer-events-auto transform transition-transform ";
+                const sizing = this.props.isFullscreen ? "px-6 py-4 gap-6 hover:scale-105 shadow-2xl" : "px-3 py-2 gap-3 shadow-lg";
+                return base + sizing;
+            },
+
+            getHangupButtonClass() {
+                const base = "rounded-full bg-red-600 flex items-center justify-center text-white hover:bg-red-500 transition-all shadow-lg hover:shadow-red-900/50 ";
+                const sizing = this.props.isFullscreen ? "w-16 h-12 text-2xl" : "w-12 h-10 text-xl";
+                return base + sizing;
             },
 
             togglePin(e, userKey) {
@@ -239,6 +337,10 @@
             },
 
             getGridStyle(peer, totalCount) {
+                if (!this.props.isFullscreen) {
+                    return 'width: 100%; aspect-ratio: 16/9;';
+                }
+
                 const pinned = this.state.pinnedPeers || [];
                 const isPinned = pinned.includes(peer.user._key);
                 const hasPins = pinned.length > 0;

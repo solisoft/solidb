@@ -18,26 +18,29 @@
 
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
-                    fetchOgMetadata } openLightbox={ openLightbox } toggleReaction={ toggleReaction } scrollToLatest={
-                    scrollToLatest } onScroll={ onScroll } goToDm={ goToDm } onToggleEmojiPicker={ toggleEmojiPicker }
-                    highlightMessageId={ state.highlightMessageId } onOpenThread={ openThread } onQuoteMessage={
-                    handleQuoteMessage } currentChannel={ state.currentChannel } onMessageClick={ navigateToSearchResult
-                    } />
+                    this.fetchOgMetadata } openLightbox={ this.openLightbox } toggleReaction={ this.toggleReaction }
+                    scrollToLatest={ this.scrollToLatest } onScroll={ this.onScroll } goToDm={ this.goToDm }
+                    onToggleEmojiPicker={ this.toggleEmojiPicker } onQuoteMessage={ this.handleQuoteMessage }
+                    onOpenThread={ (m, e)=> this.openThread(m, e) }
+                    currentChannel={ state.currentChannel } onUpdateMessage={ this.updateMessage }
+                    onDeleteMessage={ this.deleteMessage } onMessageClick={ this.navigateToSearchResult } />
 
-                <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
-                    showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave }
-                    onDragOver={ onDragOver } ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown }
-                    onHandleMessageInput={ handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker }
-                    onSendMessage={ sendMessage } quotedMessage={ state.quotedMessage } onCancelQuote={ cancelQuote }
-                    onAddFiles={ addFiles } />
+                    <talks-input dragging={ state.dragging } files={ state.files } sending={ state.sending }
+                        showEmojiPicker={ state.showEmojiPicker } onDragEnter={ onDragEnter } onDragLeave={ onDragLeave
+                        } onDragOver={ onDragOver } ondrop={ onDrop } onRemoveFile={ removeFile } onKeyDown={ onKeyDown
+                        } onHandleMessageInput={ handleMessageInput } onToggleEmojiPicker={ toggleEmojiPicker }
+                        onSendMessage={ sendMessage } quotedMessage={ state.quotedMessage } onCancelQuote={ cancelQuote
+                        } onAddFiles={ addFiles } />
             </main>
+
 
             <talks-calls incoming-calls={ state.incomingCalls } active-call={ state.activeCall } call-duration={
                 state.callDuration } is-audio-enabled={ !state.isMuted } is-video-enabled={ state.isVideoEnabled }
                 is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
-                remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } on-accept-call={
-                acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={
-                toggleVideo } onshare={ toggleScreenShare } on-hangup={ hangup } />
+                remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } is-fullscreen={
+                state.isCallFullscreen } on-toggle-fullscreen={ toggleCallFullscreen } on-accept-call={ acceptCall }
+                on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={ toggleVideo } onshare={
+                toggleScreenShare } on-hangup={ hangup } />
 
 
 
@@ -100,7 +103,7 @@
             <div class={ 'w-96 flex-shrink-0 h-full ' + (state.showThreadSidebar ? '' : 'hidden' ) }>
                 <talks-thread parentMessage={ state.threadParentMessage } threadMessages={ state.threadMessages }
                     currentUser={ state.currentUser } users={ state.users } onClose={ closeThread } onReplySent={
-                    handleThreadReplySent } />
+                    handleThreadReplySent } onUpdateMessage={ updateMessage } onDeleteMessage={ deleteMessage } />
             </div>
 
             <!-- Fullscreen Image Lightbox -->
@@ -475,9 +478,9 @@
                     showThreadSidebar: false,
                     threadParentMessage: null,
                     threadMessages: [],
-                    threadParentMessage: null,
-                    threadMessages: [],
                     threadLoading: false,
+                    // Call state
+                    isCallFullscreen: false,
                     // Quote State
                     quotedMessage: null,
                     showSoundPopup: false
@@ -1276,6 +1279,8 @@
                             )
                             FOR m IN messages
                                 FILTER POSITION(my_channels, m.channel_id) >= 0
+                                SORT m._updated_at DESC
+                                LIMIT 50
                                 RETURN m
                         `;
 
@@ -1305,18 +1310,35 @@
 
                                 let hasNewItems = false;
                                 let hasUpdates = false;
+                                let hasDeletions = false;
 
-                                // Update existing messages in place
-                                const updated = currentMessages.map(m => {
+                                // Determine window of the query result to detect deletions
+                                let minTS = Infinity;
+                                newMessages.forEach(m => {
+                                    const ts = m._updated_at || m.timestamp;
+                                    if (ts < minTS) minTS = ts;
+                                });
+
+                                // Support deletion: remove messages that SHOULD be in the result but aren't
+                                const updated = currentMessages.filter(m => {
+                                    if (newMap.has(m._key)) return true;
+
+                                    const mTS = m._updated_at || m.timestamp;
+                                    if (mTS >= minTS && newMessages.length > 0) {
+                                        // If it's newer than the oldest message in the top 50 but not in the result, it's deleted
+                                        hasDeletions = true;
+                                        return false;
+                                    }
+                                    return true;
+                                }).map(m => {
                                     if (newMap.has(m._key)) {
                                         const newData = newMap.get(m._key);
-                                        // Check if actually changed
                                         if (JSON.stringify(m) !== JSON.stringify(newData)) {
                                             hasUpdates = true;
                                             return newData;
                                         }
                                     }
-                                    return m; // Keep as-is (no removal)
+                                    return m;
                                 });
 
                                 // Add new messages that don't exist in current list
@@ -1344,7 +1366,7 @@
                                 });
 
                                 // Only update UI if something changed
-                                if (hasNewItems || hasUpdates) {
+                                if (hasNewItems || hasUpdates || hasDeletions) {
                                     // Sort by timestamp
                                     updated.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -2012,6 +2034,98 @@
                 }
             },
 
+            async updateMessage(messageKey, text) {
+                try {
+                    const response = await fetch('/talks/update_message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message_key: messageKey, text: text })
+                    });
+                    if (response.ok) {
+                        // Immediate local update
+                        const allMessages = this.state.allMessages.map(m =>
+                            m._key === messageKey ? { ...m, text: text, updated_at: Math.floor(Date.now() / 1000) } : m
+                        );
+                        const messages = this.state.messages.map(m =>
+                            m._key === messageKey ? { ...m, text: text, updated_at: Math.floor(Date.now() / 1000) } : m
+                        );
+                        this.update({ allMessages, messages });
+                    } else {
+                        const err = await response.json();
+                        alert(err.error || 'Failed to update message');
+                    }
+                } catch (err) {
+                    console.error('Error updating message:', err);
+                }
+            },
+
+            async deleteMessage(messageKey) {
+                if (!confirm('Are you sure you want to delete this message?')) return;
+                try {
+                    const response = await fetch('/talks/delete_message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message_key: messageKey })
+                    });
+                    if (response.ok) {
+                        // Immediate local update
+                        let allMessages = this.state.allMessages.filter(m => m._key !== messageKey);
+                        let messages = this.state.messages.filter(m => m._key !== messageKey);
+
+                        const updateData = {};
+
+                        // If it's the currently open thread parent, close thread
+                        if (this.state.threadParentMessage && (this.state.threadParentMessage._key === messageKey || this.state.threadParentMessage._id === messageKey)) {
+                            updateData.showThreadSidebar = false;
+                            updateData.threadParentMessage = null;
+                            updateData.threadMessages = [];
+                        } else if (this.state.threadMessages) {
+                            // If it's a reply in the current thread, remove it
+                            const initialLength = this.state.threadMessages.length;
+                            const newThreadMessages = this.state.threadMessages.filter(m => m._key !== messageKey);
+
+                            if (newThreadMessages.length < initialLength) {
+                                updateData.threadMessages = newThreadMessages;
+
+                                // Update parent message count
+                                if (this.state.threadParentMessage) {
+                                    const parentKey = this.state.threadParentMessage._key;
+
+                                    // Find authoritative count from the main list first
+                                    // Use the already filtered list effectively
+                                    const parentInList = allMessages.find(m => m._key === parentKey);
+                                    const currentCount = parentInList ? (parentInList.thread_count || 0) : (this.state.threadParentMessage.thread_count || 0);
+
+                                    const newCount = Math.max(0, currentCount - 1);
+
+                                    updateData.threadParentMessage = {
+                                        ...this.state.threadParentMessage,
+                                        thread_count: newCount
+                                    };
+
+                                    // Update in main lists
+                                    allMessages = allMessages.map(m =>
+                                        m._key === parentKey ? { ...m, thread_count: newCount } : m
+                                    );
+                                    messages = messages.map(m =>
+                                        m._key === parentKey ? { ...m, thread_count: newCount } : m
+                                    );
+                                }
+                            }
+                        }
+
+                        updateData.allMessages = allMessages;
+                        updateData.messages = messages;
+                        this.update(updateData);
+                    } else {
+                        const err = await response.json();
+                        alert(err.error || 'Failed to delete message');
+                    }
+                } catch (err) {
+                    console.error('Error deleting message:', err);
+                }
+            },
+
 
             dismissSoundPopup() {
                 localStorage.setItem('talks_sound_enabled', 'dismissed');
@@ -2268,24 +2382,6 @@
 
             // Helper: Extract domain from URL
 
-
-            // Helper: Get initials from sender name
-            // Helper: Get initials from sender name
-            getInitials(sender) {
-                if (!sender) return '';
-                const parts = sender.split(/[._\-\s]+/);
-                if (parts.length >= 2) {
-                    return (parts[0][0] + parts[1][0]).toUpperCase();
-                }
-                return sender.substring(0, 2).toUpperCase();
-            },
-
-            // Helper: Get username from user object
-            getUsername(user) {
-                if (!user) return 'anonymous';
-                if (user.username) return user.username; // legacy or if added later
-                return (user.firstname + '.' + user.lastname).toLowerCase();
-            },
 
             // Helper: Format timestamp to human-readable time
 
@@ -2609,7 +2705,11 @@
                     },
                     isVideoEnabled: type === 'video',
                     localStreamHasVideo: type === 'video',
-                    callDuration: 0
+                    callDuration: 0,
+                    showThreadSidebar: false,
+                    showSearchSidebar: false,
+                    showMembersPanel: false,
+                    isCallFullscreen: false
                 });
 
                 // Only play calling sound for DM calls (ringing behavior)
@@ -2657,7 +2757,7 @@
                     }
 
                     for (const pKey of peersToConnect) {
-                        await this.setupPeerConnection(pKey, true, type);
+                        await this.setupPeerConnection(pKey, true, type, !isDM);
                     }
                 } catch (err) {
                     console.error('Error accessing media:', err);
@@ -2707,8 +2807,11 @@
                                 this.update({
                                     incomingCalls: [...currentCalls, newCall]
                                 });
-                                this.playSound('ringtone');
-                                this.showCallNotification(caller, data.call_type);
+                                // Only ring and notify if it's NOT a huddle (i.e. it's a direct call/DM)
+                                if (!data.is_huddle) {
+                                    this.playSound('ringtone');
+                                    this.showCallNotification(caller, data.call_type);
+                                }
                             }
                         } else if (signal.type === 'bye') {
                             // Handle cancellation of incoming call (caller hung up before we answered)
@@ -2734,13 +2837,19 @@
                                 const pc = this.peerConnections[fromUser];
                                 if (pc) {
                                     try {
+                                        // Store screen sharing state if provided
+                                        if (this.remotePeerStates === undefined) this.remotePeerStates = {};
+                                        if (!this.remotePeerStates[fromUser]) this.remotePeerStates[fromUser] = {};
+                                        this.remotePeerStates[fromUser].isScreenSharing = !!data.is_screen_sharing;
+
                                         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                                         const answer = await pc.createAnswer();
                                         await pc.setLocalDescription(answer);
                                         await this.sendSignal(fromUser, 'answer', { sdp: answer });
-                                    } catch (e) { console.error("Renegotiation failed", e); }
+                                        this.updateCallPeers();
+                                    } catch (e) { console.error('Error handling renegotiation:', e); }
                                 }
-                                break;
+                                return;
                             }
 
                             await this.setupPeerConnection(fromUser, false, null);
@@ -2854,7 +2963,11 @@
                         channelId: channelId
                     },
                     isVideoEnabled: incoming.type === 'video',
-                    localStreamHasVideo: incoming.type === 'video'
+                    localStreamHasVideo: incoming.type === 'video',
+                    showThreadSidebar: false,
+                    showSearchSidebar: false,
+                    showMembersPanel: false,
+                    isCallFullscreen: false
                 });
 
                 this.callTimer = setInterval(() => {
@@ -2901,7 +3014,7 @@
                 this.closeCallNotification();
             },
 
-            async setupPeerConnection(remoteUserKey, isInitiator, callType) {
+            async setupPeerConnection(remoteUserKey, isInitiator, callType, isHuddle = false) {
                 console.log(`[setupPeerConnection] Setting up connection to ${remoteUserKey} (initiator: ${isInitiator})`);
                 if (this.peerConnections[remoteUserKey]) {
                     console.log(`[setupPeerConnection] Connection to ${remoteUserKey} already exists`);
@@ -2959,7 +3072,8 @@
                         console.log(`[setupPeerConnection] Sending offer to ${remoteUserKey}`);
                         await this.sendSignal(remoteUserKey, 'offer', {
                             sdp: offer,
-                            call_type: callType || 'audio'
+                            call_type: callType || 'audio',
+                            is_huddle: isHuddle
                         });
                     } catch (e) {
                         console.error('Error creating initial offer:', e);
@@ -2976,6 +3090,10 @@
                 if (this.remoteStreams[key]) {
                     delete this.remoteStreams[key];
                 }
+                // Also clear remote peer state
+                if (this.remotePeerStates && this.remotePeerStates[key]) {
+                    delete this.remotePeerStates[key];
+                }
                 this.updateCallPeers();
             },
 
@@ -2984,10 +3102,12 @@
                 Object.keys(this.peerConnections).forEach(key => {
                     const user = this.state.users.find(u => u._key === key) || { _key: key, firstname: 'User', lastname: key };
                     const stream = this.remoteStreams[key];
+                    const peerState = (this.remotePeerStates && this.remotePeerStates[key]) || {};
                     peers.push({
                         user: user,
                         stream: stream,
-                        hasVideo: stream ? stream.getVideoTracks().length > 0 : false
+                        hasVideo: stream ? stream.getVideoTracks().length > 0 : false,
+                        isScreenSharing: !!peerState.isScreenSharing
                     });
                 });
                 this.update({ callPeers: peers });
@@ -3076,8 +3196,13 @@
                     callDuration: 0,
                     callPeers: [],
                     isScreenSharing: false,
-                    localStreamHasVideo: false
+                    localStreamHasVideo: false,
+                    isCallFullscreen: false
                 });
+            },
+
+            toggleCallFullscreen() {
+                this.update({ isCallFullscreen: !this.state.isCallFullscreen });
             },
 
             toggleMute() {
@@ -3151,6 +3276,12 @@
                                 } else {
                                     pc.addTrack(newTrack, this.localStream);
                                 }
+                                // Notify peer that we are NOT screen sharing (and potentially restored camera)
+                                this.sendSignal(key, 'offer', {
+                                    sdp: pc.localDescription,
+                                    call_type: 'renegotiation',
+                                    is_screen_sharing: false
+                                });
                             });
                             this.update({ localStreamHasVideo: true });
                             this.attachLocalStream();
@@ -3162,6 +3293,12 @@
                             const pc = this.peerConnections[key];
                             const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                             if (sender) pc.removeTrack(sender);
+                            // Notify peer that we are NOT screen sharing
+                            this.sendSignal(key, 'offer', {
+                                sdp: pc.localDescription,
+                                call_type: 'renegotiation',
+                                is_screen_sharing: false
+                            });
                         });
                     }
                     return;
@@ -3191,8 +3328,13 @@
                         } else {
                             pc.addTrack(screenTrack, this.localStream);
                         }
+                        // Notify peer that we are screen sharing
+                        this.sendSignal(key, 'offer', {
+                            sdp: pc.localDescription,
+                            call_type: 'renegotiation',
+                            is_screen_sharing: true
+                        });
                     });
-
                     this.update({ isScreenSharing: true, localStreamHasVideo: true });
                     this.attachLocalStream();
 

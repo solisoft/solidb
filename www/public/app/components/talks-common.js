@@ -1,15 +1,16 @@
 window.TalksMixin = {
     getUsername(user) {
         if (!user) return 'anonymous';
+        if (user.firstname && user.lastname) return user.firstname + ' ' + user.lastname;
         if (user.username) return user.username;
-        return (user.firstname + '.' + user.lastname).toLowerCase();
+        return user.email || 'Anonymous';
     },
 
     getInitials(sender) {
         if (!sender) return '';
-        const parts = sender.split(/[._-]/);
+        const parts = sender.split(/[^a-zA-Z0-9]+/);
         if (parts.length >= 2) {
-            return (parts[0][0] + parts[1][0]).toUpperCase();
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
         }
         return sender.substring(0, 2).toUpperCase();
     },
@@ -239,18 +240,6 @@ window.TalksMixin = {
         this.update({ files: newFiles });
     },
 
-    getUsername(user) {
-        if (!user) return 'Unknown';
-        if (user.firstname && user.lastname) return user.firstname + ' ' + user.lastname;
-        if (user.username) return user.username;
-        return user.email || 'Anonymous';
-    },
-
-    getInitials(name) {
-        if (!name) return '?';
-        const matches = name.match(/(\b\S)?/g);
-        return matches ? matches.join("").match(/(^\S|\S$)?/g).join("").toUpperCase() : '?';
-    }
 };
 
 // Export for browser-side imports (ES modules) - REMOVED to support standard script loading

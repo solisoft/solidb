@@ -57,7 +57,7 @@
                 <p class="text-sm">No replies yet. Start the conversation!</p>
             </div>
             <div each={ message in props.threadMessages }
-                class="flex items-start gap-3 group hover:bg-[#222529]/30 -mx-4 px-4 py-2 transition-colors">
+                class="flex items-start gap-3 group hover:bg-[#222529]/30 -mx-4 px-4 py-2 transition-colors relative">
                 <div class={ getAvatarClass(message.sender) }>
                     { getInitials(message.sender) }
                 </div>
@@ -66,7 +66,25 @@
                         <span class="font-bold text-white text-sm mr-2">{ message.sender }</span>
                         <span class="text-xs text-gray-500">{ formatTime(message.timestamp) }</span>
                     </div>
-                    <div class="text-[#D1D2D3] text-sm leading-snug">{ message.text }</div>
+
+                    <div if={ state.editingMessageId !==message._key } class="text-[#D1D2D3] text-sm leading-snug">
+                        { message.text }
+                        <span if={ message.edited } class="text-[10px] text-gray-500 ml-1">(edited)</span>
+                    </div>
+
+                    <div if={ state.editingMessageId===message._key } class="mt-1">
+                        <textarea
+                            class="w-full bg-[#222529] border border-blue-500 rounded p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
+                            onkeydown={ handleEditKeyDown }>{ message.text }</textarea>
+                        <div class="flex justify-end gap-2 mt-1">
+                            <button onclick={ cancelEdit }
+                                class="text-xs text-gray-400 hover:text-white px-2 py-1">Cancel</button>
+                            <button onclick={ saveEdit }
+                                class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Save
+                                Changes</button>
+                        </div>
+                    </div>
+
                     <!-- Attachments -->
                     <div if={ message.attachments && message.attachments.length> 0 } class="mt-2 flex flex-wrap gap-2">
                         <div each={ attachment in message.attachments } class="relative">
@@ -83,6 +101,19 @@
                             </template>
                         </div>
                     </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div if={ isOwner(message) && state.editingMessageId !==message._key }
+                    class="absolute top-2 right-2 flex items-center bg-[#1A1D21] border border-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <button onclick={ (e)=> startEdit(message, e) } class="p-1.5 text-gray-400 hover:text-white
+                        transition-colors" title="Edit">
+                        <i class="fas fa-edit text-xs"></i>
+                    </button>
+                    <button onclick={ (e)=> props.onDeleteMessage(message._key, e) } class="p-1.5 text-gray-400
+                        hover:text-red-400 transition-colors" title="Delete">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
                 </div>
             </div>
         </div>
@@ -121,14 +152,26 @@
                 'talks-input': Input
             },
             ...window.TalksMixin,
-            getInitials(sender) {
-                if (!sender) return '';
-                // Split by dot, underscore, dash, OR SPACE
-                const parts = sender.split(/[._\-\s]+/);
-                if (parts.length >= 2) {
-                    return (parts[0][0] + parts[1][0]).toUpperCase();
+            isOwner(message) {
+                if (!message || !this.props.currentUser) return false;
+                if (message.user_key && message.user_key === this.props.currentUser._key) return true;
+
+                const currentUsername = this.getUsername(this.props.currentUser);
+                if (message.sender === currentUsername) return true;
+
+                // Fallback for old messages: firstname.lastname
+                if (this.props.currentUser.firstname && this.props.currentUser.lastname) {
+                    const oldFormat = (this.props.currentUser.firstname + '.' + this.props.currentUser.lastname).toLowerCase();
+                    if (message.sender === oldFormat) return true;
                 }
-                return sender.substring(0, 2).toUpperCase();
+
+                return false;
+            },
+            getUsername(user) {
+                if (!user) return 'anonymous';
+                if (user.firstname && user.lastname) return user.firstname + ' ' + user.lastname;
+                if (user.username) return user.username;
+                return user.email || 'Anonymous';
             },
             state: {
                 sending: false,
@@ -142,7 +185,8 @@
                 filteredUsers: [],
                 mentionQuery: '',
                 selectedUserIndex: 0,
-                userPickerPos: { left: 0, bottom: 0 }
+                userPickerPos: { left: 0, bottom: 0 },
+                editingMessageId: null
             },
             onMounted() {
                 this.dragCounter = 0;
@@ -203,6 +247,39 @@
                 const newFiles = [...this.state.files];
                 newFiles.splice(index, 1);
                 this.update({ files: newFiles });
+            },
+
+            // --- Editing Methods ---
+            startEdit(message, e) {
+                if (e) e.stopPropagation();
+                this.update({ editingMessageId: message._key });
+                setTimeout(() => {
+                    const textarea = this.root.querySelector('textarea');
+                    if (textarea) {
+                        textarea.focus();
+                        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+                    }
+                }, 50);
+            },
+            cancelEdit() {
+                this.update({ editingMessageId: null });
+            },
+            saveEdit() {
+                const textarea = this.root.querySelector('textarea');
+                const text = textarea?.value?.trim();
+                const msgId = this.state.editingMessageId;
+                if (text && msgId) {
+                    this.props.onUpdateMessage(msgId, text);
+                }
+                this.cancelEdit();
+            },
+            handleEditKeyDown(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.saveEdit();
+                } else if (e.key === 'Escape') {
+                    this.cancelEdit();
+                }
             },
 
             // Emoji Picker

@@ -45,7 +45,7 @@ local app = {
         pcall(function() db:CreateIndex("users", { fields = { "email" }, unique = true }) end)
         pcall(function() db:CreateIndex("messages", { fields = { "channel_id" }, unique = false }) end)
         pcall(function() db:CreateIndex("signals", { fields = { "timestamp" }, type = "ttl", expireAfter = 3600 }) end)
-        
+
         -- Create fulltext index on messages.text for search (if it doesn't exist)
         local existing_indexes = db:GetAllIndexes("messages")
         local has_fulltext_index = false
@@ -201,7 +201,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     -- Fetch all channels (standard + private where user is member + system)
     local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR c.type == 'system' OR (c.type == 'private' AND @me IN c.members) SORT c.type DESC, c.name ASC RETURN c", { me = current_user._key })
     local channels = (channelsRes and channelsRes.result) or {}
-    
+
     -- (mentions channel removed from virtual injection)
 
     -- Get current channel (default to first channel from DB)
@@ -303,20 +303,20 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         -- 2. Messages that are quotes of the user's messages (quoted_message.sender == user.username (or email logic))
         -- 3. Thread replies in threads the user participated in (this is harder to track without an index, maybe skip for now or rely on thread_participants attribute if we added it)
         -- Let's focus on text mentions and quotes.
-        
+
         -- Determine user identifier for mentions/quotes
-        local username = current_user.firstname and current_user.lastname 
+        local username = current_user.firstname and current_user.lastname
                         and (current_user.firstname .. " " .. current_user.lastname)
                         or current_user.email
-        
+
         local email_handle = string.match(current_user.email, "^[^@]+")
-        
+
         local mentionsQuery = [[
             LET username = @username
             LET user_email = @email
             LET handle = @handle
-            
-            FOR m IN messages 
+
+            FOR m IN messages
             FILTER (
                 CONTAINS(m.text, CONCAT("@", username))
                 OR
@@ -328,11 +328,11 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
                 OR
                 (m.thread_participants != null AND POSITION(m.thread_participants, username))
             )
-            SORT m.timestamp ASC 
+            SORT m.timestamp ASC
             RETURN m
         ]]
-        
-        local mentionsRes = db:Sdbql(mentionsQuery, { 
+
+        local mentionsRes = db:Sdbql(mentionsQuery, {
             username = username,
             email = current_user.email,
             handle = email_handle
@@ -417,11 +417,11 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
 
     local currentChannel = GetParam("channel") or "general"
-    
+
     -- Try to find channel by key first, then by name
     local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
     local channelRes = db:Sdbql(channelQuery, { key = currentChannel, name = currentChannel }).result[1]
-    
+
     if not channelRes then
         SetStatus(404)
         WriteJSON({ error = "Channel not found" })
@@ -446,21 +446,21 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     -- Fetch messages for this channel
     -- Fetch messages for this channel
     local messages = {}
-    
+
     if channelRes.name == "mentions" then
          -- Determine user identifier for mentions/quotes
-        local username = current_user.firstname and current_user.lastname 
+        local username = current_user.firstname and current_user.lastname
                         and (current_user.firstname .. " " .. current_user.lastname)
                         or current_user.email
-        
+
         local email_handle = string.match(current_user.email, "^[^@]+")
-        
+
         local mentionsQuery = [[
             LET username = @username
             LET user_email = @email
             LET handle = @handle
-            
-            FOR m IN messages 
+
+            FOR m IN messages
             FILTER (
                 CONTAINS(m.text, CONCAT("@", username))
                 OR
@@ -472,11 +472,11 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
                 OR
                 (m.thread_participants != null AND POSITION(m.thread_participants, username))
             )
-            SORT m.timestamp ASC 
+            SORT m.timestamp ASC
             RETURN m
         ]]
-        
-        local mentionsRes = db:Sdbql(mentionsQuery, { 
+
+        local mentionsRes = db:Sdbql(mentionsQuery, {
             username = username,
             email = current_user.email,
             handle = email_handle
@@ -913,6 +913,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
   -- API endpoint to create a new message
   create_message = function()
     local db = SoliDB.primary
+    local current_user = get_current_user()
 
     -- Parse JSON body
     local body = DecodeJson(GetBody() or "{}") or {}
@@ -930,12 +931,13 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
 
     local quoted_message = body.quoted_message
-    
+
     -- Create the message
     local timestamp = os.time()
     local doc = {
        channel_id = channel,
        sender = sender,
+       user_key = current_user and current_user._key or nil,
        text = text,
        timestamp = timestamp,
        attachments = attachments,
@@ -1049,6 +1051,144 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     end
   end,
 
+  -- API endpoint to update an existing message
+  update_message = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local message_key = body.message_key
+    local text = body.text
+
+    if not message_key or not text then
+        SetStatus(400)
+        WriteJSON({ error = "message_key and text are required" })
+        return
+    end
+
+    -- Get message to check ownership
+    local msg = db:GetDocument("messages/" .. message_key)
+    if not msg then
+        SetStatus(404)
+        WriteJSON({ error = "Message not found" })
+        return
+    end
+
+    local is_owner = false
+    if msg.user_key and msg.user_key == current_user._key then
+        is_owner = true
+    else
+        local current_username = current_user.email
+        if current_user.firstname and current_user.lastname then
+            current_username = current_user.firstname .. " " .. current_user.lastname
+        elseif current_user.username then
+            current_username = current_user.username
+        end
+
+        if msg.sender == current_username then
+            is_owner = true
+        else
+            -- Old format fallback: firstname.lastname
+            if current_user.firstname and current_user.lastname then
+                local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
+                if msg.sender == old_format then
+                    is_owner = true
+                end
+            end
+        end
+    end
+
+    if not is_owner then
+        SetStatus(403)
+        WriteJSON({ error = "Forbidden: You can only update your own messages" })
+        return
+    end
+
+    db:UpdateDocument("messages/" .. message_key, { text = text, updated_at = os.time() })
+
+    SetStatus(200)
+    WriteJSON({ success = true })
+  end,
+
+  -- API endpoint to delete an existing message
+  delete_message = function()
+    local db = SoliDB.primary
+    local current_user = get_current_user()
+    if not current_user then
+        SetStatus(401)
+        WriteJSON({ error = "Unauthorized" })
+        return
+    end
+
+    local body = DecodeJson(GetBody() or "{}") or {}
+    local message_key = body.message_key
+
+    if not message_key then
+        SetStatus(400)
+        WriteJSON({ error = "message_key is required" })
+        return
+    end
+
+    -- Get message to check ownership
+    local msg = db:GetDocument("messages/" .. message_key)
+    if not msg then
+        SetStatus(404)
+        WriteJSON({ error = "Message not found" })
+        return
+    end
+
+    local is_owner = false
+    if msg.user_key and msg.user_key == current_user._key then
+        is_owner = true
+    else
+        local current_username = current_user.email
+        if current_user.firstname and current_user.lastname then
+            current_username = current_user.firstname .. " " .. current_user.lastname
+        elseif current_user.username then
+            current_username = current_user.username
+        end
+
+        if msg.sender == current_username then
+            is_owner = true
+        else
+            -- Old format fallback: firstname.lastname
+            if current_user.firstname and current_user.lastname then
+                local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
+                if msg.sender == old_format then
+                    is_owner = true
+                end
+            end
+        end
+    end
+
+    if not is_owner then
+        SetStatus(403)
+        WriteJSON({ error = "Forbidden: You can only delete your own messages" })
+        return
+    end
+
+    -- If this is a thread reply, update the parent's thread count
+    if msg.thread_parent_id then
+        db:Sdbql([[
+            FOR m IN messages
+            FILTER m._id == @parent_id
+            UPDATE m WITH {
+                thread_count: MAX([0, IF(m.thread_count != null, m.thread_count, 1) - 1])
+            } IN messages
+        ]], { parent_id = msg.thread_parent_id })
+    end
+
+    db:DeleteDocument("messages/" .. message_key)
+
+    SetStatus(200)
+    WriteJSON({ success = true })
+  end,
+
   -- Create or get a Direct Message channel
   create_dm = function()
     local db = SoliDB.primary
@@ -1109,7 +1249,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     local res = db:Sdbql("FOR c IN channels FILTER c._key == @key RETURN c", { key = channel_id })
     local channel = res and res.result and res.result[1]
-    
+
     if not channel then
         SetStatus(404)
         WriteJSON({ error = "Channel not found" })
@@ -1120,7 +1260,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
     local pres = db:Sdbql(query, { channel_id = channel_id })
     local actual_participants = pres and pres.result or {}
-    
+
     -- Override channel's active_call_participants with actual data
     channel.active_call_participants = actual_participants
 
@@ -1186,7 +1326,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
         user_id = current_user._key,
         timestamp = os.time()
     }
-    
+
     local success, err = pcall(function() db:CreateDocument("call_participants", participant_doc) end)
     if not success then
         -- If create failed (exists), update it to refresh timestamp
@@ -1200,10 +1340,10 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local participants = res.result or {}
 
     -- Sync back to channel for UI (Best Effort)
-    pcall(function() 
+    pcall(function()
         db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
     end)
-    
+
     SetStatus(200)
     WriteJSON({ success = true, participants = participants })
   end,
@@ -1236,7 +1376,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local participants = res.result or {}
 
     -- Sync back to channel for UI (Best Effort)
-    pcall(function() 
+    pcall(function()
         db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
     end)
 
@@ -1280,7 +1420,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     Logger("Signaling: Creating signal from " .. signal.from_user .. " to " .. signal.to_user .. " type: " .. signal.type)
     local ok, res = pcall(function() return db:CreateDocument("signals", signal) end)
-    
+
     if not ok then
         Logger("Signaling ERROR: " .. tostring(res))
         SetStatus(500)
@@ -1471,23 +1611,23 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
       LET my_user_key = @user_key
       LET accessible_channels = (
         FOR c IN channels
-        FILTER c.type == "standard" 
+        FILTER c.type == "standard"
            OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
         RETURN c._id
       )
-      
+
       LET ft_matches = FULLTEXT("messages", "text", @query, 2)
-      
+
       FOR match IN ft_matches
         LET m = match.doc
         FILTER POSITION(accessible_channels, m.channel_id) >= 0
-        
+
         LET channel = FIRST(FOR c IN channels FILTER c._id == m.channel_id RETURN c)
         LET sender_user = FIRST(FOR u IN users FILTER u._key == m.user_key RETURN u)
-        
+
         SORT match.score DESC, m.timestamp DESC
         LIMIT @limit
-        
+
         RETURN {
           _key: m._key,
           _id: m._id,
@@ -1538,7 +1678,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     -- Fetch thread messages (messages where thread_parent_id equals this message)
     local res = db:Sdbql([[
-      FOR m IN messages 
+      FOR m IN messages
       FILTER m.thread_parent_id == @parent_id
       SORT m.timestamp ASC
       RETURN m
@@ -1591,7 +1731,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     local parent = parentRes.result[1]
 
     -- Determine sender name
-    local sender = current_user.firstname and current_user.lastname 
+    local sender = current_user.firstname and current_user.lastname
       and (current_user.firstname .. " " .. current_user.lastname)
       or current_user.email
 
@@ -1614,7 +1754,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
     -- First, get current thread count and participants
     local thread_count = (parent.thread_count or 0) + 1
     local thread_participants = parent.thread_participants or {}
-    
+
     -- Add sender if not already in participants
     local found = false
     for _, p in ipairs(thread_participants) do
@@ -1629,11 +1769,11 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 
     -- Update parent message
     db:Sdbql([[
-      FOR m IN messages 
-      FILTER m._id == @id 
-      UPDATE m WITH { 
-        thread_count: @count, 
-        thread_participants: @participants 
+      FOR m IN messages
+      FILTER m._id == @id
+      UPDATE m WITH {
+        thread_count: @count,
+        thread_participants: @participants
       } IN messages
     ]], { id = parent_message_id, count = thread_count, participants = thread_participants })
 

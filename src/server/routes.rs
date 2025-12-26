@@ -194,6 +194,11 @@ pub fn create_router(
         .route("/_api/database/{db}/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/commit", post(super::transaction_handlers::commit_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/rollback", post(super::transaction_handlers::rollback_transaction))
+        // Transaction operations (missing routes added)
+        .route("/_api/database/{db}/transaction/{tx_id}/document/{collection}", post(super::transaction_handlers::insert_document_tx))
+        .route("/_api/database/{db}/transaction/{tx_id}/document/{collection}/{key}", put(super::transaction_handlers::update_document_tx))
+        .route("/_api/database/{db}/transaction/{tx_id}/document/{collection}/{key}", delete(super::transaction_handlers::delete_document_tx))
+        .route("/_api/database/{db}/transaction/{tx_id}/query", post(super::transaction_handlers::execute_transactional_sdbql))
         // Cluster routes
         .route("/_api/cluster/status", get(cluster_status))
         .route("/_api/cluster/info", get(cluster_info))
