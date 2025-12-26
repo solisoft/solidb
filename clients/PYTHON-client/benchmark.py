@@ -28,12 +28,10 @@ def run_benchmark():
     iterations = 1000
     
     # INSERT BENCHMARK
-    inserted_keys = []
     start_time = time.time()
     for i in range(iterations):
-        result = client.insert(db, col, {"id": i, "data": "benchmark data content"})
-        if result and "_key" in result:
-            inserted_keys.append(result["_key"])
+        key = f"bench_{i}"
+        client.insert(db, col, {"id": i, "data": "benchmark data content"}, key=key)
     end_time = time.time()
     
     insert_duration = end_time - start_time
@@ -41,16 +39,15 @@ def run_benchmark():
     print(f"PYTHON_BENCH_RESULT:{insert_ops_per_sec:.2f}")
     
     # READ BENCHMARK
-    if inserted_keys:
-        start_time = time.time()
-        for i in range(iterations):
-            key = inserted_keys[i % len(inserted_keys)]
-            client.get(db, col, key)
-        end_time = time.time()
-        
-        read_duration = end_time - start_time
-        read_ops_per_sec = iterations / read_duration
-        print(f"PYTHON_READ_BENCH_RESULT:{read_ops_per_sec:.2f}")
+    start_time = time.time()
+    for i in range(iterations):
+        key = f"bench_{i}"
+        client.get(db, col, key)
+    end_time = time.time()
+    
+    read_duration = end_time - start_time
+    read_ops_per_sec = iterations / read_duration
+    print(f"PYTHON_READ_BENCH_RESULT:{read_ops_per_sec:.2f}")
     
     client.close()
 

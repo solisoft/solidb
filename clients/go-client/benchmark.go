@@ -27,20 +27,16 @@ func main() {
 	iterations := 1000
 
 	// INSERT BENCHMARK
-	var insertedKeys []string
 	startTime := time.Now()
 	for i := 0; i < iterations; i++ {
 		data := map[string]interface{}{
 			"id":   i,
 			"data": "benchmark data content",
 		}
-		result, err := client.Insert(db, col, data, nil)
+		key := fmt.Sprintf("bench_%d", i)
+		_, err = client.Insert(db, col, data, &key)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
-		} else if result != nil {
-			if key, ok := result["_key"].(string); ok {
-				insertedKeys = append(insertedKeys, key)
-			}
 		}
 	}
 	insertDuration := time.Since(startTime)
@@ -48,17 +44,15 @@ func main() {
 	fmt.Printf("GO_BENCH_RESULT:%.2f\n", insertOpsPerSec)
 
 	// READ BENCHMARK
-	if len(insertedKeys) > 0 {
-		startTime = time.Now()
-		for i := 0; i < iterations; i++ {
-			key := insertedKeys[i%len(insertedKeys)]
-			_, err = client.Get(db, col, key)
-			if err != nil {
-				fmt.Printf("Read Error: %v\n", err)
-			}
+	startTime = time.Now()
+	for i := 0; i < iterations; i++ {
+		key := fmt.Sprintf("bench_%d", i)
+		_, err = client.Get(db, col, key)
+		if err != nil {
+			fmt.Printf("Read Error: %v\n", err)
 		}
-		readDuration := time.Since(startTime)
-		readOpsPerSec := float64(iterations) / readDuration.Seconds()
-		fmt.Printf("GO_READ_BENCH_RESULT:%.2f\n", readOpsPerSec)
 	}
+	readDuration := time.Since(startTime)
+	readOpsPerSec := float64(iterations) / readDuration.Seconds()
+	fmt.Printf("GO_READ_BENCH_RESULT:%.2f\n", readOpsPerSec)
 }

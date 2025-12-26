@@ -23,13 +23,10 @@ async function runBenchmark() {
     const iterations = 1000;
 
     // INSERT BENCHMARK
-    const insertedKeys: string[] = [];
     const startTime = Date.now();
     for (let i = 0; i < iterations; i++) {
-        const result = await client.insert(db, col, { id: i, data: 'benchmark data content' });
-        if (result && result._key) {
-            insertedKeys.push(result._key);
-        }
+        const key = `bench_${i}`;
+        await client.insert(db, col, { id: i, data: 'benchmark data content' }, key);
     }
     const insertEndTime = Date.now();
     const insertDuration = (insertEndTime - startTime) / 1000;
@@ -37,17 +34,15 @@ async function runBenchmark() {
     console.log(`JS_BENCH_RESULT:${insertOpsPerSec.toFixed(2)}`);
 
     // READ BENCHMARK
-    if (insertedKeys.length > 0) {
-        const readStartTime = Date.now();
-        for (let i = 0; i < iterations; i++) {
-            const key = insertedKeys[i % insertedKeys.length];
-            await client.get(db, col, key);
-        }
-        const readEndTime = Date.now();
-        const readDuration = (readEndTime - readStartTime) / 1000;
-        const readOpsPerSec = iterations / readDuration;
-        console.log(`JS_READ_BENCH_RESULT:${readOpsPerSec.toFixed(2)}`);
+    const readStartTime = Date.now();
+    for (let i = 0; i < iterations; i++) {
+        const key = `bench_${i}`;
+        await client.get(db, col, key);
     }
+    const readEndTime = Date.now();
+    const readDuration = (readEndTime - readStartTime) / 1000;
+    const readOpsPerSec = iterations / readDuration;
+    console.log(`JS_READ_BENCH_RESULT:${readOpsPerSec.toFixed(2)}`);
 
     client.close();
 }
