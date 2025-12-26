@@ -24,16 +24,35 @@ def run_benchmark
 
   iterations = 1000
   
+  # INSERT BENCHMARK
+  inserted_keys = []
   start_time = Time.now
   iterations.times do |i|
-    client.insert(db, col, { id: i, data: "benchmark data content" })
+    result = client.insert(db, col, { id: i, data: "benchmark data content" })
+    if result && result['_key']
+      inserted_keys << result['_key']
+    end
   end
   end_time = Time.now
   
-  duration = end_time - start_time
-  ops_per_sec = iterations / duration
+  insert_duration = end_time - start_time
+  insert_ops_per_sec = iterations / insert_duration
+  puts "RUBY_BENCH_RESULT:#{insert_ops_per_sec.round(2)}"
   
-  puts "RUBY_BENCH_RESULT:#{ops_per_sec.round(2)}"
+  # READ BENCHMARK
+  if inserted_keys.any?
+    start_time = Time.now
+    iterations.times do |i|
+      key = inserted_keys[i % inserted_keys.length]
+      client.get(db, col, key)
+    end
+    end_time = Time.now
+    
+    read_duration = end_time - start_time
+    read_ops_per_sec = iterations / read_duration
+    puts "RUBY_READ_BENCH_RESULT:#{read_ops_per_sec.round(2)}"
+  end
+  
   client.close
 end
 

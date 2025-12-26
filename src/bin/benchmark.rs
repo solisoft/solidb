@@ -20,19 +20,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iterations = 1000;
     
+    // INSERT BENCHMARK
+    let mut inserted_keys = Vec::new();
     let start = Instant::now();
     for i in 0..iterations {
         let doc = json!({
             "id": i,
             "data": "benchmark data content"
         });
-        client.insert(db, col, None, doc).await?;
+        let result = client.insert(db, col, None, doc).await?;
+        if let Some(key) = result.get("_key").and_then(|k| k.as_str()) {
+            inserted_keys.push(key.to_string());
+        }
     }
-    let duration = start.elapsed();
-    
-    let ops_per_sec = iterations as f64 / duration.as_secs_f64();
-    
-    println!("RUST_BENCH_RESULT:{:.2}", ops_per_sec);
+    let insert_duration = start.elapsed();
+    let insert_ops_per_sec = iterations as f64 / insert_duration.as_secs_f64();
+    println!("RUST_BENCH_RESULT:{:.2}", insert_ops_per_sec);
+
+    // READ BENCHMARK
+    if !inserted_keys.is_empty() {
+        let start = Instant::now();
+        for i in 0..iterations {
+            let key = &inserted_keys[i % inserted_keys.len()];
+            let _ = client.get(db, col, key).await?;
+        }
+        let read_duration = start.elapsed();
+        let read_ops_per_sec = iterations as f64 / read_duration.as_secs_f64();
+        println!("RUST_READ_BENCH_RESULT:{:.2}", read_ops_per_sec);
+    }
 
     Ok(())
 }

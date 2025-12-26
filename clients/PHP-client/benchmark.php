@@ -28,16 +28,34 @@ function run_benchmark()
 
     $iterations = 1000;
 
+    // INSERT BENCHMARK
+    $insertedKeys = [];
     $start_time = microtime(true);
     for ($i = 0; $i < $iterations; $i++) {
-        $client->insert($db, $col, ['id' => $i, 'data' => 'benchmark data content']);
+        $result = $client->insert($db, $col, ['id' => $i, 'data' => 'benchmark data content']);
+        if (isset($result['_key'])) {
+            $insertedKeys[] = $result['_key'];
+        }
     }
     $end_time = microtime(true);
 
-    $duration = $end_time - $start_time;
-    $ops_per_sec = $iterations / $duration;
+    $insert_duration = $end_time - $start_time;
+    $insert_ops_per_sec = $iterations / $insert_duration;
+    echo "PHP_BENCH_RESULT:" . round($insert_ops_per_sec, 2) . "\n";
 
-    echo "PHP_BENCH_RESULT:" . round($ops_per_sec, 2) . "\n";
+    // READ BENCHMARK
+    if (count($insertedKeys) > 0) {
+        $start_time = microtime(true);
+        for ($i = 0; $i < $iterations; $i++) {
+            $key = $insertedKeys[$i % count($insertedKeys)];
+            $client->get($db, $col, $key);
+        }
+        $end_time = microtime(true);
+
+        $read_duration = $end_time - $start_time;
+        $read_ops_per_sec = $iterations / $read_duration;
+        echo "PHP_READ_BENCH_RESULT:" . round($read_ops_per_sec, 2) . "\n";
+    }
 }
 
 run_benchmark();
