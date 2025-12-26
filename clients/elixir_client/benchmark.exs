@@ -1,7 +1,7 @@
 defmodule SoliDB.Benchmark do
   def run do
-    {:ok, client} = SoliDB.Client.connect("127.0.0.1", 9999)
-    :ok = SoliDB.Client.auth(client, "_system", "admin", "admin")
+    {:ok, client} = SoliDB.Client.connect("127.0.0.1", 9998)
+    :ok = SoliDB.Client.auth(client, "_system", "admin", "password")
 
     db = "bench_db"
     col = "elixir_bench"

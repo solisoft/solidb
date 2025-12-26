@@ -15,7 +15,7 @@ func main() {
 	}
 	defer client.Close()
 
-	client.Auth("_system", "admin", "bench")
+	client.Auth("_system", "admin", "password")
 
 	db := "bench_db"
 	col := "go_bench"

@@ -7,9 +7,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from solidb import Client
 
 def run_benchmark():
-    client = Client("127.0.0.1", 9998)
+    port = int(os.environ.get("SOLIDB_PORT", "9998"))
+    password = os.environ.get("SOLIDB_PASSWORD", "password")
+    
+    client = Client("127.0.0.1", port)
     client.connect()
-    client.auth("_system", "admin", "bench")
+    client.auth("_system", "admin", password)
     
     db = "bench_db"
     col = "python_bench"

@@ -7,19 +7,22 @@ use SoliDB\Client;
 
 function run_benchmark()
 {
-    $client = new Client('127.0.0.1', 9999);
-    $client->auth('_system', 'admin', 'admin');
+    $port = intval(getenv('SOLIDB_PORT') ?: '9998');
+    $password = getenv('SOLIDB_PASSWORD') ?: 'password';
+
+    $client = new Client('127.0.0.1', $port);
+    $client->auth('_system', 'admin', $password);
 
     $db = 'bench_db';
     $col = 'php_bench';
 
     try {
-        $client->query('_system', "CREATE DATABASE $db");
+        $client->createDatabase($db);
     } catch (\Exception $e) {
     }
 
     try {
-        $client->query($db, "CREATE COLLECTION $col");
+        $client->createCollection($db, $col);
     } catch (\Exception $e) {
     }
 

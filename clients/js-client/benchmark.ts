@@ -1,18 +1,23 @@
 import { Client } from './src/Client';
 
 async function runBenchmark() {
-    const client = new Client('127.0.0.1', 9999);
+    // @ts-ignore - Bun globals
+    const env = typeof Bun !== 'undefined' ? Bun.env : process.env;
+    const port = parseInt(env.SOLIDB_PORT || '9998');
+    const password = env.SOLIDB_PASSWORD || 'password';
+
+    const client = new Client('127.0.0.1', port);
     await client.connect();
-    await client.auth('_system', 'admin', 'admin');
+    await client.auth('_system', 'admin', password);
 
     const db = 'bench_db';
     const col = 'js_bench';
 
     try {
-        await client.query('_system', `CREATE DATABASE ${db}`);
+        await client.createDatabase(db);
     } catch (e) { }
     try {
-        await client.query(db, `CREATE COLLECTION ${col}`);
+        await client.createCollection(db, col);
     } catch (e) { }
 
     const iterations = 1000;

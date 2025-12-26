@@ -1,11 +1,16 @@
 use solidb::driver::SoliDBClient;
 use serde_json::json;
 use std::time::Instant;
+use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = SoliDBClient::connect("127.0.0.1:9998").await?;
-    client.auth("_system", "admin", "bench").await?;
+    let port = env::var("SOLIDB_PORT").unwrap_or_else(|_| "9998".to_string());
+    let password = env::var("SOLIDB_PASSWORD").unwrap_or_else(|_| "password".to_string());
+    
+    let addr = format!("127.0.0.1:{}", port);
+    let mut client = SoliDBClient::connect(&addr).await?;
+    client.auth("_system", "admin", &password).await?;
 
     let db = "bench_db";
     let col = "rust_bench";

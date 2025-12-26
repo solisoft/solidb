@@ -301,7 +301,9 @@ impl Response {
 
 /// Helper to encode a message with length prefix
 pub fn encode_message<T: Serialize>(msg: &T) -> Result<Vec<u8>, DriverError> {
-    let payload = rmp_serde::to_vec(msg)
+    // Use named serialization to ensure maps are serialized with string keys
+    // This is required for serde's tag attribute to work correctly
+    let payload = rmp_serde::to_vec_named(msg)
         .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
 
     if payload.len() > MAX_MESSAGE_SIZE {

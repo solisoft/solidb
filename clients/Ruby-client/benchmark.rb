@@ -2,21 +2,24 @@ require_relative 'lib/solidb/client'
 require 'time'
 
 def run_benchmark
-  client = SoliDB::Client.new('127.0.0.1', 9999)
+  port = (ENV['SOLIDB_PORT'] || '9998').to_i
+  password = ENV['SOLIDB_PASSWORD'] || 'password'
+  
+  client = SoliDB::Client.new('127.0.0.1', port)
   client.connect
-  client.auth('_system', 'admin', 'admin')
+  client.auth('_system', 'admin', password)
   
   db = 'bench_db'
   col = 'ruby_bench'
   
   begin
-    client.query('_system', "CREATE DATABASE #{db}")
-  rescue
+    client.create_database(db)
+  rescue => e
   end
   
   begin
-    client.query(db, "CREATE COLLECTION #{col}")
-  rescue
+    client.create_collection(db, col)
+  rescue => e
   end
 
   iterations = 1000
