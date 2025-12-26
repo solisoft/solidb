@@ -41,11 +41,11 @@
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-              <div class="text-3xl font-black text-indigo-400 mb-1">~100K</div>
+              <div class="text-3xl font-black text-indigo-400 mb-1">40K+</div>
               <p class="text-xs text-gray-500">Lines of Rust</p>
             </div>
             <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
-              <div class="text-3xl font-black text-blue-400 mb-1">12+</div>
+              <div class="text-3xl font-black text-blue-400 mb-1">14+</div>
               <p class="text-xs text-gray-500">Core Modules</p>
             </div>
             <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
@@ -248,10 +248,12 @@
               <div class="flex"><span class="text-amber-400 w-40">transaction/</span><span class="text-gray-500"># Transaction manager, WAL, isolation</span></div>
               <div class="flex"><span class="text-rose-400 w-40">queue/</span><span class="text-gray-500"># Priority queues, scheduling, dead-letter</span></div>
               <div class="flex"><span class="text-lime-400 w-40">scripting/</span><span class="text-gray-500"># Lua runtime, sandbox, script execution</span></div>
+              <div class="flex"><span class="text-teal-400 w-40">driver/</span><span class="text-gray-500"># Internal cluster client & protocol</span></div>
               <div class="flex"><span class="text-orange-400 w-40">ttl/</span><span class="text-gray-500"># TTL index cleanup worker</span></div>
+              <div class="flex"><span class="text-gray-400 w-40">bin/</span><span class="text-gray-500"># CLI tools (dump, restore, bench, fuse)</span></div>
               <div class="flex"><span class="text-gray-400 w-40">error.rs</span><span class="text-gray-500"># Error types (DbError, DbResult)</span></div>
               <div class="flex"><span class="text-gray-400 w-40">lib.rs</span><span class="text-gray-500"># Public API exports</span></div>
-              <div class="flex"><span class="text-white w-40">main.rs</span><span class="text-gray-500"># CLI and server bootstrap</span></div>
+              <div class="flex"><span class="text-white w-40">main.rs</span><span class="text-gray-500"># Server entrypoint</span></div>
             </div>
           </div>
         </div>
@@ -376,20 +378,118 @@
                 <li><code>COLLECT</code> — Grouping and aggregation</li>
                 <li><code>INSERT / UPDATE / REMOVE</code> — Data manipulation</li>
                 <li><code>GRAPH</code> — Traversal with edge/vertex hops</li>
+                <li><code>LIKE / REGEX</code> — Pattern matching (=~, !~)</li>
               </ul>
             </div>
 
-            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <h4 class="text-purple-400 font-bold mb-3">Built-in Functions</h4>
-              <div class="grid grid-cols-2 gap-2 text-sm text-gray-400">
-                <div>String: <span class="text-cyan-400">CONCAT, SPLIT, TRIM</span></div>
-                <div>Math: <span class="text-cyan-400">SUM, AVG, SQRT</span></div>
-                <div>Array: <span class="text-cyan-400">LENGTH, PUSH, SLICE</span></div>
-                <div>Date: <span class="text-cyan-400">DATE_NOW, DATE_FORMAT</span></div>
-                <div>Type: <span class="text-cyan-400">IS_STRING, TO_NUMBER</span></div>
-                <div>Geo: <span class="text-cyan-400">DISTANCE, GEO_CONTAINS</span></div>
-                <div>Crypto: <span class="text-cyan-400">MD5, SHA256, HMAC</span></div>
-                <div>UUID: <span class="text-cyan-400">UUIDV4, UUIDV7</span></div>
+            <div class="col-span-1 md:col-span-2 bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-purple-400 font-bold mb-4">Built-in Functions Reference</h4>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
+                <!-- String & Pattern -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">String & Pattern</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">CONCAT</span>, <span class="text-cyan-400">CONCAT_SEPARATOR</span>, 
+                    <span class="text-cyan-400">SPLIT</span>, <span class="text-cyan-400">SUBSTRING</span>, 
+                    <span class="text-cyan-400">TRIM</span>, <span class="text-cyan-400">LTRIM</span>, <span class="text-cyan-400">RTRIM</span>, 
+                    <span class="text-cyan-400">UPPER</span>, <span class="text-cyan-400">LOWER</span>, 
+                    <span class="text-cyan-400">CONTAINS</span>, <span class="text-cyan-400">SUBSTITUTE</span>, 
+                    <span class="text-cyan-400">REGEX_REPLACE</span>, <span class="text-cyan-400">LEVENSHTEIN</span>
+                  </div>
+                </div>
+
+                <!-- Numeric & Math -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Numeric & Math</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">ABS</span>, <span class="text-cyan-400">ROUND</span>, 
+                    <span class="text-cyan-400">FLOOR</span>, <span class="text-cyan-400">CEIL</span>, 
+                    <span class="text-cyan-400">SQRT</span>, <span class="text-cyan-400">POW</span>, 
+                    <span class="text-cyan-400">RANDOM</span>
+                  </div>
+                </div>
+
+                <!-- Array & List -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Array Operations</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">LENGTH</span>, <span class="text-cyan-400">PUSH</span>, 
+                    <span class="text-cyan-400">APPEND</span>, <span class="text-cyan-400">SLICE</span>, 
+                    <span class="text-cyan-400">FLATTEN</span>, <span class="text-cyan-400">FIRST</span>, 
+                    <span class="text-cyan-400">LAST</span>, <span class="text-cyan-400">NTH</span>, 
+                    <span class="text-cyan-400">POSITION</span>, <span class="text-cyan-400">CONTAINS_ARRAY</span>, 
+                    <span class="text-cyan-400">UNIQUE</span>, <span class="text-cyan-400">SORTED</span>, 
+                    <span class="text-cyan-400">REVERSE</span>, <span class="text-cyan-400">UNION</span>, 
+                    <span class="text-cyan-400">INTERSECTION</span>, <span class="text-cyan-400">MINUS</span>
+                  </div>
+                </div>
+
+                <!-- Aggregation -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Aggregation (Arrays)</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">SUM</span>, <span class="text-cyan-400">AVG</span>, 
+                    <span class="text-cyan-400">MIN</span>, <span class="text-cyan-400">MAX</span>, 
+                    <span class="text-cyan-400">COUNT</span>, <span class="text-cyan-400">COUNT_DISTINCT</span>, 
+                    <span class="text-cyan-400">MEDIAN</span>, <span class="text-cyan-400">PERCENTILE</span>, 
+                    <span class="text-cyan-400">VARIANCE</span>, <span class="text-cyan-400">STDDEV</span>
+                  </div>
+                </div>
+
+                <!-- Object & Document -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Object & JSON</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">HAS</span>, <span class="text-cyan-400">KEEP</span>, 
+                    <span class="text-cyan-400">UNSET</span>, <span class="text-cyan-400">ATTRIBUTES</span>, 
+                    <span class="text-cyan-400">VALUES</span>, <span class="text-cyan-400">MERGE</span>, 
+                    <span class="text-cyan-400">JSON_PARSE</span>, <span class="text-cyan-400">JSON_STRINGIFY</span>
+                  </div>
+                </div>
+
+                <!-- Date & Time -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Date & Time</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">DATE_NOW</span>, <span class="text-cyan-400">DATE_ISO8601</span>, 
+                    <span class="text-cyan-400">DATE_TIMESTAMP</span>, <span class="text-cyan-400">DATE_FORMAT</span>, 
+                    <span class="text-cyan-400">DATE_ADD</span>, <span class="text-cyan-400">DATE_SUBTRACT</span>, 
+                    <span class="text-cyan-400">DATE_DIFF</span>, <span class="text-cyan-400">DATE_TRUNC</span>
+                  </div>
+                </div>
+
+                <!-- Geo & Search -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Geo & Search</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">DISTANCE</span>, <span class="text-cyan-400">GEO_DISTANCE</span>, 
+                    <span class="text-cyan-400">FULLTEXT</span>, <span class="text-cyan-400">BM25</span>
+                  </div>
+                </div>
+
+                <!-- Type Checking -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Type Checking</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">IS_ARRAY</span>, <span class="text-cyan-400">IS_BOOL</span>, 
+                    <span class="text-cyan-400">IS_NUMBER</span>, <span class="text-cyan-400">IS_STRING</span>, 
+                    <span class="text-cyan-400">IS_OBJECT</span>, <span class="text-cyan-400">IS_NULL</span>, 
+                    <span class="text-cyan-400">IS_DATE</span>, <span class="text-cyan-400">TYPENAME</span>,
+                    <span class="text-cyan-400">TO_STRING</span>, <span class="text-cyan-400">TO_NUMBER</span>
+                  </div>
+                </div>
+
+                <!-- Utils -->
+                <div>
+                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Utilities</h5>
+                  <div class="text-gray-400 leading-relaxed">
+                    <span class="text-cyan-400">UUIDV4</span>, <span class="text-cyan-400">UUIDV7</span>, 
+                    <span class="text-cyan-400">MD5</span>, <span class="text-cyan-400">SHA256</span>, 
+                    <span class="text-cyan-400">SLEEP</span>, <span class="text-cyan-400">ASSERT</span>, 
+                    <span class="text-cyan-400">IF</span>, <span class="text-cyan-400">COLLECTION_COUNT</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -588,6 +688,7 @@
                 <li><code class="text-cyan-400">json.encode/decode</code> — JSON handling</li>
                 <li><code class="text-cyan-400">crypto.*</code> — Hash, HMAC, JWT</li>
                 <li><code class="text-cyan-400">time.*</code> — Date/time utilities</li>
+                <li><code class="text-cyan-400">log.*</code> — Debug logging (debug, info, error)</li>
               </ul>
             </div>
           </div>
