@@ -38,7 +38,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use serde_json::Value;
 
-use super::protocol::{Command, Response, DriverError, IsolationLevel, DRIVER_MAGIC, encode_message, decode_message, MAX_MESSAGE_SIZE};
+use super::protocol::{Command, Response, DriverError, IsolationLevel, DRIVER_MAGIC, encode_command, decode_message, MAX_MESSAGE_SIZE};
 
 /// SoliDB native driver client
 pub struct SoliDBClient {
@@ -83,7 +83,7 @@ impl SoliDBClient {
     /// Send a command and receive the response
     async fn send_command(&mut self, command: Command) -> Result<Response, DriverError> {
         // Encode and send
-        let data = encode_message(&command)?;
+        let data = encode_command(&command)?;
         self.stream.write_all(&data).await
             .map_err(|e| DriverError::ConnectionError(format!("Write failed: {}", e)))?;
         self.stream.flush().await

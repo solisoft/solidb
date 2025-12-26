@@ -299,10 +299,43 @@ impl Response {
     }
 }
 
-/// Helper to encode a message with length prefix
+/// Helper to encode a command with length prefix (uses compact/fast serialization)
+/// Commands are sent from client to server
+pub fn encode_command(cmd: &Command) -> Result<Vec<u8>, DriverError> {
+    // Use named serialization for commands (required for tagged enums)
+    let payload = rmp_serde::to_vec_named(cmd)
+        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
+
+    if payload.len() > MAX_MESSAGE_SIZE {
+        return Err(DriverError::MessageTooLarge);
+    }
+
+    let mut buf = Vec::with_capacity(4 + payload.len());
+    buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    buf.extend_from_slice(&payload);
+    Ok(buf)
+}
+
+/// Helper to encode a response with length prefix (uses named serialization for compatibility)
+/// Responses are sent from server to client
+pub fn encode_response(resp: &Response) -> Result<Vec<u8>, DriverError> {
+    // Use named serialization for responses (required for tagged enums + external clients)
+    let payload = rmp_serde::to_vec_named(resp)
+        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
+
+    if payload.len() > MAX_MESSAGE_SIZE {
+        return Err(DriverError::MessageTooLarge);
+    }
+
+    let mut buf = Vec::with_capacity(4 + payload.len());
+    buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    buf.extend_from_slice(&payload);
+    Ok(buf)
+}
+
+/// Helper to encode a generic message with length prefix
 pub fn encode_message<T: Serialize>(msg: &T) -> Result<Vec<u8>, DriverError> {
     // Use named serialization to ensure maps are serialized with string keys
-    // This is required for serde's tag attribute to work correctly
     let payload = rmp_serde::to_vec_named(msg)
         .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
 

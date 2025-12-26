@@ -11,7 +11,7 @@ use crate::storage::StorageEngine;
 use crate::transaction::{TransactionId, IsolationLevel as TxIsolationLevel};
 use crate::sdbql::QueryExecutor;
 
-use super::protocol::{Command, Response, DriverError, MAX_MESSAGE_SIZE, encode_message, decode_message};
+use super::protocol::{Command, Response, DriverError, MAX_MESSAGE_SIZE, encode_response, decode_message};
 
 /// Handler for a single driver connection
 pub struct DriverHandler {
@@ -103,7 +103,7 @@ impl DriverHandler {
 
     /// Send a response to the client
     async fn send_response(&self, stream: &mut TcpStream, response: &Response) -> Result<(), DriverError> {
-        let data = encode_message(response)?;
+        let data = encode_response(response)?;
         stream.write_all(&data).await
             .map_err(|e| DriverError::ConnectionError(e.to_string()))?;
         stream.flush().await
