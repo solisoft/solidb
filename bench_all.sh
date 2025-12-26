@@ -22,14 +22,40 @@ rm -rf "$BENCH_DATA_DIR"
 mkdir -p "$BENCH_DATA_DIR"
 
 # Build everything in release mode
-echo "[1/11] Building SoliDB server (release)..."
+echo "[1/13] Building SoliDB server (release)..."
 cargo build --release --quiet 2>/dev/null || cargo build --release
 
-echo "[2/11] Building Rust benchmark..."
+echo "[2/13] Building Rust benchmark..."
 cargo build --release --bin benchmark --quiet 2>/dev/null || cargo build --release --bin benchmark
 
+echo "[3/13] Installing client dependencies..."
+# Go dependencies
+echo "    Installing Go dependencies..."
+cd clients/go-client && go mod download 2>/dev/null || go mod tidy 2>/dev/null
+cd ../..
+
+# Python dependencies
+echo "    Installing Python dependencies..."
+cd clients/PYTHON-client && pip install -q msgpack 2>/dev/null || pip3 install -q msgpack 2>/dev/null
+cd ../..
+
+# Node.js/Bun dependencies
+echo "    Installing Node.js dependencies..."
+cd clients/js-client && npm install --silent 2>/dev/null || bun install 2>/dev/null
+cd ../..
+
+# Ruby dependencies
+echo "    Installing Ruby dependencies..."
+cd clients/Ruby-client && bundle install --quiet 2>/dev/null || gem install msgpack 2>/dev/null
+cd ../..
+
+# PHP dependencies
+echo "    Installing PHP dependencies..."
+cd clients/PHP-client && composer install --quiet --no-interaction 2>/dev/null || true
+cd ../..
+
 # Start server
-echo "[3/11] Starting SoliDB server..."
+echo "[4/14] Starting SoliDB server..."
 SOLIDB_ADMIN_PASSWORD="$BENCH_PASSWORD" ./target/release/solidb --port $BENCH_PORT --data-dir "$BENCH_DATA_DIR" > /dev/null 2>&1 &
 SERVER_PID=$!
 sleep 3
@@ -49,7 +75,7 @@ extract_result() {
 }
 
 echo ""
-echo "[4/13] Running Rust benchmark..."
+echo "[5/14] Running Rust benchmark..."
 cargo build --release --bin benchmark --quiet 2>/dev/null || cargo build --release --bin benchmark
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -63,7 +89,7 @@ else
     echo "    Rust: ${RUST_RESULT} ops/s"
 fi
 
-echo "[5/11] Running Go benchmark..."
+echo "[6/14] Running Go benchmark..."
 cd clients/go-client
 sed -i'' -e "s/127.0.0.1\", [0-9]*/127.0.0.1\", $BENCH_PORT/g" benchmark.go 2>/dev/null || true
 sed -i'' -e "s/\"admin\", \"[^\"]*\"/\"admin\", \"$BENCH_PASSWORD\"/g" benchmark.go 2>/dev/null || true
