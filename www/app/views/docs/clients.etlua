@@ -347,7 +347,7 @@
                 <i class="fas fa-layer-group text-emerald-400 mr-2"></i>
                 <span class="text-sm font-bold text-white">Multi-Core Batch</span>
               </div>
-              <p class="text-xs text-gray-500">8 parallel connections, batch of 100</p>
+              <p class="text-xs text-gray-500">16 parallel connections</p>
             </div>
           </div>
 
@@ -404,7 +404,7 @@
             </div>
             <div class="flex items-center">
               <div class="w-4 h-2 bg-emerald-500 rounded mr-2"></div>
-              <span>Multi-Core Batch (8 connections)</span>
+              <span>Multi-Core Batch (16 connections)</span>
             </div>
           </div>
 
@@ -422,9 +422,15 @@
             <div class="flex items-start">
               <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
               <div class="text-xs text-gray-400 leading-relaxed">
-                <strong class="text-gray-300">Methodology:</strong> Sequential benchmark performs 10,000 inserts on a single connection. 
-                Multi-core batch uses 8 parallel connections with batches of 100 documents each.
-                Run <code class="bg-gray-800 px-1 py-0.5 rounded text-green-400">./clients/run_benchmarks.sh</code> to reproduce.
+                <strong class="text-gray-300">Why are sequential results similar?</strong> 
+                In single-connection mode, <strong class="text-white">network latency is the bottleneck</strong>, not client CPU speed. 
+                Each operation requires a full round-trip (serialize → send → wait → receive → deserialize), 
+                making language speed nearly irrelevant. The <strong class="text-emerald-400">multi-core benchmark</strong> reveals true client 
+                performance by using 16 parallel connections, where Rust's async runtime and Go's goroutines excel.
+                <br><br>
+                <strong class="text-gray-300">Methodology:</strong> Sequential: 1,000 inserts, single connection. 
+                Multi-core: 10,000 inserts, 16 parallel connections.
+                Run <code class="bg-gray-800 px-1 py-0.5 rounded text-green-400">./bench_all.sh</code> to reproduce.
               </div>
             </div>
           </div>
