@@ -103,7 +103,7 @@ else
 fi
 cd ../..
 
-echo "[6/11] Running Python benchmark..."
+echo "[7/14] Running Python benchmark..."
 cd clients/PYTHON-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -117,7 +117,7 @@ else
 fi
 cd ../..
 
-echo "[7/11] Running Bun/JS benchmark..."
+echo "[8/14] Running Bun/JS benchmark..."
 cd clients/js-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -135,35 +135,45 @@ else
 fi
 cd ../..
 
-echo "[8/11] Running Ruby benchmark..."
-cd clients/Ruby-client
-export SOLIDB_PORT=$BENCH_PORT
-export SOLIDB_PASSWORD=$BENCH_PASSWORD
-RUBY_OUTPUT=$(ruby -Ilib benchmark.rb 2>&1)
-RUBY_RESULT=$(extract_result "RUBY_BENCH_RESULT:" "$RUBY_OUTPUT")
-if [ -z "$RUBY_RESULT" ]; then
-    echo "    Ruby: FAILED"
+echo "[9/14] Running Ruby benchmark..."
+if command -v ruby &> /dev/null; then
+    cd clients/Ruby-client
+    export SOLIDB_PORT=$BENCH_PORT
+    export SOLIDB_PASSWORD=$BENCH_PASSWORD
+    RUBY_OUTPUT=$(ruby -Ilib benchmark.rb 2>&1)
+    RUBY_RESULT=$(extract_result "RUBY_BENCH_RESULT:" "$RUBY_OUTPUT")
+    if [ -z "$RUBY_RESULT" ]; then
+        echo "    Ruby: FAILED"
+        RUBY_RESULT="0"
+    else
+        echo "    Ruby: ${RUBY_RESULT} ops/s"
+    fi
+    cd ../..
+else
+    echo "    Ruby: SKIPPED (ruby not installed)"
     RUBY_RESULT="0"
-else
-    echo "    Ruby: ${RUBY_RESULT} ops/s"
 fi
-cd ../..
 
-echo "[9/11] Running PHP benchmark..."
-cd clients/PHP-client
-export SOLIDB_PORT=$BENCH_PORT
-export SOLIDB_PASSWORD=$BENCH_PASSWORD
-PHP_OUTPUT=$(php benchmark.php 2>&1)
-PHP_RESULT=$(extract_result "PHP_BENCH_RESULT:" "$PHP_OUTPUT")
-if [ -z "$PHP_RESULT" ]; then
-    echo "    PHP: FAILED"
+echo "[10/14] Running PHP benchmark..."
+if command -v php &> /dev/null; then
+    cd clients/PHP-client
+    export SOLIDB_PORT=$BENCH_PORT
+    export SOLIDB_PASSWORD=$BENCH_PASSWORD
+    PHP_OUTPUT=$(php benchmark.php 2>&1)
+    PHP_RESULT=$(extract_result "PHP_BENCH_RESULT:" "$PHP_OUTPUT")
+    if [ -z "$PHP_RESULT" ]; then
+        echo "    PHP: FAILED"
+        PHP_RESULT="0"
+    else
+        echo "    PHP: ${PHP_RESULT} ops/s"
+    fi
+    cd ../..
+else
+    echo "    PHP: SKIPPED (php not installed)"
     PHP_RESULT="0"
-else
-    echo "    PHP: ${PHP_RESULT} ops/s"
 fi
-cd ../..
 
-echo "[10/13] Running Elixir benchmark..."
+echo "[11/14] Running Elixir benchmark..."
 echo "    Elixir: SKIPPED (requires mix setup)"
 ELIXIR_RESULT="0"
 
@@ -171,7 +181,7 @@ echo ""
 echo "=== MULTI-CORE PARALLEL BENCHMARKS (8 workers, 10K inserts) ==="
 echo ""
 
-echo "[11/13] Running Go parallel benchmark..."
+echo "[12/14] Running Go parallel benchmark..."
 cd clients/go-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -185,7 +195,7 @@ else
 fi
 cd ../..
 
-echo "[12/13] Running Python parallel benchmark..."
+echo "[13/14] Running Python parallel benchmark..."
 cd clients/PYTHON-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -199,7 +209,7 @@ else
 fi
 cd ../..
 
-echo "[13/13] Stopping server..."
+echo "[14/14] Stopping server..."
 kill $SERVER_PID 2>/dev/null || true
 wait $SERVER_PID 2>/dev/null || true
 
