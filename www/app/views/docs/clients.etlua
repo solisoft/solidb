@@ -352,17 +352,18 @@
           </div>
 
           <% 
-          -- Real benchmark results from release server (1000 sequential inserts)
-          -- All measured on Linux dev machine
+          -- Real benchmark results from Ubuntu 24.04 (16 cores)
+          -- Sequential: 1K inserts, single connection
+          -- Parallel: 10K inserts, 8 connections
           local benchmarks = {
-              { name = "Python", seq = 13439, parallel = 0, hex = "#eab308", icon = "fab fa-python" },
+              { name = "Go", seq = 34895, parallel = 111186, hex = "#06b6d4", icon = "fab fa-golang" },
+              { name = "Python", seq = 34602, parallel = 82763, hex = "#eab308", icon = "fab fa-python" },
+              { name = "Rust", seq = 30771, parallel = 0, hex = "#f97316", icon = "fab fa-rust" },
+              { name = "Bun/JS", seq = 20000, parallel = 0, hex = "#22c55e", icon = "fab fa-node-js" },
               { name = "PHP", seq = 13199, parallel = 0, hex = "#a855f7", icon = "fab fa-php" },
-              { name = "Go", seq = 12670, parallel = 0, hex = "#06b6d4", icon = "fab fa-golang" },
-              { name = "Ruby", seq = 12168, parallel = 0, hex = "#ef4444", icon = "fas fa-gem" },
-              { name = "Rust", seq = 9893, parallel = 0, hex = "#f97316", icon = "fab fa-rust" },
-              { name = "Bun/JS", seq = 8547, parallel = 0, hex = "#22c55e", icon = "fab fa-node-js" }
+              { name = "Ruby", seq = 12168, parallel = 0, hex = "#ef4444", icon = "fas fa-gem" }
           }
-          local max_parallel = 15000
+          local max_parallel = 120000
           %>
 
           <!-- Comparison Bar Chart -->

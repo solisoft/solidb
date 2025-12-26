@@ -21,7 +21,7 @@ func main() {
 		password = "password"
 	}
 
-	numWorkers := 8
+	numWorkers := 16
 	totalInserts := 10000
 	insertsPerWorker := totalInserts / numWorkers
 

@@ -33,7 +33,7 @@ def run_parallel_benchmark():
     port = int(os.environ.get("SOLIDB_PORT", "9998"))
     password = os.environ.get("SOLIDB_PASSWORD", "password")
     
-    num_workers = 8
+    num_workers = 16
     total_inserts = 10000
     inserts_per_worker = total_inserts // num_workers
     

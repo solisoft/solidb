@@ -173,15 +173,28 @@ else
     PHP_RESULT="0"
 fi
 
-echo "[11/14] Running Elixir benchmark..."
+echo "[11/18] Running Elixir benchmark..."
 echo "    Elixir: SKIPPED (requires mix setup)"
 ELIXIR_RESULT="0"
 
 echo ""
-echo "=== MULTI-CORE PARALLEL BENCHMARKS (8 workers, 10K inserts) ==="
+echo "=== MULTI-CORE PARALLEL BENCHMARKS (16 workers, 10K inserts) ==="
 echo ""
 
-echo "[12/14] Running Go parallel benchmark..."
+echo "[12/18] Running Rust parallel benchmark..."
+cargo build --release --bin benchmark_parallel --quiet 2>/dev/null || cargo build --release --bin benchmark_parallel
+export SOLIDB_PORT=$BENCH_PORT
+export SOLIDB_PASSWORD=$BENCH_PASSWORD
+RUST_PARALLEL_OUTPUT=$(timeout 60s ./target/release/benchmark_parallel 2>&1 || echo "TIMEOUT_OR_ERROR")
+RUST_PARALLEL_RESULT=$(extract_result "RUST_PARALLEL_BENCH_RESULT:" "$RUST_PARALLEL_OUTPUT")
+if [ -z "$RUST_PARALLEL_RESULT" ] || [ "$RUST_PARALLEL_RESULT" = "0" ]; then
+    echo "    Rust (parallel): FAILED"
+    RUST_PARALLEL_RESULT="0"
+else
+    echo "    Rust (parallel): ${RUST_PARALLEL_RESULT} ops/s"
+fi
+
+echo "[13/18] Running Go parallel benchmark..."
 cd clients/go-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -195,7 +208,7 @@ else
 fi
 cd ../..
 
-echo "[13/14] Running Python parallel benchmark..."
+echo "[14/18] Running Python parallel benchmark..."
 cd clients/PYTHON-client
 export SOLIDB_PORT=$BENCH_PORT
 export SOLIDB_PASSWORD=$BENCH_PASSWORD
@@ -209,7 +222,63 @@ else
 fi
 cd ../..
 
-echo "[14/14] Stopping server..."
+echo "[15/18] Running JS parallel benchmark..."
+cd clients/js-client
+export SOLIDB_PORT=$BENCH_PORT
+export SOLIDB_PASSWORD=$BENCH_PASSWORD
+if command -v bun &> /dev/null; then
+    JS_PARALLEL_OUTPUT=$(bun run benchmark_parallel.ts 2>&1)
+else
+    JS_PARALLEL_OUTPUT=$(npx ts-node benchmark_parallel.ts 2>&1)
+fi
+JS_PARALLEL_RESULT=$(extract_result "JS_PARALLEL_BENCH_RESULT:" "$JS_PARALLEL_OUTPUT")
+if [ -z "$JS_PARALLEL_RESULT" ]; then
+    echo "    JS (parallel): FAILED"
+    JS_PARALLEL_RESULT="0"
+else
+    echo "    JS (parallel): ${JS_PARALLEL_RESULT} ops/s"
+fi
+cd ../..
+
+echo "[16/18] Running Ruby parallel benchmark..."
+if command -v ruby &> /dev/null; then
+    cd clients/Ruby-client
+    export SOLIDB_PORT=$BENCH_PORT
+    export SOLIDB_PASSWORD=$BENCH_PASSWORD
+    RUBY_PARALLEL_OUTPUT=$(ruby -Ilib benchmark_parallel.rb 2>&1)
+    RUBY_PARALLEL_RESULT=$(extract_result "RUBY_PARALLEL_BENCH_RESULT:" "$RUBY_PARALLEL_OUTPUT")
+    if [ -z "$RUBY_PARALLEL_RESULT" ]; then
+        echo "    Ruby (parallel): FAILED"
+        RUBY_PARALLEL_RESULT="0"
+    else
+        echo "    Ruby (parallel): ${RUBY_PARALLEL_RESULT} ops/s"
+    fi
+    cd ../..
+else
+    echo "    Ruby (parallel): SKIPPED (ruby not installed)"
+    RUBY_PARALLEL_RESULT="0"
+fi
+
+echo "[17/18] Running PHP parallel benchmark..."
+if command -v php &> /dev/null; then
+    cd clients/PHP-client
+    export SOLIDB_PORT=$BENCH_PORT
+    export SOLIDB_PASSWORD=$BENCH_PASSWORD
+    PHP_PARALLEL_OUTPUT=$(php benchmark_parallel.php 2>&1)
+    PHP_PARALLEL_RESULT=$(extract_result "PHP_PARALLEL_BENCH_RESULT:" "$PHP_PARALLEL_OUTPUT")
+    if [ -z "$PHP_PARALLEL_RESULT" ]; then
+        echo "    PHP (parallel): FAILED"
+        PHP_PARALLEL_RESULT="0"
+    else
+        echo "    PHP (parallel): ${PHP_PARALLEL_RESULT} ops/s"
+    fi
+    cd ../..
+else
+    echo "    PHP (parallel): SKIPPED (php not installed)"
+    PHP_PARALLEL_RESULT="0"
+fi
+
+echo "[18/18] Stopping server..."
 kill $SERVER_PID 2>/dev/null || true
 wait $SERVER_PID 2>/dev/null || true
 
@@ -229,9 +298,13 @@ echo "RUBY=$RUBY_RESULT"
 echo "PHP=$PHP_RESULT"
 echo "ELIXIR=$ELIXIR_RESULT"
 echo ""
-echo "=== Parallel (10K inserts, 8 connections) ==="
+echo "=== Parallel (10K inserts, 16 connections) ==="
+echo "RUST_PARALLEL=$RUST_PARALLEL_RESULT"
 echo "GO_PARALLEL=$GO_PARALLEL_RESULT"
 echo "PYTHON_PARALLEL=$PYTHON_PARALLEL_RESULT"
+echo "JS_PARALLEL=$JS_PARALLEL_RESULT"
+echo "RUBY_PARALLEL=$RUBY_PARALLEL_RESULT"
+echo "PHP_PARALLEL=$PHP_PARALLEL_RESULT"
 echo ""
 echo "Machine: $(uname -m) / $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || uname -s)"
 echo "Cores: $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 'unknown')"
