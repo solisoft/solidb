@@ -28,12 +28,12 @@ def run_parallel_benchmark
   end
   setup_client.close
   
-  threads = []
+  pids = []
   start_time = Time.now
   
-  # Spawn worker threads
+  # Spawn worker processes (using fork to bypass GIL)
   num_workers.times do |worker_id|
-    threads << Thread.new do
+    pids << fork do
       client = SoliDB::Client.new('127.0.0.1', port)
       client.connect
       client.auth('_system', 'admin', password)
@@ -50,8 +50,8 @@ def run_parallel_benchmark
     end
   end
   
-  # Wait for all threads
-  threads.each(&:join)
+  # Wait for all processes
+  pids.each { |pid| Process.wait(pid) }
   
   end_time = Time.now
   duration = end_time - start_time
