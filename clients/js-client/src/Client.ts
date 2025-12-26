@@ -1,5 +1,5 @@
 import * as net from 'net';
-import { pack, unpack } from 'msgpackr';
+import { encode, decode } from '@msgpack/msgpack';
 import { ConnectionError, ServerError, ProtocolError } from './errors';
 
 const MAGIC_HEADER = Buffer.from('solidb-drv-v1\0');
@@ -102,7 +102,7 @@ export class Client {
         if (!req) return;
 
         try {
-            const response = unpack(payload) as any;
+            const response = decode(payload) as any;
 
             // Handle Tuple [status, body]
             if (Array.isArray(response) && response.length >= 1 && typeof response[0] === 'string') {
@@ -155,7 +155,7 @@ export class Client {
         return new Promise((resolve, reject) => {
             const command = { cmd, ...args };
             try {
-                const payload = pack(command);
+                const payload = encode(command);
                 const header = Buffer.alloc(4);
                 header.writeUInt32BE(payload.length, 0);
 
