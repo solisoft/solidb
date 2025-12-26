@@ -1,0 +1,27 @@
+{
+    "name": "solidb-client",
+    "version": "0.1.0",
+    "description": "Node.js client for SoliDB",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "test": "ts-node tests/client.test.ts"
+    },
+    "keywords": [
+        "solidb",
+        "database",
+        "client",
+        "node"
+    ],
+    "author": "SoliDB Team",
+    "license": "MIT",
+    "dependencies": {
+        "@msgpack/msgpack": "^3.0.0-beta2"
+    },
+    "devDependencies": {
+        "typescript": "^5.3.3",
+        "@types/node": "^20.10.6",
+        "ts-node": "^10.9.2"
+    }
+}

@@ -203,7 +203,7 @@ pub async fn delete_document_tx(
 
 // Transactional SDBQL execution
 
-use std::sync::Arc;
+
 
 #[derive(Debug, Deserialize)]
 pub struct ExecuteSdbqlTransactionalRequest {

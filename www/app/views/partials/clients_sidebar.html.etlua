@@ -1,0 +1,82 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+      <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 px-2">Documentation</h3>
+      
+      <nav class="space-y-1">
+        <a href="#overview" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fas fa-info-circle w-5 text-sky-500 group-hover:scale-110 transition-transform"></i>
+          <span>Overview</span>
+        </a>
+      </nav>
+
+      <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mt-6 mb-4 px-2">Official Clients</h3>
+      
+      <nav class="space-y-1">
+        <!-- Rust -->
+        <a href="#rust-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-rust w-5 text-orange-500 group-hover:scale-110 transition-transform"></i>
+          <span>Rust</span>
+        </a>
+
+        <!-- Node.js -->
+        <a href="#node-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-node-js w-5 text-green-500 group-hover:scale-110 transition-transform"></i>
+          <span>Node.js / Bun</span>
+        </a>
+
+        <!-- Go -->
+        <a href="#go-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-golang w-5 text-cyan-400 group-hover:scale-110 transition-transform"></i>
+          <span>Go</span>
+        </a>
+
+        <!-- Elixir -->
+        <a href="#elixir-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-phoenix-framework w-5 text-red-400 group-hover:scale-110 transition-transform"></i>
+          <span>Elixir</span>
+        </a>
+
+        <!-- Python -->
+        <a href="#python-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-python w-5 text-yellow-500 group-hover:scale-110 transition-transform"></i>
+          <span>Python</span>
+        </a>
+
+        <!-- PHP -->
+        <a href="#php-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fab fa-php w-5 text-purple-500 group-hover:scale-110 transition-transform"></i>
+          <span>PHP</span>
+        </a>
+
+        <!-- Ruby -->
+        <a href="#ruby-client" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fas fa-gem w-5 text-red-500 group-hover:scale-110 transition-transform"></i>
+          <span>Ruby</span>
+        </a>
+      </nav>
+
+      <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mt-6 mb-4 px-2">Performance</h3>
+      
+      <nav class="space-y-1">
+        <a href="#benchmarks" class="group flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <i class="fas fa-bolt w-5 text-emerald-500 group-hover:scale-110 transition-transform"></i>
+          <span>Benchmarks</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Pro Tip Card -->
+    <div class="bg-gradient-to-br from-indigo-900/40 to-blue-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-12 -mt-12 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      <div class="flex items-center mb-2 relative z-10 text-indigo-400">
+        <i class="fas fa-bolt text-xs mr-2"></i>
+        <span class="text-[10px] font-bold uppercase tracking-wider">Performance Tip</span>
+      </div>
+      <p class="text-[12px] text-gray-300 mb-0 relative z-10 leading-relaxed">
+        All clients use the high-performance binary protocol for up to <b>50% lower latency</b> compared to REST.
+      </p>
+    </div>
+  </div>
+</div>
