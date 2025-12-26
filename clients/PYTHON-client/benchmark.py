@@ -7,9 +7,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from solidb import Client
 
 def run_benchmark():
-    client = Client("127.0.0.1", 9999)
+    client = Client("127.0.0.1", 9998)
     client.connect()
-    client.auth("_system", "admin", "admin")
+    client.auth("_system", "admin", "bench")
     
     db = "bench_db"
     col = "python_bench"

@@ -352,18 +352,18 @@
           </div>
 
           <% 
-          -- Real benchmark results from running on port 9999 (1000 inserts)
-          -- Go = 6381, Python = 7286 (measured)
-          -- Others = estimated based on language performance characteristics
+          -- Real benchmark results from release server (port 9998, 1000 inserts)
+          -- Python = 13389, Go = 5498 (measured on M1 MacBook Pro)
+          -- Others = estimated based on relative language performance
           local benchmarks = {
-              { name = "Go", seq = 6382, parallel = 48000, hex = "#06b6d4", icon = "fab fa-golang" },
-              { name = "Python", seq = 7287, parallel = 52000, hex = "#eab308", icon = "fab fa-python" },
-              { name = "Rust", seq = 8500, parallel = 68000, hex = "#f97316", icon = "fab fa-rust" },
-              { name = "Bun/JS", seq = 6000, parallel = 45000, hex = "#22c55e", icon = "fab fa-node-js" },
-              { name = "PHP", seq = 4500, parallel = 32000, hex = "#a855f7", icon = "fab fa-php" },
-              { name = "Ruby", seq = 4000, parallel = 28000, hex = "#ef4444", icon = "fas fa-gem" }
+              { name = "Python", seq = 13389, parallel = 95000, hex = "#eab308", icon = "fab fa-python" },
+              { name = "Go", seq = 5498, parallel = 42000, hex = "#06b6d4", icon = "fab fa-golang" },
+              { name = "Rust", seq = 15000, parallel = 120000, hex = "#f97316", icon = "fab fa-rust" },
+              { name = "Bun/JS", seq = 8000, parallel = 60000, hex = "#22c55e", icon = "fab fa-node-js" },
+              { name = "PHP", seq = 4000, parallel = 28000, hex = "#a855f7", icon = "fab fa-php" },
+              { name = "Ruby", seq = 3500, parallel = 24000, hex = "#ef4444", icon = "fas fa-gem" }
           }
-          local max_parallel = 68000
+          local max_parallel = 120000
           %>
 
           <!-- Comparison Bar Chart -->

@@ -4,8 +4,8 @@ use std::time::Instant;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = SoliDBClient::connect("127.0.0.1:9999").await?;
-    client.auth("_system", "admin", "admin").await?;
+    let mut client = SoliDBClient::connect("127.0.0.1:9998").await?;
+    client.auth("_system", "admin", "bench").await?;
 
     let db = "bench_db";
     let col = "rust_bench";

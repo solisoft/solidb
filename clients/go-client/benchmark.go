@@ -8,14 +8,14 @@ import (
 )
 
 func main() {
-	client := solidb.NewClient("127.0.0.1", 9999)
+	client := solidb.NewClient("127.0.0.1", 9998)
 	err := client.Connect()
 	if err != nil {
 		panic(err)
 	}
 	defer client.Close()
 
-	client.Auth("_system", "admin", "admin")
+	client.Auth("_system", "admin", "bench")
 
 	db := "bench_db"
 	col := "go_bench"
