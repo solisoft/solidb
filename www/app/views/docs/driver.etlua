@@ -1,0 +1,330 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <%- Partial("driver_sidebar") %>
+
+    <div class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-sky-400 to-blue-500 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-blue-400 to-indigo-400 mb-4 tracking-tight">
+            Native Driver Protocol
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            SoliDB provides a high-performance native binary protocol as an alternative to the HTTP REST API. The native driver offers lower latency and higher throughput.
+          </p>
+        </div>
+      </div>
+
+       <div class="alert alert-info bg-sky-900/30 border border-sky-500/30 text-sky-200 p-4 rounded-lg">
+            <strong>Port:</strong> The native driver uses the same port as the HTTP API (default: 6745) via protocol multiplexing.
+            The server automatically detects the protocol based on the connection's magic header.
+        </div>
+
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-sky-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(14,165,233,0.5)]">
+              <i class="fas fa-layer-group text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            The native driver protocol provides:
+          </p>
+          <ul class="space-y-2 text-sm text-gray-400 list-disc pl-5 mb-6">
+                <li><strong class="text-white">Binary Protocol:</strong> Uses MessagePack for efficient serialization</li>
+                <li><strong class="text-white">Length-Prefixed Framing:</strong> Reliable message boundary detection</li>
+                <li><strong class="text-white">Full Feature Parity:</strong> Supports all database operations including SDBQL queries</li>
+                <li><strong class="text-white">Connection Multiplexing:</strong> Shares port with HTTP API</li>
+                <li><strong class="text-white">Transaction Support:</strong> Full ACID transaction support</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Protocol -->
+      <section id="protocol" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+              <i class="fas fa-network-wired text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Wire Protocol</h2>
+          </div>
+
+          <h3 class="text-xl font-bold text-white mb-4">Connection Handshake</h3>
+          <p class="text-gray-300 mb-4">When connecting, the client must send the magic header:</p>
+          <pre class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto text-green-400 mb-6"><code>solidb-drv-v1\0  (14 bytes)</code></pre>
+
+          <h3 class="text-xl font-bold text-white mb-4">Message Format</h3>
+          <p class="text-gray-300 mb-4">Each message consists of:</p>
+          <ol class="list-decimal pl-5 space-y-2 text-gray-400 mb-6">
+            <li><strong>Length:</strong> 4 bytes, big-endian unsigned integer</li>
+            <li><strong>Payload:</strong> MessagePack-encoded command or response</li>
+          </ol>
+
+          <pre class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto text-gray-300 mb-6"><code>+------------------+-------------------------+
+| Length (4 bytes) | MessagePack Payload     |
++------------------+-------------------------+</code></pre>
+          
+          <h3 class="text-xl font-bold text-white mb-4">Maximum Message Size</h3>
+          <p class="text-gray-300">The maximum message size is <code>16 MB</code> (16,777,216 bytes).</p>
+        </div>
+      </section>
+
+        <!-- Commands -->
+      <section id="commands" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+              <i class="fas fa-terminal text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Commands</h2>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Utility Commands</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">ping</td><td class="px-4 py-2">Ping the server</td><td class="px-4 py-2">None</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">auth</td><td class="px-4 py-2">Authenticate</td><td class="px-4 py-2 font-mono">database, username, password</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Database Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">list_databases</td><td class="px-4 py-2">List all databases</td><td class="px-4 py-2">None</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">create_database</td><td class="px-4 py-2">Create a database</td><td class="px-4 py-2 font-mono">name</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">delete_database</td><td class="px-4 py-2">Delete a database</td><td class="px-4 py-2 font-mono">name</td></tr>
+                  </tbody>
+              </table>
+          </div>
+          
+           <h3 class="text-lg font-bold text-white mb-4">Collection Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                        <tr><td class="px-4 py-2 font-mono text-green-400">list_collections</td><td class="px-4 py-2">List collections</td><td class="px-4 py-2 font-mono">database</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">create_collection</td><td class="px-4 py-2">Create collection</td><td class="px-4 py-2 font-mono">database, name, collection_type</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">delete_collection</td><td class="px-4 py-2">Delete collection</td><td class="px-4 py-2 font-mono">database, name</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">collection_stats</td><td class="px-4 py-2">Get collection stats</td><td class="px-4 py-2 font-mono">database, name</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Document Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                        <tr><td class="px-4 py-2 font-mono text-green-400">get</td><td class="px-4 py-2">Get document by key</td><td class="px-4 py-2 font-mono">database, collection, key</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">insert</td><td class="px-4 py-2">Insert document</td><td class="px-4 py-2 font-mono">database, collection, key, document</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">update</td><td class="px-4 py-2">Update document</td><td class="px-4 py-2 font-mono">database, collection, key, document, merge</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">delete</td><td class="px-4 py-2">Delete document</td><td class="px-4 py-2 font-mono">database, collection, key</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">list</td><td class="px-4 py-2">List documents</td><td class="px-4 py-2 font-mono">database, collection, limit, offset</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Query Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">query</td><td class="px-4 py-2">Execute SDBQL query</td><td class="px-4 py-2 font-mono">database, sdbql, bind_vars</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">explain</td><td class="px-4 py-2">Explain query plan</td><td class="px-4 py-2 font-mono">database, sdbql, bind_vars</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Transaction Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">begin_transaction</td><td class="px-4 py-2">Start transaction</td><td class="px-4 py-2 font-mono">database, isolation_level</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">commit_transaction</td><td class="px-4 py-2">Commit transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">rollback_transaction</td><td class="px-4 py-2">Rollback transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
+          <h3 class="text-lg font-bold text-white mb-4">Bulk Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">batch</td><td class="px-4 py-2">Execute multiple commands</td><td class="px-4 py-2 font-mono">commands</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">bulk_insert</td><td class="px-4 py-2">Insert multiple documents</td><td class="px-4 py-2 font-mono">database, collection, documents</td></tr>
+                  </tbody>
+              </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Rust Client -->
+      <section id="rust-client" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(249,115,22,0.5)]">
+               <i class="fas fa-code text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Rust Client Library</h2>
+          </div>
+          
+           <p class="text-gray-300 mb-6">SoliDB includes a native Rust client library for easy integration:</p>
+
+        <h4 id="installation" class="scroll-mt-24 text-white font-bold mb-2">Installation</h4>
+        <p class="text-gray-300 mb-4">Add the library to your <code>Cargo.toml</code>:</p>
+        <div class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto text-gray-300 mb-6">
+<pre><code class="language-toml">[dependencies]
+solidb = { version = "0.1.0" }</code></pre>
+        </div>
+
+        <h4 class="text-white font-bold mb-2">Basic Usage</h4>
+        <p class="text-gray-300 mb-4">Import the client and connect to your SoliDB instance:</p>
+        <div class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto text-gray-300 mb-6">
+<pre><code class="language-rust">use solidb::driver::SoliDBClient;
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    <span class="text-gray-500">// Connect to SoliDB</span>
+    let mut client = SoliDBClient::connect("localhost:6745").await?;
+    
+    <span class="text-gray-500">// Authenticate (optional)</span>
+    client.auth("mydb", "admin", "password").await?;
+    
+    <span class="text-gray-500">// Insert a document</span>
+    let doc = client.insert("mydb", "users", None, json!({
+        "name": "Alice",
+        "email": "alice@example.com"
+    })).await?;
+    
+    println!("Inserted: {:?}", doc);
+    
+    <span class="text-gray-500">// Query using SDBQL</span>
+    let results = client.query("mydb", "FOR u IN users RETURN u", None).await?;
+    println!("Results: {:?}", results);
+    
+    Ok(())
+}</code></pre>
+        </div>
+        
+        <h4 class="text-white font-bold mb-2">Transactions</h4>
+        <div class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto text-gray-300 mb-6">
+<pre><code class="language-rust">use solidb::driver::protocol::IsolationLevel;
+
+<span class="text-gray-500">// Begin transaction</span>
+let tx_id = client.begin_transaction("mydb", Some(IsolationLevel::ReadCommitted)).await?;
+
+<span class="text-gray-500">// Operations are automatically associated with the transaction</span>
+client.insert("mydb", "users", None, json!({"name": "Bob"})).await?;
+
+<span class="text-gray-500">// Commit</span>
+client.commit().await?;
+
+<span class="text-gray-500">// Or rollback</span>
+<span class="text-gray-500">// client.rollback().await?;</span></code></pre>
+        </div>
+
+        </div>
+      </section>
+
+      <!-- Performance -->
+      <section id="performance" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+              <i class="fas fa-tachometer-alt text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Performance</h2>
+          </div>
+          
+           <p class="text-gray-300 mb-6">The native driver offers significant performance improvements over HTTP:</p>
+
+            <ul class="space-y-4 text-gray-300">
+            <li class="flex items-start">
+              <span class="text-green-400 mr-3">•</span>
+              <span><strong>~50% lower latency</strong> due to binary protocol and no HTTP overhead</span>
+            </li>
+            <li class="flex items-start">
+              <span class="text-green-400 mr-3">•</span>
+              <span><strong>~30% smaller payload sizes</strong> with MessagePack vs JSON</span>
+            </li>
+            <li class="flex items-start">
+               <span class="text-green-400 mr-3">•</span>
+              <span><strong>Persistent connections</strong> eliminate connection setup overhead</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+       <!-- Error Handling -->
+      <section id="error-handling" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+              <i class="fas fa-exclamation-triangle text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Error Handling</h2>
+          </div>
+          
+           <p class="text-gray-300 mb-6">Errors are returned with type-specific error codes:</p>
+
+           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+               
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">connection_error</code>
+                <span class="text-sm text-gray-400">Network or connection issues</span>
+            </div>
+            
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">auth_error</code>
+                <span class="text-sm text-gray-400">Authentication failed</span>
+            </div>
+            
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">database_error</code>
+                <span class="text-sm text-gray-400">Database operation failed</span>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">transaction_error</code>
+                <span class="text-sm text-gray-400">Transaction operation failed</span>
+            </div>
+
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">protocol_error</code>
+                <span class="text-sm text-gray-400">Protocol violation</span>
+            </div>
+            
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+                <code class="text-red-400 font-bold block mb-1">message_too_large</code>
+                <span class="text-sm text-gray-400">Message exceeds 16MB limit</span>
+            </div>
+
+           </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>

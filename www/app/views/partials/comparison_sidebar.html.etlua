@@ -52,6 +52,12 @@
           vs ArangoDB
         </a>
 
+        <!-- Benchmarks -->
+        <a href="#benchmarks" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Benchmarks
+        </a>
+
         <!-- When to Choose -->
         <a href="#when-to-choose" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>

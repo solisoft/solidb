@@ -29,6 +29,12 @@
           Transactional SDBQL
         </a>
 
+        <!-- Lua Scripting -->
+        <a href="#lua-scripting" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Lua Scripting
+        </a>
+
         <!-- Limitations -->
         <a href="#limitations" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-3 group-hover:scale-125 transition-transform"></span>

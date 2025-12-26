@@ -855,6 +855,54 @@
       </div>
     </a>
 
+    <!-- Native Driver -->
+    <a
+      href="/docs/driver"
+      class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-sky-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(14,165,233,0.15)] hover:-translate-y-1"
+    >
+      <div
+        class="absolute inset-0 bg-gradient-to-br from-sky-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+      ></div>
+
+      <div class="relative z-10 flex flex-col h-full">
+        <div class="flex items-center justify-between mb-6">
+          <div
+            class="p-4 bg-sky-500/10 rounded-2xl border border-sky-500/20 group-hover:bg-sky-500/20 transition-colors"
+          >
+            <i class="fas fa-plug text-2xl text-sky-400"></i>
+          </div>
+        </div>
+
+        <h3
+          class="text-2xl font-bold text-white mb-3 group-hover:text-sky-300 transition-colors"
+        >
+          Native Driver
+        </h3>
+        <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
+          High-performance binary protocol for maximum throughput. 50% lower latency than HTTP REST API.
+        </p>
+
+        <div
+          class="flex items-center text-sm font-bold text-sky-400 uppercase tracking-wider group-hover:text-sky-300"
+        >
+          Use Driver
+          <svg
+            class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M17 8l4 4m0 0l-4 4m4-4H3"
+            />
+          </svg>
+        </div>
+      </div>
+    </a>
+
     <!-- Talks -->
     <a
       href="/talks"

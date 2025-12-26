@@ -134,6 +134,10 @@ export async function authenticatedFetch(url, options = {}) {
     Authorization: `Bearer ${token}`,
   };
 
+  if (window.MessagePack) {
+    headers['Accept'] = 'application/msgpack';
+  }
+
   // Automatically add Content-Type for JSON bodies
   if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
@@ -146,6 +150,22 @@ export async function authenticatedFetch(url, options = {}) {
       clearAuthToken();
       redirectToLogin();
       return Promise.reject(new Error("Session expired"));
+    }
+
+    // Transparently handle MessagePack responses
+    const contentType = response.headers.get("Content-Type");
+    if (contentType && contentType.includes("application/msgpack") && window.MessagePack) {
+      const buffer = await response.arrayBuffer();
+      const decoded = window.MessagePack.decode(buffer);
+
+      // Override .json() to return the decoded object
+      // We use Object.defineProperty to ensure it's writable/configurable if needed
+      Object.defineProperty(response, 'json', {
+        value: async () => decoded
+      });
+
+      // We've consumed the body, so we should probably ensure .text() returns something meaningful or throws
+      // But typically apps just call .json()
     }
 
     return response;

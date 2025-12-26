@@ -211,6 +211,48 @@
         </div>
       </section>
 
+      <!-- Lua Scripting -->
+      <section id="lua-scripting" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+              <i class="fas fa-file-code text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Lua Scripting</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            Transactions can be executed directly within Lua scripts for maximum performance and atomicity. The <code>db:transaction</code> function handles the commit/rollback logic automatically.
+          </p>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 p-6">
+            <div class="font-mono text-sm">
+              <div class="text-gray-500 mb-2">-- Execute Transaction in Lua</div>
+              <div class="text-pink-400">db:transaction</div><div class="text-gray-300">(<span class="text-purple-400">function</span>(tx)</div>
+              <div class="text-gray-300 pl-4">
+                <span class="text-gray-500">-- Get transactional collection handles</span><br>
+                <span class="text-purple-400">local</span> users = tx:collection(<span class="text-green-300">"users"</span>)<br>
+                <span class="text-purple-400">local</span> logs = tx:collection(<span class="text-green-300">"audit_logs"</span>)<br><br>
+                
+                <span class="text-gray-500">-- Perform operations</span><br>
+                users:update(<span class="text-green-300">"user_123"</span>, { balance = <span class="text-orange-400">90</span> })<br>
+                logs:insert({ action = <span class="text-green-300">"transfer"</span>, amount = <span class="text-orange-400">10</span>, user = <span class="text-green-300">"user_123"</span> })<br>
+              </div>
+              <div class="text-gray-300">
+                <span class="text-purple-400">end</span>)
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-4 p-4 bg-pink-500/10 border border-pink-500/20 rounded-lg flex items-start">
+            <i class="fas fa-magic text-pink-400 mt-1 mr-3"></i>
+            <p class="text-sm text-gray-300">
+              If the callback function throws an error, the transaction is automatically rolled back. If it creates a return value, the transaction is committed and the value is returned.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <!-- Limitations -->
       <section id="limitations" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">

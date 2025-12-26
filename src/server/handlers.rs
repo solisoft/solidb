@@ -21,6 +21,7 @@ use crate::sync::{Operation, LogEntry};
 use crate::sync::blob_replication::replicate_blob_to_node;
 use crate::error::DbError;
 use crate::scripting::ScriptStats;
+use crate::server::response::ApiResponse;
 
 
 /// Default query execution timeout (30 seconds)
@@ -3320,7 +3321,8 @@ pub async fn copy_shard_data(
 pub async fn get_document(
     State(state): State<AppState>,
     Path((db_name, coll_name, key)): Path<(String, String, String)>,
-) -> Result<Json<Value>, DbError> {
+    headers: HeaderMap,
+) -> Result<ApiResponse<Value>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
@@ -3340,13 +3342,13 @@ pub async fn get_document(
                     map.insert("_replicas".to_string(), serde_json::json!(replicas));
                 }
 
-                return Ok(Json(doc_value));
+                return Ok(ApiResponse::new(doc_value, &headers));
             }
         }
     }
 
     let doc = collection.get(&key)?;
-    Ok(Json(doc.to_value()))
+    Ok(ApiResponse::new(doc.to_value(), &headers))
 }
 
 pub async fn update_document(
@@ -3512,7 +3514,7 @@ pub async fn execute_query(
     Path(db_name): Path<String>,
     headers: HeaderMap,
     Json(req): Json<ExecuteQueryRequest>,
-) -> Result<Json<ExecuteQueryResponse>, DbError> {
+) -> Result<ApiResponse<ExecuteQueryResponse>, DbError> {
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
         // Execute transactional SDBQL query
@@ -3541,14 +3543,14 @@ pub async fn execute_query(
             };
 
             let results = executor.execute(&query)?;
-            return Ok(Json(ExecuteQueryResponse {
+            return Ok(ApiResponse::new(ExecuteQueryResponse {
                 result: results.clone(),
                 count: results.len(),
                 has_more: false,
                 id: None,
                 cached: false,
                 execution_time_ms: 0.0,
-            }));
+            }, &headers));
         }
 
         // For mutation operations, execute transactionally
@@ -3707,7 +3709,7 @@ pub async fn execute_query(
         }
 
         // Return mutation result
-        return Ok(Json(ExecuteQueryResponse {
+        return Ok(ApiResponse::new(ExecuteQueryResponse {
             result: vec![serde_json::json!({
                 "mutationCount": mutation_count,
                 "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", mutation_count)
@@ -3717,7 +3719,7 @@ pub async fn execute_query(
             id: None,
             cached: false,
             execution_time_ms: 0.0,
-        }));
+        }, &headers));
     }
 
     // Non-transactional execution (existing logic)
@@ -3798,23 +3800,23 @@ pub async fn execute_query(
             .get_next_batch(&cursor_id)
             .unwrap_or((vec![], false));
 
-        Ok(Json(ExecuteQueryResponse {
+        Ok(ApiResponse::new(ExecuteQueryResponse {
             result: first_batch,
             count: total_count,
             has_more,
             id: if has_more { Some(cursor_id) } else { None },
             cached: false,
             execution_time_ms,
-        }))
+        }, &headers))
     } else {
-        Ok(Json(ExecuteQueryResponse {
+        Ok(ApiResponse::new(ExecuteQueryResponse {
             result,
             count: total_count,
             has_more: false,
             id: None,
             cached: false,
             execution_time_ms,
-        }))
+        }, &headers))
     }
 }
 

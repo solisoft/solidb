@@ -213,7 +213,7 @@ pub struct ExecuteSdbqlTransactionalRequest {
 }
 
 pub async fn execute_transactional_sdbql(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AppState>,
     Path((db_name, tx_id_str)): Path<(String, String)>,
     Json(req): Json<ExecuteSdbqlTransactionalRequest>,
 ) -> Result<Json<Value>, DbError> {

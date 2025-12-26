@@ -465,6 +465,11 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
             sync_worker.run_background().await;
         });
         
+        // 3. Spawn Driver Handler (native binary protocol)
+        let driver_storage = storage_for_shutdown.clone();
+        let driver_tx = solidb::driver::handler::spawn_driver_handler(driver_storage);
+        tracing::info!("Native driver protocol enabled on port {}", args.port);
+        
         // 3. Dispatch Loop (Main Task) with shutdown handling
         let shutdown_signal_future = async {
             let ctrl_c = async {
@@ -511,6 +516,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     
                     let http_tx = http_tx.clone();
                     let sync_tx = sync_tx.clone();
+                    let driver_tx = driver_tx.clone();
                     let connection_mgr = cluster_manager.clone();
                     
                     tokio::spawn(async move {
@@ -520,15 +526,24 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                         
                         let peeked_data = buf[..n].to_vec();
                         
-                        // Detection logic
-                        // Check if it looks like the Sync Magic Header
+                        // Detection logic - check magic headers first
+                        // Check for Sync Protocol: "solidb-sync-v1"
                         if &peeked_data == b"solidb-sync-v1" {
                             // For sync traffic, pass the raw stream - the magic header has been consumed
                             // and verified, so we don't need to put it back in a PeekedStream
                             if sync_tx.send((Box::new(stream), addr.to_string())).await.is_err() {
                                  tracing::error!("Sync worker channel closed");
                             }
-                        } else if peeked_data.first() == Some(&b'{') {
+                        } 
+                        // Check for Native Driver Protocol: "solidb-drv-v1\0"
+                        else if &peeked_data == b"solidb-drv-v1\0" {
+                            // For driver traffic, pass the raw stream to the driver handler
+                            if driver_tx.send((stream, addr.to_string())).await.is_err() {
+                                 tracing::error!("Driver handler channel closed");
+                            }
+                        }
+                        // Check for Cluster JSON Messages
+                        else if peeked_data.first() == Some(&b'{') {
                             // Cluster Message (JSON) - need peeked bytes for parsing
                             let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
                             let mgr = connection_mgr.clone();

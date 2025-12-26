@@ -8,6 +8,7 @@ pub mod scripting;
 pub mod sharding;
 pub mod queue;
 pub mod ttl;
+pub mod driver;
 
 // Synchronization module (new architecture)
 pub mod sync;

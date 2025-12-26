@@ -26,8 +26,26 @@ fn main() {
     println!("║          SoliDB HTTP API Benchmark Suite                    ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
-    // Create client with connection pooling and keep-alive
+    // Check for msgpack flag
+    let use_msgpack = std::env::args().any(|arg| arg == "--msgpack");
+
+    if use_msgpack {
+        println!("🚀 Running in MessagePack mode (Accept: application/msgpack)\n");
+    } else {
+        println!("📝 Running in JSON mode (default). Use --msgpack to test binary format.\n");
+    }
+
+    // Create client with connection pooling, keep-alive, and optional default headers
+    let mut headers = reqwest::header::HeaderMap::new();
+    if use_msgpack {
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/msgpack"),
+        );
+    }
+
     let client = Client::builder()
+        .default_headers(headers)
         .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
         .pool_idle_timeout(std::time::Duration::from_secs(90))
         .tcp_keepalive(std::time::Duration::from_secs(60))
@@ -373,6 +391,22 @@ fn bench_delete_document(client: &Client) {
 }
 
 
+fn parse_response<T: serde::de::DeserializeOwned>(response: reqwest::blocking::Response) -> T {
+    let headers = response.headers().clone();
+    let is_msgpack = headers
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("application/msgpack"))
+        .unwrap_or(false);
+
+    if is_msgpack {
+        let bytes = response.bytes().expect("Failed to get bytes");
+        rmp_serde::from_slice(&bytes).expect("Failed to parse msgpack")
+    } else {
+        response.json().expect("Failed to parse json")
+    }
+}
+
 fn bench_transactions(client: &Client) {
     println!("💳 TRANSACTION BENCHMARKS");
     print_separator();
@@ -386,7 +420,7 @@ fn bench_transactions(client: &Client) {
             .json(&json!({}))
             .send()
             .expect("Begin transaction failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse transaction response");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
@@ -399,7 +433,7 @@ fn bench_transactions(client: &Client) {
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
@@ -419,7 +453,7 @@ fn bench_transactions(client: &Client) {
     for batch in 0..200 {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
@@ -441,7 +475,7 @@ fn bench_transactions(client: &Client) {
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
@@ -461,7 +495,7 @@ fn bench_transactions(client: &Client) {
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let _ = client.post(&format!("{}/_api/database/{}/transaction/{}/execute-sdbql", SERVER_URL, DATABASE, tx_id))
@@ -480,7 +514,7 @@ fn bench_transactions(client: &Client) {
     for _ in 0..100 {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let query_url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
@@ -500,7 +534,7 @@ fn bench_transactions(client: &Client) {
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
@@ -520,7 +554,7 @@ fn bench_transactions(client: &Client) {
     for i in 0..SMALL {
         let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
         let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
@@ -532,6 +566,7 @@ fn bench_transactions(client: &Client) {
         let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
         client.post(&commit_url).send().expect("Commit failed");
     }
+
     print_result("TX DELETE (1 doc)", SMALL, start.elapsed());
 
     // Benchmark: read_uncommitted isolation level (faster but less safe) - using header
@@ -546,7 +581,7 @@ fn bench_transactions(client: &Client) {
             .json(&json!({"isolationLevel": "read_uncommitted"}))
             .send()
             .expect("Begin failed");
-        let tx: serde_json::Value = response.json().expect("Failed to parse");
+        let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
         let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
