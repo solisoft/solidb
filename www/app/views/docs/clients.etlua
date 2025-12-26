@@ -356,12 +356,12 @@
           -- Sequential: 1K ops, single connection
           -- Parallel: 10K ops, 16 connections
           local benchmarks = {
-              { name = "Rust", seq = 31811, read = 44422, parallel = 92719, hex = "#f97316", icon = "fab fa-rust" },
-              { name = "Go", seq = 34301, read = 45875, parallel = 92522, hex = "#06b6d4", icon = "fab fa-golang" },
-              { name = "PHP", seq = 33321, read = 45035, parallel = 83096, hex = "#a855f7", icon = "fab fa-php" },
-              { name = "Python", seq = 29345, read = 43306, parallel = 72379, hex = "#eab308", icon = "fab fa-python" },
-              { name = "Bun/JS", seq = 22222, read = 35714, parallel = 45248, hex = "#22c55e", icon = "fab fa-node-js" },
-              { name = "Ruby", seq = 28292, read = 41377, parallel = 40500, hex = "#ef4444", icon = "fas fa-gem" }
+              { name = "Rust", seq = 32008, read = 43270, parallel = 91775, hex = "#f97316", icon = "fab fa-rust" },
+              { name = "Go", seq = 34102, read = 47586, parallel = 90409, hex = "#06b6d4", icon = "fab fa-golang" },
+              { name = "PHP", seq = 26770, read = 44964, parallel = 79291, hex = "#a855f7", icon = "fab fa-php" },
+              { name = "Python", seq = 36809, read = 50434, parallel = 73233, hex = "#eab308", icon = "fab fa-python" },
+              { name = "Ruby", seq = 30423, read = 44909, parallel = 72268, hex = "#ef4444", icon = "fas fa-gem" },
+              { name = "Bun/JS", seq = 22727, read = 38462, parallel = 46729, hex = "#22c55e", icon = "fab fa-node-js" }
           }
           local max_parallel = 100000
           %>
