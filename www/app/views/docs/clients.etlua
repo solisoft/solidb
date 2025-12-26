@@ -352,16 +352,16 @@
           </div>
 
           <% 
-          -- Real benchmark results from Ubuntu 24.04 (16 cores)
+          -- Real benchmark results from Ubuntu 24.04 (16 cores) - Beelink
           -- Sequential: 1K inserts, single connection
           -- Parallel: 10K inserts, 16 connections
           local benchmarks = {
-              { name = "Rust", seq = 29581, parallel = 103797, hex = "#f97316", icon = "fab fa-rust" },
-              { name = "Go", seq = 33046, parallel = 84889, hex = "#06b6d4", icon = "fab fa-golang" },
-              { name = "PHP", seq = 31885, parallel = 80954, hex = "#a855f7", icon = "fab fa-php" },
-              { name = "Python", seq = 35553, parallel = 72474, hex = "#eab308", icon = "fab fa-python" },
-              { name = "Bun/JS", seq = 21276, parallel = 46296, hex = "#22c55e", icon = "fab fa-node-js" },
-              { name = "Ruby", seq = 28413, parallel = 39114, hex = "#ef4444", icon = "fas fa-gem" }
+              { name = "Rust", seq = 29898, parallel = 101834, hex = "#f97316", icon = "fab fa-rust" },
+              { name = "Go", seq = 31667, parallel = 81650, hex = "#06b6d4", icon = "fab fa-golang" },
+              { name = "PHP", seq = 33131, parallel = 79797, hex = "#a855f7", icon = "fab fa-php" },
+              { name = "Python", seq = 34886, parallel = 72406, hex = "#eab308", icon = "fab fa-python" },
+              { name = "Bun/JS", seq = 15384, parallel = 46511, hex = "#22c55e", icon = "fab fa-node-js" },
+              { name = "Ruby", seq = 30011, parallel = 39833, hex = "#ef4444", icon = "fas fa-gem" }
           }
           local max_parallel = 110000
           %>
