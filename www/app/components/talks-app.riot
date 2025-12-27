@@ -158,8 +158,8 @@
                     class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">
                     People</div>
                 <div class="max-h-48 overflow-y-auto custom-scrollbar">
-                    <div each={ (user, index) in state.filteredUsers } onclick={ ()=> insertMention(user) } class={
-                        getUserPickerItemClass(index) }>
+                    <div each={ (user, index) in state.filteredUsers } onclick={ ()=> insertMention(user) }
+                        class={ getUserPickerItemClass(index) }>
                         <div
                             class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
                             { getInitials(getUsername(user)) }</div>
@@ -1191,6 +1191,10 @@
                                                 }
                                             });
                                         }
+                                    } else if (this.state.currentChannelData && this.state.currentChannelData.type === 'private') {
+                                        // Current channel is private and no longer in our authorized list
+                                        console.log('[Channels] Removed from private channel. Switching to general.');
+                                        this.router.navigate('?channel=general');
                                     }
                                 }
 

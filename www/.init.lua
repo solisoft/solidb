@@ -3,6 +3,7 @@ package.path = package.path .. ";app/controllers/?.lua;/zip/app/controllers/?.lu
 package.path = package.path .. ";app/models/?.lua;/zip/app/models/?.lua"
 package.path = package.path .. ";app/cronjobs/?.lua;/zip/app/cronjobs/?.lua"
 package.path = package.path .. ";config/?.lua;/zip/config/?.lua"
+package.path = package.path .. ";lib/?.lua;/zip/lib/?.lua"
 
 -- OTP = require("otp") -- OTP functions
 require("utilities")

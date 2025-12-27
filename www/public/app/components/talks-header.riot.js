@@ -4,23 +4,84 @@ export default {
   exports: {
     ...window.TalksMixin,
 
-    onMounted() {
-        console.log('Header mounted');
+    onBeforeMount() {
+        this.state = {
+            filteredUsers: []
+        };
+    },
+
+    handleAddMemberInput(e) {
+        const query = e.target.value.toLowerCase();
+        if (!query) {
+            this.update({ filteredUsers: [] });
+            return;
+        }
+
+        const currentMembers = this.props.currentChannelData.members || [];
+        const filtered = this.props.users.filter(u => {
+            const name = this.getUsername(u).toLowerCase();
+            return name.includes(query) && !currentMembers.includes(u._key);
+        });
+
+        this.update({ filteredUsers: filtered });
+    },
+
+    async addMember(user) {
+        try {
+            const response = await fetch('/talks/add_channel_member', {
+                method: 'POST',
+                body: JSON.stringify({
+                    channel_id: this.props.currentChannelData._id,
+                    user_key: user._key
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.success) {
+                this.update({ filteredUsers: [] });
+                const input = this.root.querySelector('input[placeholder="Add someone..."]');
+                if (input) input.value = '';
+            } else {
+                alert(data.error || 'Failed to add member');
+            }
+        } catch (err) {
+            console.error('Error adding member:', err);
+        }
+    },
+
+    async removeMember(userKey) {
+        if (!confirm('Are you sure you want to remove this member?')) return;
+
+        try {
+            const response = await fetch('/talks/remove_channel_member', {
+                method: 'POST',
+                body: JSON.stringify({
+                    channel_id: this.props.currentChannelData._id,
+                    user_key: userKey
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (!data.success) {
+                alert(data.error || 'Failed to remove member');
+            }
+        } catch (err) {
+            console.error('Error removing member:', err);
+        }
+    },
+
+    canRemoveMember(memberKey) {
+        const currentUser = this.props.currentUser;
+        const channel = this.props.currentChannelData;
+        if (!currentUser || !channel) return false;
+        if (memberKey === currentUser._key) return true;
+        if (channel.created_by === currentUser._key) return true;
+        return false;
     },
 
     getStarClass() {
         const isFav = this.props.currentChannelData && this.props.isFavorite(this.props.currentChannelData._key);
         return isFav ? 'fas fa-star text-yellow-400' : 'far fa-star';
-    },
-
-    getInitials(sender) {
-        if (!sender) return '';
-        // Split by any non-alphanumeric character (space, dot, dash, etc)
-        const parts = sender.split(/[^a-zA-Z0-9]+/);
-        if (parts.length >= 2) {
-            return (parts[0][0] + parts[1][0]).toUpperCase();
-        }
-        return sender.substring(0, 2).toUpperCase();
     },
 
     getMemberEmail(memberKey) {
@@ -29,12 +90,12 @@ export default {
     },
 
     isDMChannel() {
-        return this.props.currentChannel && this.props.currentChannel.startsWith('dm_');
+        const channel = this.props.currentChannel;
+        return channel && channel.startsWith('dm_');
     },
 
     handleSearchInput(e) {
         const query = e.target.value;
-        // Only clear if empty, don't auto-search while typing
         if (query.length === 0 && this.props.onSearchClear) {
             this.props.onSearchClear();
         }
@@ -51,28 +112,19 @@ export default {
             if (this.props.onSearchClear) {
                 this.props.onSearchClear();
             }
-            // Blur input to allow closing sidebar without clearing if user wants
             e.target.blur();
         }
     },
 
-    // Huddle feature methods
     hasActiveHuddle() {
-        // Show huddle indicator for non-DM channels with active participants
         const channelData = this.props.currentChannelData;
-        if (!channelData) return false;
-        if (channelData.type === 'dm') return false;
-
-        const participants = channelData.active_call_participants || [];
-        return participants.length > 0;
+        if (!channelData || channelData.type === 'dm') return false;
+        return (channelData.active_call_participants || []).length > 0;
     },
 
     isInHuddle() {
-        // Check if current user is already in the huddle
         const channelData = this.props.currentChannelData;
-        if (!channelData) return false;
-        if (channelData.type === 'dm') return false;
-
+        if (!channelData || channelData.type === 'dm') return false;
         const participants = channelData.active_call_participants || [];
         const currentUserKey = this.props.currentUser?._key;
         return currentUserKey && participants.includes(currentUserKey);
@@ -96,11 +148,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<header class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md"><div class="flex items-center min-w-0 flex-1"><h2 expr5785="expr5785" class="text-xl font-bold text-white mr-2 truncate flex items-center"><i expr5786="expr5786" class="fas fa-lock text-sm mr-2 text-gray-400"></i><span expr5787="expr5787" class="mr-1"></span> </h2><button expr5788="expr5788" class="text-gray-400 hover:text-white transition-colors"><i expr5789="expr5789"></i></button></div><div class="flex items-center space-x-4"><div expr5790="expr5790" class="relative"></div><div class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2"><div expr5799="expr5799" class="flex items-center gap-2 bg-green-600/20 border border-green-500/50 px-3 py-1.5 rounded-full animate-pulse"></div><template expr5803="expr5803"></template></div><div class="relative hidden sm:block"><input expr5806="expr5806" type="text" placeholder="Search messages..." ref="searchInput" class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none\n                focus:border-indigo-500 w-64 transition-all text-gray-200"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header>',
+    '<header class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md"><div class="flex items-center min-w-0 flex-1"><h2 expr1808="expr1808" class="text-xl font-bold text-white mr-2 truncate flex items-center"><i expr1809="expr1809" class="fas fa-lock text-sm mr-2 text-gray-400"></i><span expr1810="expr1810" class="mr-1"></span> </h2><button expr1811="expr1811" class="text-gray-400 hover:text-white transition-colors"><i expr1812="expr1812"></i></button></div><div class="flex items-center space-x-4"><div expr1813="expr1813" class="relative"></div><div class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2"><div expr1828="expr1828" class="flex items-center gap-2 bg-green-600/20 border border-green-500/50 px-3 py-1.5 rounded-full animate-pulse"></div><template expr1832="expr1832"></template></div><div class="relative hidden sm:block"><input expr1835="expr1835" type="text" placeholder="Search messages..." ref="searchInput" class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none\n                focus:border-indigo-500 w-64 transition-all text-gray-200"/><i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i></div><button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button></div></header>',
     [
       {
-        redundantAttribute: 'expr5785',
-        selector: '[expr5785]',
+        redundantAttribute: 'expr1808',
+        selector: '[expr1808]',
 
         expressions: [
           {
@@ -118,8 +170,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type==='private',
-        redundantAttribute: 'expr5786',
-        selector: '[expr5786]',
+        redundantAttribute: 'expr1809',
+        selector: '[expr1809]',
 
         template: template(
           null,
@@ -129,8 +181,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.props.currentChannelData || (_scope.props.currentChannelData.type !=='private' && _scope.props.currentChannelData.type !=='dm'),
-        redundantAttribute: 'expr5787',
-        selector: '[expr5787]',
+        redundantAttribute: 'expr1810',
+        selector: '[expr1810]',
 
         template: template(
           '#',
@@ -138,8 +190,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr5788',
-        selector: '[expr5788]',
+        redundantAttribute: 'expr1811',
+        selector: '[expr1811]',
 
         expressions: [
           {
@@ -150,8 +202,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr5789',
-        selector: '[expr5789]',
+        redundantAttribute: 'expr1812',
+        selector: '[expr1812]',
 
         expressions: [
           {
@@ -165,27 +217,27 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.currentChannelData && _scope.props.currentChannelData.type==='private',
-        redundantAttribute: 'expr5790',
-        selector: '[expr5790]',
+        redundantAttribute: 'expr1813',
+        selector: '[expr1813]',
 
         template: template(
-          '<button expr5791="expr5791" class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 px-3 py-1.5 rounded-md transition-colors"><i class="fas fa-users text-xs"></i><span expr5792="expr5792" class="text-sm"> </span></button><div expr5793="expr5793" class="absolute right-0 top-full mt-2 w-64 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden"></div>',
+          '<button expr1814="expr1814" class="flex items-center gap-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/50\n                    px-3 py-1.5 rounded-md transition-colors"><i class="fas fa-users text-xs"></i><span expr1815="expr1815" class="text-sm"> </span></button><div expr1816="expr1816" class="absolute right-0 top-full mt-2 w-72 bg-[#1A1D21] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col max-h-[80vh]"></div>',
           [
             {
-              redundantAttribute: 'expr5791',
-              selector: '[expr5791]',
+              redundantAttribute: 'expr1814',
+              selector: '[expr1814]',
 
               expressions: [
                 {
                   type: expressionTypes.EVENT,
                   name: 'onclick',
-                  evaluate: _scope => _scope.props.onToggleMembersPanel
+                  evaluate: _scope => () => _scope.props.onToggleMembersPanel()
                 }
               ]
             },
             {
-              redundantAttribute: 'expr5792',
-              selector: '[expr5792]',
+              redundantAttribute: 'expr1815',
+              selector: '[expr1815]',
 
               expressions: [
                 {
@@ -204,23 +256,107 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.showMembersPanel,
-              redundantAttribute: 'expr5793',
-              selector: '[expr5793]',
+              redundantAttribute: 'expr1816',
+              selector: '[expr1816]',
 
               template: template(
-                '<div class="p-3 border-b border-gray-700 flex items-center justify-between"><span class="text-sm font-medium text-white">Channel Members</span><button expr5794="expr5794" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button></div><div class="max-h-64 overflow-y-auto custom-scrollbar p-2"><div expr5795="expr5795" class="flex items-center gap-2 p-2 hover:bg-white/5 rounded"></div></div>',
+                '<div class="p-3 border-b border-gray-700 flex items-center justify-between bg-gray-800/30"><span class="text-sm font-semibold text-white">Channel Members</span><button expr1817="expr1817" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button></div><div class="p-3 border-b border-gray-700 bg-gray-900/50"><div class="relative"><i class="fas fa-user-plus absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i><input expr1818="expr1818" type="text" placeholder="Add someone..." class="w-full bg-[#1A1D21] border border-gray-700 rounded text-xs px-7 py-2 text-white focus:outline-none focus:border-indigo-500"/></div><div expr1819="expr1819" class="mt-2 max-h-40 overflow-y-auto custom-scrollbar\n                            bg-[#1A1D21] border border-gray-700 rounded shadow-inner"></div></div><div class="overflow-y-auto custom-scrollbar p-2 flex-1"><div expr1823="expr1823" class="flex items-center gap-2 p-2 hover:bg-white/5 rounded group"></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr5794',
-                    selector: '[expr5794]',
+                    redundantAttribute: 'expr1817',
+                    selector: '[expr1817]',
 
                     expressions: [
                       {
                         type: expressionTypes.EVENT,
                         name: 'onclick',
-                        evaluate: _scope => _scope.props.onToggleMembersPanel
+                        evaluate: _scope => () => _scope.props.onToggleMembersPanel()
                       }
                     ]
+                  },
+                  {
+                    redundantAttribute: 'expr1818',
+                    selector: '[expr1818]',
+
+                    expressions: [
+                      {
+                        type: expressionTypes.EVENT,
+                        name: 'oninput',
+                        evaluate: _scope => e => _scope.handleAddMemberInput(e)
+                      }
+                    ]
+                  },
+                  {
+                    type: bindingTypes.IF,
+                    evaluate: _scope => _scope.state.filteredUsers.length > 0,
+                    redundantAttribute: 'expr1819',
+                    selector: '[expr1819]',
+
+                    template: template(
+                      '<div expr1820="expr1820" class="flex items-center gap-2 p-2 hover:bg-indigo-600/20 cursor-pointer\n                                transition-colors group"></div>',
+                      [
+                        {
+                          type: bindingTypes.EACH,
+                          getKey: null,
+                          condition: null,
+
+                          template: template(
+                            '<div expr1821="expr1821" class="w-6 h-6 rounded bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white"> </div><div class="flex-1 min-w-0"><div expr1822="expr1822" class="text-gray-200 text-xs truncate group-hover:text-white"> </div></div><i class="fas fa-plus text-gray-600 group-hover:text-indigo-400 text-[10px]"></i>',
+                            [
+                              {
+                                expressions: [
+                                  {
+                                    type: expressionTypes.EVENT,
+                                    name: 'onclick',
+                                    evaluate: _scope => () => _scope.addMember(_scope.user)
+                                  }
+                                ]
+                              },
+                              {
+                                redundantAttribute: 'expr1821',
+                                selector: '[expr1821]',
+
+                                expressions: [
+                                  {
+                                    type: expressionTypes.TEXT,
+                                    childNodeIndex: 0,
+
+                                    evaluate: _scope => [
+                                      _scope.getInitials(
+                                        _scope.getUsername(_scope.user)
+                                      )
+                                    ].join(
+                                      ''
+                                    )
+                                  }
+                                ]
+                              },
+                              {
+                                redundantAttribute: 'expr1822',
+                                selector: '[expr1822]',
+
+                                expressions: [
+                                  {
+                                    type: expressionTypes.TEXT,
+                                    childNodeIndex: 0,
+
+                                    evaluate: _scope => _scope.getUsername(
+                                      _scope.user
+                                    )
+                                  }
+                                ]
+                              }
+                            ]
+                          ),
+
+                          redundantAttribute: 'expr1820',
+                          selector: '[expr1820]',
+                          itemName: 'user',
+                          indexName: null,
+                          evaluate: _scope => _scope.state.filteredUsers
+                        }
+                      ]
+                    )
                   },
                   {
                     type: bindingTypes.EACH,
@@ -228,11 +364,11 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<div expr5796="expr5796" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold"> </div><div class="flex-1 min-w-0"><div expr5797="expr5797" class="text-gray-200 text-sm truncate"> </div><div expr5798="expr5798" class="text-gray-500 text-xs truncate"> </div></div>',
+                      '<div expr1824="expr1824" class="w-8 h-8 rounded bg-gradient-to-br from-indigo-500 to-purple-600 text-xs flex items-center justify-center text-white font-bold shrink-0"> </div><div class="flex-1 min-w-0"><div expr1825="expr1825" class="text-gray-200 text-sm truncate font-medium"> </div><div expr1826="expr1826" class="text-gray-500 text-[10px] truncate"> </div></div><button expr1827="expr1827" class="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-red-400\n                                transition-all" title="Remove member"></button>',
                       [
                         {
-                          redundantAttribute: 'expr5796',
-                          selector: '[expr5796]',
+                          redundantAttribute: 'expr1824',
+                          selector: '[expr1824]',
 
                           expressions: [
                             {
@@ -250,28 +386,24 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr5797',
-                          selector: '[expr5797]',
+                          redundantAttribute: 'expr1825',
+                          selector: '[expr1825]',
 
                           expressions: [
                             {
                               type: expressionTypes.TEXT,
                               childNodeIndex: 0,
 
-                              evaluate: _scope => [
-                                _scope.getMemberName(
-                                  _scope.props.users,
-                                  _scope.memberKey
-                                )
-                              ].join(
-                                ''
+                              evaluate: _scope => _scope.getMemberName(
+                                _scope.props.users,
+                                _scope.memberKey
                               )
                             }
                           ]
                         },
                         {
-                          redundantAttribute: 'expr5798',
-                          selector: '[expr5798]',
+                          redundantAttribute: 'expr1826',
+                          selector: '[expr1826]',
 
                           expressions: [
                             {
@@ -283,12 +415,37 @@ export default {
                               )
                             }
                           ]
+                        },
+                        {
+                          type: bindingTypes.IF,
+
+                          evaluate: _scope => _scope.canRemoveMember(
+                            _scope.memberKey
+                          ),
+
+                          redundantAttribute: 'expr1827',
+                          selector: '[expr1827]',
+
+                          template: template(
+                            '<i class="fas fa-user-minus text-xs"></i>',
+                            [
+                              {
+                                expressions: [
+                                  {
+                                    type: expressionTypes.EVENT,
+                                    name: 'onclick',
+                                    evaluate: _scope => () => _scope.removeMember(_scope.memberKey)
+                                  }
+                                ]
+                              }
+                            ]
+                          )
                         }
                       ]
                     ),
 
-                    redundantAttribute: 'expr5795',
-                    selector: '[expr5795]',
+                    redundantAttribute: 'expr1823',
+                    selector: '[expr1823]',
                     itemName: 'memberKey',
                     indexName: null,
                     evaluate: _scope => _scope.props.currentChannelData.members || []
@@ -302,11 +459,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.hasActiveHuddle() && !_scope.isInHuddle(),
-        redundantAttribute: 'expr5799',
-        selector: '[expr5799]',
+        redundantAttribute: 'expr1828',
+        selector: '[expr1828]',
 
         template: template(
-          '<div class="flex -space-x-2"><div expr5800="expr5800" class="w-6 h-6 rounded-full bg-green-600 border-2 border-gray-900 flex items-center justify-center text-white text-[10px] font-bold"></div><div expr5801="expr5801" class="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center\n                            justify-center text-white text-[10px]"></div></div><span class="text-green-400 text-sm font-medium">Huddle</span><button expr5802="expr5802" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium\n                        transition-colors flex items-center gap-1"><i class="fas fa-headphones text-xs"></i>\n                        Join\n                    </button>',
+          '<div class="flex -space-x-2"><div expr1829="expr1829" class="w-6 h-6 rounded-full bg-green-600 border-2 border-gray-900 flex items-center justify-center text-white text-[10px] font-bold"></div><div expr1830="expr1830" class="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-900 flex items-center\n                            justify-center text-white text-[10px]"></div></div><span class="text-green-400 text-sm font-medium">Huddle</span><button expr1831="expr1831" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium\n                        transition-colors flex items-center gap-1"><i class="fas fa-headphones text-xs"></i>\n                        Join\n                    </button>',
           [
             {
               type: bindingTypes.EACH,
@@ -335,8 +492,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr5800',
-              selector: '[expr5800]',
+              redundantAttribute: 'expr1829',
+              selector: '[expr1829]',
               itemName: 'participant',
               indexName: null,
 
@@ -348,8 +505,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.getHuddleParticipants().length > 3,
-              redundantAttribute: 'expr5801',
-              selector: '[expr5801]',
+              redundantAttribute: 'expr1830',
+              selector: '[expr1830]',
 
               template: template(
                 ' ',
@@ -373,8 +530,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr5802',
-              selector: '[expr5802]',
+              redundantAttribute: 'expr1831',
+              selector: '[expr1831]',
 
               expressions: [
                 {
@@ -390,15 +547,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.hasActiveHuddle() || _scope.isInHuddle(),
-        redundantAttribute: 'expr5803',
-        selector: '[expr5803]',
+        redundantAttribute: 'expr1832',
+        selector: '[expr1832]',
 
         template: template(
-          '<button expr5804="expr5804" class="text-gray-400 hover:text-white p-2\n                        rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call"><i class="fas fa-phone"></i></button><button expr5805="expr5805" class="text-gray-400 hover:text-white p-2\n                        rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call"><i class="fas fa-video"></i></button>',
+          '<button expr1833="expr1833" class="text-gray-400 hover:text-white p-2\n                        rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call"><i class="fas fa-phone"></i></button><button expr1834="expr1834" class="text-gray-400 hover:text-white p-2\n                        rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call"><i class="fas fa-video"></i></button>',
           [
             {
-              redundantAttribute: 'expr5804',
-              selector: '[expr5804]',
+              redundantAttribute: 'expr1833',
+              selector: '[expr1833]',
 
               expressions: [
                 {
@@ -409,8 +566,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr5805',
-              selector: '[expr5805]',
+              redundantAttribute: 'expr1834',
+              selector: '[expr1834]',
 
               expressions: [
                 {
@@ -424,19 +581,19 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr5806',
-        selector: '[expr5806]',
+        redundantAttribute: 'expr1835',
+        selector: '[expr1835]',
 
         expressions: [
           {
             type: expressionTypes.EVENT,
             name: 'oninput',
-            evaluate: _scope => _scope.handleSearchInput
+            evaluate: _scope => e => _scope.handleSearchInput(e)
           },
           {
             type: expressionTypes.EVENT,
             name: 'onkeydown',
-            evaluate: _scope => _scope.handleSearchKeydown
+            evaluate: _scope => e => _scope.handleSearchKeydown(e)
           },
           {
             type: expressionTypes.EVENT,

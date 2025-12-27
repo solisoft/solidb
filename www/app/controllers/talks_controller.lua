@@ -12,1775 +12,1719 @@ local get_current_user = function()
   return nil
 end
 
-local app = {
-  index = function()
-    -- Initialize database connection
-    local db = SoliDB.primary
+-- Helper function to find or create a channel, including access control and DM lazy-creation
+local function get_or_create_channel(db, current_user, channel_identifier)
+  -- Try to find channel by key first, then by name
+  local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
+  local channelRes = db:Sdbql(channelQuery, { key = channel_identifier, name = channel_identifier }).result[1]
 
-    -- Helper to ensure index exists without erroring if it does
-    local function ensure_index(collection, fields, unique)
-        -- In a real production app, this should be done in a migration or startup script,
-        -- not on every request. For this demo/dev setup, we'll keep it here but guard it.
-        -- But for performance, we should ideally check if it exists or rely on the driver not crashing.
-        -- SolidDB driver CreateIndex is idempotent-ish or we can ignore errors.
-        -- Ideally, we check GetAllIndexes first.
-        -- For now, let's just attempt creation and suppress errors, or assume it's cheap enough if effectively no-op.
-        -- Actually, checking GetAllIndexes adds a round trip.
-        -- Let's just create them once or assume the driver handles it.
-        -- HOWEVER, the user complained about slowness.
-        -- So let's do this: check a global flag or similar? No, Lua state might not persist across requests in this environment?
-        -- If this is Redbean, the Lua state persists.
-        -- Let's use a global flag to do this only once per server restart.
-    end
-
-    if not _G.APP_INITIALIZED then
-        pcall(function() db:CreateCollection("channels") end)
-        pcall(function() db:CreateCollection("messages") end)
-        pcall(function() db:CreateCollection("users") end)
-        pcall(function() db:CreateCollection("files", { type = "blob" }) end)
-        pcall(function() db:CreateCollection("signals") end)
-
-        -- Create Indexes
-        pcall(function() db:CreateIndex("channels", { fields = { "name" }, unique = true }) end)
-        pcall(function() db:CreateIndex("users", { fields = { "email" }, unique = true }) end)
-        pcall(function() db:CreateIndex("messages", { fields = { "channel_id" }, unique = false }) end)
-        pcall(function() db:CreateIndex("signals", { fields = { "timestamp" }, type = "ttl", expireAfter = 3600 }) end)
-
-        -- Create fulltext index on messages.text for search (if it doesn't exist)
-        local existing_indexes = db:GetAllIndexes("messages")
-        local has_fulltext_index = false
-        if existing_indexes and existing_indexes.identifiers then
-            for _, idx in pairs(existing_indexes.identifiers) do
-                if idx.type == "fulltext" and idx.fields and idx.fields[1] == "text" then
-                    has_fulltext_index = true
-                    break
-                end
-            end
-        end
-        if not has_fulltext_index then
-            pcall(function() db:CreateIndex("messages", { fields = { "text" }, type = "fulltext" }) end)
-        end
-
-        _G.APP_INITIALIZED = true
-    end
-
-    -- Bootstrap presence WebSocket script
-    -- We force delete and recreate to ensure it has the latest code
-    local presence_script_key = "talks_presence"
-    db:Sdbql("REMOVE @key IN _scripts", { key = presence_script_key })
-
-    Logger("Creating presence WebSocket script...")
-    local presence_code = [=[
-local user_id = context.query_params.user_id
-if not user_id then return end
-
--- Increment connection count atomically
-local res = db:query([[
-    FOR u IN users
-    FILTER u._id == @id OR u._key == @id
-    UPDATE u WITH {
-        connection_count: IF(u.connection_count != null, u.connection_count, 0) + 1,
-        status: "online",
-        last_seen: DATE_NOW()
-    } IN users
-    RETURN NEW
-]], { id = user_id })
-
-while true do
-    local msg = solidb.ws.recv()
-    if not msg then break end
-end
-
--- Decrement connection count atomically and update status
-db:query([[
-    FOR u IN users
-    FILTER u._id == @id OR u._key == @id
-    LET old_count = IF(u.connection_count != null, u.connection_count, 1)
-    LET new_count = old_count - 1
-    LET status = IF(new_count > 0, "online", "offline")
-    UPDATE u WITH {
-        connection_count: new_count,
-        status: status,
-        last_seen: DATE_NOW()
-    } IN users
-]], { id = user_id })
-]=]
-    db:CreateDocument("_scripts", {
-      _key = presence_script_key,
-      name = "Presence Tracker",
-      methods = { "WS" },
-      path = "presence",
-      database = db._db_config.db_name,
-      code = presence_code,
-      description = "Tracks user online/offline status via WebSocket connection counting",
-      created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-      updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    })
-    Logger("Presence WebSocket script created.")
-
-    -- Seed demo messages for #general if not already present
-    local res = db:Sdbql("FOR c IN channels FILTER c.name == 'general' RETURN c")
-    if res and res.result and #res.result == 0 then
-      -- Create channels
-      local general_channel = db:CreateDocument("channels", { name = "general", type = "standard" })
-      db:CreateDocument("channels", { name = "development", type = "standard" })
-      db:CreateDocument("channels", { name = "announcements", type = "standard" })
-
-      -- Insert demo messages with reactions (usernames list) and code samples
-      db:CreateDocument("messages", {
-        channel_id = general_channel._id,
-        sender = "rust-bot",
-        text = "Welcome to #general! The SoliDB cluster is now connected and ready for action.",
-        timestamp = os.time(),
-        reactions = {
-          { emoji = "🚀", users = { "olivier.bonnaure", "antigravity", "rust-bot" } },
-          { emoji = "👍", users = { "antigravity", "olivier.bonnaure" } }
-        }
-      })
-      db:CreateDocument("messages", {
-        channel_id = general_channel._id,
-        sender = "antigravity",
-        text = [[Here's a sample query optimization I've been working on:
-```rust
-#[inline(always)]
-pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
-    // Fast path for point lookups
-    if let Some(key) = query.get_point_key() {
-        return Ok(Plan::PointLookup(key.clone()));
-    }
-
-    // Cost-based optimization
-    let mut plan = Plan::default();
-    plan.analyze_filters(&query.filters)?;
-    Ok(plan)
-}
-```]],
-        timestamp = os.time() + 1,
-        reactions = { { emoji = "🔥", users = { "olivier.bonnaure", "rust-bot", "alice", "bob", "charlie" } } }
-      })
-      db:CreateDocument("messages", {
-        channel_id = general_channel._id,
-        sender = "olivier.bonnaure",
-        text = "The UI looks great! Let's start integrating real data. Love the dark theme 🌙",
-        timestamp = os.time() + 2,
-        reactions = {
-          { emoji = "❤️", users = { "antigravity", "rust-bot", "alice", "bob" } },
-          { emoji = "✨", users = { "antigravity", "charlie" } }
-        }
-      })
-      db:CreateDocument("messages", {
-        channel_id = general_channel._id,
-        sender = "rust-bot",
-        text = [[System performance metrics for today:
-```json
-{
-  "queries_per_second": 15420,
-  "avg_latency_ms": 0.8,
-  "cache_hit_rate": 0.94,
-  "active_connections": 127
-}
-```]],
-        timestamp = os.time() + 3,
-        reactions = { { emoji = "📊", users = { "olivier.bonnaure" } } }
-      })
-    end
-
-    -- Get current user early for validation
-    local current_user = get_current_user()
-    if not current_user then
-      RedirectTo("/talks/login")
-      return
-    end
-
-    -- Seed mentions channel if not exists
-    local mentionsRes = db:Sdbql("FOR c IN channels FILTER c.name == 'mentions' RETURN c")
-    if mentionsRes and mentionsRes.result and #mentionsRes.result == 0 then
-        db:CreateDocument("channels", { name = "mentions", type = "system" })
-    end
-
-    -- Fetch all channels (standard + private where user is member + system)
-    local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR c.type == 'system' OR (c.type == 'private' AND @me IN c.members) SORT c.type DESC, c.name ASC RETURN c", { me = current_user._key })
-    local channels = (channelsRes and channelsRes.result) or {}
-
-    -- (mentions channel removed from virtual injection)
-
-    -- Get current channel (default to first channel from DB)
-    local currentChannel = GetParam("channel") or "general"
-
-    if not currentChannel or currentChannel == "" then
-      if #channels > 0 then
-        currentChannel = channels[1].name
-      else
-        currentChannel = "general"
+  -- Access Control for Private Channels (if found)
+  if channelRes and channelRes.type == "private" then
+    local isMember = false
+    if channelRes.members then
+      for _, m in ipairs(channelRes.members) do
+        if m == current_user._key then isMember = true break end
       end
     end
-
-    Params.channel = currentChannel
-
-    Params.channel = currentChannel
-
-    -- Try to find channel by key first, then by name
-    local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
-    local channelRes = db:Sdbql(channelQuery, { key = currentChannel, name = currentChannel }).result[1]
-
-    -- Access Control for Private Channels
-    if channelRes and channelRes.type == "private" then
-        local isMember = false
-        if channelRes.members then
-            for _, m in ipairs(channelRes.members) do
-                if m == current_user._key then isMember = true break end
-            end
-        end
-
-        if not isMember then
-            -- Eject unauthorized user
-            RedirectTo("/talks?channel=general")
-            return
-        end
+    if not isMember then
+      -- Unauthorized, return nil
+      return nil
     end
+  end
 
-    -- Lazy create DM channel if it doesn't exist
-    if not channelRes and string.sub(currentChannel, 1, 3) == "dm_" then
-      local remainder = string.sub(currentChannel, 4) -- Remove "dm_" prefix
-      local underscorePos = string.find(remainder, "_")
+  -- Lazy create DM channel if it doesn't exist and matches DM pattern
+  if not channelRes and string.sub(channel_identifier, 1, 3) == "dm_" then
+    local remainder = string.sub(channel_identifier, 4) -- Remove "dm_" prefix
+    local underscorePos = string.find(remainder, "_")
 
-      if underscorePos and current_user then
-        local key1 = string.sub(remainder, 1, underscorePos - 1)
-        local key2 = string.sub(remainder, underscorePos + 1)
+    if underscorePos and current_user then
+      local key1 = string.sub(remainder, 1, underscorePos - 1)
+      local key2 = string.sub(remainder, underscorePos + 1)
 
-        -- Validate keys exist in users collection
-        local user1Res = db:Sdbql("FOR u IN users FILTER u._key == @k RETURN u._key", { k = key1 })
-        local user2Res = db:Sdbql("FOR u IN users FILTER u._key == @k RETURN u._key", { k = key2 })
+      -- Validate keys exist in users collection
+      local user1Res = db:Sdbql("FOR u IN users FILTER u._key == @k RETURN u._key", { k = key1 })
+      local user2Res = db:Sdbql("FOR u IN users FILTER u._key == @k RETURN u._key", { k = key2 })
 
-        local user1Exists = user1Res and user1Res.result and #user1Res.result > 0
-        local user2Exists = user2Res and user2Res.result and #user2Res.result > 0
+      local user1Exists = user1Res and user1Res.result and #user1Res.result > 0
+      local user2Exists = user2Res and user2Res.result and #user2Res.result > 0
 
-        -- For self-DM, both keys are the same
-        local isSelfDM = (key1 == key2)
-        local bothExist = isSelfDM and user1Exists or (user1Exists and user2Exists)
+      -- For self-DM, both keys are the same
+      local isSelfDM = (key1 == key2)
+      local bothExist = isSelfDM and user1Exists or (user1Exists and user2Exists)
 
-        if bothExist then
-            -- Verify authorization: current user must be one of the keys
-            local isAuthorized = (current_user._key == key1 or current_user._key == key2)
+      if bothExist then
+        -- Verify authorization: current user must be one of the keys
+        local isAuthorized = (current_user._key == key1 or current_user._key == key2)
 
-            if isAuthorized then
-                -- Create the channel
-                local createRes = db:CreateDocument("channels", {
-                    name = currentChannel,
-                    type = "dm",
-                    members = { key1, key2 }
-                })
+        if isAuthorized then
+          -- Create the channel
+          db:CreateDocument("channels", {
+            name = channel_identifier,
+            type = "dm",
+            members = { key1, key2 }
+          })
 
-                -- Refetch the channel to ensure we have the correct format
-                channelRes = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = currentChannel }).result[1]
-            end
+          -- Refetch the channel to ensure we have the correct format
+          channelRes = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = channel_identifier }).result[1]
         end
       end
     end
-
-    -- If still no channel found, default to general
-    if not channelRes then
-        Params.channel = "general"
-        channelRes = db:Sdbql("FOR c IN channels FILTER c.name == 'general' RETURN c").result[1]
-    end
-
-    -- Update user's last seen for this channel
-    if channelRes then
-        local seen = current_user.channel_last_seen or {}
-        seen[channelRes._id] = os.time()
-        -- Update the user document
-        db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
-        -- Update local current_user object so it's passed to view correctly
-        current_user.channel_last_seen = seen
-    end
-
-    -- Fetch messages for current channel using the resolved channel ID
-    -- Fetch messages for current channel
-    local messages = {}
-    if channelRes.name == "mentions" then
-        -- Consolidated query for mentions:
-        -- 1. Messages where the text contains "@username"
-        -- 2. Messages that are quotes of the user's messages (quoted_message.sender == user.username (or email logic))
-        -- 3. Thread replies in threads the user participated in (this is harder to track without an index, maybe skip for now or rely on thread_participants attribute if we added it)
-        -- Let's focus on text mentions and quotes.
-
-        -- Determine user identifier for mentions/quotes
-        local username = current_user.firstname and current_user.lastname
-                        and (current_user.firstname .. " " .. current_user.lastname)
-                        or current_user.email
-
-        local email_handle = string.match(current_user.email, "^[^@]+")
-
-        local mentionsQuery = [[
-            LET username = @username
-            LET user_email = @email
-            LET handle = @handle
-
-            FOR m IN messages
-            FILTER (
-                CONTAINS(m.text, CONCAT("@", username))
-                OR
-                CONTAINS(m.text, CONCAT("@", user_email))
-                OR
-                CONTAINS(m.text, CONCAT("@", handle))
-                OR
-                (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
-                OR
-                (m.thread_participants != null AND POSITION(m.thread_participants, username))
-            )
-            SORT m.timestamp ASC
-            RETURN m
-        ]]
-
-        local mentionsRes = db:Sdbql(mentionsQuery, {
-            username = username,
-            email = current_user.email,
-            handle = email_handle
-        })
-        messages = (mentionsRes and mentionsRes.result) or {}
-    else
-        -- Standard channel messages
-        local messagesRes = db:Sdbql(
-          [[
-            FOR m IN messages FILTER m.channel_id == @channelId
-            SORT m.timestamp ASC RETURN m
-          ]],
-          { channelId = channelRes._id }
-        )
-        messages = (messagesRes and messagesRes.result) or {}
-    end
-
-    -- Fetch all users for the sidebar
-    local usersRes = db:Sdbql("FOR u IN users RETURN { _key: u._key, _id: u._id, firstname: u.firstname, lastname: u.lastname, email: u.email, status: u.status, connection_count: u.connection_count }")
-    local users = (usersRes and usersRes.result) or {}
-
-    -- Fetch DM channels for the current user
-    local dmRes = db:Sdbql("FOR c IN channels FILTER c.type == 'dm' AND POSITION(c.members, @me) >= 0 RETURN c", { me = current_user._key })
-    local dmChannels = (dmRes and dmRes.result) or {}
-
-    -- Pass data to view
-    Params.channels = EncodeJson(channels)
-    Params.channelId = channelRes._id
-    Params.currentChannelData = EncodeJson(channelRes)
-    Params.messages = EncodeJson(messages)
-    Params.channels = EncodeJson(channels)
-    Params.channelId = channelRes._id
-    Params.messages = EncodeJson(messages)
-    Params.users = EncodeJson(users)
-    Params.dmChannels = EncodeJson(dmChannels)
-    Params.currentChannel = currentChannel
-
-    -- Robustly extract DB name
-    local config = db._db_config
-    Params.db_name = config.db_name or config.database or config.name
-
-    -- DB host for WebSocket connections (from env var or fallback)
-    Params.db_host = os.getenv("DB_HOST") or "localhost:6745"
-
-    Logger("DEBUG: Final Params.db_name: " .. tostring(Params.db_name))
-
-    -- Authentication check
-    -- Authentication check (already done at top)
-
-    -- Access Control for DM channels
-    if channelRes.type == "dm" then
-      local isMember = false
-      if channelRes.members then
-        for _, memberKey in ipairs(channelRes.members) do
-          if memberKey == current_user._key then
-            isMember = true
-            break
-          end
-        end
-      end
-
-      if not isMember then
-        -- Unauthorized access to DM, redirect to general
-        RedirectTo("/talks?channel=general")
-        return
-      end
-    end
-
-    Params.currentUser = EncodeJson(current_user)
-    Params.full_height = true
-    Params.hide_header = true
-    Page("talks/index", "app")
-  end,
-
-  channel_data = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local currentChannel = GetParam("channel") or "general"
-
-    -- Try to find channel by key first, then by name
-    local channelQuery = "FOR c IN channels FILTER c._key == @key OR c.name == @name RETURN c"
-    local channelRes = db:Sdbql(channelQuery, { key = currentChannel, name = currentChannel }).result[1]
-
-    if not channelRes then
-        SetStatus(404)
-        WriteJSON({ error = "Channel not found" })
-        return
-    end
-
-    -- Access Control (same as in index)
-    if channelRes.type == "private" then
-        local isMember = false
-        if channelRes.members then
-            for _, m in ipairs(channelRes.members) do
-                if m == current_user._key then isMember = true break end
-            end
-        end
-        if not isMember then
-            SetStatus(403)
-            WriteJSON({ error = "Forbidden" })
-            return
-        end
-    end
-
-    -- Fetch messages for this channel
-    -- Fetch messages for this channel
-    local messages = {}
-
-    if channelRes.name == "mentions" then
-         -- Determine user identifier for mentions/quotes
-        local username = current_user.firstname and current_user.lastname
-                        and (current_user.firstname .. " " .. current_user.lastname)
-                        or current_user.email
-
-        local email_handle = string.match(current_user.email, "^[^@]+")
-
-        local mentionsQuery = [[
-            LET username = @username
-            LET user_email = @email
-            LET handle = @handle
-
-            FOR m IN messages
-            FILTER (
-                CONTAINS(m.text, CONCAT("@", username))
-                OR
-                CONTAINS(m.text, CONCAT("@", user_email))
-                OR
-                CONTAINS(m.text, CONCAT("@", handle))
-                OR
-                (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
-                OR
-                (m.thread_participants != null AND POSITION(m.thread_participants, username))
-            )
-            SORT m.timestamp ASC
-            RETURN m
-        ]]
-
-        local mentionsRes = db:Sdbql(mentionsQuery, {
-            username = username,
-            email = current_user.email,
-            handle = email_handle
-        })
-        messages = (mentionsRes and mentionsRes.result) or {}
-    else
-        local messagesRes = db:Sdbql(
-          [[
-            FOR m IN messages FILTER m.channel_id == @channelId
-            SORT m.timestamp ASC RETURN m
-          ]],
-          { channelId = channelRes._id }
-        )
-        messages = (messagesRes and messagesRes.result) or {}
-    end
-
-    -- Update user's last seen for this channel
-    local seen = current_user.channel_last_seen or {}
-    seen[channelRes._id] = os.time()
-    db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
-
-    -- Return JSON data
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({
-        currentChannel = currentChannel,
-        currentChannelData = channelRes,
-        channelId = channelRes._id,
-        messages = messages
-    })
-  end,
-
-  login_form = function()
-    Params.hide_header = true
-    Params.no_padding = true
-    Page("talks/login", "app")
-  end,
-
-  login = function()
-    local db = SoliDB.primary
-    local email = GetParam("email")
-    local password = GetParam("password")
-
-    if not email or not password then
-      Params.error = "Email and password are required"
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/login", "app")
-    end
-
-    local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
-
-    if not res or not res.result or #res.result == 0 then
-      Params.error = "Invalid email or password"
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/login", "app")
-    end
-
-    local user = res.result[1]
-    local ok, err = argon2.verify(user.password_hash, password)
-
-    if ok then
-      RedirectTo("/talks")
-      SetCookie("talks_session", user._id, { Path = "/", HttpOnly = true, MaxAge = 86400 * 30 })
-    else
-      Params.error = "Invalid email or password"
-      Params.hide_header = true
-      Params.no_padding = true
-      Page("talks/login", "app")
-    end
-  end,
-
-  signup_form = function()
-    Params.hide_header = true
-    Params.no_padding = true
-    Page("talks/signup", "app")
-  end,
-
-  signup = function()
-    local db = SoliDB.primary
-    local firstname = GetParam("firstname")
-    local lastname = GetParam("lastname")
-    local email = GetParam("email")
-    local password = GetParam("password")
-
-    if not firstname or not lastname or not email or not password then
-      Params.error = "All fields are required"
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/signup", "app")
-    end
-
-    if #password < 8 then
-      Params.error = "Password must be at least 8 characters long"
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/signup", "app")
-    end
-
-    -- Check if email exists
-    local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
-    if res and res.result and #res.result > 0 then
-      Params.error = "Email already registered"
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/signup", "app")
-    end
-
-    -- Hash password
-    local salt = EncodeBase64(GetRandomBytes(16))
-    local hash, err = argon2.hash_encoded(password, salt)
-
-    if not hash then
-      Params.error = "Error hashing password: " .. tostring(err)
-      Params.hide_header = true
-      Params.no_padding = true
-      return Page("talks/signup", "app")
-    end
-
-    local user = {
-      firstname = firstname,
-      lastname = lastname,
-      email = email,
-      password_hash = hash,
-      connection_count = 0,
-      status = "offline"
-    }
-
-    local createRes = db:CreateDocument("users", user)
-
-    -- Retrieve the created user (CreateDocument might return the doc or ID depending on driver)
-    -- Assuming it returns the document or we use logic to get ID.
-    -- Redbean/SoliDB driver typically returns the document or meta.
-    -- If createRes has _id, use it.
-    local userId = createRes._id
-    if not userId then
-       -- Fallback if driver returns something else, fetch by email
-       local u = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email }).result[1]
-       userId = u._id
-    end
-
-    RedirectTo("/talks")
-    SetCookie("talks_session", userId, { Path = "/", HttpOnly = true, MaxAge = 86400 * 30 })
-  end,
-
-  logout = function()
-    RedirectTo("/talks/login")
-    SetCookie("talks_session", "", { Path = "/", MaxAge = 0 })
-  end,
-
-  -- Proxy file upload to SoliDB blob API
-  upload = function()
-    local db = SoliDB.primary
-    -- Use local get_current_user directly
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local body = GetBody()
-    if not body or #body == 0 then
-      SetStatus(400)
-      WriteJSON({ error = "Empty body" })
-      return
-    end
-
-    -- Forward to /_api/blob/{db}/files
-    -- We must preserve the Content-Type header from the client request as it contains the multipart boundary
-    local content_type = GetHeader("Content-Type")
-
-    local path = "/_api/blob/" .. db._db_config.db_name .. "/files"
-    local url = db:Api_url(path)
-    local headers = {
-       ["Content-Type"] = content_type
-    }
-
-    if db._token ~= "" then
-      headers["Authorization"] = "Bearer " .. db._token
-    end
-
-    local status, res_headers, res_body = Fetch(url, {
-      method = "POST",
-      body = body,
-      headers = headers
-    })
-
-    if status ~= 201 and status ~= 200 then
-       SetStatus(status)
-       -- Try to decode error to give better feedback
-       local err_json = DecodeJson(res_body)
-       if err_json and err_json.errorMessage then
-          WriteJSON({ error = err_json.errorMessage })
-       else
-          Write(res_body)
-       end
-       return
-    end
-
-    -- res_body is JSON like { _key: "...", name: "...", ... }
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    Write(res_body)
-  end,
-
-  -- Proxy file download from SoliDB blob API
-  file = function()
-    local db = SoliDB.primary
-    -- Allow downloading file if logged in
-    local current_user = get_current_user()
-    if not current_user then
-       SetStatus(401)
-       return
-    end
-
-    local key = GetParam("key")
-    if not key or key == "" then
-       SetStatus(400)
-       Write("Key required")
-       return
-    end
-
-    -- Get a short-lived token (2 seconds) instead of exposing the main JWT
-    local short_token = db:LiveQueryToken()
-    if not short_token then
-       SetStatus(500)
-       Write("Could not generate access token")
-       return
-    end
-
-    -- Redirect directly to the blob API with short-lived token
-    local path = "/_api/blob/" .. db._db_config.db_name .. "/files/" .. key
-    local db_url = ""
-
-    local get_env = function(k)
-        local v = os.getenv(k)
-        if v then return v end
-        for _, p in ipairs({".env", "www/.env"}) do
-            local f = io.open(p, "r")
-            if f then
-                for l in f:lines() do
-                     local key, val = l:match("^%s*([%w_]+)%s*=%s*(.*)$")
-                     if key == k then f:close(); return val end
-                end
-                f:close()
-            end
-        end
-        return nil
-    end
-
-    local db_host_env = get_env("DB_HOST")
-    if db_host_env then
-        -- Use configured DB_HOST
-        local base = db_host_env:gsub("/+$", "")
-        if not base:match("^https?://") then
-            base = "https://" .. base
-        end
-        db_url = base .. path
-    else
-        -- Fallback: Use standard Api_url logic with localhost fix
-        db_url = db:Api_url(path)
-
-        -- Adjust hostname if DB is configured as localhost but accessed via remote server
-        local host_header = GetHeader("Host")
-        if host_header then
-            local public_host = host_header:match("([^:]+)")
-            if public_host then
-                local scheme, db_host, db_port_part, rest = db_url:match("^(https?://)([^:/]+)(:?%d*)(/.*)$")
-                if scheme and (db_host == "localhost" or db_host == "127.0.0.1") then
-                    db_url = scheme .. public_host .. db_port_part .. rest
-                end
-            end
-        end
-    end
-
-    local url = db_url .. "?token=" .. short_token
-    RedirectTo(url)
-  end,
-
-  -- Generate a short-lived token for live query WebSocket connections
-  livequery_token = function()
-    local token = SoliDB.primary:LiveQueryToken()
-    SetHeader("Content-Type", "application/json")
-    if token then
-      WriteJSON({ token = token, expires_in = 30 })
-    else
-      SetStatus(500)
-      WriteJSON({ error = "Failed to generate token" })
-    end
-  end,
-
-  -- API endpoint to create a new channel
-  create_channel = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local name = body.name
-
-    if not name or name == "" then
-        SetStatus(400)
-        WriteJSON({ error = "Channel name is required" })
-        return
-    end
-
-    -- Sanitize name (slugify: lowercase, replace spaces with dashes, keep only alphanumeric and dashes)
-    name = string.lower(name)
-    name = string.gsub(name, "[^a-z0-9%-]", "")
-
-    if name == "" then
-         SetStatus(400)
-         WriteJSON({ error = "Invalid channel name" })
-         return
-    end
-
-    -- Check if channel exists (only for public channels)
-    if not is_private then
-        local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = name })
-        if res and res.result and #res.result > 0 then
-            SetStatus(409)
-            WriteJSON({ error = "Channel already exists" })
-            return
-        end
-    end
-
-    local is_private = body.is_private or false
-    local members = body.members or {}
-
-    -- Initialize channel document
-    local doc = {
-        name = name,
-        type = "standard",
-        created_by = current_user._key,
-        created_at = os.time()
-    }
-
-    if is_private then
-        doc.type = "private"
-        -- Ensure creator is in members
-        local has_creator = false
-        for _, m in ipairs(members) do
-            if m == current_user._key then has_creator = true break end
-        end
-        if not has_creator then
-            table.insert(members, current_user._key)
-        end
-        doc.members = members
-    end
-
-    local createRes = db:CreateDocument("channels", doc)
-    doc._key = createRes._key -- Assign the new key to doc for response
-
-    SetStatus(201)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ success = true, channel = doc })
-  end,
-
-  -- Toggle favorite status for a channel
-  toggle_favorite = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local channel_key = body.channel_key
-
-    if not channel_key then
-        SetStatus(400)
-        WriteJSON({ error = "Channel key is required" })
-        return
-    end
-
-    local favorites = current_user.favorites or {}
-    local found_index = nil
-    for i, key in ipairs(favorites) do
-        if key == channel_key then
-            found_index = i
-            break
-        end
-    end
-
-    local is_favorite = false
-    if found_index then
-        table.remove(favorites, found_index)
-        is_favorite = false
-    else
-        table.insert(favorites, channel_key)
-        is_favorite = true
-    end
-
-    -- Update user favorites
-    -- Using SDBQL to update the user document
-    db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { favorites: @favorites } IN users", { key = current_user._key, favorites = favorites })
-
-    WriteJSON({ success = true, is_favorite = is_favorite, favorites = favorites })
-  end,
-
-  -- API endpoint to update user status
-  update_status = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local status = body.status
-
-    if not status then
-        SetStatus(400)
-        WriteJSON({ error = "Status is required" })
-        return
-    end
-
-    -- Update user status
-    db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { status: @status } IN users", { key = current_user._key, status = status })
-
-    SetStatus(200)
-    WriteJSON({ success = true })
-  end,
-
-  -- API endpoint to create a new message
-  create_message = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-
-    -- Parse JSON body
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local channel = body.channel or "general"
-    local text = body.text or ""
-    local sender = body.sender or "anonymous"
-    -- Attachments is array of { key, filename, type, size }
-    local attachments = body.attachments or {}
-
-    -- Require text OR attachments
-    if text == "" and #attachments == 0 then
-      SetStatus(400)
-      WriteJSON({ error = "Message text or attachment is required" })
-      return
-    end
-
-    local quoted_message = body.quoted_message
-
-    -- Create the message
-    local timestamp = os.time()
-    local doc = {
-       channel_id = channel,
-       sender = sender,
-       user_key = current_user and current_user._key or nil,
-       text = text,
-       timestamp = timestamp,
-       attachments = attachments,
-       reactions = {}
-    }
-
-    if quoted_message then
-        doc.quoted_message = quoted_message
-    end
-
-    local result = db:CreateDocument("messages", doc)
-
-    -- Update channel's latest_message_received
-    -- We filter by _id (if channel arg is an ID) or _key
-    db:Sdbql("FOR c IN channels FILTER c._id == @id OR c._key == @id UPDATE c WITH { latest_message_received: @ts } IN channels", { id = channel, ts = timestamp })
-
-    SetStatus(201)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ success = true, message = result })
-  end,
-
-  -- API endpoint to toggle a reaction on a message
-  toggle_reaction = function()
-    local db = SoliDB.primary
-
-    -- Parse JSON body
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local message_key = body.message_key or ""
-    local emoji = body.emoji or ""
-    local username = body.username or "anonymous"
-
-    if message_key == "" or emoji == "" then
-      SetStatus(400)
-      WriteJSON({ error = "message_key and emoji are required" })
-      return
-    end
-
-    -- Get the message
-    local msgRes = db:Sdbql(string.format(
-      "FOR m IN messages FILTER m._key == '%s' RETURN m",
-      message_key
-    ))
-
-    if not msgRes or not msgRes.result or #msgRes.result == 0 then
-      SetStatus(404)
-      WriteJSON({ error = "Message not found" })
-      return
-    end
-
-    local message = msgRes.result[1]
-    local reactions = message.reactions or {}
-    local foundReaction = nil
-    local foundIndex = nil
-
-    -- Find if this emoji reaction already exists
-    for i, reaction in ipairs(reactions) do
-      if reaction.emoji == emoji then
-        foundReaction = reaction
-        foundIndex = i
-        break
-      end
-    end
-
-    local action = "added"
-
-    if foundReaction then
-      -- Check if user already reacted
-      local userFound = false
-      local userIndex = nil
-      local users = foundReaction.users or {}
-
-      for i, user in ipairs(users) do
-        if user == username then
-          userFound = true
-          userIndex = i
+  end
+
+  -- Access Control for DM channels (if found or newly created)
+  if channelRes and channelRes.type == "dm" then
+    local isMember = false
+    if channelRes.members then
+      for _, memberKey in ipairs(channelRes.members) do
+        if memberKey == current_user._key then
+          isMember = true
           break
         end
       end
+    end
+    if not isMember then
+      -- Unauthorized, return nil
+      return nil
+    end
+  end
 
-      if userFound then
-        -- Remove user from reaction
-        table.remove(users, userIndex)
-        action = "removed"
+  return channelRes
+end
 
-        -- If no users left, remove the reaction entirely
-        if #users == 0 then
-          table.remove(reactions, foundIndex)
-        else
-          reactions[foundIndex].users = users
-        end
-      else
-        -- Add user to existing reaction
-        table.insert(users, username)
-        reactions[foundIndex].users = users
+local app = {}
+
+app.index = function()
+  -- Initialize database connection
+  local db = SoliDB.primary
+
+  -- Run seeds and initialization
+  local Seeds = require("seeds")
+  Seeds.run(db)
+
+  -- Get current user early for validation
+  local current_user = get_current_user()
+  if not current_user then
+    RedirectTo("/talks/login")
+    return
+  end
+
+
+  -- Fetch all channels (standard + private where user is member + system)
+  local channelsRes = db:Sdbql("FOR c IN channels FILTER c.type == 'standard' OR c.type == 'system' OR (c.type == 'private' AND @me IN c.members) SORT c.type DESC, c.name ASC RETURN c", { me = current_user._key })
+  local channels = (channelsRes and channelsRes.result) or {}
+
+  -- (mentions channel removed from virtual injection)
+
+  -- Get current channel (default to first channel from DB)
+  local currentChannel = GetParam("channel") or "general"
+
+  if not currentChannel or currentChannel == "" then
+    if #channels > 0 then
+      currentChannel = channels[1].name
+    else
+      currentChannel = "general"
+    end
+  end
+
+  Params.channel = currentChannel
+
+  -- Try to find or create channel
+  local channelRes = get_or_create_channel(db, current_user, currentChannel)
+
+  -- If still no channel found (e.g., unauthorized private/DM, or invalid name), default to general
+  if not channelRes then
+      Params.channel = "general"
+      channelRes = db:Sdbql("FOR c IN channels FILTER c.name == 'general' RETURN c").result[1]
+      -- If even general isn't found, something is very wrong, but we'll proceed with nil channelRes
+      if not channelRes then
+          RedirectTo("/talks/login") -- Or show an error page
+          return
       end
-    else
-      -- Create new reaction with this user
-      table.insert(reactions, { emoji = emoji, users = { username } })
-    end
+  end
 
-    -- Update the message
-    db:UpdateDocument("messages/" .. message_key, { reactions = reactions })
+  -- Update user's last seen for this channel
+  if channelRes then
+      local seen = current_user.channel_last_seen or {}
+      seen[channelRes._id] = os.time()
+      -- Update the user document
+      db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
+      -- Update local current_user object so it's passed to view correctly
+      current_user.channel_last_seen = seen
+  end
 
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    -- Ensure reactions is a proper array (use cjson array marker if available)
-    if #reactions == 0 then
-      Write('{"success":true,"action":"' .. action .. '","reactions":[]}')
-    else
-    WriteJSON({ success = true, action = action, reactions = reactions })
-    end
-  end,
+  -- Fetch messages for current channel using the resolved channel ID
+  -- Fetch messages for current channel
+  local messages = {}
+  if channelRes.name == "mentions" then
+      -- Consolidated query for mentions:
+      -- 1. Messages where the text contains "@username"
+      -- 2. Messages that are quotes of the user's messages (quoted_message.sender == user.username (or email logic))
+      -- 3. Thread replies in threads the user participated in (this is harder to track without an index, maybe skip for now or rely on thread_participants attribute if we added it)
+      -- Let's focus on text mentions and quotes.
 
-  -- API endpoint to update an existing message
-  update_message = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
+      -- Determine user identifier for mentions/quotes
+      local username = current_user.firstname and current_user.lastname
+                      and (current_user.firstname .. " " .. current_user.lastname)
+                      or current_user.email
 
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local message_key = body.message_key
-    local text = body.text
+      local email_handle = string.match(current_user.email, "^[^@]+")
 
-    if not message_key or not text then
-        SetStatus(400)
-        WriteJSON({ error = "message_key and text are required" })
-        return
-    end
+      local mentionsQuery = [[
+          LET username = @username
+          LET user_email = @email
+          LET handle = @handle
 
-    -- Get message to check ownership
-    local msg = db:GetDocument("messages/" .. message_key)
-    if not msg then
-        SetStatus(404)
-        WriteJSON({ error = "Message not found" })
-        return
-    end
+          FOR m IN messages
+          FILTER (
+              CONTAINS(m.text, CONCAT("@", username))
+              OR
+              CONTAINS(m.text, CONCAT("@", user_email))
+              OR
+              CONTAINS(m.text, CONCAT("@", handle))
+              OR
+              (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
+              OR
+              (m.thread_participants != null AND POSITION(m.thread_participants, username))
+          )
+          SORT m.timestamp ASC
+          RETURN m
+      ]]
 
-    local is_owner = false
-    if msg.user_key and msg.user_key == current_user._key then
-        is_owner = true
-    else
-        local current_username = current_user.email
-        if current_user.firstname and current_user.lastname then
-            current_username = current_user.firstname .. " " .. current_user.lastname
-        elseif current_user.username then
-            current_username = current_user.username
-        end
-
-        if msg.sender == current_username then
-            is_owner = true
-        else
-            -- Old format fallback: firstname.lastname
-            if current_user.firstname and current_user.lastname then
-                local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
-                if msg.sender == old_format then
-                    is_owner = true
-                end
-            end
-        end
-    end
-
-    if not is_owner then
-        SetStatus(403)
-        WriteJSON({ error = "Forbidden: You can only update your own messages" })
-        return
-    end
-
-    db:UpdateDocument("messages/" .. message_key, { text = text, updated_at = os.time() })
-
-    SetStatus(200)
-    WriteJSON({ success = true })
-  end,
-
-  -- API endpoint to delete an existing message
-  delete_message = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local message_key = body.message_key
-
-    if not message_key then
-        SetStatus(400)
-        WriteJSON({ error = "message_key is required" })
-        return
-    end
-
-    -- Get message to check ownership
-    local msg = db:GetDocument("messages/" .. message_key)
-    if not msg then
-        SetStatus(404)
-        WriteJSON({ error = "Message not found" })
-        return
-    end
-
-    local is_owner = false
-    if msg.user_key and msg.user_key == current_user._key then
-        is_owner = true
-    else
-        local current_username = current_user.email
-        if current_user.firstname and current_user.lastname then
-            current_username = current_user.firstname .. " " .. current_user.lastname
-        elseif current_user.username then
-            current_username = current_user.username
-        end
-
-        if msg.sender == current_username then
-            is_owner = true
-        else
-            -- Old format fallback: firstname.lastname
-            if current_user.firstname and current_user.lastname then
-                local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
-                if msg.sender == old_format then
-                    is_owner = true
-                end
-            end
-        end
-    end
-
-    if not is_owner then
-        SetStatus(403)
-        WriteJSON({ error = "Forbidden: You can only delete your own messages" })
-        return
-    end
-
-    -- If this is a thread reply, update the parent's thread count
-    if msg.thread_parent_id then
-        db:Sdbql([[
-            FOR m IN messages
-            FILTER m._id == @parent_id
-            UPDATE m WITH {
-                thread_count: MAX([0, IF(m.thread_count != null, m.thread_count, 1) - 1])
-            } IN messages
-        ]], { parent_id = msg.thread_parent_id })
-    end
-
-    db:DeleteDocument("messages/" .. message_key)
-
-    SetStatus(200)
-    WriteJSON({ success = true })
-  end,
-
-  -- Create or get a Direct Message channel
-  create_dm = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local target_user_key = body.target_user_key
-
-    if not target_user_key or target_user_key == "" then
-      SetStatus(400)
-      WriteJSON({ error = "target_user_key is required" })
-      return
-    end
-
-    -- Sort Keys to create deterministic channel name
-    local keys = { current_user._key, target_user_key }
-    table.sort(keys)
-    local channelName = "dm_" .. keys[1] .. "_" .. keys[2]
-
-    -- Check if channel exists
-    local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = channelName })
-
-    if not res or not res.result or #res.result == 0 then
-      -- Create new DM channel
-      db:CreateDocument("channels", {
-        name = channelName,
-        type = "dm",
-        members = { current_user._key, target_user_key }
+      local mentionsRes = db:Sdbql(mentionsQuery, {
+          username = username,
+          email = current_user.email,
+          handle = email_handle
       })
-    end
-
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ success = true, channel = channelName })
-  end,
-
-  -- Get channel info (for huddle polling)
-  channel_info = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local channel_id = GetParam("channel_id")
-    if not channel_id or channel_id == "" then
-        SetStatus(400)
-        WriteJSON({ error = "channel_id required" })
-        return
-    end
-
-    local res = db:Sdbql("FOR c IN channels FILTER c._key == @key RETURN c", { key = channel_id })
-    local channel = res and res.result and res.result[1]
-
-    if not channel then
-        SetStatus(404)
-        WriteJSON({ error = "Channel not found" })
-        return
-    end
-
-    -- Fetch ACTUAL participants from call_participants collection (source of truth)
-    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
-    local pres = db:Sdbql(query, { channel_id = channel_id })
-    local actual_participants = pres and pres.result or {}
-
-    -- Override channel's active_call_participants with actual data
-    channel.active_call_participants = actual_participants
-
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ channel = channel })
-  end,
-
-  join_call = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local channel_id = body.channel_id
-
-    if not channel_id then
-        SetStatus(400)
-        WriteJSON({ error = "Channel ID required" })
-        return
-    end
-
-    -- Get channel
-    local channel = db:GetDocument("channels/" .. channel_id)
-    if not channel then
-        SetStatus(404)
-        WriteJSON({ error = "Channel not found" })
-        return
-    end
-
-    -- Ensure collection and indexes exist
-    pcall(function() db:CreateCollection("call_participants") end)
-    pcall(function() db:CreateIndex("call_participants", { fields = {"channel_id"}, type = "hash" }) end)
-    -- Auto-expire participants after 2 hours effectively acting as a keep-alive/max duration
-    pcall(function() db:CreateIndex("call_participants", { fields = {"timestamp"}, type = "ttl", expireAfterSeconds = 7200 }) end)
-
-    -- MIGRATION: Backfill existing participants from channel document to collection
-    -- This ensures users already in the call (pre-update) are visible to new joiners
-    local old_participants = channel.active_call_participants or {}
-    for _, uid in ipairs(old_participants) do
-        local pid_key = channel_id .. "_" .. uid
-        local p_doc = {
-            _key = pid_key,
-            channel_id = channel_id,
-            user_id = uid,
-            timestamp = os.time()
-        }
-        -- Upsert
-        local s, _ = pcall(function() db:CreateDocument("call_participants", p_doc) end)
-        if not s then db:UpdateDocument("call_participants/" .. pid_key, p_doc) end
-    end
-
-    -- Register CURRENT participant (Upsert logic)
-    -- This happens after migration loop, so if we were in the list, we just update timestamp again (redundant but safe)
-    local doc_key = channel_id .. "_" .. current_user._key
-    local participant_doc = {
-        _key = doc_key,
-        channel_id = channel_id,
-        user_id = current_user._key,
-        timestamp = os.time()
-    }
-
-    local success, err = pcall(function() db:CreateDocument("call_participants", participant_doc) end)
-    if not success then
-        -- If create failed (exists), update it to refresh timestamp
-        db:UpdateDocument("call_participants/" .. doc_key, participant_doc)
-    end
-
-    -- Fetch all current participants from the dedicated collection
-    -- This ensures we get everyone, regardless of race conditions on the channel doc
-    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
-    local res = db:Sdbql(query, { channel_id = channel_id })
-    local participants = res.result or {}
-
-    -- Sync back to channel for UI (Best Effort)
-    pcall(function()
-        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
-    end)
-
-    SetStatus(200)
-    WriteJSON({ success = true, participants = participants })
-  end,
-
-  leave_call = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-        SetStatus(401)
-        WriteJSON({ error = "Unauthorized" })
-        return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local channel_id = body.channel_id
-
-    if not channel_id then
-        SetStatus(400)
-        WriteJSON({ error = "Channel ID required" })
-        return
-    end
-
-    -- Remove from participants collection
-    local doc_key = channel_id .. "_" .. current_user._key
-    pcall(function() db:DeleteDocument("call_participants/" .. doc_key) end)
-
-    -- Fetch remaining participants to update channel doc
-    local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
-    local res = db:Sdbql(query, { channel_id = channel_id })
-    local participants = res.result or {}
-
-    -- Sync back to channel for UI (Best Effort)
-    pcall(function()
-        db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
-    end)
-
-    SetStatus(200)
-    WriteJSON({ success = true })
-  end,
-
-  -- Send a WebRTC signaling message
-  send_signal = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local target_user = body.target_user
-    local type = body.type
-    local data = body.data
-
-    if not target_user or not type then
-      SetStatus(400)
-      WriteJSON({ error = "target_user and type are required" })
-      return
-    end
-
-    -- Ensure collection exists
-    pcall(function() db:CreateCollection("signals") end)
-
-    -- Create signal document
-    -- We include a timestamp so the receiver can ignore old signals
-    local signal = {
-        from_user = current_user._key,
-        to_user = target_user,
-        type = type,
-        data = data,
-        timestamp = os.time() * 1000 -- ms precision
-    }
-
-    Logger("Signaling: Creating signal from " .. signal.from_user .. " to " .. signal.to_user .. " type: " .. signal.type)
-    local ok, res = pcall(function() return db:CreateDocument("signals", signal) end)
-
-    if not ok then
-        Logger("Signaling ERROR: " .. tostring(res))
-        SetStatus(500)
-        WriteJSON({ error = "Internal Error: " .. tostring(res) })
-        return
-    end
-
-    SetStatus(200)
-    WriteJSON({ success = true, result = res })
-  end,
-
-  -- Delete a signal document (called after signal is processed)
-  delete_signal = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local signal_key = body.signal_key
-
-    if not signal_key then
-      SetStatus(400)
-      WriteJSON({ error = "signal_key is required" })
-      return
-    end
-
-    -- Delete the signal - only allow deletion of signals addressed to the current user
-    local ok, err = pcall(function()
-      db:Sdbql("FOR s IN signals FILTER s._key == @key AND s.to_user == @me REMOVE s IN signals", { key = signal_key, me = current_user._key })
-    end)
-
-    if not ok then
-      Logger("Error deleting signal: " .. tostring(err))
-    end
-
-    SetStatus(200)
-    WriteJSON({ success = true })
-  end,
-
-  -- Fetch Open Graph metadata for URL previews
-  og_metadata = function()
-    local url = GetParam("url")
-    if not url or url == "" then
-      SetStatus(400)
-      SetHeader("Content-Type", "application/json")
-      Write('{"error":"URL parameter required"}')
-      return
-    end
-
-    -- Fetch the URL content
-    local status, headers, body = Fetch(url)
-
-    if status ~= 200 or not body then
-      SetStatus(200)
-      SetHeader("Content-Type", "application/json")
-      Write('{"error":"Failed to fetch URL"}')
-      return
-    end
-
-    -- Parse Open Graph meta tags
-    local og = {}
-
-    -- DEBUG: Log parts of body to see what we're parsing
-    if body then
-       Logger("OG Fetch Body Preview: " .. body:sub(1, 1000))
-    end
-
-    -- og:title
-    local title = body:match('<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']')
-      or body:match('<title>([^<]+)</title>')
-    og.title = title
-
-    -- og:description (with fallbacks)
-    local desc = body:match('<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']')
-      or body:match('<meta[^>]+name=["\']twitter:description["\'][^>]+content=["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:description["\']')
-      or body:match('<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']')
-    og.description = desc
-
-    -- og:image (with fallbacks)
-    -- Allow spaces around =
-    local image = body:match('<meta[^>]+property%s*=%s*["\']og:image["\'][^>]+content%s*=%s*["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content%s*=%s*["\']([^"\']+)["\'][^>]+property%s*=%s*["\']og:image["\']')
-      -- twitter:image fallback
-      or body:match('<meta[^>]+name%s*=%s*["\']twitter:image["\'][^>]+content%s*=%s*["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content%s*=%s*["\']([^"\']+)["\'][^>]+name%s*=%s*["\']twitter:image["\']')
-      -- First large image fallback (skip icons/logos)
-      or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.jpg)["\']')
-      or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.png)["\']')
-      or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.webp)["\']')
-
-    Logger("OG extracted raw image: " .. tostring(image))
-
-    -- Make relative image URL absolute
-    if image and not image:match("^https?://") then
-      if image:sub(1, 2) == "//" then
-        image = "https:" .. image
-      elseif image:sub(1, 1) == "/" then
-        -- Root relative
-        local domain = url:match("^(https?://[^/]+)")
-        if domain then
-          image = domain .. image
-        end
-      else
-        -- Path relative
-        local path_base = url:match("(.*/)")
-        if not path_base then
-           -- URL is just domain like https://example.com or https://example.com/file (no trailing slash implies file at root?)
-           -- Actually if url is https://example.com/foo, base is https://example.com/
-           -- robust way: if url ends with /, take it. else remove last segment.
-           if url:sub(-1) == "/" then
-             path_base = url
-           else
-             -- check if it has path
-             local domain = url:match("^(https?://[^/]+)")
-             if url == domain then
-               path_base = url .. "/"
-             else
-               path_base = url:match("(.*/)") or (url .. "/")
-             end
-           end
-        end
-        image = path_base .. image
-      end
-    end
-    og.image = image
-    Logger("OG final image: " .. tostring(image))
-
-    -- og:site_name
-    local site = body:match('<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']+)["\']')
-      or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:site_name["\']')
-    og.site_name = site
-
-    -- favicon
-    local favicon = body:match('<link[^>]+rel=["\']icon["\'][^>]+href=["\']([^"\']+)["\']')
-      or body:match('<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\']icon["\']')
-      or body:match('<link[^>]+rel=["\']shortcut icon["\'][^>]+href=["\']([^"\']+)["\']')
-    if favicon and not favicon:match("^https?://") then
-      -- Make relative favicon absolute
-      local base = url:match("^(https?://[^/]+)")
-      if base then
-        if favicon:sub(1, 1) == "/" then
-          favicon = base .. favicon
-        else
-          favicon = base .. "/" .. favicon
-        end
-      end
-    end
-    og.favicon = favicon
-
-    og.url = url
-
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    SetHeader("Cache-Control", "public, max-age=3600")
-    WriteJSON(og)
-  end,
-
-  -- Search messages across channels
-  search = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local query = GetParam("q") or ""
-    local limit = tonumber(GetParam("limit")) or 50
-
-    if query == "" or #query < 2 then
-      SetStatus(200)
-      WriteJSON({ results = {} })
-      return
-    end
-
-    -- Search messages using fulltext index for better performance
-    -- Returns messages with relevance scoring using BM25
-    local search_query = [[
-      LET my_user_key = @user_key
-      LET accessible_channels = (
-        FOR c IN channels
-        FILTER c.type == "standard"
-           OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
-        RETURN c._id
+      messages = (mentionsRes and mentionsRes.result) or {}
+  else
+      -- Standard channel messages
+      local messagesRes = db:Sdbql(
+        [[
+          FOR m IN messages FILTER m.channel_id == @channelId
+          SORT m.timestamp ASC RETURN m
+        ]],
+        { channelId = channelRes._id }
       )
+      messages = (messagesRes and messagesRes.result) or {}
+  end
 
-      LET ft_matches = FULLTEXT("messages", "text", @query, 2)
+  -- Fetch all users for the sidebar
+  local usersRes = db:Sdbql("FOR u IN users RETURN { _key: u._key, _id: u._id, firstname: u.firstname, lastname: u.lastname, email: u.email, status: u.status, connection_count: u.connection_count }")
+  local users = (usersRes and usersRes.result) or {}
 
-      FOR match IN ft_matches
-        LET m = match.doc
-        FILTER POSITION(accessible_channels, m.channel_id) >= 0
+  -- Fetch DM channels for the current user
+  local dmRes = db:Sdbql("FOR c IN channels FILTER c.type == 'dm' AND POSITION(c.members, @me) >= 0 RETURN c", { me = current_user._key })
+  local dmChannels = (dmRes and dmRes.result) or {}
 
-        LET channel = FIRST(FOR c IN channels FILTER c._id == m.channel_id RETURN c)
-        LET sender_user = FIRST(FOR u IN users FILTER u._key == m.user_key RETURN u)
+  -- Pass data to view
+  Params.channels = EncodeJson(channels)
+  Params.channelId = channelRes._id
+  Params.currentChannelData = EncodeJson(channelRes)
+  Params.messages = EncodeJson(messages)
+  Params.channels = EncodeJson(channels)
+  Params.channelId = channelRes._id
+  Params.messages = EncodeJson(messages)
+  Params.users = EncodeJson(users)
+  Params.dmChannels = EncodeJson(dmChannels)
+  Params.currentChannel = currentChannel
 
-        SORT match.score DESC, m.timestamp DESC
-        LIMIT @limit
+  -- Robustly extract DB name
+  local config = db._db_config
+  Params.db_name = config.db_name or config.database or config.name
 
-        RETURN {
-          _key: m._key,
-          _id: m._id,
-          text: m.text,
-          sender: m.sender,
-          timestamp: m.timestamp,
-          channel_id: m.channel_id,
-          channel_name: channel.name,
-          channel_type: channel.type,
-          sender_firstname: sender_user.firstname,
-          sender_lastname: sender_user.lastname,
-          score: match.score
-        }
-    ]]
+  -- DB host for WebSocket connections (from env var or fallback)
+  Params.db_host = os.getenv("DB_HOST") or "localhost:6745"
 
-    local res = db:Sdbql(search_query, {
-      user_key = current_user._key,
-      query = query,
-      limit = limit
-    })
+  Logger("DEBUG: Final Params.db_name: " .. tostring(Params.db_name))
 
-    local results = {}
-    if res and res.result then
-      results = res.result
-    end
+  -- Authentication check
+  -- Authentication check (already done at top)
 
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ results = results, query = query })
-  end,
+  Params.currentUser = EncodeJson(current_user)
+  Params.full_height = true
+  Params.hide_header = true
+  Page("talks/index", "app")
+end
 
-  -- Get thread messages for a parent message
-  get_thread_messages = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
+app.channel_data = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
 
-    local parent_id = GetParam("parent_id")
-    if not parent_id or parent_id == "" then
-      SetStatus(400)
-      WriteJSON({ error = "parent_id is required" })
-      return
-    end
+  local currentChannel = GetParam("channel") or "general"
 
-    -- Fetch thread messages (messages where thread_parent_id equals this message)
-    local res = db:Sdbql([[
-      FOR m IN messages
-      FILTER m.thread_parent_id == @parent_id
-      SORT m.timestamp ASC
-      RETURN m
-    ]], { parent_id = parent_id })
+  -- Try to find or create channel
+  local channelRes = get_or_create_channel(db, current_user, currentChannel)
 
-    local messages = {}
-    if res and res.result then
-      messages = res.result
-    end
-
-    SetStatus(200)
-    SetHeader("Content-Type", "application/json")
-    WriteJSON({ success = true, messages = messages })
-  end,
-
-  -- Send a reply in a thread
-  send_thread_reply = function()
-    local db = SoliDB.primary
-    local current_user = get_current_user()
-    if not current_user then
-      SetStatus(401)
-      WriteJSON({ error = "Unauthorized" })
-      return
-    end
-
-    local body = DecodeJson(GetBody() or "{}") or {}
-    local parent_message_id = body.parent_message_id
-    local text = body.text
-
-    if not parent_message_id or parent_message_id == "" then
-      SetStatus(400)
-      WriteJSON({ error = "parent_message_id is required" })
-      return
-    end
-
-    if not text or text == "" then
-      SetStatus(400)
-      WriteJSON({ error = "text is required" })
-      return
-    end
-
-    -- Get the parent message to find the channel
-    local parentRes = db:Sdbql("FOR m IN messages FILTER m._id == @id RETURN m", { id = parent_message_id })
-    if not parentRes or not parentRes.result or #parentRes.result == 0 then
+  if not channelRes then
       SetStatus(404)
-      WriteJSON({ error = "Parent message not found" })
+      WriteJSON({ error = "Channel not found or unauthorized" })
       return
-    end
+  end
 
-    local parent = parentRes.result[1]
+  -- Fetch messages for this channel
+  -- Fetch messages for this channel
+  local messages = {}
 
-    -- Determine sender name
-    local sender = current_user.firstname and current_user.lastname
-      and (current_user.firstname .. " " .. current_user.lastname)
-      or current_user.email
+  if channelRes.name == "mentions" then
+        -- Determine user identifier for mentions/quotes
+      local username = current_user.firstname and current_user.lastname
+                      and (current_user.firstname .. " " .. current_user.lastname)
+                      or current_user.email
 
-    -- Create the thread reply message
-    local newMessage = {
-      channel_id = parent.channel_id,
-      thread_parent_id = parent_message_id,
+      local email_handle = string.match(current_user.email, "^[^@]+")
+
+      local mentionsQuery = [[
+          LET username = @username
+          LET user_email = @email
+          LET handle = @handle
+
+          FOR m IN messages
+          FILTER (
+              CONTAINS(m.text, CONCAT("@", username))
+              OR
+              CONTAINS(m.text, CONCAT("@", user_email))
+              OR
+              CONTAINS(m.text, CONCAT("@", handle))
+              OR
+              (m.quoted_message != null AND (m.quoted_message.sender == username OR m.quoted_message.sender == user_email))
+              OR
+              (m.thread_participants != null AND POSITION(m.thread_participants, username))
+          )
+          SORT m.timestamp ASC
+          RETURN m
+      ]]
+
+      local mentionsRes = db:Sdbql(mentionsQuery, {
+          username = username,
+          email = current_user.email,
+          handle = email_handle
+      })
+      messages = (mentionsRes and mentionsRes.result) or {}
+  else
+      local messagesRes = db:Sdbql(
+        [[
+          FOR m IN messages FILTER m.channel_id == @channelId
+          SORT m.timestamp ASC RETURN m
+        ]],
+        { channelId = channelRes._id }
+      )
+      messages = (messagesRes and messagesRes.result) or {}
+  end
+
+  -- Update user's last seen for this channel
+  local seen = current_user.channel_last_seen or {}
+  seen[channelRes._id] = os.time()
+  db:UpdateDocument("users/" .. current_user._key, { channel_last_seen = seen })
+
+  -- Return JSON data
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({
+      currentChannel = currentChannel,
+      currentChannelData = channelRes,
+      channelId = channelRes._id,
+      messages = messages
+  })
+end
+
+app.login_form = function()
+  Params.hide_header = true
+  Params.no_padding = true
+  Page("talks/login", "app")
+end
+
+app.login = function()
+  local db = SoliDB.primary
+  local email = GetParam("email")
+  local password = GetParam("password")
+
+  if not email or not password then
+    Params.error = "Email and password are required"
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/login", "app")
+  end
+
+  local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
+
+  if not res or not res.result or #res.result == 0 then
+    Params.error = "Invalid email or password"
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/login", "app")
+  end
+
+  local user = res.result[1]
+  local ok, err = argon2.verify(user.password_hash, password)
+
+  if ok then
+    RedirectTo("/talks")
+    SetCookie("talks_session", user._id, { Path = "/", HttpOnly = true, MaxAge = 86400 * 30 })
+  else
+    Params.error = "Invalid email or password"
+    Params.hide_header = true
+    Params.no_padding = true
+    Page("talks/login", "app")
+  end
+end
+
+app.signup_form = function()
+  Params.hide_header = true
+  Params.no_padding = true
+  Page("talks/signup", "app")
+end
+
+app.signup = function()
+  local db = SoliDB.primary
+  local firstname = GetParam("firstname")
+  local lastname = GetParam("lastname")
+  local email = GetParam("email")
+  local password = GetParam("password")
+
+  if not firstname or not lastname or not email or not password then
+    Params.error = "All fields are required"
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/signup", "app")
+  end
+
+  if #password < 8 then
+    Params.error = "Password must be at least 8 characters long"
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/signup", "app")
+  end
+
+  -- Check if email exists
+  local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
+  if res and res.result and #res.result > 0 then
+    Params.error = "Email already registered"
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/signup", "app")
+  end
+
+  -- Hash password
+  local salt = EncodeBase64(GetRandomBytes(16))
+  local hash, err = argon2.hash_encoded(password, salt)
+
+  if not hash then
+    Params.error = "Error hashing password: " .. tostring(err)
+    Params.hide_header = true
+    Params.no_padding = true
+    return Page("talks/signup", "app")
+  end
+
+  local user = {
+    firstname = firstname,
+    lastname = lastname,
+    email = email,
+    password_hash = hash,
+    connection_count = 0,
+    status = "offline"
+  }
+
+  local createRes = db:CreateDocument("users", user)
+
+  -- Retrieve the created user (CreateDocument might return the doc or ID depending on driver)
+  -- Assuming it returns the document or we use logic to get ID.
+  -- Redbean/SoliDB driver typically returns the document or meta.
+  -- If createRes has _id, use it.
+  local userId = createRes._id
+  if not userId then
+      -- Fallback if driver returns something else, fetch by email
+      local u = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email }).result[1]
+      userId = u._id
+  end
+
+  RedirectTo("/talks")
+  SetCookie("talks_session", userId, { Path = "/", HttpOnly = true, MaxAge = 86400 * 30 })
+end
+
+app.logout = function()
+  RedirectTo("/talks/login")
+  SetCookie("talks_session", "", { Path = "/", MaxAge = 0 })
+end
+
+-- Proxy file upload to SoliDB blob API
+app.upload = function()
+  local db = SoliDB.primary
+  -- Use local get_current_user directly
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local body = GetBody()
+  if not body or #body == 0 then
+    SetStatus(400)
+    WriteJSON({ error = "Empty body" })
+    return
+  end
+
+  -- Forward to /_api/blob/{db}/files
+  -- We must preserve the Content-Type header from the client request as it contains the multipart boundary
+  local content_type = GetHeader("Content-Type")
+
+  local path = "/_api/blob/" .. db._db_config.db_name .. "/files"
+  local url = db:Api_url(path)
+  local headers = {
+      ["Content-Type"] = content_type
+  }
+
+  if db._token ~= "" then
+    headers["Authorization"] = "Bearer " .. db._token
+  end
+
+  local status, res_headers, res_body = Fetch(url, {
+    method = "POST",
+    body = body,
+    headers = headers
+  })
+
+  if status ~= 201 and status ~= 200 then
+      SetStatus(status)
+      -- Try to decode error to give better feedback
+      local err_json = DecodeJson(res_body)
+      if err_json and err_json.errorMessage then
+        WriteJSON({ error = err_json.errorMessage })
+      else
+        Write(res_body)
+      end
+      return
+  end
+
+  -- res_body is JSON like { _key: "...", name: "...", ... }
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  Write(res_body)
+end
+
+-- Proxy file download from SoliDB blob API
+app.file = function()
+  local db = SoliDB.primary
+  -- Allow downloading file if logged in
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      return
+  end
+
+  local key = GetParam("key")
+  if not key or key == "" then
+      SetStatus(400)
+      Write("Key required")
+      return
+  end
+
+  -- Get a short-lived token (2 seconds) instead of exposing the main JWT
+  local short_token = db:LiveQueryToken()
+  if not short_token then
+      SetStatus(500)
+      Write("Could not generate access token")
+      return
+  end
+
+  -- Redirect directly to the blob API with short-lived token
+  local path = "/_api/blob/" .. db._db_config.db_name .. "/files/" .. key
+  local db_url = ""
+
+  local get_env = function(k)
+      local v = os.getenv(k)
+      if v then return v end
+      for _, p in ipairs({".env", "www/.env"}) do
+          local f = io.open(p, "r")
+          if f then
+              for l in f:lines() do
+                    local key, val = l:match("^%s*([%w_]+)%s*=%s*(.*)$")
+                    if key == k then f:close(); return val end
+              end
+              f:close()
+          end
+      end
+      return nil
+  end
+
+  local db_host_env = get_env("DB_HOST")
+  if db_host_env then
+      -- Use configured DB_HOST
+      local base = db_host_env:gsub("/+$", "")
+      if not base:match("^https?://") then
+          base = "https://" .. base
+      end
+      db_url = base .. path
+  else
+      -- Fallback: Use standard Api_url logic with localhost fix
+      db_url = db:Api_url(path)
+
+      -- Adjust hostname if DB is configured as localhost but accessed via remote server
+      local host_header = GetHeader("Host")
+      if host_header then
+          local public_host = host_header:match("([^:]+)")
+          if public_host then
+              local scheme, db_host, db_port_part, rest = db_url:match("^(https?://)([^:/]+)(:?%d*)(/.*)$")
+              if scheme and (db_host == "localhost" or db_host == "127.0.0.1") then
+                  db_url = scheme .. public_host .. db_port_part .. rest
+              end
+          end
+      end
+  end
+
+  local url = db_url .. "?token=" .. short_token
+  RedirectTo(url)
+end
+
+-- Generate a short-lived token for live query WebSocket connections
+app.livequery_token = function()
+  local token = SoliDB.primary:LiveQueryToken()
+  SetHeader("Content-Type", "application/json")
+  if token then
+    WriteJSON({ token = token, expires_in = 30 })
+  else
+    SetStatus(500)
+    WriteJSON({ error = "Failed to generate token" })
+  end
+end
+
+-- API endpoint to create a new channel
+app.create_channel = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local name = body.name
+
+  if not name or name == "" then
+      SetStatus(400)
+      WriteJSON({ error = "Channel name is required" })
+      return
+  end
+
+  -- Sanitize name (slugify: lowercase, replace spaces with dashes, keep only alphanumeric and dashes)
+  name = string.lower(name)
+  name = string.gsub(name, "[^a-z0-9%-]", "")
+
+  if name == "" then
+        SetStatus(400)
+        WriteJSON({ error = "Invalid channel name" })
+        return
+  end
+
+  -- Check if channel exists (only for public channels)
+  if not is_private then
+      local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = name })
+      if res and res.result and #res.result > 0 then
+          SetStatus(409)
+          WriteJSON({ error = "Channel already exists" })
+          return
+      end
+  end
+
+  local is_private = body.is_private or false
+  local members = body.members or {}
+
+  -- Initialize channel document
+  local doc = {
+      name = name,
+      type = "standard",
+      created_by = current_user._key,
+      created_at = os.time()
+  }
+
+  if is_private then
+      doc.type = "private"
+      -- Ensure creator is in members
+      local has_creator = false
+      for _, m in ipairs(members) do
+          if m == current_user._key then has_creator = true break end
+      end
+      if not has_creator then
+          table.insert(members, current_user._key)
+      end
+      doc.members = members
+  end
+
+  local createRes = db:CreateDocument("channels", doc)
+  doc._key = createRes._key -- Assign the new key to doc for response
+
+  SetStatus(201)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ success = true, channel = doc })
+end
+
+-- API endpoint to add a member to a private channel
+app.add_channel_member = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel_id = body.channel_id
+  local user_key = body.user_key
+
+  if not channel_id or not user_key then
+      SetStatus(400)
+      WriteJSON({ error = "channel_id and user_key are required" })
+      return
+  end
+
+  -- Get channel
+  local channel = db:GetDocument("channels/" .. channel_id)
+  if not channel then
+      SetStatus(404)
+      WriteJSON({ error = "Channel not found" })
+      return
+  end
+
+  -- Only private channels have members management for now
+  if channel.type ~= "private" then
+      SetStatus(400)
+      WriteJSON({ error = "Only private channels support member management" })
+      return
+  end
+
+  -- Check if current user is member
+  local is_member = false
+  local members = channel.members or {}
+  for _, m in ipairs(members) do
+      if m == current_user._key then is_member = true break end
+  end
+
+  if not is_member then
+      SetStatus(403)
+      WriteJSON({ error = "Forbidden: You must be a member of the channel" })
+      return
+  end
+
+  -- Check if user to add already in members
+  local already_member = false
+  for _, m in ipairs(members) do
+      if m == user_key then already_member = true break end
+  end
+
+  if not already_member then
+      table.insert(members, user_key)
+      db:UpdateDocument("channels/" .. channel_id, { members = members })
+  end
+
+  WriteJSON({ success = true, members = members })
+end
+
+-- API endpoint to remove a member from a private channel
+app.remove_channel_member = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel_id = body.channel_id
+  local user_key = body.user_key
+
+  if not channel_id or not user_key then
+      SetStatus(400)
+      WriteJSON({ error = "channel_id and user_key are required" })
+      return
+  end
+
+  -- Get channel
+  local channel = db:GetDocument("channels/" .. channel_id)
+  if not channel then
+      SetStatus(404)
+      WriteJSON({ error = "Channel not found" })
+      return
+  end
+
+  if channel.type ~= "private" then
+      SetStatus(400)
+      WriteJSON({ error = "Only private channels support member management" })
+      return
+  end
+
+  -- Only creator or the user themselves can remove
+  local can_remove = (channel.created_by == current_user._key) or (user_key == current_user._key)
+
+  if not can_remove then
+      SetStatus(403)
+      WriteJSON({ error = "Forbidden: Only the creator or the user themselves can remove members" })
+      return
+  end
+
+  local members = channel.members or {}
+  local found_index = nil
+  for i, m in ipairs(members) do
+      if m == user_key then
+          found_index = i
+          break
+      end
+  end
+
+  if found_index then
+      table.remove(members, found_index)
+      db:UpdateDocument("channels/" .. channel_id, { members = members })
+  end
+
+  WriteJSON({ success = true, members = members })
+end
+
+-- Toggle favorite status for a channel
+app.toggle_favorite = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel_key = body.channel_key
+
+  if not channel_key then
+      SetStatus(400)
+      WriteJSON({ error = "Channel key is required" })
+      return
+  end
+
+  local favorites = current_user.favorites or {}
+  local found_index = nil
+  for i, key in ipairs(favorites) do
+      if key == channel_key then
+          found_index = i
+          break
+      end
+  end
+
+  local is_favorite = false
+  if found_index then
+      table.remove(favorites, found_index)
+      is_favorite = false
+  else
+      table.insert(favorites, channel_key)
+      is_favorite = true
+  end
+
+  -- Update user favorites
+  -- Using SDBQL to update the user document
+  db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { favorites: @favorites } IN users", { key = current_user._key, favorites = favorites })
+
+  WriteJSON({ success = true, is_favorite = is_favorite, favorites = favorites })
+end
+
+-- API endpoint to update user status
+app.update_status = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local status = body.status
+
+  if not status then
+      SetStatus(400)
+      WriteJSON({ error = "Status is required" })
+      return
+  end
+
+  -- Update user status
+  db:Sdbql("FOR u IN users FILTER u._key == @key UPDATE u WITH { status: @status } IN users", { key = current_user._key, status = status })
+
+  SetStatus(200)
+  WriteJSON({ success = true })
+end
+
+-- API endpoint to create a new message
+app.create_message = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+
+  -- Parse JSON body
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel = body.channel or "general"
+  local text = body.text or ""
+  local sender = body.sender or "anonymous"
+  -- Attachments is array of { key, filename, type, size }
+  local attachments = body.attachments or {}
+
+  -- Require text OR attachments
+  if text == "" and #attachments == 0 then
+    SetStatus(400)
+    WriteJSON({ error = "Message text or attachment is required" })
+    return
+  end
+
+  local quoted_message = body.quoted_message
+
+  -- Create the message
+  local timestamp = os.time()
+  local doc = {
+      channel_id = channel,
       sender = sender,
-      user_key = current_user._key,
+      user_key = current_user and current_user._key or nil,
       text = text,
-      timestamp = os.time(),
-      attachments = body.attachments or {}
-    }
+      timestamp = timestamp,
+      attachments = attachments,
+      reactions = {}
+  }
 
-    local createRes = db:CreateDocument("messages", newMessage)
-    newMessage._key = createRes._key
-    newMessage._id = createRes._id
+  if quoted_message then
+      doc.quoted_message = quoted_message
+  end
 
-    -- Update the parent message with thread count and participants
-    -- First, get current thread count and participants
-    local thread_count = (parent.thread_count or 0) + 1
-    local thread_participants = parent.thread_participants or {}
+  local result = db:CreateDocument("messages", doc)
 
-    -- Add sender if not already in participants
-    local found = false
-    for _, p in ipairs(thread_participants) do
-      if p == sender then
-        found = true
+  -- Update channel's latest_message_received
+  -- We filter by _id (if channel arg is an ID) or _key
+  db:Sdbql("FOR c IN channels FILTER c._id == @id OR c._key == @id UPDATE c WITH { latest_message_received: @ts } IN channels", { id = channel, ts = timestamp })
+
+  SetStatus(201)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ success = true, message = result })
+end
+
+-- API endpoint to toggle a reaction on a message
+app.toggle_reaction = function()
+  local db = SoliDB.primary
+
+  -- Parse JSON body
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local message_key = body.message_key or ""
+  local emoji = body.emoji or ""
+  local username = body.username or "anonymous"
+
+  if message_key == "" or emoji == "" then
+    SetStatus(400)
+    WriteJSON({ error = "message_key and emoji are required" })
+    return
+  end
+
+  -- Get the message
+  local msgRes = db:Sdbql(string.format(
+    "FOR m IN messages FILTER m._key == '%s' RETURN m",
+    message_key
+  ))
+
+  if not msgRes or not msgRes.result or #msgRes.result == 0 then
+    SetStatus(404)
+    WriteJSON({ error = "Message not found" })
+    return
+  end
+
+  local message = msgRes.result[1]
+  local reactions = message.reactions or {}
+  local foundReaction = nil
+  local foundIndex = nil
+
+  -- Find if this emoji reaction already exists
+  for i, reaction in ipairs(reactions) do
+    if reaction.emoji == emoji then
+      foundReaction = reaction
+      foundIndex = i
+      break
+    end
+  end
+
+  local action = "added"
+
+  if foundReaction then
+    -- Check if user already reacted
+    local userFound = false
+    local userIndex = nil
+    local users = foundReaction.users or {}
+
+    for i, user in ipairs(users) do
+      if user == username then
+        userFound = true
+        userIndex = i
         break
       end
     end
-    if not found then
-      table.insert(thread_participants, sender)
+
+    if userFound then
+      -- Remove user from reaction
+      table.remove(users, userIndex)
+      action = "removed"
+
+      -- If no users left, remove the reaction entirely
+      if #users == 0 then
+        table.remove(reactions, foundIndex)
+      else
+        reactions[foundIndex].users = users
+      end
+    else
+      -- Add user to existing reaction
+      table.insert(users, username)
+      reactions[foundIndex].users = users
     end
+  else
+    -- Create new reaction with this user
+    table.insert(reactions, { emoji = emoji, users = { username } })
+  end
 
-    -- Update parent message
-    db:Sdbql([[
-      FOR m IN messages
-      FILTER m._id == @id
-      UPDATE m WITH {
-        thread_count: @count,
-        thread_participants: @participants
-      } IN messages
-    ]], { id = parent_message_id, count = thread_count, participants = thread_participants })
+  -- Update the message
+  db:UpdateDocument("messages/" .. message_key, { reactions = reactions })
 
-    SetStatus(201)
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  -- Ensure reactions is a proper array (use cjson array marker if available)
+  if #reactions == 0 then
+    Write('{"success":true,"action":"' .. action .. '","reactions":[]}')
+  else
+  WriteJSON({ success = true, action = action, reactions = reactions })
+  end
+end
+
+-- API endpoint to update an existing message
+app.update_message = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local message_key = body.message_key
+  local text = body.text
+
+  if not message_key or not text then
+      SetStatus(400)
+      WriteJSON({ error = "message_key and text are required" })
+      return
+  end
+
+  -- Get message to check ownership
+  local msg = db:GetDocument("messages/" .. message_key)
+  if not msg then
+      SetStatus(404)
+      WriteJSON({ error = "Message not found" })
+      return
+  end
+
+  local is_owner = false
+  if msg.user_key and msg.user_key == current_user._key then
+      is_owner = true
+  else
+      local current_username = current_user.email
+      if current_user.firstname and current_user.lastname then
+          current_username = current_user.firstname .. " " .. current_user.lastname
+      elseif current_user.username then
+          current_username = current_user.username
+      end
+
+      if msg.sender == current_username then
+          is_owner = true
+      else
+          -- Old format fallback: firstname.lastname
+          if current_user.firstname and current_user.lastname then
+              local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
+              if msg.sender == old_format then
+                  is_owner = true
+              end
+          end
+      end
+  end
+
+  if not is_owner then
+      SetStatus(403)
+      WriteJSON({ error = "Forbidden: You can only update your own messages" })
+      return
+  end
+
+  db:UpdateDocument("messages/" .. message_key, { text = text, updated_at = os.time() })
+
+  SetStatus(200)
+  WriteJSON({ success = true })
+end
+
+-- API endpoint to delete an existing message
+app.delete_message = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local message_key = body.message_key
+
+  if not message_key then
+      SetStatus(400)
+      WriteJSON({ error = "message_key is required" })
+      return
+  end
+
+  -- Get message to check ownership
+  local msg = db:GetDocument("messages/" .. message_key)
+  if not msg then
+      SetStatus(404)
+      WriteJSON({ error = "Message not found" })
+      return
+  end
+
+  local is_owner = false
+  if msg.user_key and msg.user_key == current_user._key then
+      is_owner = true
+  else
+      local current_username = current_user.email
+      if current_user.firstname and current_user.lastname then
+          current_username = current_user.firstname .. " " .. current_user.lastname
+      elseif current_user.username then
+          current_username = current_user.username
+      end
+
+      if msg.sender == current_username then
+          is_owner = true
+      else
+          -- Old format fallback: firstname.lastname
+          if current_user.firstname and current_user.lastname then
+              local old_format = (current_user.firstname .. "." .. current_user.lastname):lower()
+              if msg.sender == old_format then
+                  is_owner = true
+              end
+          end
+      end
+  end
+
+  if not is_owner then
+      SetStatus(403)
+      WriteJSON({ error = "Forbidden: You can only delete your own messages" })
+      return
+  end
+
+  -- If this is a thread reply, update the parent's thread count
+  if msg.thread_parent_id then
+      db:Sdbql([[
+          FOR m IN messages
+          FILTER m._id == @parent_id
+          UPDATE m WITH {
+              thread_count: MAX([0, IF(m.thread_count != null, m.thread_count, 1) - 1])
+          } IN messages
+      ]], { parent_id = msg.thread_parent_id })
+  end
+
+  db:DeleteDocument("messages/" .. message_key)
+
+  SetStatus(200)
+  WriteJSON({ success = true })
+end
+
+-- Create or get a Direct Message channel
+app.create_dm = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local target_user_key = body.target_user_key
+
+  if not target_user_key or target_user_key == "" then
+    SetStatus(400)
+    WriteJSON({ error = "target_user_key is required" })
+    return
+  end
+
+  -- Sort Keys to create deterministic channel name
+  local keys = { current_user._key, target_user_key }
+  table.sort(keys)
+  local channelName = "dm_" .. keys[1] .. "_" .. keys[2]
+
+  -- Check if channel exists
+  local res = db:Sdbql("FOR c IN channels FILTER c.name == @name RETURN c", { name = channelName })
+
+  if not res or not res.result or #res.result == 0 then
+    -- Create new DM channel
+    db:CreateDocument("channels", {
+      name = channelName,
+      type = "dm",
+      members = { current_user._key, target_user_key }
+    })
+  end
+
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ success = true, channel = channelName })
+end
+
+-- Get channel info (for huddle polling)
+app.channel_info = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local channel_id = GetParam("channel_id")
+  if not channel_id or channel_id == "" then
+      SetStatus(400)
+      WriteJSON({ error = "channel_id required" })
+      return
+  end
+
+  local res = db:Sdbql("FOR c IN channels FILTER c._key == @key RETURN c", { key = channel_id })
+  local channel = res and res.result and res.result[1]
+
+  if not channel then
+      SetStatus(404)
+      WriteJSON({ error = "Channel not found" })
+      return
+  end
+
+  -- Fetch ACTUAL participants from call_participants collection (source of truth)
+  local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+  local pres = db:Sdbql(query, { channel_id = channel_id })
+  local actual_participants = pres and pres.result or {}
+
+  -- Override channel's active_call_participants with actual data
+  channel.active_call_participants = actual_participants
+
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ channel = channel })
+end
+
+app.join_call = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel_id = body.channel_id
+
+  if not channel_id then
+      SetStatus(400)
+      WriteJSON({ error = "Channel ID required" })
+      return
+  end
+
+  -- Get channel
+  local channel = db:GetDocument("channels/" .. channel_id)
+  if not channel then
+      SetStatus(404)
+      WriteJSON({ error = "Channel not found" })
+      return
+  end
+
+  -- Ensure collection and indexes exist
+  pcall(function() db:CreateCollection("call_participants") end)
+  pcall(function() db:CreateIndex("call_participants", { fields = {"channel_id"}, type = "hash" }) end)
+  -- Auto-expire participants after 2 hours effectively acting as a keep-alive/max duration
+  pcall(function() db:CreateIndex("call_participants", { fields = {"timestamp"}, type = "ttl", expireAfterSeconds = 7200 }) end)
+
+  -- MIGRATION: Backfill existing participants from channel document to collection
+  -- This ensures users already in the call (pre-update) are visible to new joiners
+  local old_participants = channel.active_call_participants or {}
+  for _, uid in ipairs(old_participants) do
+      local pid_key = channel_id .. "_" .. uid
+      local p_doc = {
+          _key = pid_key,
+          channel_id = channel_id,
+          user_id = uid,
+          timestamp = os.time()
+      }
+      -- Upsert
+      local s, _ = pcall(function() db:CreateDocument("call_participants", p_doc) end)
+      if not s then db:UpdateDocument("call_participants/" .. pid_key, p_doc) end
+  end
+
+  -- Register CURRENT participant (Upsert logic)
+  -- This happens after migration loop, so if we were in the list, we just update timestamp again (redundant but safe)
+  local doc_key = channel_id .. "_" .. current_user._key
+  local participant_doc = {
+      _key = doc_key,
+      channel_id = channel_id,
+      user_id = current_user._key,
+      timestamp = os.time()
+  }
+
+  local success, err = pcall(function() db:CreateDocument("call_participants", participant_doc) end)
+  if not success then
+      -- If create failed (exists), update it to refresh timestamp
+      db:UpdateDocument("call_participants/" .. doc_key, participant_doc)
+  end
+
+  -- Fetch all current participants from the dedicated collection
+  -- This ensures we get everyone, regardless of race conditions on the channel doc
+  local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+  local res = db:Sdbql(query, { channel_id = channel_id })
+  local participants = res.result or {}
+
+  -- Sync back to channel for UI (Best Effort)
+  pcall(function()
+      db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+  end)
+
+  SetStatus(200)
+  WriteJSON({ success = true, participants = participants })
+end
+
+app.leave_call = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+      SetStatus(401)
+      WriteJSON({ error = "Unauthorized" })
+      return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local channel_id = body.channel_id
+
+  if not channel_id then
+      SetStatus(400)
+      WriteJSON({ error = "Channel ID required" })
+      return
+  end
+
+  -- Remove from participants collection
+  local doc_key = channel_id .. "_" .. current_user._key
+  pcall(function() db:DeleteDocument("call_participants/" .. doc_key) end)
+
+  -- Fetch remaining participants to update channel doc
+  local query = "FOR p IN call_participants FILTER p.channel_id == @channel_id RETURN p.user_id"
+  local res = db:Sdbql(query, { channel_id = channel_id })
+  local participants = res.result or {}
+
+  -- Sync back to channel for UI (Best Effort)
+  pcall(function()
+      db:UpdateDocument("channels/" .. channel_id, { active_call_participants = participants })
+  end)
+
+  SetStatus(200)
+  WriteJSON({ success = true })
+end
+
+-- Send a WebRTC signaling message
+app.send_signal = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local target_user = body.target_user
+  local type = body.type
+  local data = body.data
+
+  if not target_user or not type then
+    SetStatus(400)
+    WriteJSON({ error = "target_user and type are required" })
+    return
+  end
+
+  -- Ensure collection exists
+  pcall(function() db:CreateCollection("signals") end)
+
+  -- Create signal document
+  -- We include a timestamp so the receiver can ignore old signals
+  local signal = {
+      from_user = current_user._key,
+      to_user = target_user,
+      type = type,
+      data = data,
+      timestamp = os.time() * 1000 -- ms precision
+  }
+
+  Logger("Signaling: Creating signal from " .. signal.from_user .. " to " .. signal.to_user .. " type: " .. signal.type)
+  local ok, res = pcall(function() return db:CreateDocument("signals", signal) end)
+
+  if not ok then
+      Logger("Signaling ERROR: " .. tostring(res))
+      SetStatus(500)
+      WriteJSON({ error = "Internal Error: " .. tostring(res) })
+      return
+  end
+
+  SetStatus(200)
+  WriteJSON({ success = true, result = res })
+end
+
+-- Delete a signal document (called after signal is processed)
+app.delete_signal = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local signal_key = body.signal_key
+
+  if not signal_key then
+    SetStatus(400)
+    WriteJSON({ error = "signal_key is required" })
+    return
+  end
+
+  -- Delete the signal - only allow deletion of signals addressed to the current user
+  local ok, err = pcall(function()
+    db:Sdbql("FOR s IN signals FILTER s._key == @key AND s.to_user == @me REMOVE s IN signals", { key = signal_key, me = current_user._key })
+  end)
+
+  if not ok then
+    Logger("Error deleting signal: " .. tostring(err))
+  end
+
+  SetStatus(200)
+  WriteJSON({ success = true })
+end
+
+-- Fetch Open Graph metadata for URL previews
+app.og_metadata = function()
+  local url = GetParam("url")
+  if not url or url == "" then
+    SetStatus(400)
     SetHeader("Content-Type", "application/json")
-    WriteJSON({ success = true, message = newMessage })
-  end,
-}
+    Write('{"error":"URL parameter required"}')
+    return
+  end
+
+  -- Fetch the URL content
+  local status, headers, body = Fetch(url)
+
+  if status ~= 200 or not body then
+    SetStatus(200)
+    SetHeader("Content-Type", "application/json")
+    Write('{"error":"Failed to fetch URL"}')
+    return
+  end
+
+  -- Parse Open Graph meta tags
+  local og = {}
+
+  -- DEBUG: Log parts of body to see what we're parsing
+  if body then
+      Logger("OG Fetch Body Preview: " .. body:sub(1, 1000))
+  end
+
+  -- og:title
+  local title = body:match('<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']')
+    or body:match('<title>([^<]+)</title>')
+  og.title = title
+
+  -- og:description (with fallbacks)
+  local desc = body:match('<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']')
+    or body:match('<meta[^>]+name=["\']twitter:description["\'][^>]+content=["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:description["\']')
+    or body:match('<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']')
+  og.description = desc
+
+  -- og:image (with fallbacks)
+  -- Allow spaces around =
+  local image = body:match('<meta[^>]+property%s*=%s*["\']og:image["\'][^>]+content%s*=%s*["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content%s*=%s*["\']([^"\']+)["\'][^>]+property%s*=%s*["\']og:image["\']')
+    -- twitter:image fallback
+    or body:match('<meta[^>]+name%s*=%s*["\']twitter:image["\'][^>]+content%s*=%s*["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content%s*=%s*["\']([^"\']+)["\'][^>]+name%s*=%s*["\']twitter:image["\']')
+    -- First large image fallback (skip icons/logos)
+    or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.jpg)["\']')
+    or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.png)["\']')
+    or body:match('<img[^>]+src%s*=%s*["\']([^"\']+%.webp)["\']')
+
+  Logger("OG extracted raw image: " .. tostring(image))
+
+  -- Make relative image URL absolute
+  if image and not image:match("^https?://") then
+    if image:sub(1, 2) == "//" then
+      image = "https:" .. image
+    elseif image:sub(1, 1) == "/" then
+      -- Root relative
+      local domain = url:match("^(https?://[^/]+)")
+      if domain then
+        image = domain .. image
+      end
+    else
+      -- Path relative
+      local path_base = url:match("(.*/)")
+      if not path_base then
+          -- URL is just domain like https://example.com or https://example.com/file (no trailing slash implies file at root?)
+          -- Actually if url is https://example.com/foo, base is https://example.com/
+          -- robust way: if url ends with /, take it. else remove last segment.
+          if url:sub(-1) == "/" then
+            path_base = url
+          else
+            -- check if it has path
+            local domain = url:match("^(https?://[^/]+)")
+            if url == domain then
+              path_base = url .. "/"
+            else
+              path_base = url:match("(.*/)") or (url .. "/")
+            end
+          end
+      end
+      image = path_base .. image
+    end
+  end
+  og.image = image
+  Logger("OG final image: " .. tostring(image))
+
+  -- og:site_name
+  local site = body:match('<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']+)["\']')
+    or body:match('<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:site_name["\']')
+  og.site_name = site
+
+  -- favicon
+  local favicon = body:match('<link[^>]+rel=["\']icon["\'][^>]+href=["\']([^"\']+)["\']')
+    or body:match('<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\']icon["\']')
+    or body:match('<link[^>]+rel=["\']shortcut icon["\'][^>]+href=["\']([^"\']+)["\']')
+  if favicon and not favicon:match("^https?://") then
+    -- Make relative favicon absolute
+    local base = url:match("^(https?://[^/]+)")
+    if base then
+      if favicon:sub(1, 1) == "/" then
+        favicon = base .. favicon
+      else
+        favicon = base .. "/" .. favicon
+      end
+    end
+  end
+  og.favicon = favicon
+
+  og.url = url
+
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  SetHeader("Cache-Control", "public, max-age=3600")
+  WriteJSON(og)
+end
+
+-- Search messages across channels
+app.search = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local query = GetParam("q") or ""
+  local limit = tonumber(GetParam("limit")) or 50
+
+  if query == "" or #query < 2 then
+    SetStatus(200)
+    WriteJSON({ results = {} })
+    return
+  end
+
+  -- Search messages using fulltext index for better performance
+  -- Returns messages with relevance scoring using BM25
+  local search_query = [[
+    LET my_user_key = @user_key
+    LET accessible_channels = (
+      FOR c IN channels
+      FILTER c.type == "standard"
+          OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+      RETURN c._id
+    )
+
+    LET ft_matches = FULLTEXT("messages", "text", @query, 2)
+
+    FOR match IN ft_matches
+      LET m = match.doc
+      FILTER POSITION(accessible_channels, m.channel_id) >= 0
+
+      LET channel = FIRST(FOR c IN channels FILTER c._id == m.channel_id RETURN c)
+      LET sender_user = FIRST(FOR u IN users FILTER u._key == m.user_key RETURN u)
+
+      SORT match.score DESC, m.timestamp DESC
+      LIMIT @limit
+
+      RETURN {
+        _key: m._key,
+        _id: m._id,
+        text: m.text,
+        sender: m.sender,
+        timestamp: m.timestamp,
+        channel_id: m.channel_id,
+        channel_name: channel.name,
+        channel_type: channel.type,
+        sender_firstname: sender_user.firstname,
+        sender_lastname: sender_user.lastname,
+        score: match.score
+      }
+  ]]
+
+  local res = db:Sdbql(search_query, {
+    user_key = current_user._key,
+    query = query,
+    limit = limit
+  })
+
+  local results = {}
+  if res and res.result then
+    results = res.result
+  end
+
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ results = results, query = query })
+end
+
+-- Get thread messages for a parent message
+app.get_thread_messages = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local parent_id = GetParam("parent_id")
+  if not parent_id or parent_id == "" then
+    SetStatus(400)
+    WriteJSON({ error = "parent_id is required" })
+    return
+  end
+
+  -- Fetch thread messages (messages where thread_parent_id equals this message)
+  local res = db:Sdbql([[
+    FOR m IN messages
+    FILTER m.thread_parent_id == @parent_id
+    SORT m.timestamp ASC
+    RETURN m
+  ]], { parent_id = parent_id })
+
+  local messages = {}
+  if res and res.result then
+    messages = res.result
+  end
+
+  SetStatus(200)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ success = true, messages = messages })
+end
+
+-- Send a reply in a thread
+app.send_thread_reply = function()
+  local db = SoliDB.primary
+  local current_user = get_current_user()
+  if not current_user then
+    SetStatus(401)
+    WriteJSON({ error = "Unauthorized" })
+    return
+  end
+
+  local body = DecodeJson(GetBody() or "{}") or {}
+  local parent_message_id = body.parent_message_id
+  local text = body.text
+
+  if not parent_message_id or parent_message_id == "" then
+    SetStatus(400)
+    WriteJSON({ error = "parent_message_id is required" })
+    return
+  end
+
+  if not text or text == "" then
+    SetStatus(400)
+    WriteJSON({ error = "text is required" })
+    return
+  end
+
+  -- Get the parent message to find the channel
+  local parentRes = db:Sdbql("FOR m IN messages FILTER m._id == @id RETURN m", { id = parent_message_id })
+  if not parentRes or not parentRes.result or #parentRes.result == 0 then
+    SetStatus(404)
+    WriteJSON({ error = "Parent message not found" })
+    return
+  end
+
+  local parent = parentRes.result[1]
+
+  -- Determine sender name
+  local sender = current_user.firstname and current_user.lastname
+    and (current_user.firstname .. " " .. current_user.lastname)
+    or current_user.email
+
+  -- Create the thread reply message
+  local newMessage = {
+    channel_id = parent.channel_id,
+    thread_parent_id = parent_message_id,
+    sender = sender,
+    user_key = current_user._key,
+    text = text,
+    timestamp = os.time(),
+    attachments = body.attachments or {}
+  }
+
+  local createRes = db:CreateDocument("messages", newMessage)
+  newMessage._key = createRes._key
+  newMessage._id = createRes._id
+
+  -- Update the parent message with thread count and participants
+  -- First, get current thread count and participants
+  local thread_count = (parent.thread_count or 0) + 1
+  local thread_participants = parent.thread_participants or {}
+
+  -- Add sender if not already in participants
+  local found = false
+  for _, p in ipairs(thread_participants) do
+    if p == sender then
+      found = true
+      break
+    end
+  end
+  if not found then
+    table.insert(thread_participants, sender)
+  end
+
+  -- Update parent message
+  db:Sdbql([[
+    FOR m IN messages
+    FILTER m._id == @id
+    UPDATE m WITH {
+      thread_count: @count,
+      thread_participants: @participants
+    } IN messages
+  ]], { id = parent_message_id, count = thread_count, participants = thread_participants })
+
+  SetStatus(201)
+  SetHeader("Content-Type", "application/json")
+  WriteJSON({ success = true, message = newMessage })
+end
 
 return BeansEnv == "development" and HandleController(app) or app

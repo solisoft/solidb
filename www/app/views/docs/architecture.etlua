@@ -368,130 +368,273 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <h4 class="text-purple-400 font-bold mb-3">Query Capabilities</h4>
-              <ul class="space-y-2 text-sm text-gray-400">
-                <li><code>FOR...IN</code> — Collection iteration</li>
-                <li><code>FILTER</code> — Conditional filtering with index usage</li>
-                <li><code>SORT / LIMIT</code> — Ordering and pagination</li>
-                <li><code>LET</code> — Variable bindings and subqueries</li>
-                <li><code>COLLECT</code> — Grouping and aggregation</li>
-                <li><code>INSERT / UPDATE / REMOVE</code> — Data manipulation</li>
-                <li><code>GRAPH</code> — Traversal with edge/vertex hops</li>
-                <li><code>LIKE / REGEX</code> — Pattern matching (=~, !~)</li>
-              </ul>
-            </div>
-
-            <div class="col-span-1 md:col-span-2 bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <h4 class="text-purple-400 font-bold mb-4">Built-in Functions Reference</h4>
+            <div class="bg-gray-950/50 col-span-2 rounded-xl p-6 border border-white/10">
+              <h4 class="text-purple-400 font-bold mb-6 flex items-center">
+                <i class="fas fa-rocket mr-3"></i> Query Capabilities
+              </h4>
               
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
-                <!-- String & Pattern -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">String & Pattern</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">CONCAT</span>, <span class="text-cyan-400">CONCAT_SEPARATOR</span>, 
-                    <span class="text-cyan-400">SPLIT</span>, <span class="text-cyan-400">SUBSTRING</span>, 
-                    <span class="text-cyan-400">TRIM</span>, <span class="text-cyan-400">LTRIM</span>, <span class="text-cyan-400">RTRIM</span>, 
-                    <span class="text-cyan-400">UPPER</span>, <span class="text-cyan-400">LOWER</span>, 
-                    <span class="text-cyan-400">CONTAINS</span>, <span class="text-cyan-400">SUBSTITUTE</span>, 
-                    <span class="text-cyan-400">REGEX_REPLACE</span>, <span class="text-cyan-400">LEVENSHTEIN</span>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+                <!-- Iteration -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-purple-500/50 to-indigo-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center mr-3 border border-purple-500/30">
+                        <i class="fas fa-redo text-purple-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Iteration</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Multi-source iteration over collections, ranges, and static arrays.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-purple-300 border border-white/5">
+                      FOR doc IN users
+                    </div>
                   </div>
                 </div>
 
-                <!-- Numeric & Math -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Numeric & Math</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">ABS</span>, <span class="text-cyan-400">ROUND</span>, 
-                    <span class="text-cyan-400">FLOOR</span>, <span class="text-cyan-400">CEIL</span>, 
-                    <span class="text-cyan-400">SQRT</span>, <span class="text-cyan-400">POW</span>, 
-                    <span class="text-cyan-400">RANDOM</span>
+                <!-- Filtering -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500/50 to-indigo-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center mr-3 border border-blue-500/30">
+                        <i class="fas fa-filter text-blue-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Filtering</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Advanced filtering with optimized index usage and logical operators.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-blue-300 border border-white/5">
+                      FILTER d.age > 18
+                    </div>
                   </div>
                 </div>
 
-                <!-- Array & List -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Array Operations</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">LENGTH</span>, <span class="text-cyan-400">PUSH</span>, 
-                    <span class="text-cyan-400">APPEND</span>, <span class="text-cyan-400">SLICE</span>, 
-                    <span class="text-cyan-400">FLATTEN</span>, <span class="text-cyan-400">FIRST</span>, 
-                    <span class="text-cyan-400">LAST</span>, <span class="text-cyan-400">NTH</span>, 
-                    <span class="text-cyan-400">POSITION</span>, <span class="text-cyan-400">CONTAINS_ARRAY</span>, 
-                    <span class="text-cyan-400">UNIQUE</span>, <span class="text-cyan-400">SORTED</span>, 
-                    <span class="text-cyan-400">REVERSE</span>, <span class="text-cyan-400">UNION</span>, 
-                    <span class="text-cyan-400">INTERSECTION</span>, <span class="text-cyan-400">MINUS</span>
+                <!-- Variables -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/50 to-cyan-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3 border border-indigo-500/30">
+                        <i class="fas fa-calculator text-indigo-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Bindings</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Variable declarations, intermediate results, and subqueries.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-indigo-300 border border-white/5">
+                      LET avg = (FOR ...)
+                    </div>
                   </div>
                 </div>
 
                 <!-- Aggregation -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Aggregation (Arrays)</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">SUM</span>, <span class="text-cyan-400">AVG</span>, 
-                    <span class="text-cyan-400">MIN</span>, <span class="text-cyan-400">MAX</span>, 
-                    <span class="text-cyan-400">COUNT</span>, <span class="text-cyan-400">COUNT_DISTINCT</span>, 
-                    <span class="text-cyan-400">MEDIAN</span>, <span class="text-cyan-400">PERCENTILE</span>, 
-                    <span class="text-cyan-400">VARIANCE</span>, <span class="text-cyan-400">STDDEV</span>
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-500/50 to-purple-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center mr-3 border border-pink-500/30">
+                        <i class="fas fa-layer-group text-pink-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Grouping</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Data reduction via COLLECT with COUNT and AGGREGATE.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-pink-300 border border-white/5">
+                      COLLECT city = d.city
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Graph -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/50 to-teal-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mr-3 border border-cyan-500/30">
+                        <i class="fas fa-project-diagram text-cyan-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Graph</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Native graph traversal with edge/vertex hops and path finding.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-cyan-300 border border-white/5">
+                      FOR v,e,p IN 1..3
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Patterns -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/50 to-teal-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-3 border border-emerald-500/30">
+                        <i class="fas fa-search text-emerald-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Matching</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Pattern matching using LIKE and regular expressions (=~, !~).</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-emerald-300 border border-white/5">
+                      FILTER u.name =~ "J.*"
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Mutations -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-orange-500/50 to-red-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center mr-3 border border-orange-500/30">
+                        <i class="fas fa-bolt text-orange-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Mutations</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Atomic multi-document mutations within the query flow.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-orange-300 border border-white/5">
+                      UPDATE u WITH {v:1}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Results -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-rose-500/50 to-pink-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center mr-3 border border-rose-500/30">
+                        <i class="fas fa-external-link-alt text-rose-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Returning</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Flexible response construction with projection and mapping.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-rose-300 border border-white/5">
+                      RETURN { name: u.v }
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h4 class="text-purple-400 font-bold mb-6 flex items-center">
+                <i class="fas fa-book-open mr-3"></i> Built-in Functions Reference
+              </h4>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-sm">
+                <!-- String & Pattern -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-quote-left text-cyan-400 mr-2"></i> String & Pattern
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"CONCAT", "CONCAT_SEPARATOR", "SPLIT", "SUBSTRING", "TRIM", "LTRIM", "RTRIM", "UPPER", "LOWER", "CONTAINS", "SUBSTITUTE", "REGEX_REPLACE", "LEVENSHTEIN"}) do %>
+                      <span class="text-cyan-400/80 hover:text-cyan-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Numeric & Math -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-calculator text-blue-400 mr-2"></i> Numeric & Math
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"ABS", "ROUND", "FLOOR", "CEIL", "SQRT", "POW", "RANDOM"}) do %>
+                      <span class="text-blue-400/80 hover:text-blue-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Array & List -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-list text-purple-400 mr-2"></i> Array Operations
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"LENGTH", "PUSH", "APPEND", "SLICE", "FLATTEN", "FIRST", "LAST", "NTH", "POSITION", "CONTAINS_ARRAY", "UNIQUE", "SORTED", "REVERSE", "UNION", "INTERSECTION", "MINUS"}) do %>
+                      <span class="text-purple-400/80 hover:text-purple-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Aggregation -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-layer-group text-pink-400 mr-2"></i> Aggregation (Arrays)
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT", "MEDIAN", "PERCENTILE", "VARIANCE", "STDDEV"}) do %>
+                      <span class="text-pink-400/80 hover:text-pink-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
 
                 <!-- Object & Document -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Object & JSON</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">HAS</span>, <span class="text-cyan-400">KEEP</span>, 
-                    <span class="text-cyan-400">UNSET</span>, <span class="text-cyan-400">ATTRIBUTES</span>, 
-                    <span class="text-cyan-400">VALUES</span>, <span class="text-cyan-400">MERGE</span>, 
-                    <span class="text-cyan-400">JSON_PARSE</span>, <span class="text-cyan-400">JSON_STRINGIFY</span>
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-code text-indigo-400 mr-2"></i> Object & JSON
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"HAS", "KEEP", "UNSET", "ATTRIBUTES", "VALUES", "MERGE", "JSON_PARSE", "JSON_STRINGIFY"}) do %>
+                      <span class="text-indigo-400/80 hover:text-indigo-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
 
                 <!-- Date & Time -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Date & Time</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">DATE_NOW</span>, <span class="text-cyan-400">DATE_ISO8601</span>, 
-                    <span class="text-cyan-400">DATE_TIMESTAMP</span>, <span class="text-cyan-400">DATE_FORMAT</span>, 
-                    <span class="text-cyan-400">DATE_ADD</span>, <span class="text-cyan-400">DATE_SUBTRACT</span>, 
-                    <span class="text-cyan-400">DATE_DIFF</span>, <span class="text-cyan-400">DATE_TRUNC</span>
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-clock text-rose-400 mr-2"></i> Date & Time
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC"}) do %>
+                      <span class="text-rose-400/80 hover:text-rose-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
 
                 <!-- Geo & Search -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Geo & Search</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">DISTANCE</span>, <span class="text-cyan-400">GEO_DISTANCE</span>, 
-                    <span class="text-cyan-400">FULLTEXT</span>, <span class="text-cyan-400">BM25</span>
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-search text-emerald-400 mr-2"></i> Geo & Search
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"DISTANCE", "GEO_DISTANCE", "FULLTEXT", "BM25"}) do %>
+                      <span class="text-emerald-400/80 hover:text-emerald-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
 
                 <!-- Type Checking -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Type Checking</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">IS_ARRAY</span>, <span class="text-cyan-400">IS_BOOL</span>, 
-                    <span class="text-cyan-400">IS_NUMBER</span>, <span class="text-cyan-400">IS_STRING</span>, 
-                    <span class="text-cyan-400">IS_OBJECT</span>, <span class="text-cyan-400">IS_NULL</span>, 
-                    <span class="text-cyan-400">IS_DATE</span>, <span class="text-cyan-400">TYPENAME</span>,
-                    <span class="text-cyan-400">TO_STRING</span>, <span class="text-cyan-400">TO_NUMBER</span>
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-check-circle text-orange-400 mr-2"></i> Type Checking
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"IS_ARRAY", "IS_BOOL", "IS_NUMBER", "IS_STRING", "IS_OBJECT", "IS_NULL", "IS_DATE", "TYPENAME", "TO_STRING", "TO_NUMBER"}) do %>
+                      <span class="text-orange-400/80 hover:text-orange-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
 
                 <!-- Utils -->
-                <div>
-                  <h5 class="text-white font-semibold mb-2 border-b border-white/10 pb-1">Utilities</h5>
-                  <div class="text-gray-400 leading-relaxed">
-                    <span class="text-cyan-400">UUIDV4</span>, <span class="text-cyan-400">UUIDV7</span>, 
-                    <span class="text-cyan-400">MD5</span>, <span class="text-cyan-400">SHA256</span>, 
-                    <span class="text-cyan-400">SLEEP</span>, <span class="text-cyan-400">ASSERT</span>, 
-                    <span class="text-cyan-400">IF</span>, <span class="text-cyan-400">COLLECTION_COUNT</span>
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-wrench text-amber-400 mr-2"></i> Utilities
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"UUIDV4", "UUIDV7", "MD5", "SHA256", "SLEEP", "ASSERT", "IF", "COLLECTION_COUNT"}) do %>
+                      <span class="text-amber-400/80 hover:text-amber-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </section>
