@@ -146,6 +146,7 @@ async fn spawn_node(peers: Vec<String>) -> Result<TestNode> {
         Some(replication_log.clone()),
         Some(shard_coordinator.clone()),
         None,
+        Arc::new(solidb::scripting::ScriptStats::default()),
         port
     );
 

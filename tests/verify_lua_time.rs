@@ -7,7 +7,8 @@ async fn verify_lua_time_functions() {
 
     // Helper to run a script and check for errors
     async fn verify_lua_script(code: &str) {
-        let engine = ScriptEngine::new(Arc::new(StorageEngine::new("test_db".to_string()).unwrap()));
+        use solidb::scripting::ScriptStats;
+        let engine = ScriptEngine::new(Arc::new(StorageEngine::new("test_db".to_string()).unwrap()), Arc::new(ScriptStats::default()));
         let context = ScriptContext {
             method: "GET".to_string(),
             path: "/test".to_string(),
@@ -15,6 +16,7 @@ async fn verify_lua_time_functions() {
             params: HashMap::new(),
             headers: HashMap::new(),
             body: None,
+            is_websocket: false,
         };
 
         // Wrap code in a function to allow early returns with error messages

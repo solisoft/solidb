@@ -13,7 +13,7 @@ async fn test_benchmark_sort_limit() {
     storage.create_collection("bench".to_string(), None).unwrap();
     let collection = storage.get_collection("bench").unwrap();
     
-    collection.create_index("idx1".to_string(), "val".to_string(), IndexType::Persistent, false).unwrap();
+    collection.create_index("idx1".to_string(), vec!["val".to_string()], IndexType::Persistent, false).unwrap();
     
     println!("Inserting 1,000 documents...");
     let start_insert = Instant::now();

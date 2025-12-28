@@ -233,7 +233,7 @@ fn test_create_index() {
     let stats = collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Persistent,
             false,
         )
@@ -264,7 +264,7 @@ fn test_index_lookup_eq() {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Hash,
             false,
         )
@@ -286,7 +286,7 @@ fn test_list_indexes() {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Persistent,
             false,
         )
@@ -294,7 +294,7 @@ fn test_list_indexes() {
     collection
         .create_index(
             "idx_name".to_string(),
-            "name".to_string(),
+            vec!["name".to_string()],
             solidb::IndexType::Hash,
             false,
         )
@@ -313,7 +313,7 @@ fn test_drop_index() {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Persistent,
             false,
         )
@@ -377,7 +377,7 @@ fn test_index_persists_after_reopen() {
         collection
             .create_index(
                 "idx_age".to_string(),
-                "age".to_string(),
+                vec!["age".to_string()],
                 solidb::IndexType::Persistent,
                 false,
             )

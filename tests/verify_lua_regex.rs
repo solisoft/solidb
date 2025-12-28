@@ -1,4 +1,4 @@
-use solidb::scripting::{ScriptEngine, Script, ScriptContext};
+use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats};
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 async fn verify_lua_regex() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(StorageEngine::new(tmp_dir.path()).unwrap());
-    let engine = ScriptEngine::new(storage);
+    let engine = ScriptEngine::new(storage, Arc::new(ScriptStats::default()));
 
     // Test 1: Valid Regex Match
     let script_match = Script {
@@ -33,6 +33,7 @@ async fn verify_lua_regex() {
         params: HashMap::new(),
         headers: HashMap::new(),
         body: None,
+        is_websocket: false,
     };
 
     let result_match = engine.execute(&script_match, "_system", &context).await.unwrap();

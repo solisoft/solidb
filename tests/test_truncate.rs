@@ -4,6 +4,8 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::{create_router, StorageEngine};
+use solidb::scripting::ScriptStats;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
@@ -15,7 +17,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
     storage.initialize().expect("Failed to initialize storage");
-    let router = create_router(storage, None, None, None, None, 0);
+    let router = create_router(storage, None, None, None, None, Arc::new(ScriptStats::default()), 0);
     (router, temp_dir)
 }
 

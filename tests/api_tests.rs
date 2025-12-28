@@ -7,6 +7,8 @@ use axum::{
 };
 use serde_json::{json, Value};
 use solidb::{create_router, StorageEngine};
+use solidb::scripting::ScriptStats;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::util::ServiceExt;
 
@@ -18,7 +20,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
     storage.initialize().expect("Failed to initialize storage");
-    let router = create_router(storage, None, None, None, None, 0);
+    let router = create_router(storage, None, None, None, None, Arc::new(ScriptStats::default()), 0);
     (router, temp_dir)
 }
 
@@ -901,10 +903,9 @@ async fn test_explain_with_sort() {
 
     assert_eq!(status, StatusCode::OK);
 
-    // Check sort info
+    // Check sort info - direction is now included in the field string
     assert!(body["sort"].is_object());
-    assert_eq!(body["sort"]["field"], "doc.age");
-    assert_eq!(body["sort"]["direction"], "DESC");
+    assert_eq!(body["sort"]["field"], "doc.age DESC");
     assert!(body["sort"]["time_us"].is_number());
 }
 

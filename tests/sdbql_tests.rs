@@ -77,25 +77,28 @@ fn test_parse_sort() {
     let query = parse("FOR doc IN users SORT doc.age DESC RETURN doc").unwrap();
     assert!(query.sort_clause.is_some());
     let sort = query.sort_clause.unwrap();
-    assert!(!sort.ascending);
+    assert!(!sort.fields.is_empty());
+    assert!(!sort.fields[0].1); // ascending = false for DESC
 }
 
 #[test]
 fn test_parse_limit() {
+    use solidb::sdbql::ast::Expression;
     let query = parse("FOR doc IN users LIMIT 10 RETURN doc").unwrap();
     assert!(query.limit_clause.is_some());
     let limit = query.limit_clause.unwrap();
-    assert_eq!(limit.count, 10);
-    assert_eq!(limit.offset, 0);
+    assert_eq!(limit.count, Expression::Literal(json!(10)));
+    assert_eq!(limit.offset, Expression::Literal(json!(0)));
 }
 
 #[test]
 fn test_parse_limit_with_offset() {
+    use solidb::sdbql::ast::Expression;
     let query = parse("FOR doc IN users LIMIT 5, 10 RETURN doc").unwrap();
     assert!(query.limit_clause.is_some());
     let limit = query.limit_clause.unwrap();
-    assert_eq!(limit.offset, 5);
-    assert_eq!(limit.count, 10);
+    assert_eq!(limit.offset, Expression::Literal(json!(5)));
+    assert_eq!(limit.count, Expression::Literal(json!(10)));
 }
 
 #[test]
@@ -1448,11 +1451,10 @@ fn test_explain_with_sort() {
     let executor = QueryExecutor::new(&storage);
     let explain = executor.explain(&query).unwrap();
 
-    // Check sort info
+    // Check sort info - direction is now included in the field string
     assert!(explain.sort.is_some());
     let sort = explain.sort.unwrap();
-    assert_eq!(sort.field, "doc.age");
-    assert_eq!(sort.direction, "DESC");
+    assert_eq!(sort.field, "doc.age DESC");
 
 }
 

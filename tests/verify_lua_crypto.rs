@@ -1,4 +1,4 @@
-use solidb::scripting::{ScriptEngine, Script, ScriptContext};
+use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats};
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 async fn verify_lua_crypto() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(StorageEngine::new(tmp_dir.path()).unwrap());
-    let engine = ScriptEngine::new(storage);
+    let engine = ScriptEngine::new(storage, Arc::new(ScriptStats::default()));
 
     // Crypto Test Script
     // We confirm correct values for standard algorithms and sanity check others
@@ -81,6 +81,7 @@ async fn verify_lua_crypto() {
         params: HashMap::new(),
         headers: HashMap::new(),
         body: None,
+        is_websocket: false,
     };
 
     let result = engine.execute(&script, "_system", &context).await.unwrap();

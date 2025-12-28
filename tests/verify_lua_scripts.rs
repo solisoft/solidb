@@ -341,7 +341,7 @@ fn test_script_with_sdbql() {
         json!({"name": "Charlie", "age": 35}),
     ];
 
-    for user in users {
+    for _user in users {
         client
             .post(&format!("{}/api/custom/querydb/users", BASE_URL)) // Using direct custom endpoint won't work yet as we haven't made a script for it. Use regular API? No, we don't have regular document API exposed in these tests easily? 
             // Wait, we can use a script to insert data or just assume we have document API.

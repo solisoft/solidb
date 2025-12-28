@@ -26,6 +26,9 @@ pub enum DbError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
+    #[error("Operation not supported: {0}")]
+    OperationNotSupported(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 

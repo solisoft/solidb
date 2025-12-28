@@ -15,7 +15,7 @@ async fn test_numeric_sort_order() {
     let collection = storage.get_collection("dates").unwrap();
     
     // Create index
-    collection.create_index("idx1".to_string(), "val".to_string(), IndexType::Persistent, false).unwrap();
+    collection.create_index("idx1".to_string(), vec!["val".to_string()], IndexType::Persistent, false).unwrap();
     
     // Insert data: 1, 2, 10
     collection.insert(serde_json::json!({"val": 1})).unwrap();

@@ -14,7 +14,7 @@ async fn create_test_server() -> (axum::Router, TempDir) {
     engine.create_database("testdb".to_string()).unwrap();
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
-    let router = create_router(engine, None, None, None, None, 0);
+    let router = create_router(engine, None, None, None, None, std::sync::Arc::new(solidb::scripting::ScriptStats::default()), 0);
     (router, temp_dir)
 }
 

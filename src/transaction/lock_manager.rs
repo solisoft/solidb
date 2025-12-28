@@ -1,0 +1,107 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+use crate::error::{DbError, DbResult};
+use super::TransactionId;
+
+/// Type of lock
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockType {
+    /// Shared lock (for reading)
+    Shared,
+    /// Exclusive lock (for writing)
+    Exclusive,
+}
+
+/// A unique key identifying a resource to lock
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LockKey {
+    pub database: String,
+    pub collection: String,
+    pub key: String,
+}
+
+impl LockKey {
+    pub fn new(database: &str, collection: &str, key: &str) -> Self {
+        Self {
+            database: database.to_string(),
+            collection: collection.to_string(),
+            key: key.to_string(),
+        }
+    }
+}
+
+/// Manages locks for transactions
+pub struct LockManager {
+    /// Maps a resource key to the transaction holding the exclusive lock
+    /// For now, we simplify to only supporting exclusive locks for robust OLTP writes
+    exclusive_locks: RwLock<HashMap<LockKey, TransactionId>>,
+    
+    /// Maps a transaction ID to the set of keys it holds (for fast release)
+    tx_locks: RwLock<HashMap<TransactionId, HashSet<LockKey>>>,
+}
+
+impl LockManager {
+    pub fn new() -> Self {
+        Self {
+            exclusive_locks: RwLock::new(HashMap::new()),
+            tx_locks: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Try to acquire an exclusive lock on a key
+    pub fn acquire_exclusive(&self, tx_id: TransactionId, database: &str, collection: &str, key: &str) -> DbResult<()> {
+        let lock_key = LockKey::new(database, collection, key);
+
+        // Check availability
+        {
+            let mut locks = self.exclusive_locks.write().unwrap();
+            
+            if let Some(owner) = locks.get(&lock_key) {
+                if *owner == tx_id {
+                    // Already locked by this transaction, re-entrant
+                    return Ok(());
+                }
+                // Locked by someone else
+                return Err(DbError::TransactionConflict(format!(
+                    "Write conflict: Key {}/{}/{} is locked by transaction {}",
+                    database, collection, key, owner
+                )));
+            }
+
+            // Acquire lock
+            locks.insert(lock_key.clone(), tx_id);
+        }
+
+        // Record in transaction's lock set
+        {
+            let mut tx_locks = self.tx_locks.write().unwrap();
+            tx_locks.entry(tx_id).or_default().insert(lock_key);
+        }
+        
+        tracing::debug!("Transaction {} acquired lock on {}/{}/{}", tx_id, database, collection, key);
+
+        Ok(())
+    }
+
+    /// Release all locks held by a transaction
+    pub fn release_locks(&self, tx_id: TransactionId) {
+        let locks_to_release = {
+            let mut tx_locks = self.tx_locks.write().unwrap();
+            tx_locks.remove(&tx_id)
+        };
+
+        if let Some(keys) = locks_to_release {
+            let mut locks = self.exclusive_locks.write().unwrap();
+            for key in keys {
+                locks.remove(&key);
+                tracing::debug!("Transaction {} released lock on {}/{}/{}", tx_id, key.database, key.collection, key.key);
+            }
+        }
+    }
+}
+
+impl Default for LockManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

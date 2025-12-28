@@ -1,4 +1,4 @@
-use solidb::scripting::{ScriptEngine, Script, ScriptContext};
+use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats};
 use solidb::storage::StorageEngine;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 async fn verify_lua_regex_replace() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(StorageEngine::new(tmp_dir.path()).unwrap());
-    let engine = ScriptEngine::new(storage);
+    let engine = ScriptEngine::new(storage, Arc::new(ScriptStats::default()));
 
     let context = ScriptContext {
         method: "GET".to_string(),
@@ -16,6 +16,7 @@ async fn verify_lua_regex_replace() {
         params: HashMap::new(),
         headers: HashMap::new(),
         body: None,
+        is_websocket: false,
     };
 
     // Test 1: Simple replacement

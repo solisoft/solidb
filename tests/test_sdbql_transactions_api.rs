@@ -6,6 +6,9 @@ use solidb::StorageEngine;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+use std::sync::Arc;
+use solidb::scripting::ScriptStats;
+
 /// Helper to create test server
 async fn create_test_server() -> (axum::Router, TempDir) {
     // Set admin password for tests
@@ -22,7 +25,7 @@ async fn create_test_server() -> (axum::Router, TempDir) {
     db.create_collection("users".to_string(), None).unwrap();
     db.create_collection("backup".to_string(), None).unwrap();
 
-    let router = create_router(engine, None, None, None, None, 0);
+    let router = create_router(engine, None, None, None, None, Arc::new(ScriptStats::default()), 0);
     (router, temp_dir)
 }
 

@@ -15,7 +15,7 @@ fn test_index_optimization_performance() {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Persistent,
             false,
         )
@@ -63,7 +63,7 @@ fn test_index_optimization_correctness() {
     collection
         .create_index(
             "idx_age".to_string(),
-            "age".to_string(),
+            vec!["age".to_string()],
             solidb::IndexType::Persistent,
             false,
         )

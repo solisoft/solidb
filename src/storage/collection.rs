@@ -869,8 +869,7 @@ impl Collection {
     /// Efficiently deletes a range of keys. Only works correctly if keys are time-ordered (like UUIDv7).
     pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<()> {
         use std::sync::atomic::Ordering;
-        use crate::DOC_PREFIX;
-
+        
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name).expect("Column family should exist");
 

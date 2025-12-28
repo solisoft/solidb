@@ -32,6 +32,24 @@ impl SolidbProcess {
             std::fs::write(&keyfile_path, "secret123_tcp_key_must_be_long_enough_for_hmac_sha256_so_lets_make_it_so")?;
         }
 
+        Self::start_with_keyfile_internal(port, repl_port, node_id, peers, data_dir, keyfile_path)
+    }
+
+    fn start_with_shared_keyfile(port: u16, repl_port: u16, node_id: &str, peers: &[u16], shared_keyfile_path: &std::path::Path) -> Result<Self> {
+        // Create temp dir but persist it so child process can use it
+        // and we delete it manually in Drop
+        let temp_dir = tempfile::tempdir()?;
+        let path = temp_dir.path().to_path_buf();
+        // Prevent automatic cleanup by `temp_dir` drop, we own cleanup in SolidbProcess::drop
+        let _ = temp_dir.keep();
+
+        let data_dir = path.join(node_id);
+        std::fs::create_dir_all(&data_dir)?;
+
+        Self::start_with_keyfile_internal(port, repl_port, node_id, peers, data_dir, shared_keyfile_path.to_path_buf())
+    }
+
+    fn start_with_keyfile_internal(port: u16, repl_port: u16, node_id: &str, peers: &[u16], data_dir: std::path::PathBuf, keyfile_path: std::path::PathBuf) -> Result<Self> {
         let mut args = vec![
             "run".to_string(),
             "--".to_string(),
@@ -49,6 +67,7 @@ impl SolidbProcess {
 
         // Print args for debugging
         println!("Starting node {} with args: {:?}", node_id, args);
+        println!("Node {} using keyfile: {}", node_id, keyfile_path.to_string_lossy());
 
         // Set environment variables for auth and secret
         let child = Command::new("cargo")
@@ -85,14 +104,25 @@ async fn test_sharded_changefeed_cluster() -> Result<()> {
     let status = Command::new("cargo").arg("build").status()?;
     assert!(status.success(), "Failed to build project");
 
-    // 2. Start Node 1 and Node 2
+    // 2. Create shared keyfile directory and key
+    let shared_temp_dir = tempfile::tempdir()?;
+    let shared_path = shared_temp_dir.path().to_path_buf();
+    let shared_keyfile_path = shared_path.join("shared_cluster.key");
+    if !shared_keyfile_path.exists() {
+        std::fs::write(&shared_keyfile_path, "secret123_tcp_key_must_be_long_enough_for_hmac_sha256_so_lets_make_it_so")?;
+    }
+    println!("Created shared keyfile at: {}", shared_keyfile_path.display());
+    // Prevent automatic cleanup by keeping reference to parent temp dir
+    let _ = shared_temp_dir.keep();
+
+    // 3. Start Node 1 and Node 2 with shared keyfile
     // Mutual peering: Node 1 knows about Node 2's repl port (6783)
-    let node1 = SolidbProcess::start(6780, 6781, "node1", &[6783])?;
+    let node1 = SolidbProcess::start_with_shared_keyfile(6780, 6781, "node1", &[6783], &shared_keyfile_path)?;
     sleep(Duration::from_secs(2)).await;
 
     // Node 2 knows about Node 1's repl port (6781)
-    let node2 = SolidbProcess::start(6782, 6783, "node2", &[6781])?;
-    sleep(Duration::from_secs(10)).await; // Increase wait
+    let node2 = SolidbProcess::start_with_shared_keyfile(6782, 6783, "node2", &[6781], &shared_keyfile_path)?;
+    sleep(Duration::from_secs(15)).await; // Increase wait for cluster formation
 
     let client = reqwest::Client::new();
     let base_url1 = format!("http://127.0.0.1:{}", node1.port);
@@ -127,6 +157,7 @@ async fn test_sharded_changefeed_cluster() -> Result<()> {
     tracing::info!("Create Collection Response: {} - {}", status, text);
 
     // Wait for collection to propagate to Node 2
+    println!("Waiting for collection feed_test to propagate to node2...");
     wait_for_collection(&client, &base_url2, "feed_test").await?;
 
     // 4. Get User Token for WS

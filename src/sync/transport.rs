@@ -114,6 +114,12 @@ impl ConnectionPool {
             return Err(TransportError::IoError(e));
         }
         debug!("ConnectionPool: Magic header sent to {}", peer_addr);
+        
+        // Flush to ensure magic header is sent before authentication
+        if let Err(e) = stream.flush().await {
+            debug!("ConnectionPool: Failed to flush magic header to {}: {}", peer_addr, e);
+            return Err(TransportError::IoError(e));
+        }
 
         // Perform authentication
         let stream = match self.authenticate_client(stream).await {
@@ -143,6 +149,9 @@ impl ConnectionPool {
         }
 
         debug!("authenticate_client: waiting for challenge");
+        // Small delay to let server process magic header and send challenge
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        
         // Read challenge from server
         let msg = match Self::read_message(&mut stream).await {
             Ok(m) => {

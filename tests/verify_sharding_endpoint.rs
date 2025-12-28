@@ -1,6 +1,7 @@
 use solidb::storage::engine::StorageEngine;
 use solidb::server::handlers::AppState;
 use solidb::sharding::coordinator::CollectionShardConfig;
+use solidb::scripting::ScriptStats;
 use std::sync::Arc;
 use tempfile::TempDir;
 use axum::{
@@ -49,6 +50,7 @@ async fn verify_sharding_endpoint_returns_shards() {
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
         queue_worker: None,
+        script_stats: Arc::new(ScriptStats::default()),
     };
 
     // Create a mini router with just the needed route
