@@ -1211,6 +1211,30 @@ FOR i IN nums
           </div>
         </div>
 
+        <!-- Time Series -->
+        <div class="mb-12" id="func-timeseries">
+          <h3 class="text-xl font-bold text-cyan-300 mb-6 flex items-center">
+            <span class="w-2 h-8 bg-cyan-500 rounded-full mr-3"></span>
+            Time Series
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30"
+                  >TIME_BUCKET(time, interval)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Buckets timestamp into fixed intervals.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TIME_BUCKET(date_str, "5m")</code></pre>
+            </div>
+          </div>
+        </div>
+
         <!-- String -->
         <div class="mb-12" id="func-string">
           <h3 class="text-xl font-bold text-purple-300 mb-6 flex items-center">

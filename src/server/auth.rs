@@ -505,3 +505,161 @@ pub async fn auth_middleware(
 
     Err(StatusCode::UNAUTHORIZED)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_and_verify_password() {
+        let password = "test_password_123";
+        let hash = AuthService::hash_password(password).unwrap();
+        
+        assert!(!hash.is_empty());
+        assert!(AuthService::verify_password(password, &hash));
+        assert!(!AuthService::verify_password("wrong_password", &hash));
+    }
+
+    #[test]
+    fn test_verify_password_invalid_hash() {
+        assert!(!AuthService::verify_password("password", "invalid_hash"));
+    }
+
+    #[test]
+    fn test_create_and_validate_jwt() {
+        let token = AuthService::create_jwt("testuser").unwrap();
+        
+        assert!(!token.is_empty());
+        
+        let claims = AuthService::validate_token(&token).unwrap();
+        assert_eq!(claims.sub, "testuser");
+        assert!(claims.exp > 0);
+        assert!(claims.livequery.is_none());
+    }
+
+    #[test]
+    fn test_validate_invalid_token() {
+        let result = AuthService::validate_token("invalid.token.here");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_livequery_jwt() {
+        let token = AuthService::create_livequery_jwt().unwrap();
+        
+        let claims = AuthService::validate_token(&token).unwrap();
+        assert_eq!(claims.sub, "livequery");
+        assert_eq!(claims.livequery, Some(true));
+    }
+
+    #[test]
+    fn test_generate_api_key() {
+        let (raw_key, hash) = AuthService::generate_api_key();
+        
+        // Key should start with sk_
+        assert!(raw_key.starts_with("sk_"));
+        
+        // Key should be 67 characters (sk_ + 64 hex chars)
+        assert_eq!(raw_key.len(), 67);
+        
+        // Hash should be 64 characters (SHA-256 hex)
+        assert_eq!(hash.len(), 64);
+        
+        // Hashing same key should produce same hash
+        let hash2 = AuthService::hash_api_key(&raw_key);
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_api_key_uniqueness() {
+        let (key1, _) = AuthService::generate_api_key();
+        let (key2, _) = AuthService::generate_api_key();
+        
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"test", b"test"));
+        assert!(!constant_time_eq(b"test", b"Test"));
+        assert!(!constant_time_eq(b"test", b"testing"));
+        assert!(!constant_time_eq(b"short", b"longer_string"));
+    }
+
+    #[test]
+    fn test_claims_struct() {
+        let claims = Claims {
+            sub: "user1".to_string(),
+            exp: 12345,
+            livequery: Some(true),
+        };
+        
+        assert_eq!(claims.sub, "user1");
+        assert_eq!(claims.exp, 12345);
+        assert_eq!(claims.livequery, Some(true));
+    }
+
+    #[test]
+    fn test_user_struct() {
+        let user = User {
+            username: "admin".to_string(),
+            password_hash: "hash123".to_string(),
+        };
+        
+        assert_eq!(user.username, "admin");
+        assert_eq!(user.password_hash, "hash123");
+    }
+
+    #[test]
+    fn test_api_key_struct() {
+        let api_key = ApiKey {
+            id: "key1".to_string(),
+            name: "My Key".to_string(),
+            key_hash: "hash123".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+        
+        assert_eq!(api_key.id, "key1");
+        assert_eq!(api_key.name, "My Key");
+    }
+
+    #[test]
+    fn test_claims_serialization() {
+        let claims = Claims {
+            sub: "user".to_string(),
+            exp: 1000,
+            livequery: None,
+        };
+        
+        let json = serde_json::to_string(&claims).unwrap();
+        assert!(json.contains("user"));
+        assert!(json.contains("1000"));
+        // livequery should be skipped when None
+        assert!(!json.contains("livequery"));
+        
+        let deserialized: Claims = serde_json::from_str(&json).unwrap();
+        assert_eq!(claims.sub, deserialized.sub);
+    }
+
+    #[test]
+    fn test_check_rate_limit_initial() {
+        // First call should succeed (using unique IP)
+        let result = check_rate_limit("192.168.1.1_test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_password_hash_different_each_time() {
+        let password = "same_password";
+        let hash1 = AuthService::hash_password(password).unwrap();
+        let hash2 = AuthService::hash_password(password).unwrap();
+        
+        // Hashes should be different due to random salt
+        assert_ne!(hash1, hash2);
+        
+        // But both should verify correctly
+        assert!(AuthService::verify_password(password, &hash1));
+        assert!(AuthService::verify_password(password, &hash2));
+    }
+}
+

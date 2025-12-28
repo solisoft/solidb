@@ -184,3 +184,136 @@ fn is_physical_shard_collection(name: &str) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_physical_shard_collection() {
+        // Should match physical shard collections
+        assert!(is_physical_shard_collection("users_s0"));
+        assert!(is_physical_shard_collection("users_s1"));
+        assert!(is_physical_shard_collection("users_s10"));
+        assert!(is_physical_shard_collection("orders_s99"));
+        
+        // Should not match regular collections
+        assert!(!is_physical_shard_collection("users"));
+        assert!(!is_physical_shard_collection("_system"));
+        assert!(!is_physical_shard_collection("user_settings"));
+        
+        // Should not match non-numeric suffixes
+        assert!(!is_physical_shard_collection("users_shard"));
+        assert!(!is_physical_shard_collection("users_s"));
+        assert!(!is_physical_shard_collection("users_ss1"));
+    }
+
+    #[test]
+    fn test_node_basic_stats_default() {
+        let stats = NodeBasicStats {
+            total_chunk_count: 100,
+            total_file_count: 50,
+            storage_bytes: 1024 * 1024,
+            total_memtable_size: 4096,
+            total_live_size: 512,
+            cpu_usage_percent: 25.5,
+            memory_used_mb: 256,
+        };
+        
+        assert_eq!(stats.total_chunk_count, 100);
+        assert_eq!(stats.total_file_count, 50);
+        assert_eq!(stats.memory_used_mb, 256);
+    }
+
+    #[test]
+    fn test_shard_stat() {
+        let stat = ShardStat {
+            id: 5,
+            primary: "node1".to_string(),
+            replicas: vec!["node2".to_string(), "node3".to_string()],
+            status: "Ready".to_string(),
+        };
+        
+        assert_eq!(stat.id, 5);
+        assert_eq!(stat.primary, "node1");
+        assert_eq!(stat.replicas.len(), 2);
+        assert_eq!(stat.status, "Ready");
+    }
+
+    #[test]
+    fn test_collection_stats() {
+        let stats = CollectionStats {
+            name: "users".to_string(),
+            database: "mydb".to_string(),
+            shard_count: 4,
+            replication_factor: 2,
+            document_count: 1000,
+            chunk_count: 50,
+            storage_bytes: 1024 * 1024 * 10,
+            shards: vec![],
+            status: "Ready".to_string(),
+            actions: vec![],
+        };
+        
+        assert_eq!(stats.name, "users");
+        assert_eq!(stats.shard_count, 4);
+        assert_eq!(stats.document_count, 1000);
+    }
+
+    #[test]
+    fn test_node_basic_stats_serialization() {
+        let stats = NodeBasicStats {
+            total_chunk_count: 10,
+            total_file_count: 5,
+            storage_bytes: 1000,
+            total_memtable_size: 500,
+            total_live_size: 200,
+            cpu_usage_percent: 15.0,
+            memory_used_mb: 128,
+        };
+        
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("total_chunk_count"));
+        assert!(json.contains("cpu_usage_percent"));
+        
+        let deserialized: NodeBasicStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(stats.total_chunk_count, deserialized.total_chunk_count);
+    }
+
+    #[test]
+    fn test_collection_stats_with_shards() {
+        let shards = vec![
+            ShardStat {
+                id: 0,
+                primary: "node1".to_string(),
+                replicas: vec!["node2".to_string()],
+                status: "Ready".to_string(),
+            },
+            ShardStat {
+                id: 1,
+                primary: "node2".to_string(),
+                replicas: vec!["node3".to_string()],
+                status: "Syncing".to_string(),
+            },
+        ];
+        
+        let stats = CollectionStats {
+            name: "orders".to_string(),
+            database: "shop".to_string(),
+            shard_count: 2,
+            replication_factor: 2,
+            document_count: 5000,
+            chunk_count: 100,
+            storage_bytes: 50 * 1024 * 1024,
+            shards,
+            status: "Ready".to_string(),
+            actions: vec!["Rebalancing".to_string()],
+        };
+        
+        assert_eq!(stats.shards.len(), 2);
+        assert_eq!(stats.shards[0].status, "Ready");
+        assert_eq!(stats.shards[1].status, "Syncing");
+        assert_eq!(stats.actions.len(), 1);
+    }
+}
+

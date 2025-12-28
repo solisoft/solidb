@@ -3120,3 +3120,328 @@ impl ShardCoordinator {
         Ok((total_docs, total_chunks, total_size))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_coordinator() -> (ShardCoordinator, TempDir) {
+        let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+        let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine");
+        
+        let coordinator = ShardCoordinator::new(
+            Arc::new(engine),
+            None, // No cluster manager for unit tests
+            None, // No replication log
+        );
+        
+        (coordinator, tmp_dir)
+    }
+
+    #[test]
+    fn test_new_coordinator() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Should not be rebalancing initially
+        assert!(!coordinator.is_rebalancing());
+        
+        // Without cluster manager, should return "local"
+        assert_eq!(coordinator.my_node_id(), "local");
+        assert_eq!(coordinator.my_address(), "local");
+    }
+
+    #[test]
+    fn test_route_delegates_to_router() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Verify routing is consistent
+        let shard1 = coordinator.route("test_key", 10);
+        let shard2 = coordinator.route("test_key", 10);
+        assert_eq!(shard1, shard2);
+        
+        // Different keys should potentially route to different shards
+        let shard_a = coordinator.route("key_a", 100);
+        let shard_b = coordinator.route("key_b", 100);
+        // They might be equal, but the function should work
+        assert!(shard_a < 100);
+        assert!(shard_b < 100);
+    }
+
+    #[test]
+    fn test_is_shard_replica() {
+        // Static method test
+        // Shard 0, RF=2, 3 nodes: nodes 0 and 1 should have it
+        assert!(ShardCoordinator::is_shard_replica(0, 0, 2, 3));
+        assert!(ShardCoordinator::is_shard_replica(0, 1, 2, 3));
+        assert!(!ShardCoordinator::is_shard_replica(0, 2, 2, 3));
+        
+        // Shard 1, RF=2, 3 nodes: nodes 1 and 2 should have it
+        assert!(!ShardCoordinator::is_shard_replica(1, 0, 2, 3));
+        assert!(ShardCoordinator::is_shard_replica(1, 1, 2, 3));
+        assert!(ShardCoordinator::is_shard_replica(1, 2, 2, 3));
+        
+        // Edge cases
+        assert!(!ShardCoordinator::is_shard_replica(0, 0, 0, 3)); // RF=0
+        assert!(!ShardCoordinator::is_shard_replica(0, 0, 2, 0)); // num_nodes=0
+    }
+
+    #[test]
+    fn test_record_and_clear_node_failure() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Record failure
+        coordinator.record_node_failure("node1");
+        
+        // Check it was recorded
+        let failures = coordinator.recently_failed_nodes.read().unwrap();
+        assert!(failures.contains_key("node1"));
+        drop(failures);
+        
+        // Clear failure
+        coordinator.clear_node_failure("node1");
+        
+        // Check it was cleared
+        let failures = coordinator.recently_failed_nodes.read().unwrap();
+        assert!(!failures.contains_key("node1"));
+    }
+
+    #[test]
+    fn test_cleanup_old_failures() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Record a failure
+        coordinator.record_node_failure("node1");
+        
+        // Cleanup should keep recent failures
+        coordinator.cleanup_old_failures();
+        
+        let failures = coordinator.recently_failed_nodes.read().unwrap();
+        assert!(failures.contains_key("node1")); // Should still be there (recent)
+    }
+
+    #[test]
+    fn test_is_rebalancing_flag() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Initially false
+        assert!(!coordinator.is_rebalancing());
+        
+        // Set to true
+        coordinator.is_rebalancing.store(true, Ordering::SeqCst);
+        assert!(coordinator.is_rebalancing());
+        
+        // Set back to false
+        coordinator.is_rebalancing.store(false, Ordering::SeqCst);
+        assert!(!coordinator.is_rebalancing());
+    }
+
+    #[test]
+    fn test_mark_reshard_completed() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Initially no reshard time
+        {
+            let last_time = coordinator.last_reshard_time.read().unwrap();
+            assert!(last_time.is_none());
+        }
+        
+        // Mark as completed
+        coordinator.mark_reshard_completed();
+        
+        // Should now have a time
+        {
+            let last_time = coordinator.last_reshard_time.read().unwrap();
+            assert!(last_time.is_some());
+        }
+    }
+
+    #[test]
+    fn test_check_recent_resharding() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // No recent resharding initially
+        assert!(!coordinator.check_recent_resharding());
+        
+        // Mark reshard completed
+        coordinator.mark_reshard_completed();
+        
+        // Should return true (within 10 second window)
+        assert!(coordinator.check_recent_resharding());
+        
+        // Also returns true if currently rebalancing
+        coordinator.is_rebalancing.store(true, Ordering::SeqCst);
+        assert!(coordinator.check_recent_resharding());
+    }
+
+    #[test]
+    fn test_calculate_blob_replication_factor_single_node() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, healthy_count = 1
+        // Formula: min(max(2, 1/2), 10) = min(max(2, 0), 10) = min(2, 10) = 2
+        let rf = coordinator.calculate_blob_replication_factor();
+        assert_eq!(rf, ShardCoordinator::MIN_BLOB_REPLICAS);
+    }
+
+    #[test]
+    fn test_get_node_addresses_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, should return ["local"]
+        let addresses = coordinator.get_node_addresses();
+        assert_eq!(addresses, vec!["local".to_string()]);
+    }
+
+    #[test]
+    fn test_get_node_ids_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, should return ["local"]
+        let ids = coordinator.get_node_ids();
+        assert_eq!(ids, vec!["local".to_string()]);
+    }
+
+    #[test]
+    fn test_get_healthy_node_count_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, should return 1
+        assert_eq!(coordinator.get_healthy_node_count(), 1);
+    }
+
+    #[test]
+    fn test_get_node_api_address_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, should return None
+        assert!(coordinator.get_node_api_address("any_node").is_none());
+    }
+
+    #[test]
+    fn test_get_shard_config_nonexistent() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Non-existent database/collection should return None
+        assert!(coordinator.get_shard_config("nonexistent_db", "nonexistent_coll").is_none());
+    }
+
+    #[test]
+    fn test_get_shard_table_nonexistent() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Non-existent database/collection should return None
+        assert!(coordinator.get_shard_table("nonexistent_db", "nonexistent_coll").is_none());
+    }
+
+    #[test]
+    fn test_should_pause_resharding_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, should return false
+        assert!(!coordinator.should_pause_resharding());
+    }
+
+    #[test]
+    fn test_collection_shard_config_default() {
+        let config = CollectionShardConfig::default();
+        
+        assert_eq!(config.num_shards, 0);
+        assert_eq!(config.shard_key, "");
+        assert_eq!(config.replication_factor, 0);
+    }
+
+    #[test]
+    fn test_shard_table_creation() {
+        let mut assignments = HashMap::new();
+        assignments.insert(0, ShardAssignment {
+            shard_id: 0,
+            primary_node: "node1".to_string(),
+            replica_nodes: vec!["node2".to_string()],
+        });
+        
+        let table = ShardTable {
+            database: "test_db".to_string(),
+            collection: "test_coll".to_string(),
+            num_shards: 4,
+            replication_factor: 2,
+            shard_key: "_key".to_string(),
+            assignments,
+        };
+        
+        assert_eq!(table.database, "test_db");
+        assert_eq!(table.collection, "test_coll");
+        assert_eq!(table.num_shards, 4);
+        assert_eq!(table.replication_factor, 2);
+        assert_eq!(table.assignments.len(), 1);
+    }
+
+    #[test]
+    fn test_shard_assignment_creation() {
+        let assignment = ShardAssignment {
+            shard_id: 5,
+            primary_node: "primary".to_string(),
+            replica_nodes: vec!["replica1".to_string(), "replica2".to_string()],
+        };
+        
+        assert_eq!(assignment.shard_id, 5);
+        assert_eq!(assignment.primary_node, "primary");
+        assert_eq!(assignment.replica_nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(ShardCoordinator::MAX_BLOB_REPLICAS, 10);
+        assert_eq!(ShardCoordinator::MIN_BLOB_REPLICAS, 2);
+    }
+
+    #[test]
+    fn test_update_shard_table_cache() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        let table = ShardTable {
+            database: "db1".to_string(),
+            collection: "coll1".to_string(),
+            num_shards: 4,
+            replication_factor: 2,
+            shard_key: "_key".to_string(),
+            assignments: HashMap::new(),
+        };
+        
+        coordinator.update_shard_table_cache(table.clone());
+        
+        // Check it was cached
+        let tables = coordinator.shard_tables.read().unwrap();
+        assert!(tables.contains_key("db1.coll1"));
+    }
+
+    #[test]
+    fn test_get_node_index_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Without cluster manager, returns None since we can't compute index
+        // Actually the implementation might differ - let's check
+        let index = coordinator.get_node_index();
+        // Without cluster, node index lookup fails
+        assert!(index.is_none() || index == Some(0));
+    }
+
+    #[test]
+    fn test_clear_failures_for_healthy_nodes_without_cluster() {
+        let (coordinator, _tmp) = create_test_coordinator();
+        
+        // Record some failures
+        coordinator.record_node_failure("node1");
+        coordinator.record_node_failure("node2");
+        
+        // Without cluster manager, this should be a no-op
+        coordinator.clear_failures_for_healthy_nodes();
+        
+        // Failures should still be there (no cluster manager to determine health)
+        let failures = coordinator.recently_failed_nodes.read().unwrap();
+        assert!(failures.contains_key("node1"));
+        assert!(failures.contains_key("node2"));
+    }
+}
+

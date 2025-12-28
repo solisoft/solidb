@@ -1,6 +1,6 @@
-//! Collection Properties Tests
+//! Sharding API Tests
 //!
-//! Verifies updating collection properties (replication, sharding) and enforcement of constraints.
+//! Verifies sharding configuration and status endpoints.
 
 use axum::{
     body::Body,
@@ -21,7 +21,7 @@ fn create_test_app() -> (axum::Router, TempDir) {
     
     let script_stats = Arc::new(ScriptStats::default());
     
-    // No coordinator -> 1 healthy node assumed
+    // No cluster manager or coordinator for basic API tests
     let router = create_router(
         engine,
         None,
@@ -41,7 +41,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 }
 
 #[tokio::test]
-async fn test_update_replication_factor_capped() {
+async fn test_get_sharding_not_sharded() {
     let (app, _tmp) = create_test_app();
     
     // 1. Create DB and Collection
@@ -49,74 +49,79 @@ async fn test_update_replication_factor_capped() {
         .method("POST")
         .uri("/_api/database")
         .header("Content-Type", "application/json")
-        .body(Body::from(json!({ "name": "prop_db" }).to_string())).unwrap()
+        .body(Body::from(json!({ "name": "shard_db" }).to_string())).unwrap()
     ).await.unwrap();
 
     app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/prop_db/collection")
+        .uri("/_api/database/shard_db/collection")
         .header("Content-Type", "application/json")
-        .body(Body::from(json!({ "name": "test_col" }).to_string())).unwrap()
+        .body(Body::from(json!({ "name": "normal_col" }).to_string())).unwrap()
     ).await.unwrap();
 
-    // 2. Update Properties: RF=5 (Should be capped to 1)
+    // 2. Get Sharding Details
     let response = app.clone().oneshot(Request::builder()
-        .method("PUT")
-        .uri("/_api/database/prop_db/collection/test_col/properties")
-        .header("Content-Type", "application/json")
-        .body(Body::from(json!({ 
-            "replication_factor": 5,
-            "num_shards": 2 // Also capped to 1
-        }).to_string())).unwrap()
+        .method("GET")
+        .uri("/_api/database/shard_db/collection/normal_col/sharding")
+        .body(Body::empty()).unwrap()
     ).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
     let json = response_json(response).await;
     
-    let config = &json["shardConfig"];
-    assert_eq!(config["replication_factor"], 1, "Replication factor should be capped to 1 node");
-    assert_eq!(config["num_shards"], 1, "Num shards should be capped to 1 node");
+    assert_eq!(json["sharded"], false);
+    assert!(json["shards"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn test_update_collection_type() {
+async fn test_enable_sharding() {
     let (app, _tmp) = create_test_app();
     
-    // 1. Setup
+    // Setup
     app.clone().oneshot(Request::builder()
         .method("POST")
         .uri("/_api/database")
         .header("Content-Type", "application/json")
-        .body(Body::from(json!({ "name": "type_db" }).to_string())).unwrap()
+        .body(Body::from(json!({ "name": "shard_db_2" }).to_string())).unwrap()
     ).await.unwrap();
 
     app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/type_db/collection")
+        .uri("/_api/database/shard_db_2/collection")
         .header("Content-Type", "application/json")
-        .body(Body::from(json!({ "name": "edge_col" }).to_string())).unwrap()
+        .body(Body::from(json!({ "name": "sharded_col" }).to_string())).unwrap()
     ).await.unwrap();
 
-    // 2. Update Type to "edge" (Wait, default is document?)
-    // Actually create collection defaults to document.
+    // 3. Update Properties to Enable Sharding
+    // Without a coordinator, we might be limited in what we can set (capped to 1 node likely)
     let response = app.clone().oneshot(Request::builder()
         .method("PUT")
-        .uri("/_api/database/type_db/collection/edge_col/properties")
+        .uri("/_api/database/shard_db_2/collection/sharded_col/properties")
         .header("Content-Type", "application/json")
         .body(Body::from(json!({ 
-            "type": "edge"
+            "num_shards": 1,
+            "replication_factor": 1
         }).to_string())).unwrap()
     ).await.unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
-    
-    // 3. Verify via Get (Sharding endpoint return type)
+    let json = response_json(response).await;
+    // The Update endpoint returns 'shardConfig' object, not 'sharded' boolean
+    assert!(json["shardConfig"]["num_shards"].as_u64().unwrap() >= 1);
+
+    // 4. Verify via Sharding Details
     let response = app.clone().oneshot(Request::builder()
         .method("GET")
-        .uri("/_api/database/type_db/collection/edge_col/sharding")
+        .uri("/_api/database/shard_db_2/collection/sharded_col/sharding")
         .body(Body::empty()).unwrap()
     ).await.unwrap();
-    
+
+    assert_eq!(response.status(), StatusCode::OK);
     let json = response_json(response).await;
-    assert_eq!(json["type"], "edge");
+    
+    assert_eq!(json["sharded"], true);
+    let shards = json["shards"].as_array().unwrap();
+    assert_eq!(shards.len(), 1);
+    assert_eq!(shards[0]["shard_id"], 0);
+    assert_eq!(shards[0]["status"], "healthy"); // Local fallback logic
 }

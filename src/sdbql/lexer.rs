@@ -429,3 +429,196 @@ impl Lexer {
         Ok(tokens)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tokenize(input: &str) -> Vec<Token> {
+        Lexer::new(input).tokenize().unwrap()
+    }
+
+    #[test]
+    fn test_keywords() {
+        let tokens = tokenize("FOR IN FILTER SORT LIMIT RETURN LET ASC DESC");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::In);
+        assert_eq!(tokens[2], Token::Filter);
+        assert_eq!(tokens[3], Token::Sort);
+        assert_eq!(tokens[4], Token::Limit);
+        assert_eq!(tokens[5], Token::Return);
+        assert_eq!(tokens[6], Token::Let);
+        assert_eq!(tokens[7], Token::Asc);
+        assert_eq!(tokens[8], Token::Desc);
+    }
+
+    #[test]
+    fn test_keywords_case_insensitive() {
+        assert_eq!(tokenize("for")[0], Token::For);
+        assert_eq!(tokenize("FOR")[0], Token::For);
+        assert_eq!(tokenize("For")[0], Token::For);
+    }
+
+    #[test]
+    fn test_boolean_null() {
+        assert_eq!(tokenize("TRUE")[0], Token::True);
+        assert_eq!(tokenize("FALSE")[0], Token::False);
+        assert_eq!(tokenize("NULL")[0], Token::Null);
+    }
+
+    #[test]
+    fn test_logical_operators() {
+        assert_eq!(tokenize("AND")[0], Token::And);
+        assert_eq!(tokenize("OR")[0], Token::Or);
+        assert_eq!(tokenize("NOT")[0], Token::Not);
+    }
+
+    #[test]
+    fn test_graph_keywords() {
+        assert_eq!(tokenize("OUTBOUND")[0], Token::Outbound);
+        assert_eq!(tokenize("INBOUND")[0], Token::Inbound);
+        assert_eq!(tokenize("ANY")[0], Token::Any);
+        assert_eq!(tokenize("GRAPH")[0], Token::Graph);
+    }
+
+    #[test]
+    fn test_identifiers() {
+        assert_eq!(tokenize("myVar")[0], Token::Identifier("myVar".to_string()));
+        assert_eq!(tokenize("_private")[0], Token::Identifier("_private".to_string()));
+        assert_eq!(tokenize("var123")[0], Token::Identifier("var123".to_string()));
+    }
+
+    #[test]
+    fn test_quoted_identifier() {
+        assert_eq!(tokenize("`my field`")[0], Token::Identifier("my field".to_string()));
+    }
+
+    #[test]
+    fn test_bind_variables() {
+        assert_eq!(tokenize("@name")[0], Token::BindVar("name".to_string()));
+        assert_eq!(tokenize("@_id")[0], Token::BindVar("_id".to_string()));
+        assert_eq!(tokenize("@var123")[0], Token::BindVar("var123".to_string()));
+    }
+
+    #[test]
+    fn test_integers() {
+        assert_eq!(tokenize("123")[0], Token::Integer(123));
+        assert_eq!(tokenize("0")[0], Token::Integer(0));
+        assert_eq!(tokenize("999999")[0], Token::Integer(999999));
+    }
+
+    #[test]
+    fn test_floats() {
+        assert_eq!(tokenize("3.14")[0], Token::Float(3.14));
+        assert_eq!(tokenize("0.5")[0], Token::Float(0.5));
+        assert_eq!(tokenize("100.0")[0], Token::Float(100.0));
+    }
+
+    #[test]
+    fn test_strings() {
+        assert_eq!(tokenize("\"hello\"")[0], Token::String("hello".to_string()));
+        assert_eq!(tokenize("'world'")[0], Token::String("world".to_string()));
+        assert_eq!(tokenize("\"\"")[0], Token::String("".to_string()));
+    }
+
+    #[test]
+    fn test_string_escapes() {
+        assert_eq!(tokenize("\"hello\\nworld\"")[0], Token::String("hello\nworld".to_string()));
+        assert_eq!(tokenize("\"tab\\there\"")[0], Token::String("tab\there".to_string()));
+        assert_eq!(tokenize("\"quote\\\"here\"")[0], Token::String("quote\"here".to_string()));
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        assert_eq!(tokenize("==")[0], Token::Equal);
+        assert_eq!(tokenize("!=")[0], Token::NotEqual);
+        assert_eq!(tokenize("<")[0], Token::LessThan);
+        assert_eq!(tokenize("<=")[0], Token::LessThanEq);
+        assert_eq!(tokenize(">")[0], Token::GreaterThan);
+        assert_eq!(tokenize(">=")[0], Token::GreaterThanEq);
+        assert_eq!(tokenize("=")[0], Token::Assign);
+    }
+
+    #[test]
+    fn test_regex_operators() {
+        assert_eq!(tokenize("=~")[0], Token::RegEx);
+        assert_eq!(tokenize("!~")[0], Token::NotRegEx);
+    }
+
+    #[test]
+    fn test_arithmetic_operators() {
+        assert_eq!(tokenize("+")[0], Token::Plus);
+        assert_eq!(tokenize("-")[0], Token::Minus);
+        assert_eq!(tokenize("*")[0], Token::Star);
+        assert_eq!(tokenize("/")[0], Token::Slash);
+    }
+
+    #[test]
+    fn test_delimiters() {
+        assert_eq!(tokenize(".")[0], Token::Dot);
+        assert_eq!(tokenize("..")[0], Token::DotDot);
+        assert_eq!(tokenize(",")[0], Token::Comma);
+        assert_eq!(tokenize("{")[0], Token::LeftBrace);
+        assert_eq!(tokenize("}")[0], Token::RightBrace);
+        assert_eq!(tokenize("[")[0], Token::LeftBracket);
+        assert_eq!(tokenize("]")[0], Token::RightBracket);
+        assert_eq!(tokenize("(")[0], Token::LeftParen);
+        assert_eq!(tokenize(")")[0], Token::RightParen);
+        assert_eq!(tokenize(":")[0], Token::Colon);
+        assert_eq!(tokenize("?")[0], Token::Question);
+    }
+
+    #[test]
+    fn test_eof() {
+        let tokens = tokenize("");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Eof);
+    }
+
+    #[test]
+    fn test_whitespace_handling() {
+        let tokens = tokenize("  FOR   IN  ");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::In);
+    }
+
+    #[test]
+    fn test_complete_query() {
+        let query = "FOR doc IN users FILTER doc.age > 18 RETURN doc";
+        let tokens = tokenize(query);
+        
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+        assert_eq!(tokens[4], Token::Filter);
+    }
+
+    #[test]
+    fn test_number_before_range() {
+        // "1..10" should tokenize as Integer(1), DotDot, Integer(10)
+        let tokens = tokenize("1..10");
+        assert_eq!(tokens[0], Token::Integer(1));
+        assert_eq!(tokens[1], Token::DotDot);
+        assert_eq!(tokens[2], Token::Integer(10));
+    }
+
+    #[test]
+    fn test_error_unterminated_string() {
+        let result = Lexer::new("\"unterminated").tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_empty_bind_var() {
+        let result = Lexer::new("@").tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_error_unexpected_char() {
+        let result = Lexer::new("$").tokenize();
+        assert!(result.is_err());
+    }
+}
+

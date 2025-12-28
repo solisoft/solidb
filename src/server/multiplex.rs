@@ -119,3 +119,62 @@ impl axum::serve::Listener for ChannelListener {
         Ok(self.local_addr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_peeked_stream_reconstruction() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.write_all(b"1234567890").await.unwrap();
+        });
+
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 5];
+        socket.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"12345");
+        
+        let mut peeked_stream = PeekedStream::new(socket, buf.to_vec());
+        let mut content = Vec::new();
+        peeked_stream.read_to_end(&mut content).await.unwrap();
+        
+        assert_eq!(content, b"1234567890");
+    }
+
+    #[tokio::test]
+    async fn test_peeked_stream_partial_read() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.write_all(b"ABCDEFGHIJ").await.unwrap();
+        });
+
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 3];
+        socket.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"ABC"); // Left: DEFGHIJ
+        
+        let mut peeked_stream = PeekedStream::new(socket, buf.to_vec());
+        
+        let mut small_buf = [0u8; 2];
+        peeked_stream.read_exact(&mut small_buf).await.unwrap();
+        assert_eq!(&small_buf, b"AB");
+        
+        let mut med_buf = [0u8; 3];
+        peeked_stream.read_exact(&mut med_buf).await.unwrap();
+        assert_eq!(&med_buf, b"CDE");
+        
+        let mut content = String::new();
+        peeked_stream.read_to_string(&mut content).await.unwrap();
+        assert_eq!(content, "FGHIJ");
+    }
+}

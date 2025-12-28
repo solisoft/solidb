@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use uuid::Uuid;
 
 use super::document::Document;
 use super::geo::{GeoIndex, GeoIndexStats};
@@ -103,7 +104,7 @@ pub struct Collection {
     /// Broadcast channel for real-time change events
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
     /// Collection type (document, edge, blob)
-    pub collection_type: String,
+    pub collection_type: Arc<RwLock<String>>,
 }
 
 impl Clone for Collection {
@@ -196,13 +197,13 @@ impl Collection {
             count_dirty: Arc::new(AtomicBool::new(false)),
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
-            collection_type,
+            collection_type: Arc::new(RwLock::new(collection_type)),
         }
     }
 
     /// Get collection type
-    pub fn get_type(&self) -> &str {
-        &self.collection_type
+    pub fn get_type(&self) -> String {
+        self.collection_type.read().unwrap().clone()
     }
 
     /// Set collection type (persists to disk)
@@ -215,6 +216,10 @@ impl Collection {
         db.put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
             
+        // Update in-memory state
+        let mut mg = self.collection_type.write().unwrap();
+        *mg = type_.to_string();
+
         Ok(())
     }
 
@@ -389,6 +394,66 @@ impl Collection {
         Ok(())
     }
 
+    /// Prune documents older than a specified timestamp (Timeseries only)
+    pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<usize> {
+        // Enforce collection type
+        if *self.collection_type.read().unwrap() != "timeseries" {
+             return Err(DbError::OperationNotSupported("Pruning only supported on timeseries collections".to_string()));
+        }
+
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+
+        // Construct End Key (UUIDv7-compatible lower bound from timestamp)
+        // UUIDv7: 48 bits timestamp at the top.
+        // We construct a 128-bit integer where the top 48 bits are the timestamp.
+        let end_uuid_int = (timestamp_ms as u128) << 80;
+        let end_uuid = Uuid::from_u128(end_uuid_int);
+        // We construct the key string
+        let end_key_str = end_uuid.to_string();
+        
+        let start_key = Self::doc_key("");
+        let end_key = Self::doc_key(&end_key_str);
+        
+        // Count items to be deleted (scanning keys only)
+        // Optimization: For massive retention policies, this scan might be costly.
+        // But maintaining accurate doc_count is important.
+        let iter = db.iterator_cf(
+            cf, 
+            rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward)
+        );
+        
+        let mut count = 0;
+        
+        for item in iter {
+             match item {
+                 Ok((k, _)) => {
+                     // Check if we are still within "doc:" prefix
+                     if !k.starts_with(&start_key[0..4]) {
+                         break; 
+                     }
+                     // Check if we reached the end key
+                     // Lexicographical comparison of bytes matches UUID comparison
+                     if k.as_ref() >= end_key.as_slice() {
+                         break;
+                     }
+                     count += 1;
+                 },
+                 Err(_) => break,
+             }
+        }
+        
+        if count > 0 {
+             db.delete_range_cf(cf, &start_key, &end_key)
+                 .map_err(|e| DbError::InternalError(format!("Prune failed: {}", e)))?;
+                 
+             self.doc_count.fetch_sub(count, Ordering::Relaxed);
+             self.count_dirty.store(true, Ordering::Relaxed);
+        }
+        
+        Ok(count)
+    }
+
     // ==================== Document Operations ====================
 
     /// Insert a document into the collection
@@ -472,7 +537,7 @@ impl Collection {
             return Ok(0);
         }
 
-        if self.collection_type == "timeseries" {
+        if *self.collection_type.read().unwrap() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Upsert (update) operations are not allowed on timeseries collections. Use insert_batch instead.".to_string(),
             ));
@@ -671,7 +736,7 @@ impl Collection {
     /// Internal insert implementation
     fn insert_internal(&self, mut data: Value, update_indexes: bool) -> DbResult<Document> {
         // Validate edge documents
-        if self.collection_type == "edge" {
+        if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&data)?;
         }
 
@@ -754,7 +819,7 @@ impl Collection {
 
     /// Update a document
     pub fn update(&self, key: &str, data: Value) -> DbResult<Document> {
-        if self.collection_type == "timeseries" {
+        if *self.collection_type.read().unwrap() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -769,7 +834,7 @@ impl Collection {
         let new_value = doc.to_value();
 
         // Validate edge documents after update
-        if self.collection_type == "edge" {
+        if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&new_value)?;
         }
 
@@ -811,7 +876,7 @@ impl Collection {
         expected_rev: &str,
         data: Value,
     ) -> DbResult<Document> {
-        if self.collection_type == "timeseries" {
+        if *self.collection_type.read().unwrap() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
             ));
@@ -865,63 +930,7 @@ impl Collection {
         Ok(doc)
     }
 
-    /// Prune documents older than the given Unix timestamp (milliseconds)
-    /// Efficiently deletes a range of keys. Only works correctly if keys are time-ordered (like UUIDv7).
-    pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<()> {
-        use std::sync::atomic::Ordering;
-        
-        let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
 
-        // Construct a UUIDv7 for this timestamp to serve as the end bound (exclusive)
-        // UUID structure allows lexicographical comparison to match time order
-        let seconds = timestamp_ms / 1000;
-        let nanos = (timestamp_ms % 1000) as u32 * 1_000_000;
-        let ts = uuid::Timestamp::from_unix(uuid::NoContext, seconds, nanos);
-        let end_uuid = uuid::Uuid::new_v7(ts);
-
-        // Range: From "doc:" to "doc:<end_uuid>"
-        // This covers all documents created before the timestamp
-        let start_key = format!("{}", DOC_PREFIX).into_bytes();
-        let end_key = Self::doc_key(&end_uuid.to_string());
-
-        // Perform range deletion
-        db.delete_range_cf(cf, &start_key, &end_key)
-            .map_err(|e| DbError::InternalError(format!("Failed to prune range: {}", e)))?;
-
-        // Mark count as dirty since we don't know how many were deleted
-        self.count_dirty.store(true, Ordering::Relaxed);
-
-        // Also broadcast a generic "prune" event or multiple deletes?
-        // Since this is a bulk operation, we might skip individual notifications for performance
-        // or send a special "CollectionPruned" event if needed.
-
-        // Also clean up indexes?
-        // WARNING: delete_range_cf ONLY deletes the valid Key-Value range in RocksDB.
-        // It DOES NOT automatically remove entries from secondary indexes (idx:, ft:, geo:, etc.)
-        // This creates "dangling pointers" in indexes.
-        // Standard SQL DBs would scan and delete.
-        // For high-performance Time Series, we ideally don't use secondary indexes or we accept they might be loose.
-        // OR we have to implement a "Range Delete" logic for indexes too if they are time-based?
-        // BUT our indexes are not time-ordered (key is value, value is doc_id).
-        
-        // Strategy: 
-        // 1. If no secondary indexes, this is 100% safe.
-        // 2. If indexes exist, we have a problem.
-        //    We must either:
-        //    a) Iterate and delete (slow)
-        //    b) Accept dangling index entries (they will point to non-existent docs)
-        
-        // For 'timeseries' optimized for WRITE/PRUNE, we usually avoid secondary indexes or accept cleanup cost.
-        // SoliDB `get` checks existence. If index points to missing doc, `get` fails "DocumentNotFound".
-        // `query` might return phantom results?
-        // SoliDB's `Index` usage: `idx_entry_key` -> `doc_key`.
-        // If we query an index, we get a list of doc_keys. We then fetch docs.
-        // If doc is missing, we should handle it gracefully in the query executor.
-        // Let's ensure query executor handles missing docs.
-
-        Ok(()) 
-    }
 
     /// Delete a document
     pub fn delete(&self, key: &str) -> DbResult<()> {
@@ -940,7 +949,7 @@ impl Collection {
         }
 
         // If blob collection, delete chunks
-        if self.collection_type == "blob" {
+        if *self.collection_type.read().unwrap() == "blob" {
             self.delete_blob_data(key)?;
         }
 
@@ -994,7 +1003,7 @@ impl Collection {
                     batch.delete_cf(cf, Self::doc_key(key));
                     
                     // Handle blobs
-                    if self.collection_type == "blob" {
+                    if *self.collection_type.read().unwrap() == "blob" {
                         // This might fail partial batch if error? 
                         // But blob chunks are separate keys.
                         // We can call delete_blob_data (which does its own deletes).
@@ -1752,7 +1761,7 @@ impl Collection {
     // ==================== Index Operations ====================
 
     /// Get all index metadata
-    fn get_all_indexes(&self) -> Vec<Index> {
+    pub fn get_all_indexes(&self) -> Vec<Index> {
         let db = self.db.read().unwrap();
         let cf = db
             .cf_handle(&self.name)
@@ -3315,4 +3324,180 @@ impl Collection {
         Ok(total_deleted)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_doc_key() {
+        let key = Collection::doc_key("user123");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(DOC_PREFIX));
+        assert!(key_str.contains("user123"));
+    }
+
+    #[test]
+    fn test_blo_chunk_key() {
+        let key = Collection::blo_chunk_key("file1", 5);
+        let key_str = String::from_utf8(key.clone()).unwrap();
+        assert!(key_str.starts_with(BLO_PREFIX));
+        assert!(key_str.contains("file1"));
+    }
+
+    #[test]
+    fn test_idx_meta_key() {
+        let key = Collection::idx_meta_key("idx_name");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(IDX_META_PREFIX));
+        assert!(key_str.contains("idx_name"));
+    }
+
+    #[test]
+    fn test_idx_entry_key() {
+        let values = vec![json!("value1"), json!(42)];
+        let key = Collection::idx_entry_key("myindex", &values, "doc1");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(IDX_PREFIX));
+        assert!(key_str.contains("myindex"));
+    }
+
+    #[test]
+    fn test_geo_meta_key() {
+        let key = Collection::geo_meta_key("geo_idx");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(GEO_META_PREFIX));
+    }
+
+    #[test]
+    fn test_geo_entry_key() {
+        let key = Collection::geo_entry_key("geo_idx", "doc1");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(GEO_PREFIX));
+    }
+
+    #[test]
+    fn test_ft_meta_key() {
+        let key = Collection::ft_meta_key("fulltext_idx");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(FT_META_PREFIX));
+    }
+
+    #[test]
+    fn test_ft_ngram_key() {
+        let key = Collection::ft_ngram_key("ft_idx", "hel", "doc1");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(FT_PREFIX));
+    }
+
+    #[test]
+    fn test_ft_term_key() {
+        let key = Collection::ft_term_key("ft_idx", "hello", "doc1");
+        let key_str = String::from_utf8(key).unwrap();
+        assert!(key_str.starts_with(FT_TERM_PREFIX));
+    }
+
+    #[test]
+    fn test_change_type_serialization() {
+        let insert = ChangeType::Insert;
+        let json = serde_json::to_string(&insert).unwrap();
+        assert_eq!(json, "\"insert\"");
+
+        let update = ChangeType::Update;
+        let json = serde_json::to_string(&update).unwrap();
+        assert_eq!(json, "\"update\"");
+
+        let delete = ChangeType::Delete;
+        let json = serde_json::to_string(&delete).unwrap();
+        assert_eq!(json, "\"delete\"");
+    }
+
+    #[test]
+    fn test_change_event_creation() {
+        let event = ChangeEvent {
+            type_: ChangeType::Insert,
+            key: "doc1".to_string(),
+            data: Some(json!({"name": "Alice"})),
+            old_data: None,
+        };
+
+        assert_eq!(event.key, "doc1");
+        assert!(event.data.is_some());
+        assert!(event.old_data.is_none());
+    }
+
+    #[test]
+    fn test_change_event_serialization() {
+        let event = ChangeEvent {
+            type_: ChangeType::Update,
+            key: "doc1".to_string(),
+            data: Some(json!({"a": 1})),
+            old_data: Some(json!({"a": 0})),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"update\""));
+        assert!(json.contains("\"key\":\"doc1\""));
+    }
+
+    #[test]
+    fn test_collection_stats() {
+        let stats = CollectionStats {
+            name: "users".to_string(),
+            document_count: 1000,
+            chunk_count: 50,
+            disk_usage: DiskUsage {
+                sst_files_size: 1024 * 1024,
+                live_data_size: 512 * 1024,
+                num_sst_files: 5,
+                memtable_size: 64 * 1024,
+            },
+        };
+
+        assert_eq!(stats.name, "users");
+        assert_eq!(stats.document_count, 1000);
+        assert_eq!(stats.disk_usage.num_sst_files, 5);
+    }
+
+    #[test]
+    fn test_disk_usage_serialization() {
+        let usage = DiskUsage {
+            sst_files_size: 100,
+            live_data_size: 50,
+            num_sst_files: 2,
+            memtable_size: 10,
+        };
+
+        let json = serde_json::to_string(&usage).unwrap();
+        let deserialized: DiskUsage = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(usage.sst_files_size, deserialized.sst_files_size);
+        assert_eq!(usage.num_sst_files, deserialized.num_sst_files);
+    }
+
+    #[test]
+    fn test_default_min_length() {
+        assert_eq!(default_min_length(), 3);
+    }
+
+    #[test]
+    fn test_fulltext_index_deserialization() {
+        let json = r#"{"name": "ft_idx", "field": "content", "min_length": 2}"#;
+        let idx: FulltextIndex = serde_json::from_str(json).unwrap();
+        
+        assert_eq!(idx.name, "ft_idx");
+        assert_eq!(idx.fields.len(), 1);
+        assert_eq!(idx.min_length, 2);
+    }
+
+    #[test]
+    fn test_fulltext_index_default_min_length() {
+        let json = r#"{"name": "ft_idx", "field": "content"}"#;
+        let idx: FulltextIndex = serde_json::from_str(json).unwrap();
+        
+        assert_eq!(idx.min_length, 3); // default
+    }
+}
+
 

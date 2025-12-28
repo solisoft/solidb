@@ -179,12 +179,11 @@
 
                <div class="mt-4 mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
-                 <div class="bg-black/30 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="bg-black/30 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                    {
-                     "status": "pruned",
-                     "timestamp_ms": 1672531200000
+                     "deleted": 15420
                    }
-                 </div>
+                  </div>
                </div>
             </div>
             

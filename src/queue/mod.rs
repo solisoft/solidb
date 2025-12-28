@@ -130,7 +130,7 @@ impl QueueWorker {
         }
     }
 
-    async fn check_jobs(&self) {
+    pub async fn check_jobs(&self) {
         let _lock = match self.claiming_lock.try_lock() {
             Ok(lock) => lock,
             Err(_) => return, // Already checking
@@ -264,7 +264,7 @@ impl QueueWorker {
         }
     }
 
-    async fn check_cron_jobs(&self) {
+    pub async fn check_cron_jobs(&self) {
         let _lock = match self.claiming_lock.try_lock() {
             Ok(lock) => lock,
             Err(_) => return, // Already checking

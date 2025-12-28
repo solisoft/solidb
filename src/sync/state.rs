@@ -283,3 +283,211 @@ impl Clone for SyncState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_storage() -> Arc<StorageEngine> {
+        let tmp = TempDir::new().unwrap();
+        Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap())
+    }
+
+    #[test]
+    fn test_sync_state_new() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        assert_eq!(state.node_id(), "node1");
+        assert_eq!(state.current_sequence(), 0);
+    }
+
+    #[test]
+    fn test_next_sequence() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        assert_eq!(state.next_sequence(), 1);
+        assert_eq!(state.next_sequence(), 2);
+        assert_eq!(state.next_sequence(), 3);
+        assert_eq!(state.current_sequence(), 3);
+    }
+
+    #[test]
+    fn test_origin_sequences() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        // Initial is 0
+        assert_eq!(state.get_origin_sequence("node2"), 0);
+        
+        // Update
+        state.update_origin_sequence("node2", 5);
+        assert_eq!(state.get_origin_sequence("node2"), 5);
+        
+        // Won't decrease
+        state.update_origin_sequence("node2", 3);
+        assert_eq!(state.get_origin_sequence("node2"), 5);
+        
+        // Will increase
+        state.update_origin_sequence("node2", 10);
+        assert_eq!(state.get_origin_sequence("node2"), 10);
+    }
+
+    #[test]
+    fn test_is_duplicate() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        state.update_origin_sequence("node2", 5);
+        
+        // Lower or equal is duplicate
+        assert!(state.is_duplicate("node2", 3));
+        assert!(state.is_duplicate("node2", 5));
+        
+        // Higher is not duplicate
+        assert!(!state.is_duplicate("node2", 6));
+        
+        // Unknown origin is not duplicate if > 0
+        assert!(!state.is_duplicate("unknown", 1));
+    }
+
+    #[test]
+    fn test_sent_sequences() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        assert_eq!(state.get_sent_sequence("peer1"), 0);
+        
+        state.update_sent_sequence("peer1", 10);
+        assert_eq!(state.get_sent_sequence("peer1"), 10);
+        
+        state.update_sent_sequence("peer1", 20);
+        assert_eq!(state.get_sent_sequence("peer1"), 20);
+    }
+
+    #[test]
+    fn test_add_peer() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        state.add_peer(
+            "node2".to_string(),
+            "127.0.0.1:6746".to_string(),
+            "127.0.0.1:8080".to_string(),
+        );
+        
+        let peers = state.get_peers();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].node_id, "node2");
+        assert_eq!(peers[0].sync_address, "127.0.0.1:6746");
+    }
+
+    #[test]
+    fn test_remove_peer() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        state.add_peer("node2".to_string(), "addr".to_string(), "http".to_string());
+        state.update_sent_sequence("node2", 5);
+        
+        assert_eq!(state.get_peers().len(), 1);
+        
+        state.remove_peer("node2");
+        
+        assert_eq!(state.get_peers().len(), 0);
+        assert_eq!(state.get_sent_sequence("node2"), 0);
+    }
+
+    #[test]
+    fn test_set_peer_connected() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        state.add_peer("node2".to_string(), "addr".to_string(), "http".to_string());
+        
+        let peers = state.get_peers();
+        assert!(!peers[0].is_connected);
+        
+        state.set_peer_connected("node2", true);
+        
+        let peers = state.get_peers();
+        assert!(peers[0].is_connected);
+    }
+
+    #[test]
+    fn test_dead_nodes() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        let stats = NodeStats {
+            cpu_usage: 25.0,
+            memory_used: 1024,
+            disk_used: 2048,
+            document_count: 1000,
+            collections_count: 10,
+        };
+        
+        state.update_heartbeat("node2", stats);
+        
+        // Just added, should not be dead
+        let dead = state.dead_nodes(Duration::from_secs(1));
+        assert!(dead.is_empty());
+        
+        // After timeout, would be dead
+        std::thread::sleep(Duration::from_millis(20));
+        let dead = state.dead_nodes(Duration::from_millis(10));
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0], "node2");
+    }
+
+    #[test]
+    fn test_get_all_stats() {
+        let storage = create_test_storage();
+        let state = SyncState::new(storage, "node1".to_string());
+        
+        let stats1 = NodeStats {
+            cpu_usage: 50.0,
+            memory_used: 2048,
+            disk_used: 4096,
+            document_count: 1000,
+            collections_count: 5,
+        };
+        
+        state.update_heartbeat("node2", stats1);
+        
+        let all_stats = state.get_all_stats();
+        assert_eq!(all_stats.len(), 1);
+        assert_eq!(all_stats.get("node2").unwrap().document_count, 1000);
+    }
+
+    #[test]
+    fn test_sync_state_clone() {
+        let storage = create_test_storage();
+        let state1 = SyncState::new(storage, "node1".to_string());
+        
+        state1.next_sequence();
+        state1.next_sequence();
+        
+        let state2 = state1.clone();
+        
+        assert_eq!(state1.current_sequence(), state2.current_sequence());
+        assert_eq!(state1.node_id(), state2.node_id());
+    }
+
+    #[test]
+    fn test_peer_info() {
+        let info = PeerInfo {
+            node_id: "node2".to_string(),
+            sync_address: "127.0.0.1:6746".to_string(),
+            http_address: "127.0.0.1:8080".to_string(),
+            last_seen: Instant::now(),
+            is_connected: true,
+        };
+        
+        assert_eq!(info.node_id, "node2");
+        assert!(info.is_connected);
+    }
+}
+

@@ -87,3 +87,48 @@ impl TtlWorker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_ttl_worker_new() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        
+        let worker = TtlWorker::new(storage);
+        
+        // Default interval is 60 seconds
+        assert_eq!(worker.interval_secs, 60);
+    }
+
+    #[tokio::test]
+    async fn test_ttl_cleanup_empty_database() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        
+        let worker = TtlWorker::new(storage);
+        
+        // Should not panic on empty database
+        worker.cleanup_expired_documents().await;
+    }
+
+    #[tokio::test]
+    async fn test_ttl_cleanup_no_ttl_indexes() {
+        let tmp = TempDir::new().unwrap();
+        let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        
+        // Create a database and collection without TTL index
+        storage.create_database("test_db".to_string()).unwrap();
+        let db = storage.get_database("test_db").unwrap();
+        db.create_collection("test_coll".to_string(), None).unwrap();
+        
+        let worker = TtlWorker::new(storage);
+        
+        // Should skip collections without TTL indexes
+        worker.cleanup_expired_documents().await;
+    }
+}
+

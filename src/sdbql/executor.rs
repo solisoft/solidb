@@ -4016,6 +4016,8 @@ impl<'a> QueryExecutor<'a> {
                 ))
             }
 
+
+
             // SQRT(n) - square root
             "SQRT" => {
                 if evaluated_args.len() != 1 {

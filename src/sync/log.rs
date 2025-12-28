@@ -255,3 +255,210 @@ impl Clone for SyncLog {
     }
 }
 // Operation is already exported via mod.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_entry(seq: u64) -> LogEntry {
+        LogEntry {
+            sequence: seq,
+            node_id: "test_node".to_string(),
+            database: "test_db".to_string(),
+            collection: "test_coll".to_string(),
+            operation: Operation::Insert,
+            key: format!("key_{}", seq),
+            data: Some(b"test data".to_vec()),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        }
+    }
+
+    #[test]
+    fn test_log_entry_creation() {
+        let entry = create_test_entry(1);
+        
+        assert_eq!(entry.sequence, 1);
+        assert_eq!(entry.node_id, "test_node");
+        assert_eq!(entry.database, "test_db");
+        assert_eq!(entry.collection, "test_coll");
+        assert!(entry.data.is_some());
+    }
+
+    #[test]
+    fn test_log_entry_to_sync_entry() {
+        let entry = create_test_entry(5);
+        let hlc = HybridLogicalClock::new(chrono::Utc::now().timestamp_millis() as u64, 0, "node1".to_string());
+        
+        let sync_entry = entry.to_sync_entry(&hlc);
+        
+        assert_eq!(sync_entry.sequence, 5);
+        assert_eq!(sync_entry.origin_node, "test_node");
+        assert_eq!(sync_entry.database, "test_db");
+        assert_eq!(sync_entry.document_key, "key_5");
+    }
+
+    #[test]
+    fn test_log_entry_serialization() {
+        let entry = create_test_entry(1);
+        
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("test_node"));
+        assert!(json.contains("test_db"));
+        
+        let deserialized: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry.sequence, deserialized.sequence);
+        assert_eq!(entry.key, deserialized.key);
+    }
+
+    #[test]
+    fn test_sync_log_new() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        assert_eq!(log.node_id(), "node1");
+        assert_eq!(log.current_sequence(), 0);
+    }
+
+    #[test]
+    fn test_sync_log_append() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        let entry = create_test_entry(0);
+        let seq = log.append(entry);
+        
+        assert_eq!(seq, 1);
+        assert_eq!(log.current_sequence(), 1);
+    }
+
+    #[test]
+    fn test_sync_log_append_multiple() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        for _ in 0..5 {
+            log.append(create_test_entry(0));
+        }
+        
+        assert_eq!(log.current_sequence(), 5);
+    }
+
+    #[test]
+    fn test_sync_log_append_batch() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        let entries = vec![
+            create_test_entry(0),
+            create_test_entry(0),
+            create_test_entry(0),
+        ];
+        
+        let seq = log.append_batch(entries);
+        
+        assert_eq!(seq, 3);
+        assert_eq!(log.current_sequence(), 3);
+    }
+
+    #[test]
+    fn test_sync_log_append_batch_empty() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        let seq = log.append_batch(vec![]);
+        assert_eq!(seq, 0);
+    }
+
+    #[test]
+    fn test_sync_log_get_entries_after() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        for _ in 0..5 {
+            log.append(create_test_entry(0));
+        }
+        
+        let entries = log.get_entries_after(2, 10);
+        assert_eq!(entries.len(), 3); // Sequences 3, 4, 5
+        assert_eq!(entries[0].sequence, 3);
+    }
+
+    #[test]
+    fn test_sync_log_get_entries_with_limit() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        for _ in 0..10 {
+            log.append(create_test_entry(0));
+        }
+        
+        let entries = log.get_entries_after(0, 3);
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn test_sync_log_clone() {
+        let tmp = TempDir::new().unwrap();
+        let log1 = SyncLog::new(
+            "node1".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        log1.append(create_test_entry(0));
+        
+        let log2 = log1.clone();
+        
+        // Both share the same state
+        assert_eq!(log1.current_sequence(), log2.current_sequence());
+    }
+
+    #[test]
+    fn test_sync_log_fills_node_id() {
+        let tmp = TempDir::new().unwrap();
+        let log = SyncLog::new(
+            "my_node".to_string(),
+            tmp.path().to_str().unwrap(),
+            100,
+        ).unwrap();
+        
+        let mut entry = create_test_entry(0);
+        entry.node_id = String::new(); // Empty node_id
+        
+        log.append(entry);
+        
+        let entries = log.get_entries_after(0, 1);
+        assert_eq!(entries[0].node_id, "my_node");
+    }
+}
+

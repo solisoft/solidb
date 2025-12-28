@@ -11,7 +11,7 @@ pub struct AuthParams {
 }
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use crate::cluster::stats::NodeBasicStats;
 use std::sync::Arc;
 use base64::{Engine as _, engine::general_purpose};
@@ -630,6 +630,11 @@ pub struct CreateCollectionRequest {
     /// Replication factor (optional, default: 1 = no replicas)
     #[serde(rename = "replicationFactor")]
     pub replication_factor: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PruneRequest {
+    pub older_than: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1532,35 +1537,7 @@ pub struct PruneCollectionResponse {
     pub timestamp_ms: u64,
 }
 
-pub async fn prune_collection(
-    State(state): State<AppState>,
-    Path((db_name, coll_name)): Path<(String, String)>,
-    Json(req): Json<PruneCollectionRequest>,
-) -> Result<Json<PruneCollectionResponse>, DbError> {
-    let db = state.storage.get_database(&db_name)?;
-    let collection = db.get_collection(&coll_name)?;
 
-    // Parse timestamp
-    let dt = chrono::DateTime::parse_from_rfc3339(&req.older_than)
-        .map_err(|e| DbError::BadRequest(format!("Invalid timestamp format: {}", e)))?;
-    
-    let ts_i64 = dt.timestamp_millis();
-    if ts_i64 < 0 {
-        return Err(DbError::BadRequest("Pruning timestamp must be after 1970-01-01".to_string()));
-    }
-    
-    // Ensure accurate conversion to u64 ms
-    let timestamp_ms = ts_i64 as u64;
-
-    collection.prune_older_than(timestamp_ms)?;
-
-    tracing::info!("Pruned collection {}/{} older than {}", db_name, coll_name, req.older_than);
-
-    Ok(Json(PruneCollectionResponse {
-        status: "pruned".to_string(),
-        timestamp_ms,
-    }))
-}
 
 /// Get document count for a collection (used for cluster-wide aggregation)
 pub async fn get_collection_count(
@@ -1632,6 +1609,28 @@ pub async fn repair_collection(
     } else {
         Err(DbError::InternalError("Shard coordinator not available".to_string()))
     }
+}
+
+pub async fn prune_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(payload): Json<PruneRequest>,
+) -> Result<Json<Value>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    
+    // Parse timestamp
+    let dt = chrono::DateTime::parse_from_rfc3339(&payload.older_than)
+        .map_err(|_| DbError::BadRequest("Invalid timestamp format (ISO8601 required)".to_string()))?;
+    
+    let timestamp_ms = dt.timestamp_millis();
+    if timestamp_ms < 0 {
+         return Err(DbError::BadRequest("Timestamp cannot be negative".to_string()));
+    }
+    
+    let count = collection.prune_older_than(timestamp_ms as u64)?;
+    
+    Ok(Json(json!({ "deleted": count })))
 }
 
 pub async fn get_collection_stats(

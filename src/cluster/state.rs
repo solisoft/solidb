@@ -125,3 +125,168 @@ impl ClusterState {
         sent.insert(peer_id.to_string(), sequence);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_node(id: &str) -> Node {
+        Node::new(
+            id.to_string(),
+            format!("127.0.0.1:{}", 8000),
+            format!("127.0.0.1:{}", 9000),
+        )
+    }
+
+    #[test]
+    fn test_cluster_state_new() {
+        let state = ClusterState::new("node1".to_string());
+        
+        assert_eq!(state.local_node_id, "node1");
+        assert!(state.get_all_members().is_empty());
+    }
+
+    #[test]
+    fn test_add_member() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        let is_new = state.add_member(node.clone(), NodeStatus::Active);
+        
+        assert!(is_new);
+        assert_eq!(state.get_all_members().len(), 1);
+    }
+
+    #[test]
+    fn test_add_member_duplicate() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        let first = state.add_member(node.clone(), NodeStatus::Active);
+        let second = state.add_member(node.clone(), NodeStatus::Active);
+        
+        assert!(first);  // First add is new
+        assert!(!second); // Second add is not new (already exists)
+        assert_eq!(state.get_all_members().len(), 1);
+    }
+
+    #[test]
+    fn test_remove_member() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        state.add_member(node, NodeStatus::Active);
+        assert_eq!(state.get_all_members().len(), 1);
+        
+        state.remove_member("node1");
+        assert!(state.get_all_members().is_empty());
+    }
+
+    #[test]
+    fn test_get_member() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        state.add_member(node.clone(), NodeStatus::Active);
+        
+        let member = state.get_member("node1");
+        assert!(member.is_some());
+        assert_eq!(member.unwrap().node.id, "node1");
+        
+        assert!(state.get_member("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_mark_status() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        state.add_member(node, NodeStatus::Active);
+        
+        state.mark_status("node1", NodeStatus::Suspected);
+        let member = state.get_member("node1").unwrap();
+        assert_eq!(member.status, NodeStatus::Suspected);
+        
+        state.mark_status("node1", NodeStatus::Dead);
+        let member = state.get_member("node1").unwrap();
+        assert_eq!(member.status, NodeStatus::Dead);
+    }
+
+    #[test]
+    fn test_active_nodes() {
+        let state = ClusterState::new("local".to_string());
+        
+        state.add_member(create_test_node("node1"), NodeStatus::Active);
+        state.add_member(create_test_node("node2"), NodeStatus::Suspected);
+        state.add_member(create_test_node("node3"), NodeStatus::Active);
+        
+        let active = state.active_nodes();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn test_update_heartbeat() {
+        let state = ClusterState::new("local".to_string());
+        let node = create_test_node("node1");
+        
+        state.add_member(node, NodeStatus::Suspected);
+        
+        // Heartbeat should update status from Suspected to Active
+        state.update_heartbeat("node1", 10, None);
+        
+        let member = state.get_member("node1").unwrap();
+        assert_eq!(member.status, NodeStatus::Active);
+        assert_eq!(member.last_sequence, 10);
+    }
+
+    #[test]
+    fn test_check_and_update_origin_sequence() {
+        let state = ClusterState::new("local".to_string());
+        
+        // First update should succeed
+        assert!(state.check_and_update_origin_sequence("origin1".to_string(), 5));
+        
+        // Same sequence should fail
+        assert!(!state.check_and_update_origin_sequence("origin1".to_string(), 5));
+        
+        // Lower sequence should fail
+        assert!(!state.check_and_update_origin_sequence("origin1".to_string(), 3));
+        
+        // Higher sequence should succeed
+        assert!(state.check_and_update_origin_sequence("origin1".to_string(), 10));
+    }
+
+    #[test]
+    fn test_sent_to_peer() {
+        let state = ClusterState::new("local".to_string());
+        
+        // Default is 0
+        assert_eq!(state.get_sent_to_peer("peer1"), 0);
+        
+        // Update
+        state.update_sent_to_peer("peer1", 42);
+        assert_eq!(state.get_sent_to_peer("peer1"), 42);
+        
+        // Different peer still 0
+        assert_eq!(state.get_sent_to_peer("peer2"), 0);
+    }
+
+    #[test]
+    fn test_node_status_variants() {
+        assert_ne!(NodeStatus::Joining, NodeStatus::Active);
+        assert_ne!(NodeStatus::Syncing, NodeStatus::Dead);
+        assert_eq!(NodeStatus::Leaving.clone(), NodeStatus::Leaving);
+    }
+
+    #[test]
+    fn test_cluster_state_clone() {
+        let state1 = ClusterState::new("node1".to_string());
+        state1.add_member(create_test_node("n1"), NodeStatus::Active);
+        
+        let state2 = state1.clone();
+        
+        // Both share the same underlying data
+        assert_eq!(state1.get_all_members().len(), state2.get_all_members().len());
+    }
+}
+

@@ -266,3 +266,278 @@ pub enum UnaryOperator {
     Not,
     Negate,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_expression_literal() {
+        let expr = Expression::Literal(json!(42));
+        assert_eq!(expr, Expression::Literal(json!(42)));
+    }
+
+    #[test]
+    fn test_expression_variable() {
+        let expr = Expression::Variable("doc".to_string());
+        if let Expression::Variable(name) = expr {
+            assert_eq!(name, "doc");
+        } else {
+            panic!("Expected Variable");
+        }
+    }
+
+    #[test]
+    fn test_expression_field_access() {
+        let expr = Expression::FieldAccess(
+            Box::new(Expression::Variable("doc".to_string())),
+            "name".to_string(),
+        );
+        
+        if let Expression::FieldAccess(base, field) = expr {
+            assert_eq!(*base, Expression::Variable("doc".to_string()));
+            assert_eq!(field, "name");
+        } else {
+            panic!("Expected FieldAccess");
+        }
+    }
+
+    #[test]
+    fn test_expression_binary_op() {
+        let expr = Expression::BinaryOp {
+            left: Box::new(Expression::Variable("a".to_string())),
+            op: BinaryOperator::Add,
+            right: Box::new(Expression::Literal(json!(1))),
+        };
+        
+        if let Expression::BinaryOp { left, op, right } = expr {
+            assert_eq!(*left, Expression::Variable("a".to_string()));
+            assert_eq!(op, BinaryOperator::Add);
+            assert_eq!(*right, Expression::Literal(json!(1)));
+        } else {
+            panic!("Expected BinaryOp");
+        }
+    }
+
+    #[test]
+    fn test_for_clause() {
+        let clause = ForClause {
+            variable: "doc".to_string(),
+            collection: "users".to_string(),
+            source_variable: None,
+            source_expression: None,
+        };
+        
+        assert_eq!(clause.variable, "doc");
+        assert_eq!(clause.collection, "users");
+    }
+
+    #[test]
+    fn test_filter_clause() {
+        let clause = FilterClause {
+            expression: Expression::Literal(json!(true)),
+        };
+        
+        assert_eq!(clause.expression, Expression::Literal(json!(true)));
+    }
+
+    #[test]
+    fn test_limit_clause() {
+        let clause = LimitClause {
+            offset: Expression::Literal(json!(0)),
+            count: Expression::Literal(json!(10)),
+        };
+        
+        assert_eq!(clause.offset, Expression::Literal(json!(0)));
+        assert_eq!(clause.count, Expression::Literal(json!(10)));
+    }
+
+    #[test]
+    fn test_sort_clause() {
+        let clause = SortClause {
+            fields: vec![
+                (Expression::FieldAccess(
+                    Box::new(Expression::Variable("doc".to_string())),
+                    "age".to_string(),
+                ), true),
+            ],
+        };
+        
+        assert_eq!(clause.fields.len(), 1);
+        assert!(clause.fields[0].1); // ascending
+    }
+
+    #[test]
+    fn test_let_clause() {
+        let clause = LetClause {
+            variable: "x".to_string(),
+            expression: Expression::Literal(json!(42)),
+        };
+        
+        assert_eq!(clause.variable, "x");
+    }
+
+    #[test]
+    fn test_insert_clause() {
+        let clause = InsertClause {
+            document: Expression::Object(vec![]),
+            collection: "users".to_string(),
+        };
+        
+        assert_eq!(clause.collection, "users");
+    }
+
+    #[test]
+    fn test_edge_direction() {
+        assert_ne!(EdgeDirection::Inbound, EdgeDirection::Outbound);
+        assert_ne!(EdgeDirection::Any, EdgeDirection::Inbound);
+    }
+
+    #[test]
+    fn test_binary_operators() {
+        assert_eq!(BinaryOperator::Equal.clone(), BinaryOperator::Equal);
+        assert_ne!(BinaryOperator::Equal, BinaryOperator::NotEqual);
+        assert_ne!(BinaryOperator::Add, BinaryOperator::Subtract);
+    }
+
+    #[test]
+    fn test_unary_operators() {
+        assert_eq!(UnaryOperator::Not.clone(), UnaryOperator::Not);
+        assert_ne!(UnaryOperator::Not, UnaryOperator::Negate);
+    }
+
+    #[test]
+    fn test_expression_clone() {
+        let expr = Expression::Variable("test".to_string());
+        let cloned = expr.clone();
+        assert_eq!(expr, cloned);
+    }
+
+    #[test]
+    fn test_query_default() {
+        let query = Query {
+            let_clauses: vec![],
+            for_clauses: vec![],
+            filter_clauses: vec![],
+            sort_clause: None,
+            limit_clause: None,
+            return_clause: None,
+            body_clauses: vec![],
+        };
+        
+        assert!(query.for_clauses.is_empty());
+        assert!(query.return_clause.is_none());
+    }
+
+    #[test]
+    fn test_collect_clause() {
+        let clause = CollectClause {
+            group_vars: vec![("category".to_string(), Expression::FieldAccess(
+                Box::new(Expression::Variable("doc".to_string())),
+                "cat".to_string(),
+            ))],
+            into_var: Some("items".to_string()),
+            count_var: Some("cnt".to_string()),
+            aggregates: vec![],
+        };
+        
+        assert_eq!(clause.group_vars.len(), 1);
+        assert_eq!(clause.into_var, Some("items".to_string()));
+        assert_eq!(clause.count_var, Some("cnt".to_string()));
+    }
+
+    #[test]
+    fn test_aggregate_expr() {
+        let agg = AggregateExpr {
+            variable: "total".to_string(),
+            function: "SUM".to_string(),
+            argument: Some(Expression::FieldAccess(
+                Box::new(Expression::Variable("doc".to_string())),
+                "price".to_string(),
+            )),
+        };
+        
+        assert_eq!(agg.variable, "total");
+        assert_eq!(agg.function, "SUM");
+        assert!(agg.argument.is_some());
+    }
+
+    #[test]
+    fn test_expression_array() {
+        let expr = Expression::Array(vec![
+            Expression::Literal(json!(1)),
+            Expression::Literal(json!(2)),
+            Expression::Literal(json!(3)),
+        ]);
+        
+        if let Expression::Array(items) = expr {
+            assert_eq!(items.len(), 3);
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_expression_object() {
+        let expr = Expression::Object(vec![
+            ("name".to_string(), Expression::Literal(json!("test"))),
+            ("value".to_string(), Expression::Literal(json!(42))),
+        ]);
+        
+        if let Expression::Object(fields) = expr {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].0, "name");
+        } else {
+            panic!("Expected Object");
+        }
+    }
+
+    #[test]
+    fn test_expression_range() {
+        let expr = Expression::Range(
+            Box::new(Expression::Literal(json!(1))),
+            Box::new(Expression::Literal(json!(5))),
+        );
+        
+        if let Expression::Range(start, end) = expr {
+            assert_eq!(*start, Expression::Literal(json!(1)));
+            assert_eq!(*end, Expression::Literal(json!(5)));
+        } else {
+            panic!("Expected Range");
+        }
+    }
+
+    #[test]
+    fn test_expression_function_call() {
+        let expr = Expression::FunctionCall {
+            name: "LENGTH".to_string(),
+            args: vec![Expression::Variable("arr".to_string())],
+        };
+        
+        if let Expression::FunctionCall { name, args } = expr {
+            assert_eq!(name, "LENGTH");
+            assert_eq!(args.len(), 1);
+        } else {
+            panic!("Expected FunctionCall");
+        }
+    }
+
+    #[test]
+    fn test_expression_ternary() {
+        let expr = Expression::Ternary {
+            condition: Box::new(Expression::Variable("flag".to_string())),
+            true_expr: Box::new(Expression::Literal(json!(1))),
+            false_expr: Box::new(Expression::Literal(json!(0))),
+        };
+        
+        if let Expression::Ternary { condition, true_expr, false_expr } = expr {
+            assert_eq!(*condition, Expression::Variable("flag".to_string()));
+            assert_eq!(*true_expr, Expression::Literal(json!(1)));
+            assert_eq!(*false_expr, Expression::Literal(json!(0)));
+        } else {
+            panic!("Expected Ternary");
+        }
+    }
+}
+

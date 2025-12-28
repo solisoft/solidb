@@ -105,3 +105,55 @@ impl Default for LockManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lock_acquire_and_release() {
+        let manager = LockManager::new();
+        let tx1 = TransactionId::from_u64(1);
+        
+        // Acquire
+        assert!(manager.acquire_exclusive(tx1, "db", "col", "key1").is_ok());
+        
+        // Re-acquire (re-entrant)
+        assert!(manager.acquire_exclusive(tx1, "db", "col", "key1").is_ok());
+        
+        // Acquire another
+        assert!(manager.acquire_exclusive(tx1, "db", "col", "key2").is_ok());
+        
+        // Verify recorded
+        {
+            let tx_locks = manager.tx_locks.read().unwrap();
+            let keys = tx_locks.get(&tx1).unwrap();
+            assert_eq!(keys.len(), 2);
+        }
+        
+        // Release
+        manager.release_locks(tx1);
+        
+        // Verify released
+        {
+            let locks = manager.exclusive_locks.read().unwrap();
+            assert!(locks.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_lock_conflict() {
+        let manager = LockManager::new();
+        let tx1 = TransactionId::from_u64(1);
+        let tx2 = TransactionId::from_u64(2);
+        
+        manager.acquire_exclusive(tx1, "db", "col", "key1").unwrap();
+        
+        // Conflict
+        let res = manager.acquire_exclusive(tx2, "db", "col", "key1");
+        assert!(matches!(res, Err(DbError::TransactionConflict(_))));
+        
+        // No conflict on different key
+        assert!(manager.acquire_exclusive(tx2, "db", "col", "key2").is_ok());
+    }
+}

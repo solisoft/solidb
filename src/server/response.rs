@@ -68,3 +68,72 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_format_default_json() {
+        let headers = HeaderMap::new();
+        assert_eq!(ApiFormat::from_headers(&headers), ApiFormat::Json);
+    }
+
+    #[test]
+    fn test_api_format_accept_json() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, "application/json".parse().unwrap());
+        assert_eq!(ApiFormat::from_headers(&headers), ApiFormat::Json);
+    }
+
+    #[test]
+    fn test_api_format_accept_msgpack() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, "application/msgpack".parse().unwrap());
+        assert_eq!(ApiFormat::from_headers(&headers), ApiFormat::MsgPack);
+    }
+
+    #[test]
+    fn test_api_format_accept_x_msgpack() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, "application/x-msgpack".parse().unwrap());
+        assert_eq!(ApiFormat::from_headers(&headers), ApiFormat::MsgPack);
+    }
+
+    #[test]
+    fn test_api_format_equality() {
+        assert_eq!(ApiFormat::Json, ApiFormat::Json);
+        assert_eq!(ApiFormat::MsgPack, ApiFormat::MsgPack);
+        assert_ne!(ApiFormat::Json, ApiFormat::MsgPack);
+    }
+
+    #[test]
+    fn test_api_format_clone() {
+        let format = ApiFormat::Json;
+        let cloned = format.clone();
+        assert_eq!(format, cloned);
+    }
+
+    #[test]
+    fn test_api_format_debug() {
+        let format = ApiFormat::Json;
+        let debug = format!("{:?}", format);
+        assert!(debug.contains("Json"));
+    }
+
+    #[test]
+    fn test_api_response_new_json() {
+        let headers = HeaderMap::new();
+        let response = ApiResponse::new(serde_json::json!({"key": "value"}), &headers);
+        assert_eq!(response.format, ApiFormat::Json);
+    }
+
+    #[test]
+    fn test_api_response_new_msgpack() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, "application/msgpack".parse().unwrap());
+        let response = ApiResponse::new(serde_json::json!({"key": "value"}), &headers);
+        assert_eq!(response.format, ApiFormat::MsgPack);
+    }
+}
+

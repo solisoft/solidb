@@ -298,3 +298,191 @@ pub fn extract_field_value(doc: &Value, field_path: &str) -> Value {
 
     current.clone()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_generate_ngrams() {
+        let ngrams = generate_ngrams("hello", 3);
+        assert!(ngrams.contains(&"hel".to_string()));
+        assert!(ngrams.contains(&"ell".to_string()));
+        assert!(ngrams.contains(&"llo".to_string()));
+    }
+
+    #[test]
+    fn test_generate_ngrams_short_string() {
+        // When string is shorter than n, returns vec with the normalized string
+        let ngrams = generate_ngrams("ab", 3);
+        assert_eq!(ngrams.len(), 1);
+        assert_eq!(ngrams[0], "ab");
+    }
+
+    #[test]
+    fn test_normalize_text() {
+        assert_eq!(normalize_text("Hello World!"), "hello world");
+        assert_eq!(normalize_text("Test123"), "test123");
+        assert_eq!(normalize_text("  spaced  "), "spaced");
+    }
+
+    #[test]
+    fn test_tokenize() {
+        let tokens = tokenize("Hello World  Test");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], "hello");
+        assert_eq!(tokens[1], "world");
+        assert_eq!(tokens[2], "test");
+    }
+
+    #[test]
+    fn test_levenshtein_distance() {
+        assert_eq!(levenshtein_distance("", ""), 0);
+        assert_eq!(levenshtein_distance("abc", "abc"), 0);
+        assert_eq!(levenshtein_distance("abc", "ab"), 1);
+        assert_eq!(levenshtein_distance("abc", "adc"), 1);
+        assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn test_ngram_similarity() {
+        let ngrams1 = generate_ngrams("hello", 3);
+        let ngrams2 = generate_ngrams("hello", 3);
+        assert!((ngram_similarity(&ngrams1, &ngrams2) - 1.0).abs() < 1e-10);
+        
+        let ngrams3 = generate_ngrams("world", 3);
+        let sim = ngram_similarity(&ngrams1, &ngrams3);
+        assert!(sim < 1.0);
+    }
+
+    #[test]
+    fn test_ngram_similarity_empty() {
+        // Both empty means identical (returns 1.0)
+        let sim = ngram_similarity(&[], &[]);
+        assert!((sim - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_calculate_idf() {
+        // If term appears in all docs, IDF should be low/negative
+        let idf_all = calculate_idf(100, 100);
+        let idf_few = calculate_idf(100, 5);
+        
+        // Term appearing in fewer docs should have higher IDF
+        assert!(idf_few > idf_all);
+    }
+
+    #[test]
+    fn test_index_type() {
+        assert_ne!(IndexType::Hash, IndexType::Persistent);
+        assert_ne!(IndexType::Fulltext, IndexType::TTL);
+    }
+
+    #[test]
+    fn test_index_new() {
+        let index = Index::new(
+            "idx_name".to_string(),
+            vec!["field1".to_string(), "field2".to_string()],
+            IndexType::Persistent,
+            true,
+        );
+        
+        assert_eq!(index.name, "idx_name");
+        assert_eq!(index.fields.len(), 2);
+        assert_eq!(index.index_type, IndexType::Persistent);
+        assert!(index.unique);
+    }
+
+    #[test]
+    fn test_ttl_index_new() {
+        let ttl_idx = TtlIndex::new(
+            "ttl_idx".to_string(),
+            "expires_at".to_string(),
+            3600,
+        );
+        
+        assert_eq!(ttl_idx.name, "ttl_idx");
+        assert_eq!(ttl_idx.field, "expires_at");
+        assert_eq!(ttl_idx.expire_after_seconds, 3600);
+    }
+
+    #[test]
+    fn test_extract_field_value_simple() {
+        let doc = json!({"name": "Alice", "age": 30});
+        
+        assert_eq!(extract_field_value(&doc, "name"), json!("Alice"));
+        assert_eq!(extract_field_value(&doc, "age"), json!(30));
+        assert_eq!(extract_field_value(&doc, "missing"), Value::Null);
+    }
+
+    #[test]
+    fn test_extract_field_value_nested() {
+        let doc = json!({
+            "user": {
+                "profile": {
+                    "name": "Bob"
+                }
+            }
+        });
+        
+        assert_eq!(extract_field_value(&doc, "user.profile.name"), json!("Bob"));
+        assert_eq!(extract_field_value(&doc, "user.missing"), Value::Null);
+    }
+
+    #[test]
+    fn test_fulltext_match() {
+        let match_result = FulltextMatch {
+            doc_key: "doc1".to_string(),
+            score: 2.5,
+            matched_terms: vec!["hello".to_string()],
+        };
+        
+        assert_eq!(match_result.doc_key, "doc1");
+        assert!((match_result.score - 2.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_index_serialization() {
+        let index = Index::new(
+            "test_idx".to_string(),
+            vec!["field".to_string()],
+            IndexType::Hash,
+            false,
+        );
+        
+        let json = serde_json::to_string(&index).unwrap();
+        assert!(json.contains("test_idx"));
+        assert!(json.contains("Hash"));
+        
+        let deserialized: Index = serde_json::from_str(&json).unwrap();
+        assert_eq!(index.name, deserialized.name);
+    }
+
+    #[test]
+    fn test_index_stats() {
+        let stats = IndexStats {
+            name: "idx".to_string(),
+            index_type: IndexType::Persistent,
+            fields: vec!["field1".to_string()],
+            field: "field1".to_string(),
+            unique: true,
+            unique_values: 500,
+            indexed_documents: 1000,
+        };
+        
+        assert_eq!(stats.indexed_documents, 1000);
+        assert_eq!(stats.unique_values, 500);
+    }
+
+    #[test]
+    fn test_bm25_score_empty() {
+        let query_terms: Vec<String> = vec![];
+        let doc_terms: Vec<String> = vec![];
+        let term_doc_freq = std::collections::HashMap::new();
+        
+        let score = bm25_score(&query_terms, &doc_terms, 0, 1.0, 1, &term_doc_freq);
+        assert!((score - 0.0).abs() < 1e-10);
+    }
+}
+

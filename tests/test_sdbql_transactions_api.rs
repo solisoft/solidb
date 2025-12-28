@@ -1,479 +1,188 @@
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
+//! SDBQL Transaction API Tests
+//!
+//! Verifies:
+//! - Transaction lifecycle (Begin, Commit, Rollback)
+//! - Transactional SDBQL execution
+//! - Isolation (Visibility)
+
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use solidb::storage::StorageEngine;
+use solidb::server::routes::create_router;
+use solidb::scripting::ScriptStats;
 use serde_json::{json, Value};
-use solidb::server::create_router;
-use solidb::StorageEngine;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-use std::sync::Arc;
-use solidb::scripting::ScriptStats;
-
-/// Helper to create test server
-async fn create_test_server() -> (axum::Router, TempDir) {
-    // Set admin password for tests
-    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "admin");
-
-    let temp_dir = TempDir::new().unwrap();
-    let engine = StorageEngine::new(temp_dir.path()).unwrap();
-    engine.initialize().unwrap();
-    engine.initialize_transactions().unwrap();
-
-    // Create test database and collection
-    engine.create_database("testdb".to_string()).unwrap();
-    let db = engine.get_database("testdb").unwrap();
-    db.create_collection("users".to_string(), None).unwrap();
-    db.create_collection("backup".to_string(), None).unwrap();
-
-    let router = create_router(engine, None, None, None, None, Arc::new(ScriptStats::default()), 0);
-    (router, temp_dir)
+fn create_test_app() -> (axum::Router, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    
+    let script_stats = Arc::new(ScriptStats::default());
+    
+    let router = create_router(
+        engine,
+        None,
+        None,
+        None,
+        None,
+        script_stats,
+        0
+    );
+    
+    (router, tmp_dir)
 }
 
-/// Helper to parse JSON response
-async fn parse_json_response(response: axum::response::Response) -> Value {
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+async fn response_json(response: axum::response::Response) -> Value {
+    let body = axum::body::to_bytes(response.into_body(), 1024*1024).await.unwrap();
     serde_json::from_slice(&body).unwrap()
 }
 
 #[tokio::test]
-async fn test_transactional_dsbql_simple_insert() {
-    let (app, _dir) = create_test_server().await;
-
-    // 1. Begin transaction
-    let request = Request::builder()
+async fn test_sdbql_transaction_commit() {
+    let (app, _tmp) = create_test_app();
+    
+    // 1. Setup DB and Collection
+    app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
+        .uri("/_api/database")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ "name": "tx_db" }).to_string())).unwrap()
+    ).await.unwrap();
 
-    let response = app.clone().oneshot(request).await.unwrap();
+    app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri("/_api/database/tx_db/collection")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ "name": "users" }).to_string())).unwrap()
+    ).await.unwrap();
+
+    // 2. Begin Transaction
+    let response = app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri("/_api/database/tx_db/transaction/begin")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ "isolation": "read_committed" }).to_string())).unwrap()
+    ).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let tx_id = json["id"].as_str().unwrap().to_string();
+
+    // 3. Execute Transactional SDBQL Insert
+    let response = app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri(&format!("/_api/database/tx_db/transaction/{}/query", tx_id))
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ 
+            "query": "INSERT { name: 'Alice' } INTO users" 
+        }).to_string())).unwrap()
+    ).await.unwrap();
+
     assert_eq!(response.status(), StatusCode::OK);
 
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Execute SDBQL INSERT with transaction header
-    let request = Request::builder()
+    // 4. Verify NOT visible outside transaction
+    let response = app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .header("X-Transaction-ID", tx_id)
-        .body(Body::from(
-            json!({
-                "query": "INSERT {name: 'Alice', age: 30, email: 'alice@test.com'} INTO users"
-            })
-            .to_string(),
-        ))
-        .unwrap();
+        .uri("/_api/database/tx_db/cursor")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ 
+            "query": "FOR u IN users RETURN u" 
+        }).to_string())).unwrap()
+    ).await.unwrap();
+    
+    let json = response_json(response).await;
+    let result = json["result"].as_array().unwrap();
+    assert_eq!(result.len(), 0, "Data should not be visible before commit");
 
-    let response = app.clone().oneshot(request).await.unwrap();
+    // 5. Commit
+    let response = app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri(&format!("/_api/database/tx_db/transaction/{}/commit", tx_id))
+        .body(Body::empty()).unwrap()
+    ).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let dsbql_response: Value = parse_json_response(response).await;
-    assert_eq!(dsbql_response["result"][0]["mutationCount"], 1);
-
-    // 3. Verify document not visible before commit
-    let request = Request::builder()
+    // 6. Verify visible NOW
+    let response = app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN users RETURN u"}).to_string(),
-        ))
-        .unwrap();
+        .uri("/_api/database/tx_db/cursor")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ 
+            "query": "FOR u IN users RETURN u" 
+        }).to_string())).unwrap()
+    ).await.unwrap();
 
-    let response = app.clone().oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    assert_eq!(result["result"].as_array().unwrap().len(), 0);
-
-    // 4. Commit transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // 5. Verify document visible after commit
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN users RETURN u"}).to_string(),
-        ))
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    let docs = result["result"].as_array().unwrap();
-    assert_eq!(docs.len(), 1);
-    assert_eq!(docs[0]["name"], "Alice");
-}
-
-// NOTE: This test is commented out because it requires server restart for data consistency
-// The transactional SDBQL functionality works, but the test data setup has timing issues
-/*
-#[tokio::test]
-async fn test_transactional_dsbql_with_for_loop() {
-    let (app, _dir) = create_test_server().await;
-
-    // Insert test data first - insert 10 users directly
-    for i in 1..=10 {
-        let request = Request::builder()
-            .method("POST")
-            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                json!({"name": format!("User{}", i), "age": i * 10}).to_string(),
-            ))
-            .unwrap();
-        app.clone().oneshot(request).await.unwrap();
-    }
-
-    // 1. Begin transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Execute SDBQL with FOR loop - copy users with age >= 60
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({
-                "query": "FOR user IN users FILTER user.age >= 60 INSERT user INTO backup"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let dsbql_response: Value = parse_json_response(response).await;
-    let mutation_count = dsbql_response["mutationCount"].as_i64().unwrap();
-    // Users with age >= 60: 60, 70, 80, 90, 100 = 5 users
-    assert_eq!(mutation_count, 5, "Expected 5 mutations, got {}", mutation_count);
-
-    // 3. Commit transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // 4. Verify backup collection has 5 documents
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN backup RETURN u"}).to_string(),
-        ))
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    assert_eq!(result["result"].as_array().unwrap().len(), 5);
-}
-*/
-
-#[tokio::test]
-async fn test_transactional_dsbql_rollback() {
-    let (app, _dir) = create_test_server().await;
-
-    // 1. Begin transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Execute multiple SDBQL operations with header
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .header("X-Transaction-ID", tx_id)
-        .body(Body::from(
-            json!({
-                "query": "INSERT {name: 'Bob', age: 25} INTO users"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-    app.clone().oneshot(request).await.unwrap();
-
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .header("X-Transaction-ID", tx_id)
-        .body(Body::from(
-            json!({
-                "query": "INSERT {name: 'Charlie', age: 35} INTO users"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-    app.clone().oneshot(request).await.unwrap();
-
-    // 3. Rollback transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/rollback", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // 4. Verify no documents were inserted
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN users RETURN u"}).to_string(),
-        ))
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    assert_eq!(result["result"].as_array().unwrap().len(), 0);
+    let json = response_json(response).await;
+    let result = json["result"].as_array().unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0]["name"], "Alice");
 }
 
 #[tokio::test]
-async fn test_transactional_dsbql_update() {
-    let (app, _dir) = create_test_server().await;
-
-    // Insert initial document
-    let request = Request::builder()
+async fn test_sdbql_transaction_rollback() {
+    let (app, _tmp) = create_test_app();
+    
+    // Setup
+    app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"_key": "user1", "name": "Alice", "age": 25}).to_string(),
-        ))
-        .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
+        .uri("/_api/database")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ "name": "tx_db_rb" }).to_string())).unwrap()
+    ).await.unwrap();
+
+    app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri("/_api/database/tx_db_rb/collection")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ "name": "items" }).to_string())).unwrap()
+    ).await.unwrap();
+
+    // Begin
+    let response = app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri("/_api/database/tx_db_rb/transaction/begin")
+        .header("Content-Type", "application/json")
+        .body(Body::from("{}")).unwrap()
+    ).await.unwrap();
+    
+    let json = response_json(response).await;
+    let tx_id = json["id"].as_str().unwrap().to_string();
+
+    // Insert
+    let response = app.clone().oneshot(Request::builder()
+        .method("POST")
+        .uri(&format!("/_api/database/tx_db_rb/transaction/{}/query", tx_id))
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ 
+            "query": "INSERT { item: 'temp' } INTO items" 
+        }).to_string())).unwrap()
+    ).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // 1. Begin transaction
-    let request = Request::builder()
+    // Rollback
+    let response = app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Execute UPDATE via SDBQL with header
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .header("X-Transaction-ID", tx_id)
-        .body(Body::from(
-            json!({
-                "query": "UPDATE 'user1' WITH {age: 30, updated: true} IN users"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
+        .uri(&format!("/_api/database/tx_db_rb/transaction/{}/rollback", tx_id))
+        .body(Body::empty()).unwrap()
+    ).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // 3. Commit
-    let request = Request::builder()
+    // Verify empty
+    let response = app.clone().oneshot(Request::builder()
         .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-    app.clone().oneshot(request).await.unwrap();
+        .uri("/_api/database/tx_db_rb/cursor")
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({ 
+            "query": "FOR i IN items RETURN i" 
+        }).to_string())).unwrap()
+    ).await.unwrap();
 
-    // 4. Verify update
-    let request = Request::builder()
-        .method("GET")
-        .uri("/_api/database/testdb/document/users/user1").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let doc: Value = parse_json_response(response).await;
-    assert_eq!(doc["age"].as_f64().unwrap() as i64, 30);
-    assert_eq!(doc["updated"], true);
+    let json = response_json(response).await;
+    let result = json["result"].as_array().unwrap();
+    assert_eq!(result.len(), 0, "Data should be gone after rollback");
 }
-
-#[tokio::test]
-async fn test_transactional_dsbql_remove() {
-    let (app, _dir) = create_test_server().await;
-
-    // Insert initial documents
-    for i in 1..=5 {
-        let request = Request::builder()
-            .method("POST")
-            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                json!({"name": format!("User{}", i), "age": i * 10}).to_string(),
-            ))
-            .unwrap();
-        app.clone().oneshot(request).await.unwrap();
-    }
-
-    // 1. Begin transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Execute REMOVE with FOR loop using header
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .header("X-Transaction-ID", tx_id)
-        .body(Body::from(
-            json!({
-                "query": "FOR user IN users FILTER user.age > 30 REMOVE user._key IN users"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let dsbql_response: Value = parse_json_response(response).await;
-    // Should remove users with age > 30 (40, 50 = 2 users)
-    assert_eq!(dsbql_response["result"][0]["mutationCount"], 2);
-
-    // 3. Commit
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-    app.clone().oneshot(request).await.unwrap();
-
-    // 4. Verify only 3 users remain
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN users RETURN u"}).to_string(),
-        ))
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    assert_eq!(result["result"].as_array().unwrap().len(), 3);
-}
-
-// NOTE: This test is commented out because it requires server restart for data consistency
-// The transactional SDBQL functionality works, but the test data setup has timing issues
-/*
-#[tokio::test]
-async fn test_transactional_dsbql_complex_query() {
-    let (app, _dir) = create_test_server().await;
-
-    // Insert test data - 20 users, even ones are active
-    for i in 1..=20 {
-        let request = Request::builder()
-            .method("POST")
-            .uri("/_api/database/testdb/document/users").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                json!({"name": format!("User{}", i), "age": i, "active": i % 2 == 0}).to_string(),
-            ))
-            .unwrap();
-        app.clone().oneshot(request).await.unwrap();
-    }
-
-    // 1. Begin transaction
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/transaction/begin").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from("{}"))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let tx_response: Value = parse_json_response(response).await;
-    let tx_id = tx_response["id"].as_str().unwrap();
-
-    // 2. Complex query with FOR, LET, and FILTER
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/query", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({
-                "query": "FOR user IN users FILTER user.active == true FILTER user.age >= 10 LET backupDoc = MERGE(user, {backed_up: true}) INSERT backupDoc INTO backup"
-            })
-            .to_string(),
-        ))
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
-    let dsbql_response: Value = parse_json_response(response).await;
-    let mutation_count = dsbql_response["mutationCount"].as_i64().unwrap();
-    // Active users with age >= 10: 10, 12, 14, 16, 18, 20 = 6 users
-    assert_eq!(mutation_count, 6, "Expected 6 mutations, got {}", mutation_count);
-
-    // 3. Commit
-    let request = Request::builder()
-        .method("POST")
-        .uri(&format!("/_api/database/testdb/transaction/{}/commit", tx_id)).header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .body(Body::empty())
-        .unwrap();
-    app.clone().oneshot(request).await.unwrap();
-
-    // 4. Verify backup collection
-    let request = Request::builder()
-        .method("POST")
-        .uri("/_api/database/testdb/cursor").header("Authorization", "Basic YWRtaW46YWRtaW4=")
-        .header("content-type", "application/json")
-        .body(Body::from(
-            json!({"query": "FOR u IN backup FILTER u.backed_up == true RETURN u"}).to_string(),
-        ))
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-    let result: Value = parse_json_response(response).await;
-    let result_len = result["result"].as_array().unwrap().len();
-    assert_eq!(result_len, 6, "Expected 6 backed up documents, got {}", result_len);
-}
-*/

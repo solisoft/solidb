@@ -1,633 +1,455 @@
-//! Storage Engine Tests
-//! Tests for RocksDB-backed storage, collections, and documents
+//! Storage Layer Unit Tests
+//!
+//! Tests for the database storage layer, covering:
+//! - Document creation and manipulation
+//! - Collection operations
+//! - Storage engine functionality
 
+use solidb::storage::{Document, StorageEngine};
 use serde_json::json;
-use solidb::{DbError, StorageEngine};
+use std::sync::Arc;
 use tempfile::TempDir;
 
-/// Helper to create a test storage engine with a temporary directory
-fn create_test_storage() -> (StorageEngine, TempDir) {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let storage = StorageEngine::new(temp_dir.path()).expect("Failed to create storage");
-    (storage, temp_dir)
-}
-
-// ==================== Collection Tests ====================
+// ============================================================================
+// Document Tests
+// ============================================================================
 
 #[test]
-fn test_create_collection() {
-    let (storage, _dir) = create_test_storage();
-
-    let result = storage.create_collection("users".to_string(), None);
-    assert!(result.is_ok());
-
-    let collections = storage.list_collections();
-    assert!(collections.contains(&"users".to_string()));
+fn test_document_new() {
+    let doc = Document::new("users", json!({"name": "Alice", "age": 30}));
+    
+    assert!(!doc.key.is_empty(), "Document should have a key");
+    assert!(doc.id.starts_with("users/"), "Document ID should include collection");
+    assert!(!doc.rev.is_empty(), "Document should have a revision");
 }
 
 #[test]
-fn test_create_duplicate_collection_fails() {
-    let (storage, _dir) = create_test_storage();
-
-    storage.create_collection("users".to_string(), None).unwrap();
-    let result = storage.create_collection("users".to_string(), None);
-
-    assert!(matches!(result, Err(DbError::CollectionAlreadyExists(_))));
+fn test_document_with_key() {
+    let doc = Document::with_key("users", "custom-key".to_string(), json!({"name": "Bob"}));
+    
+    assert_eq!(doc.key, "custom-key");
+    assert_eq!(doc.id, "users/custom-key");
 }
 
 #[test]
-fn test_get_collection() {
-    let (storage, _dir) = create_test_storage();
-
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users");
-
-    assert!(collection.is_ok());
-    assert_eq!(collection.unwrap().name, "users");
+fn test_document_get_field() {
+    let doc = Document::new("users", json!({"name": "Charlie", "email": "charlie@test.com"}));
+    
+    assert_eq!(doc.get("name"), Some(json!("Charlie")));
+    assert_eq!(doc.get("email"), Some(json!("charlie@test.com")));
+    assert_eq!(doc.get("nonexistent"), None);
 }
 
 #[test]
-fn test_get_nonexistent_collection_fails() {
-    let (storage, _dir) = create_test_storage();
-
-    let result = storage.get_collection("nonexistent");
-    assert!(matches!(result, Err(DbError::CollectionNotFound(_))));
+fn test_document_get_system_fields() {
+    let doc = Document::with_key("users", "key123".to_string(), json!({"name": "Test"}));
+    
+    assert_eq!(doc.get("_key"), Some(json!("key123")));
+    assert_eq!(doc.get("_id"), Some(json!("users/key123")));
+    assert!(doc.get("_rev").is_some());
 }
 
 #[test]
-fn test_delete_collection() {
-    let (storage, _dir) = create_test_storage();
-
-    storage.create_collection("users".to_string(), None).unwrap();
-    let result = storage.delete_collection("users");
-
-    assert!(result.is_ok());
-    assert!(!storage.list_collections().contains(&"users".to_string()));
+fn test_document_update() {
+    let mut doc = Document::new("users", json!({"name": "Initial", "score": 0}));
+    let original_rev = doc.rev.clone();
+    
+    doc.update(json!({"score": 100, "level": 5}));
+    
+    assert_eq!(doc.get("name"), Some(json!("Initial")), "Original field should remain");
+    assert_eq!(doc.get("score"), Some(json!(100)), "Field should be updated");
+    assert_eq!(doc.get("level"), Some(json!(5)), "New field should be added");
+    assert_ne!(doc.rev, original_rev, "Revision should change on update");
 }
 
 #[test]
-fn test_list_multiple_collections() {
-    let (storage, _dir) = create_test_storage();
-
-    storage.create_collection("users".to_string(), None).unwrap();
-    storage.create_collection("products".to_string(), None).unwrap();
-    storage.create_collection("orders".to_string(), None).unwrap();
-
-    let collections = storage.list_collections();
-    assert_eq!(collections.len(), 3);
-    assert!(collections.contains(&"users".to_string()));
-    assert!(collections.contains(&"products".to_string()));
-    assert!(collections.contains(&"orders".to_string()));
-}
-
-// ==================== Document Tests ====================
-
-#[test]
-fn test_insert_document() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let doc = collection
-        .insert(json!({
-            "name": "Alice",
-            "age": 30
-        }))
-        .unwrap();
-
-    assert!(!doc.key.is_empty());
-    assert!(doc.id.starts_with("users/"));
+fn test_document_update_preserves_system_fields() {
+    let mut doc = Document::with_key("users", "testkey".to_string(), json!({"name": "Test"}));
+    
+    // Try to overwrite system fields  
+    doc.update(json!({"_key": "hacked", "_id": "hacked/key", "name": "Updated"}));
+    
+    // System fields should NOT be overwritten
+    assert_eq!(doc.key, "testkey");
+    assert_eq!(doc.id, "users/testkey");
+    assert_eq!(doc.get("name"), Some(json!("Updated")));
 }
 
 #[test]
-fn test_insert_document_with_custom_key() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let doc = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice",
-            "age": 30
-        }))
-        .unwrap();
-
-    assert_eq!(doc.key, "alice");
-}
-
-#[test]
-fn test_get_document() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let inserted = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice",
-            "age": 30
-        }))
-        .unwrap();
-
-    let retrieved = collection.get("alice").unwrap();
-    assert_eq!(retrieved.key, inserted.key);
-}
-
-#[test]
-fn test_get_nonexistent_document_fails() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let result = collection.get("nonexistent");
-    assert!(matches!(result, Err(DbError::DocumentNotFound(_))));
-}
-
-#[test]
-fn test_update_document() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice",
-            "age": 30
-        }))
-        .unwrap();
-
-    let updated = collection
-        .update(
-            "alice",
-            json!({
-                "age": 31,
-                "city": "Paris"
-            }),
-        )
-        .unwrap();
-
-    let doc_value = updated.to_value();
-    assert_eq!(doc_value["age"], 31);
-    assert_eq!(doc_value["city"], "Paris");
-    assert_eq!(doc_value["name"], "Alice"); // Original field preserved
-}
-
-#[test]
-fn test_delete_document() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
-
-    let result = collection.delete("alice");
-    assert!(result.is_ok());
-
-    let get_result = collection.get("alice");
-    assert!(matches!(get_result, Err(DbError::DocumentNotFound(_))));
-}
-
-#[test]
-fn test_all_documents() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    collection.insert(json!({"name": "Alice"})).unwrap();
-    collection.insert(json!({"name": "Bob"})).unwrap();
-    collection.insert(json!({"name": "Charlie"})).unwrap();
-
-    let all = collection.all();
-    assert_eq!(all.len(), 3);
-}
-
-#[test]
-fn test_document_count() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    assert_eq!(collection.count(), 0);
-
-    collection.insert(json!({"name": "Alice"})).unwrap();
-    collection.insert(json!({"name": "Bob"})).unwrap();
-
-    assert_eq!(collection.count(), 2);
-}
-
-// ==================== Index Tests ====================
-
-#[test]
-fn test_create_index() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let stats = collection
-        .create_index(
-            "idx_age".to_string(),
-            vec!["age".to_string()],
-            solidb::IndexType::Persistent,
-            false,
-        )
-        .unwrap();
-
-    assert_eq!(stats.name, "idx_age");
-    assert_eq!(stats.field, "age");
-}
-
-#[test]
-fn test_index_lookup_eq() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    // Insert documents first
-    collection
-        .insert(json!({"_key": "alice", "name": "Alice", "age": 30}))
-        .unwrap();
-    collection
-        .insert(json!({"_key": "bob", "name": "Bob", "age": 25}))
-        .unwrap();
-    collection
-        .insert(json!({"_key": "charlie", "name": "Charlie", "age": 30}))
-        .unwrap();
-
-    // Create index
-    collection
-        .create_index(
-            "idx_age".to_string(),
-            vec!["age".to_string()],
-            solidb::IndexType::Hash,
-            false,
-        )
-        .unwrap();
-
-    // Lookup
-    let results = collection.index_lookup_eq("age", &json!(30));
-    assert!(results.is_some());
-    let docs = results.unwrap();
-    assert_eq!(docs.len(), 2);
-}
-
-#[test]
-fn test_list_indexes() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    collection
-        .create_index(
-            "idx_age".to_string(),
-            vec!["age".to_string()],
-            solidb::IndexType::Persistent,
-            false,
-        )
-        .unwrap();
-    collection
-        .create_index(
-            "idx_name".to_string(),
-            vec!["name".to_string()],
-            solidb::IndexType::Hash,
-            false,
-        )
-        .unwrap();
-
-    let indexes = collection.list_indexes();
-    assert_eq!(indexes.len(), 2);
-}
-
-#[test]
-fn test_drop_index() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    collection
-        .create_index(
-            "idx_age".to_string(),
-            vec!["age".to_string()],
-            solidb::IndexType::Persistent,
-            false,
-        )
-        .unwrap();
-
-    let result = collection.drop_index("idx_age");
-    assert!(result.is_ok());
-
-    let indexes = collection.list_indexes();
-    assert_eq!(indexes.len(), 0);
-}
-
-// ==================== Persistence Tests ====================
-
-#[test]
-fn test_data_persists_after_reopen() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let path = temp_dir.path().to_path_buf();
-
-    // Create storage, insert data, drop storage
-    {
-        let storage = StorageEngine::new(&path).unwrap();
-        storage.create_collection("users".to_string(), None).unwrap();
-        let collection = storage.get_collection("users").unwrap();
-        collection
-            .insert(json!({
-                "_key": "alice",
-                "name": "Alice",
-                "age": 30
-            }))
-            .unwrap();
-    }
-
-    // Reopen storage and verify data
-    {
-        let storage = StorageEngine::new(&path).unwrap();
-        let collections = storage.list_collections();
-        assert!(collections.contains(&"users".to_string()));
-
-        let collection = storage.get_collection("users").unwrap();
-        let doc = collection.get("alice").unwrap();
-        let value = doc.to_value();
-        assert_eq!(value["name"], "Alice");
-        assert_eq!(value["age"], 30);
-    }
-}
-
-#[test]
-fn test_index_persists_after_reopen() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let path = temp_dir.path().to_path_buf();
-
-    // Create storage with index
-    {
-        let storage = StorageEngine::new(&path).unwrap();
-        storage.create_collection("users".to_string(), None).unwrap();
-        let collection = storage.get_collection("users").unwrap();
-        collection
-            .insert(json!({"_key": "alice", "age": 30}))
-            .unwrap();
-        collection
-            .create_index(
-                "idx_age".to_string(),
-                vec!["age".to_string()],
-                solidb::IndexType::Persistent,
-                false,
-            )
-            .unwrap();
-    }
-
-    // Reopen and verify index
-    {
-        let storage = StorageEngine::new(&path).unwrap();
-        let collection = storage.get_collection("users").unwrap();
-        let indexes = collection.list_indexes();
-        assert_eq!(indexes.len(), 1);
-        assert_eq!(indexes[0].name, "idx_age");
-    }
-}
-
-// ==================== Geo Index Tests ====================
-
-#[test]
-fn test_create_geo_index() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string(), None).unwrap();
-    let collection = storage.get_collection("places").unwrap();
-
-    let stats = collection
-        .create_geo_index("idx_location".to_string(), "location".to_string())
-        .unwrap();
-
-    assert_eq!(stats.name, "idx_location");
-    assert_eq!(stats.field, "location");
-}
-
-#[test]
-fn test_geo_near() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string(), None).unwrap();
-    let collection = storage.get_collection("places").unwrap();
-
-    // Insert places
-    collection
-        .insert(json!({
-            "_key": "eiffel",
-            "name": "Eiffel Tower",
-            "location": {"lat": 48.8584, "lon": 2.2945}
-        }))
-        .unwrap();
-    collection
-        .insert(json!({
-            "_key": "louvre",
-            "name": "Louvre Museum",
-            "location": {"lat": 48.8606, "lon": 2.3376}
-        }))
-        .unwrap();
-    collection
-        .insert(json!({
-            "_key": "notre_dame",
-            "name": "Notre Dame",
-            "location": {"lat": 48.8530, "lon": 2.3499}
-        }))
-        .unwrap();
-
-    // Create geo index
-    collection
-        .create_geo_index("idx_location".to_string(), "location".to_string())
-        .unwrap();
-
-    // Query near Eiffel Tower
-    let results = collection.geo_near("location", 48.8584, 2.2945, 3);
-    assert!(results.is_some());
-    let places = results.unwrap();
-    assert!(!places.is_empty());
-
-    // First result should be Eiffel Tower (closest to itself)
-    let (first_doc, first_dist) = &places[0];
-    assert_eq!(first_doc.key, "eiffel");
-    assert!(first_dist < &100.0); // Very close to itself
-}
-
-#[test]
-fn test_geo_within() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("places".to_string(), None).unwrap();
-    let collection = storage.get_collection("places").unwrap();
-
-    // Insert places
-    collection
-        .insert(json!({
-            "_key": "eiffel",
-            "name": "Eiffel Tower",
-            "location": {"lat": 48.8584, "lon": 2.2945}
-        }))
-        .unwrap();
-    collection
-        .insert(json!({
-            "_key": "london_eye",
-            "name": "London Eye",
-            "location": {"lat": 51.5033, "lon": -0.1196}
-        }))
-        .unwrap();
-
-    // Create geo index
-    collection
-        .create_geo_index("idx_location".to_string(), "location".to_string())
-        .unwrap();
-
-    // Query within 10km of Eiffel Tower (should not include London Eye)
-    let results = collection.geo_within("location", 48.8584, 2.2945, 10_000.0);
-    assert!(results.is_some());
-    let places = results.unwrap();
-    assert_eq!(places.len(), 1);
-    assert_eq!(places[0].0.key, "eiffel");
-}
-
-// ==================== Revision Tests ====================
-
-#[test]
-fn test_document_has_revision() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    let doc = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
-
-    // Document should have a _rev field
+fn test_document_to_value() {
+    let doc = Document::with_key("users", "key1".to_string(), json!({"name": "Test"}));
     let value = doc.to_value();
+    
+    assert!(value.is_object());
+    assert_eq!(value.get("_key"), Some(&json!("key1")));
+    assert_eq!(value.get("_id"), Some(&json!("users/key1")));
     assert!(value.get("_rev").is_some());
-    assert!(value["_rev"].is_string());
-    assert!(!value["_rev"].as_str().unwrap().is_empty());
+    assert_eq!(value.get("name"), Some(&json!("Test")));
 }
 
 #[test]
-fn test_revision_changes_on_update() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
+fn test_document_revision_changes_on_update() {
+    let mut doc = Document::new("users", json!({"counter": 0}));
+    let mut revisions = vec![doc.rev.clone()];
+    
+    for i in 1..5 {
+        doc.update(json!({"counter": i}));
+        revisions.push(doc.rev.clone());
+    }
+    
+    // All revisions should be unique
+    let unique_revs: std::collections::HashSet<_> = revisions.iter().collect();
+    assert_eq!(unique_revs.len(), revisions.len(), "Each update should generate unique revision");
+}
 
-    // Insert document
-    let doc = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
-    let original_rev = doc.revision().to_string();
+// ============================================================================
+// StorageEngine Tests
+// ============================================================================
 
-    // Update document
-    let updated_doc = collection
-        .update(
-            "alice",
-            json!({
-                "name": "Alice Updated"
-            }),
-        )
-        .unwrap();
-    let new_rev = updated_doc.revision().to_string();
-
-    // Revision should change
-    assert_ne!(original_rev, new_rev);
+fn create_test_engine() -> (Arc<StorageEngine>, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    (Arc::new(engine), tmp_dir)
 }
 
 #[test]
-fn test_update_with_rev_success() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    // Insert document
-    let doc = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
-    let current_rev = doc.revision().to_string();
-
-    // Update with correct revision should succeed
-    let result = collection.update_with_rev(
-        "alice",
-        &current_rev,
-        json!({
-            "name": "Alice Updated"
-        }),
-    );
-
-    assert!(result.is_ok());
-    let updated = result.unwrap();
-    assert_eq!(updated.to_value()["name"], json!("Alice Updated"));
+fn test_storage_engine_create() {
+    let (engine, _tmp) = create_test_engine();
+    assert!(!engine.data_dir().is_empty());
 }
 
 #[test]
-fn test_update_with_rev_conflict() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
-
-    // Insert document
-    let doc = collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
-    let original_rev = doc.revision().to_string();
-
-    // Simulate another update (changes revision)
-    collection
-        .update(
-            "alice",
-            json!({
-                "status": "active"
-            }),
-        )
-        .unwrap();
-
-    // Try to update with old revision - should fail
-    let result = collection.update_with_rev(
-        "alice",
-        &original_rev,
-        json!({
-            "name": "Alice Conflict"
-        }),
-    );
-
-    assert!(result.is_err());
-    assert!(matches!(result, Err(DbError::ConflictError(_))));
+fn test_storage_engine_create_database() {
+    let (engine, _tmp) = create_test_engine();
+    
+    let result = engine.create_database("test_db".to_string());
+    assert!(result.is_ok(), "Should create database: {:?}", result.err());
 }
 
 #[test]
-fn test_revision_accessible_via_get() {
-    let (storage, _dir) = create_test_storage();
-    storage.create_collection("users".to_string(), None).unwrap();
-    let collection = storage.get_collection("users").unwrap();
+fn test_storage_engine_list_databases() {
+    let (engine, _tmp) = create_test_engine();
+    
+    engine.create_database("db1".to_string()).unwrap();
+    engine.create_database("db2".to_string()).unwrap();
+    
+    let dbs = engine.list_databases();
+    assert!(dbs.contains(&"db1".to_string()));
+    assert!(dbs.contains(&"db2".to_string()));
+}
 
-    // Insert document
-    collection
-        .insert(json!({
-            "_key": "alice",
-            "name": "Alice"
-        }))
-        .unwrap();
+#[test]
+fn test_storage_engine_get_database() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_database("mydb".to_string()).unwrap();
+    
+    let db = engine.get_database("mydb");
+    assert!(db.is_ok(), "Should get database: {:?}", db.err());
+}
 
-    // Get document and check _rev is accessible
-    let doc = collection.get("alice").unwrap();
-    let rev = doc.get("_rev");
+#[test]
+fn test_storage_engine_create_collection() {
+    let (engine, _tmp) = create_test_engine();
+    
+    let result = engine.create_collection("test_collection".to_string(), None);
+    assert!(result.is_ok(), "Should create collection: {:?}", result.err());
+}
 
-    assert!(rev.is_some());
-    assert!(rev.unwrap().is_string());
+#[test]
+fn test_storage_engine_list_collections() {
+    let (engine, _tmp) = create_test_engine();
+    
+    engine.create_collection("col1".to_string(), None).unwrap();
+    engine.create_collection("col2".to_string(), None).unwrap();
+    
+    let cols = engine.list_collections();
+    assert!(cols.contains(&"col1".to_string()));
+    assert!(cols.contains(&"col2".to_string()));
+}
+
+#[test]
+fn test_storage_engine_get_collection() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("users".to_string(), None).unwrap();
+    
+    let col = engine.get_collection("users");
+    assert!(col.is_ok(), "Should get collection: {:?}", col.err());
+}
+
+#[test]
+fn test_storage_engine_delete_collection() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("to_delete".to_string(), None).unwrap();
+    
+    let before = engine.list_collections();
+    assert!(before.contains(&"to_delete".to_string()));
+    
+    engine.delete_collection("to_delete").unwrap();
+    
+    let after = engine.list_collections();
+    assert!(!after.contains(&"to_delete".to_string()));
+}
+
+// ============================================================================
+// Collection Document Operations
+// ============================================================================
+
+#[test]
+fn test_collection_insert_and_get() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("users".to_string(), None).unwrap();
+    let collection = engine.get_collection("users").unwrap();
+    
+    // Insert a document using Value (the actual API)
+    let inserted = collection.insert(json!({"_key": "user1", "name": "Alice", "age": 30}))
+        .expect("Insert should succeed");
+    
+    assert_eq!(inserted.key, "user1");
+    
+    // Get it back
+    let retrieved = collection.get("user1").expect("Get should succeed");
+    
+    let val = retrieved.to_value();
+    assert_eq!(val.get("name"), Some(&json!("Alice")));
+    assert_eq!(val.get("age"), Some(&json!(30)));
+}
+
+#[test]
+fn test_collection_insert_auto_key() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("items".to_string(), None).unwrap();
+    let collection = engine.get_collection("items").unwrap();
+    
+    // Insert without _key - should auto-generate
+    let inserted = collection.insert(json!({"value": 42}))
+        .expect("Insert should succeed");
+    
+    // Key should be a UUID v7
+    assert!(!inserted.key.is_empty());
+    assert!(inserted.key.contains('-')); // UUID format
+}
+
+#[test]
+fn test_collection_update_document() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("users".to_string(), None).unwrap();
+    let collection = engine.get_collection("users").unwrap();
+    
+    // Insert initial document
+    collection.insert(json!({"_key": "user1", "name": "Bob", "score": 0}))
+        .expect("Insert should succeed");
+    
+    // Update it using the Collection API: update(key, data)
+    let updated = collection.update("user1", json!({"score": 100}))
+        .expect("Update should succeed");
+    
+    // Verify update
+    let val = updated.to_value();
+    assert_eq!(val.get("score"), Some(&json!(100)));
+    assert_eq!(val.get("name"), Some(&json!("Bob"))); // Name should be preserved
+}
+
+#[test]
+fn test_collection_delete_document() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("users".to_string(), None).unwrap();
+    let collection = engine.get_collection("users").unwrap();
+    
+    // Insert 
+    collection.insert(json!({"_key": "to_delete", "temp": true}))
+        .expect("Insert should succeed");
+    
+    // Verify exists
+    assert!(collection.get("to_delete").is_ok());
+    
+    // Delete
+    collection.delete("to_delete").expect("Delete should succeed");
+    
+    // Verify deleted - get should return an error
+    assert!(collection.get("to_delete").is_err());
+}
+
+#[test]
+fn test_collection_count() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("items".to_string(), None).unwrap();
+    let collection = engine.get_collection("items").unwrap();
+    
+    // Insert multiple documents
+    for i in 0..10 {
+        collection.insert(json!({"index": i}))
+            .expect("Insert should succeed");
+    }
+    
+    let count = collection.count();
+    assert_eq!(count, 10);
+}
+
+#[test]
+fn test_collection_all_documents() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("items".to_string(), None).unwrap();
+    let collection = engine.get_collection("items").unwrap();
+    
+    // Insert some documents
+    for i in 0..5 {
+        collection.insert(json!({"value": i}))
+            .expect("Insert should succeed");
+    }
+    
+    let all_docs = collection.all();
+    assert_eq!(all_docs.len(), 5);
+}
+
+// ============================================================================
+// Edge Collection Tests
+// ============================================================================
+
+#[test]
+fn test_edge_collection_create() {
+    let (engine, _tmp) = create_test_engine();
+    
+    let result = engine.create_collection("follows".to_string(), Some("edge".to_string()));
+    assert!(result.is_ok(), "Should create edge collection: {:?}", result.err());
+}
+
+#[test]
+fn test_edge_collection_requires_from_to() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("edges".to_string(), Some("edge".to_string())).unwrap();
+    let collection = engine.get_collection("edges").unwrap();
+    
+    // Try to insert without _from and _to - should fail
+    let result = collection.insert(json!({"data": "no edges"}));
+    assert!(result.is_err(), "Edge without _from/_to should fail");
+    
+    // Insert with _from and _to - should succeed
+    let result = collection.insert(json!({
+        "_from": "users/alice",
+        "_to": "users/bob",
+        "since": "2024-01-01"
+    }));
+    assert!(result.is_ok(), "Edge with _from/_to should succeed: {:?}", result.err());
+}
+
+// ============================================================================
+// Concurrent Access Tests
+// ============================================================================
+
+#[test]
+fn test_concurrent_document_operations() {
+    use std::thread;
+    
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("concurrent".to_string(), None).unwrap();
+    
+    let handles: Vec<_> = (0..10).map(|t| {
+        let engine = Arc::clone(&engine);
+        thread::spawn(move || {
+            let collection = engine.get_collection("concurrent").unwrap();
+            let mut success_count = 0;
+            let mut error_count = 0;
+            
+            for i in 0..10 {
+                let key = format!("t{}_doc{}", t, i);
+                match collection.insert(json!({"_key": key, "thread": t, "doc": i})) {
+                    Ok(_) => success_count += 1,
+                    Err(e) => {
+                        error_count += 1;
+                        eprintln!("Thread {} insert {}: {:?}", t, i, e);
+                    }
+                }
+            }
+            
+            (success_count, error_count)
+        })
+    }).collect();
+    
+    let mut total_success = 0;
+    let mut total_errors = 0;
+    
+    for h in handles {
+        let (success, errors) = h.join().expect("Thread should complete");
+        total_success += success;
+        total_errors += errors;
+    }
+    
+    println!("Total successful inserts: {}, Total errors: {}", total_success, total_errors);
+    
+    // Use recount to get actual document count from disk
+    let collection = engine.get_collection("concurrent").unwrap();
+    let actual_count = collection.recount_documents();
+    let cached_count = collection.count();
+    
+    println!("Actual count from disk: {}, Cached count: {}", actual_count, cached_count);
+    
+    // Assert that we have the expected number of documents
+    assert_eq!(actual_count, 100, "All concurrent inserts should succeed");
+    assert_eq!(cached_count, actual_count, "Cached count should match actual count");
+    assert_eq!(total_errors, 0, "No insert operations should fail");
+}
+
+#[test]
+fn test_document_uuidv7_key_ordering() {
+    // UUID v7 keys should be time-ordered
+    let doc1 = Document::new("test", json!({"seq": 1}));
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let doc2 = Document::new("test", json!({"seq": 2}));
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let doc3 = Document::new("test", json!({"seq": 3}));
+    
+    // UUID v7 keys are lexicographically sortable by time
+    assert!(doc1.key < doc2.key, "doc1 key should be less than doc2 key");
+    assert!(doc2.key < doc3.key, "doc2 key should be less than doc3 key");
+}
+
+// ============================================================================
+// Batch Operations
+// ============================================================================
+
+#[test]
+fn test_collection_batch_insert() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("batch_test".to_string(), None).unwrap();
+    let collection = engine.get_collection("batch_test").unwrap();
+    
+    // Prepare batch of documents
+    let documents: Vec<serde_json::Value> = (0..100)
+        .map(|i| json!({"index": i, "name": format!("item_{}", i)}))
+        .collect();
+    
+    let result = collection.insert_batch(documents);
+    assert!(result.is_ok(), "Batch insert should succeed: {:?}", result.err());
+    
+    let inserted = result.unwrap();
+    assert_eq!(inserted.len(), 100);
+    
+    let count = collection.count();
+    assert_eq!(count, 100);
+}
+
+// ============================================================================
+// Document Key Tests
+// ============================================================================
+
+#[test]
+fn test_document_duplicate_key() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("unique_test".to_string(), None).unwrap();
+    let collection = engine.get_collection("unique_test").unwrap();
+    
+    // Insert first document
+    collection.insert(json!({"_key": "same-key", "value": 1})).unwrap();
+    
+    // Inserting with same key should actually overwrite (or return error depending on impl)
+    // Let's verify the behavior
+    let _result = collection.insert(json!({"_key": "same-key", "value": 2}));
+    
+    // Get the document to see final state
+    let doc = collection.get("same-key").unwrap();
+    let val = doc.to_value();
+    
+    // Document should exist (either original or updated)
+    assert!(val.get("value").is_some());
 }

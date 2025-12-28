@@ -95,3 +95,132 @@ impl Default for ClusterConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cluster_config_default() {
+        let config = ClusterConfig::default();
+        
+        assert!(!config.node_id.is_empty());
+        assert!(config.peers.is_empty());
+        assert_eq!(config.replication_port, 6746);
+        assert!(config.keyfile.is_none());
+    }
+
+    #[test]
+    fn test_cluster_config_new_with_node_id() {
+        let config = ClusterConfig::new(
+            Some("my-node".to_string()),
+            vec![],
+            7000,
+            None,
+        );
+        
+        assert_eq!(config.node_id, "my-node");
+        assert_eq!(config.replication_port, 7000);
+    }
+
+    #[test]
+    fn test_cluster_config_auto_node_id() {
+        let config = ClusterConfig::new(
+            None,
+            vec![],
+            6746,
+            None,
+        );
+        
+        // Auto-generated node ID should contain hyphen and be non-empty
+        assert!(!config.node_id.is_empty());
+    }
+
+    #[test]
+    fn test_cluster_config_strip_http() {
+        let config = ClusterConfig::new(
+            Some("node".to_string()),
+            vec![
+                "http://peer1:8080".to_string(),
+                "https://peer2:8080".to_string(),
+                "peer3:8080".to_string(),
+            ],
+            6746,
+            None,
+        );
+        
+        assert_eq!(config.peers[0], "peer1:8080");
+        assert_eq!(config.peers[1], "peer2:8080");
+        assert_eq!(config.peers[2], "peer3:8080");
+    }
+
+    #[test]
+    fn test_cluster_config_trim_whitespace() {
+        let config = ClusterConfig::new(
+            Some("node".to_string()),
+            vec!["  peer1:8080  ".to_string()],
+            6746,
+            None,
+        );
+        
+        assert_eq!(config.peers[0], "peer1:8080");
+    }
+
+    #[test]
+    fn test_is_cluster_mode() {
+        let config = ClusterConfig::default();
+        // Any cluster config means cluster mode
+        assert!(config.is_cluster_mode());
+    }
+
+    #[test]
+    fn test_replication_addr() {
+        let config = ClusterConfig::new(
+            Some("node".to_string()),
+            vec![],
+            7777,
+            None,
+        );
+        
+        assert_eq!(config.replication_addr(), "0.0.0.0:7777");
+    }
+
+    #[test]
+    fn test_requires_auth_without_keyfile() {
+        let config = ClusterConfig::default();
+        assert!(!config.requires_auth());
+    }
+
+    #[test]
+    fn test_cluster_config_serialization() {
+        let config = ClusterConfig::new(
+            Some("test-node".to_string()),
+            vec!["peer1:8080".to_string()],
+            6746,
+            None,
+        );
+        
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("test-node"));
+        assert!(json.contains("peer1:8080"));
+        
+        let deserialized: ClusterConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.node_id, deserialized.node_id);
+        assert_eq!(config.peers, deserialized.peers);
+    }
+
+    #[test]
+    fn test_cluster_config_clone() {
+        let config = ClusterConfig::new(
+            Some("node1".to_string()),
+            vec!["peer:8080".to_string()],
+            6746,
+            None,
+        );
+        
+        let cloned = config.clone();
+        assert_eq!(config.node_id, cloned.node_id);
+        assert_eq!(config.peers, cloned.peers);
+    }
+}
+
