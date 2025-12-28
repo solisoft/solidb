@@ -61,6 +61,7 @@ CustomRoute("GET", "/database/:db/sharding", "dashboard#sharding")
 CustomRoute("GET", "/database/:db/monitoring", "dashboard#monitoring")
 
 -- docs pages
+CustomRoute("GET", "/slides", "docs#slides")
 CustomRoute("GET", "/docs/:page", "docs#show")
 
 CustomRoute("POST", "/upload/:collection/:key/:field", "uploads#upload")

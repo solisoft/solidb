@@ -753,14 +753,8 @@ app.remove_channel_member = function()
       return
   end
 
-  if channel.type ~= "private" then
-      SetStatus(400)
-      WriteJSON({ error = "Only private channels support member management" })
-      return
-  end
-
-  -- Only creator or the user themselves can remove
-  local can_remove = (channel.created_by == current_user._key) or (user_key == current_user._key)
+  -- Only creator, self-removal, or DM participants
+  local can_remove = (channel.created_by == current_user._key) or (user_key == current_user._key) or (channel.type == "dm")
 
   if not can_remove then
       SetStatus(403)
