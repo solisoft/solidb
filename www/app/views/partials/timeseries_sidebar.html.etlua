@@ -1,0 +1,50 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto space-y-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Time Series</h3>
+      
+      <nav class="space-y-1">
+        <!-- Concepts -->
+        <a href="#concepts" class="group flex items-center px-2 py-2 text-sm font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(6,182,212,0.5)]"></span>
+          Concepts
+        </a>
+
+        <!-- Collections -->
+        <a href="#collections" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Collections
+        </a>
+
+        <!-- Querying -->
+        <a href="#querying" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Querying & Buckets
+        </a>
+
+        <!-- Pruning -->
+        <a href="#pruning" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Data Pruning
+        </a>
+      </nav>
+    </div>
+
+    <!-- Help Card -->
+    <div class="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <h4 class="text-white font-semibold mb-2 relative z-10">Need Help?</h4>
+      <p class="text-sm text-gray-400 mb-4 relative z-10">
+        Check out our getting started guide for a quick introduction.
+      </p>
+      <a href="/docs/getting-started" class="inline-flex items-center text-xs font-bold uppercase tracking-wider text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg transition-all relative z-10">
+        Get Started
+        <svg class="w-3 h-3 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>

@@ -85,6 +85,10 @@ pub fn create_router(
             put(compact_collection),
         )
         .route(
+            "/_api/database/{db}/collection/{name}/prune",
+            post(prune_collection),
+        )
+        .route(
             "/_api/database/{db}/collection/{name}/recount",
             put(recount_collection),
         )

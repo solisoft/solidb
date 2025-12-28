@@ -1521,6 +1521,47 @@ pub async fn compact_collection(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PruneCollectionRequest {
+    pub older_than: String, // ISO8601
+}
+
+#[derive(Debug, Serialize)]
+pub struct PruneCollectionResponse {
+    pub status: String,
+    pub timestamp_ms: u64,
+}
+
+pub async fn prune_collection(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<PruneCollectionRequest>,
+) -> Result<Json<PruneCollectionResponse>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let collection = db.get_collection(&coll_name)?;
+
+    // Parse timestamp
+    let dt = chrono::DateTime::parse_from_rfc3339(&req.older_than)
+        .map_err(|e| DbError::BadRequest(format!("Invalid timestamp format: {}", e)))?;
+    
+    let ts_i64 = dt.timestamp_millis();
+    if ts_i64 < 0 {
+        return Err(DbError::BadRequest("Pruning timestamp must be after 1970-01-01".to_string()));
+    }
+    
+    // Ensure accurate conversion to u64 ms
+    let timestamp_ms = ts_i64 as u64;
+
+    collection.prune_older_than(timestamp_ms)?;
+
+    tracing::info!("Pruned collection {}/{} older than {}", db_name, coll_name, req.older_than);
+
+    Ok(Json(PruneCollectionResponse {
+        status: "pruned".to_string(),
+        timestamp_ms,
+    }))
+}
+
 /// Get document count for a collection (used for cluster-wide aggregation)
 pub async fn get_collection_count(
     State(state): State<AppState>,

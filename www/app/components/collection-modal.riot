@@ -40,7 +40,7 @@
           <!-- Collection Type -->
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 gap-3">
               <button type="button" data-type="document" onclick={ setType }
                 class={ 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 '
                 + (state.collectionType==='document'
@@ -63,6 +63,17 @@
                 </svg>
                 Edge
               </button>
+              <button type="button" data-type="timeseries" onclick={ setType }
+                class={ 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 '
+                + (state.collectionType==='timeseries'
+                ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800' ) }>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                Time Series
+              </button>
               <button type="button" data-type="blob" onclick={ setType }
                 class={ 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 '
                 + (state.collectionType==='blob'
@@ -80,6 +91,9 @@
             </p>
             <p if={ state.collectionType==='blob' } class="mt-2 text-xs text-amber-400">
               Blob collections are optimized for file storage and automatically shard large files
+            </p>
+            <p if={ state.collectionType==='timeseries' } class="mt-2 text-xs text-cyan-400">
+              Time series collections are append-only and optimized for high-speed writes and range pruning
             </p>
           </div>
 

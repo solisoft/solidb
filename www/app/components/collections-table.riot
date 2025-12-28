@@ -59,8 +59,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
+              <!-- Timeseries collection icon (chart) -->
+              <svg if={ collection.type==='timeseries' }
+                class="h-5 w-5 text-cyan-400 mr-2 group-hover:text-cyan-300 transition-colors" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
               <!-- Document collection icon (folder) -->
-              <svg if={ collection.type !=='edge' && collection.type !=='blob' }
+              <svg if={ collection.type !=='edge' && collection.type !=='blob' && collection.type !=='timeseries' }
                 class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -72,6 +79,8 @@
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">Edge</span>
               <span if={ collection.type==='blob' }
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Blob</span>
+              <span if={ collection.type==='timeseries' }
+                class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">TS</span>
             </a>
           </td>
           <td class="px-6 py-4 whitespace-nowrap">

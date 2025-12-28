@@ -2438,6 +2438,77 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::String(type_name.to_string()))
             }
 
+            // TIME_BUCKET(timestamp, interval) - bucket timestamp into fixed intervals
+            "TIME_BUCKET" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "TIME_BUCKET requires 2 arguments: timestamp, interval (e.g. '5m')".to_string(),
+                    ));
+                }
+
+                // Parse interval
+                let interval_str = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("TIME_BUCKET: interval must be a string".to_string())
+                })?;
+
+                let len = interval_str.len();
+                if len < 2 {
+                     return Err(DbError::ExecutionError("TIME_BUCKET: invalid interval format".to_string()));
+                }
+
+                let unit = &interval_str[len-1..];
+                let val_str = &interval_str[..len-1];
+                let val: u64 = val_str.parse().map_err(|_| {
+                    DbError::ExecutionError("TIME_BUCKET: invalid interval number".to_string())
+                })?;
+
+                let interval_ms = match unit {
+                    "s" => val * 1000,
+                    "m" => val * 1000 * 60,
+                    "h" => val * 1000 * 60 * 60,
+                    "d" => val * 1000 * 60 * 60 * 24,
+                    _ => return Err(DbError::ExecutionError("TIME_BUCKET: valid units are s, m, h, d".to_string())),
+                };
+
+                if interval_ms == 0 {
+                    return Err(DbError::ExecutionError("TIME_BUCKET: interval cannot be 0".to_string()));
+                }
+
+                // Parse timestamp
+                match &evaluated_args[0] {
+                    Value::Number(n) => {
+                        let ts = n.as_i64().ok_or_else(|| {
+                            DbError::ExecutionError("TIME_BUCKET: timestamp must be a valid number".to_string())
+                        })?;
+                        // Bucket (use div_euclid to handle negative timestamps correctly)
+                        let bucket = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
+                        Ok(Value::Number(bucket.into()))
+                    },
+                    Value::String(s) => {
+                         let dt = chrono::DateTime::parse_from_rfc3339(s).map_err(|_| {
+                             DbError::ExecutionError("TIME_BUCKET: invalid timestamp string".to_string())
+                         })?;
+                         let ts = dt.timestamp_millis();
+                         let bucket_ts = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
+                         
+                         // Convert back to string (UTC)
+                         // We use basic arithmetic to get seconds/nanos for safe reconstruction
+                         let seconds = bucket_ts.div_euclid(1000);
+                         let nanos = (bucket_ts.rem_euclid(1000) * 1_000_000) as u32;
+                         
+                         // Try standard DateTime construction (compatible with most chrono versions)
+                         // We rely on Utc being available
+                         if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                             Ok(Value::String(dt.to_rfc3339()))
+                         } else {
+                             // Fallback or error path
+                             Err(DbError::ExecutionError("TIME_BUCKET: failed to construct date".to_string()))
+                         }
+                    },
+                    _ => Err(DbError::ExecutionError("TIME_BUCKET: timestamp must be number or string".to_string()))
+                }
+            }
+
             // DISTANCE(lat1, lon1, lat2, lon2) - distance between two points in meters
             "DISTANCE" => {
                 if evaluated_args.len() != 4 {

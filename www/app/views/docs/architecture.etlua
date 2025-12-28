@@ -156,6 +156,14 @@
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
               <div class="flex items-center mb-3">
+                <i class="fas fa-chart-line text-cyan-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Time Series</h4>
+              </div>
+              <p class="text-sm text-gray-400">Optimized storage for time-series data with ranged pruning and downsampling aggregations.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
                 <i class="fas fa-code text-lime-400 mr-3"></i>
                 <h4 class="text-white font-semibold">Lua Scripting</h4>
               </div>
@@ -587,7 +595,7 @@
                     <i class="fas fa-clock text-rose-400 mr-2"></i> Date & Time
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC"}) do %>
+                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC", "TIME_BUCKET"}) do %>
                       <span class="text-rose-400/80 hover:text-rose-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>
