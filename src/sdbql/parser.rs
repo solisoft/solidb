@@ -97,6 +97,9 @@ impl Parser {
             } else if matches!(self.current_token(), Token::Remove) {
                 let remove_clause = self.parse_remove_clause()?;
                 body_clauses.push(BodyClause::Remove(remove_clause));
+            } else if matches!(self.current_token(), Token::Upsert) {
+                let upsert_clause = self.parse_upsert_clause()?;
+                body_clauses.push(BodyClause::Upsert(upsert_clause));
             } else if matches!(self.current_token(), Token::Let) {
                 let let_clause = self.parse_let_clause()?;
                 // LET after FOR goes to body_clauses (correlated), not let_clauses
@@ -425,6 +428,55 @@ impl Parser {
         Ok(RemoveClause {
             selector,
             collection,
+        })
+    }
+
+    fn parse_upsert_clause(&mut self) -> DbResult<UpsertClause> {
+        self.expect(Token::Upsert)?;
+
+        // Parse search expression
+        // Disable IN operator to avoid consuming 'IN' keyword
+        self.allow_in_operator = false;
+        let search = self.parse_expression()?;
+        self.allow_in_operator = true;
+
+        self.expect(Token::Insert)?;
+
+        self.allow_in_operator = false;
+        let insert = self.parse_expression()?;
+        self.allow_in_operator = true;
+
+        // Expect UPDATE or REPLACE
+        let replace = if matches!(self.current_token(), Token::Replace) {
+             self.advance();
+             true
+        } else {
+             self.expect(Token::Update)?;
+             false
+        };
+
+        self.allow_in_operator = false;
+        let update = self.parse_expression()?;
+        self.allow_in_operator = true;
+
+        self.expect(Token::In)?;
+
+        let collection = if let Token::Identifier(name) = self.current_token() {
+            let coll = name.clone();
+            self.advance();
+            coll
+        } else {
+            return Err(DbError::ParseError(
+                "Expected collection name after IN".to_string(),
+            ));
+        };
+
+        Ok(UpsertClause {
+            search,
+            insert,
+            update,
+            collection,
+            replace,
         })
     }
 
@@ -811,14 +863,62 @@ impl Parser {
     }
 
     fn parse_and_expression(&mut self) -> DbResult<Expression> {
-        let mut left = self.parse_comparison_expression()?;
+        let mut left = self.parse_bitwise_or_expression()?;
 
         while matches!(self.current_token(), Token::And) {
+            self.advance();
+            let right = self.parse_bitwise_or_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::And,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_or_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_bitwise_xor_expression()?;
+
+        while matches!(self.current_token(), Token::Pipe) {
+            self.advance();
+            let right = self.parse_bitwise_xor_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::BitwiseOr,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_xor_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_bitwise_and_expression()?;
+
+        while matches!(self.current_token(), Token::Caret) {
+            self.advance();
+            let right = self.parse_bitwise_and_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::BitwiseXor,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_bitwise_and_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_comparison_expression()?;
+
+        while matches!(self.current_token(), Token::Ampersand) {
             self.advance();
             let right = self.parse_comparison_expression()?;
             left = Expression::BinaryOp {
                 left: Box::new(left),
-                op: BinaryOperator::And,
+                op: BinaryOperator::BitwiseAnd,
                 right: Box::new(right),
             };
         }
@@ -903,15 +1003,36 @@ impl Parser {
 
     /// Parse range expressions (e.g., 1..5 produces [1, 2, 3, 4, 5])
     fn parse_range_expression(&mut self) -> DbResult<Expression> {
-        let left = self.parse_additive_expression()?;
+        let left = self.parse_shift_expression()?;
 
         if matches!(self.current_token(), Token::DotDot) {
             self.advance(); // consume '..'
-            let right = self.parse_additive_expression()?;
+            let right = self.parse_shift_expression()?;
             Ok(Expression::Range(Box::new(left), Box::new(right)))
         } else {
             Ok(left)
         }
+    }
+
+    fn parse_shift_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_additive_expression()?;
+
+        while matches!(self.current_token(), Token::LeftShift | Token::RightShift) {
+            let op = match self.current_token() {
+                Token::LeftShift => BinaryOperator::LeftShift,
+                Token::RightShift => BinaryOperator::RightShift,
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_additive_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
     }
 
     fn parse_additive_expression(&mut self) -> DbResult<Expression> {
@@ -938,10 +1059,11 @@ impl Parser {
     fn parse_multiplicative_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_unary_expression()?;
 
-        while matches!(self.current_token(), Token::Star | Token::Slash) {
+        while matches!(self.current_token(), Token::Star | Token::Slash | Token::Percent) {
             let op = match self.current_token() {
                 Token::Star => BinaryOperator::Multiply,
                 Token::Slash => BinaryOperator::Divide,
+                Token::Percent => BinaryOperator::Modulus,
                 _ => unreachable!(),
             };
             self.advance();
@@ -971,6 +1093,14 @@ impl Parser {
                 let operand = self.parse_unary_expression()?;
                 Ok(Expression::UnaryOp {
                     op: UnaryOperator::Negate,
+                    operand: Box::new(operand),
+                })
+            }
+            Token::Tilde => {
+                self.advance();
+                let operand = self.parse_unary_expression()?;
+                Ok(Expression::UnaryOp {
+                    op: UnaryOperator::BitwiseNot,
                     operand: Box::new(operand),
                 })
             }

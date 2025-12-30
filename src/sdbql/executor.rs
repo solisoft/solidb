@@ -17,6 +17,35 @@ fn number_from_f64(f: f64) -> serde_json::Number {
     serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0))
 }
 
+/// Parse a date value (timestamp or ISO string) into DateTime<Utc>
+fn parse_datetime(value: &Value) -> DbResult<chrono::DateTime<Utc>> {
+    use chrono::{DateTime, TimeZone};
+    
+    match value {
+        Value::Number(n) => {
+            let timestamp_ms = if let Some(i) = n.as_i64() {
+                i
+            } else if let Some(f) = n.as_f64() {
+                f as i64
+            } else {
+                return Err(DbError::ExecutionError("Invalid timestamp".to_string()));
+            };
+            let secs = timestamp_ms / 1000;
+            let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
+            match Utc.timestamp_opt(secs, nanos) {
+                chrono::LocalResult::Single(dt) => Ok(dt),
+                _ => Err(DbError::ExecutionError(format!("Invalid timestamp: {}", timestamp_ms))),
+            }
+        }
+        Value::String(s) => {
+            DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| DbError::ExecutionError(format!("Invalid ISO 8601 date '{}': {}", s, e)))
+        }
+        _ => Err(DbError::ExecutionError("Date must be a timestamp or ISO 8601 string".to_string())),
+    }
+}
+
 /// Execution context holding variable bindings
 type Context = HashMap<String, Value>;
 
@@ -1029,6 +1058,60 @@ impl<'a> QueryExecutor<'a> {
                         collection.delete(&key)?;
                         // Log to replication
                         self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
+                    }
+                }
+                BodyClause::Upsert(upsert_clause) => {
+                    let collection = self.get_collection(&upsert_clause.collection)?;
+                    
+                    for ctx in &mut rows {
+                        let search_value = self.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
+                        
+                        let mut found_doc_key: Option<String> = None;
+                        
+                        if let Some(s) = search_value.as_str() {
+                             if collection.get(s).is_ok() {
+                                 found_doc_key = Some(s.to_string());
+                             }
+                        } else if let Some(obj) = search_value.as_object() {
+                              if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
+                                   if let Some(ks) = k.as_str() {
+                                        if collection.get(ks).is_ok() {
+                                             found_doc_key = Some(ks.to_string());
+                                        }
+                                   }
+                              }
+                        }
+
+                        if let Some(key) = found_doc_key {
+                            // Update
+                            let update_value = self.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
+                            if !update_value.is_object() {
+                                return Err(DbError::ExecutionError("UPSERT: update expression must be an object".to_string()));
+                            }
+                            
+                            let doc = collection.update(&key, update_value)?;
+                            
+                            self.log_mutation(
+                                &upsert_clause.collection,
+                                Operation::Update,
+                                &key,
+                                Some(&doc.to_value()),
+                            );
+                            ctx.insert("NEW".to_string(), doc.to_value());
+                             
+                        } else {
+                             // Insert
+                            let insert_value = self.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
+                            let doc = collection.insert(insert_value)?;
+                            
+                            self.log_mutation(
+                                &upsert_clause.collection,
+                                Operation::Insert,
+                                &doc.key,
+                                Some(&doc.to_value()),
+                            );
+                            ctx.insert("NEW".to_string(), doc.to_value());
+                        }
                     }
                 }
                 BodyClause::GraphTraversal(gt) => {
@@ -3174,6 +3257,67 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(result))
             }
 
+            // ZIP(array1, array2) - zip two arrays into array of pairs
+            "ZIP" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "ZIP requires 2 arguments: array1, array2".to_string(),
+                    ));
+                }
+                let arr1 = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("ZIP: first argument must be an array".to_string())
+                })?;
+                let arr2 = evaluated_args[1].as_array().ok_or_else(|| {
+                    DbError::ExecutionError("ZIP: second argument must be an array".to_string())
+                })?;
+
+                let len = std::cmp::min(arr1.len(), arr2.len());
+                let mut result = Vec::with_capacity(len);
+
+                for i in 0..len {
+                    result.push(Value::Array(vec![arr1[i].clone(), arr2[i].clone()]));
+                }
+                Ok(Value::Array(result))
+            }
+
+            // REMOVE_VALUE(array, value, limit?) - remove value from array
+            "REMOVE_VALUE" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "REMOVE_VALUE requires 2-3 arguments: array, value, [limit]".to_string(),
+                    ));
+                }
+                let arr = evaluated_args[0].as_array().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "REMOVE_VALUE: first argument must be an array".to_string(),
+                    )
+                })?;
+                let val_to_remove = &evaluated_args[1];
+
+                // Optional limit: number of occurrences to remove (default: -1 = remove all)
+                let limit = if evaluated_args.len() > 2 {
+                    evaluated_args[2].as_i64().unwrap_or(-1)
+                } else {
+                    -1
+                };
+
+                let mut result = Vec::new();
+                let mut removed_count = 0;
+
+                for item in arr {
+                    if values_equal(item, val_to_remove) {
+                        if limit != -1 && removed_count >= limit {
+                            result.push(item.clone());
+                        } else {
+                            removed_count += 1;
+                        }
+                    } else {
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::Array(result))
+            }
+
             // ATTRIBUTES(doc, removeInternal?, sort?) - return top-level attribute keys
             "ATTRIBUTES" => {
                 if evaluated_args.is_empty() {
@@ -3686,6 +3830,36 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::String(hex::encode(hasher.finalize())))
             }
 
+            // BASE64_ENCODE(string)
+            "BASE64_ENCODE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("BASE64_ENCODE requires 1 argument".to_string()));
+                }
+                let input = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("BASE64_ENCODE: argument must be a string".to_string())
+                })?;
+                use base64::{Engine as _, engine::general_purpose};
+                Ok(Value::String(general_purpose::STANDARD.encode(input)))
+            }
+
+            // BASE64_DECODE(string)
+            "BASE64_DECODE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("BASE64_DECODE requires 1 argument".to_string()));
+                }
+                let input = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("BASE64_DECODE: argument must be a string".to_string())
+                })?;
+                use base64::{Engine as _, engine::general_purpose};
+                match general_purpose::STANDARD.decode(input) {
+                    Ok(bytes) => {
+                        let s = String::from_utf8(bytes).map_err(|_| DbError::ExecutionError("BASE64_DECODE: result is not valid utf8".to_string()))?;
+                        Ok(Value::String(s))
+                    },
+                    Err(_) => Err(DbError::ExecutionError("BASE64_DECODE: invalid base64".to_string()))
+                }
+            }
+
             // SLEEP(ms)
             "SLEEP" => {
                 if evaluated_args.len() != 1 {
@@ -4090,6 +4264,400 @@ impl<'a> QueryExecutor<'a> {
                     number_from_f64(random_val),
                 ))
             }
+
+            // LOG(x) - natural logarithm (ln)
+            "LOG" | "LN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("LOG requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("LOG: argument must be a number".to_string())
+                })?;
+                if num <= 0.0 {
+                    return Err(DbError::ExecutionError("LOG: argument must be positive".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.ln())))
+            }
+
+            // LOG10(x) - base-10 logarithm
+            "LOG10" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("LOG10 requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("LOG10: argument must be a number".to_string())
+                })?;
+                if num <= 0.0 {
+                    return Err(DbError::ExecutionError("LOG10: argument must be positive".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.log10())))
+            }
+
+            // LOG2(x) - base-2 logarithm
+            "LOG2" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("LOG2 requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("LOG2: argument must be a number".to_string())
+                })?;
+                if num <= 0.0 {
+                    return Err(DbError::ExecutionError("LOG2: argument must be positive".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.log2())))
+            }
+
+            // EXP(x) - e^x
+            "EXP" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("EXP requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("EXP: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.exp())))
+            }
+
+            // SIN(x) - sine (x in radians)
+            "SIN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("SIN requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("SIN: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.sin())))
+            }
+
+            // COS(x) - cosine (x in radians)
+            "COS" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("COS requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("COS: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.cos())))
+            }
+
+            // TAN(x) - tangent (x in radians)
+            "TAN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("TAN requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("TAN: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.tan())))
+            }
+
+            // ASIN(x) - arc sine
+            "ASIN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("ASIN requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ASIN: argument must be a number".to_string())
+                })?;
+                if num < -1.0 || num > 1.0 {
+                    return Err(DbError::ExecutionError("ASIN: argument must be between -1 and 1".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.asin())))
+            }
+
+            // ACOS(x) - arc cosine
+            "ACOS" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("ACOS requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ACOS: argument must be a number".to_string())
+                })?;
+                if num < -1.0 || num > 1.0 {
+                    return Err(DbError::ExecutionError("ACOS: argument must be between -1 and 1".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(num.acos())))
+            }
+
+            // ATAN(x) - arc tangent
+            "ATAN" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("ATAN requires 1 argument".to_string()));
+                }
+                let num = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ATAN: argument must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(num.atan())))
+            }
+
+            // ATAN2(y, x) - arc tangent of y/x
+            "ATAN2" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("ATAN2 requires 2 arguments".to_string()));
+                }
+                let y = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ATAN2: y must be a number".to_string())
+                })?;
+                let x = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("ATAN2: x must be a number".to_string())
+                })?;
+                Ok(Value::Number(number_from_f64(y.atan2(x))))
+            }
+
+            // PI() - returns pi constant
+            "PI" => {
+                if !evaluated_args.is_empty() {
+                    return Err(DbError::ExecutionError("PI takes no arguments".to_string()));
+                }
+                Ok(Value::Number(number_from_f64(std::f64::consts::PI)))
+            }
+
+            // COALESCE(a, b, ...) - return first non-null value
+            "COALESCE" | "NOT_NULL" | "FIRST_NOT_NULL" => {
+                for arg in &evaluated_args {
+                    if !arg.is_null() {
+                        return Ok(arg.clone());
+                    }
+                }
+                Ok(Value::Null)
+            }
+
+            // LEFT(str, n) - get first n characters
+            "LEFT" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("LEFT requires 2 arguments".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("LEFT: first argument must be a string".to_string())
+                })?;
+                let n = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("LEFT: second argument must be a number".to_string())
+                })? as usize;
+                let result: String = s.chars().take(n).collect();
+                Ok(Value::String(result))
+            }
+
+            // RIGHT(str, n) - get last n characters
+            "RIGHT" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("RIGHT requires 2 arguments".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("RIGHT: first argument must be a string".to_string())
+                })?;
+                let n = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("RIGHT: second argument must be a number".to_string())
+                })? as usize;
+                let chars: Vec<char> = s.chars().collect();
+                let start = chars.len().saturating_sub(n);
+                let result: String = chars[start..].iter().collect();
+                Ok(Value::String(result))
+            }
+
+            // CHAR_LENGTH(str) - character count (unicode-aware)
+            "CHAR_LENGTH" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("CHAR_LENGTH requires 1 argument".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("CHAR_LENGTH: argument must be a string".to_string())
+                })?;
+                Ok(Value::Number(serde_json::Number::from(s.chars().count())))
+            }
+
+            // FIND_FIRST(str, search, start?) - find first occurrence, return index or -1
+            "FIND_FIRST" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("FIND_FIRST requires 2-3 arguments".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FIND_FIRST: first argument must be a string".to_string())
+                })?;
+                let search = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FIND_FIRST: second argument must be a string".to_string())
+                })?;
+                let start = if evaluated_args.len() == 3 {
+                    evaluated_args[2].as_f64().unwrap_or(0.0) as usize
+                } else {
+                    0
+                };
+                
+                if start >= s.len() {
+                    return Ok(Value::Number(serde_json::Number::from(-1)));
+                }
+                
+                match s[start..].find(search) {
+                    Some(idx) => Ok(Value::Number(serde_json::Number::from(start + idx))),
+                    None => Ok(Value::Number(serde_json::Number::from(-1))),
+                }
+            }
+
+            // FIND_LAST(str, search, end?) - find last occurrence, return index or -1
+            "FIND_LAST" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("FIND_LAST requires 2-3 arguments".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FIND_LAST: first argument must be a string".to_string())
+                })?;
+                let search = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("FIND_LAST: second argument must be a string".to_string())
+                })?;
+                let end = if evaluated_args.len() == 3 {
+                    evaluated_args[2].as_f64().unwrap_or(s.len() as f64) as usize
+                } else {
+                    s.len()
+                };
+                
+                let search_str = &s[..end.min(s.len())];
+                match search_str.rfind(search) {
+                    Some(idx) => Ok(Value::Number(serde_json::Number::from(idx))),
+                    None => Ok(Value::Number(serde_json::Number::from(-1))),
+                }
+            }
+
+            // REGEX_TEST(str, pattern) - test if string matches regex pattern
+            "REGEX_TEST" | "REGEX_MATCH" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError("REGEX_TEST requires 2 arguments".to_string()));
+                }
+                let s = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("REGEX_TEST: first argument must be a string".to_string())
+                })?;
+                let pattern = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("REGEX_TEST: second argument must be a string (pattern)".to_string())
+                })?;
+                
+                use regex::Regex;
+                let re = Regex::new(pattern).map_err(|e| {
+                    DbError::ExecutionError(format!("REGEX_TEST: invalid regex '{}': {}", pattern, e))
+                })?;
+                Ok(Value::Bool(re.is_match(s)))
+            }
+
+            // DATE_YEAR(date) - extract year from date
+            "DATE_YEAR" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_YEAR requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Datelike;
+                Ok(Value::Number(serde_json::Number::from(dt.year())))
+            }
+
+            // DATE_MONTH(date) - extract month from date (1-12)
+            "DATE_MONTH" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_MONTH requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Datelike;
+                Ok(Value::Number(serde_json::Number::from(dt.month())))
+            }
+
+            // DATE_DAY(date) - extract day of month from date (1-31)
+            "DATE_DAY" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_DAY requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Datelike;
+                Ok(Value::Number(serde_json::Number::from(dt.day())))
+            }
+
+            // DATE_HOUR(date) - extract hour from date (0-23)
+            "DATE_HOUR" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_HOUR requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Timelike;
+                Ok(Value::Number(serde_json::Number::from(dt.hour())))
+            }
+
+            // DATE_MINUTE(date) - extract minute from date (0-59)
+            "DATE_MINUTE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_MINUTE requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Timelike;
+                Ok(Value::Number(serde_json::Number::from(dt.minute())))
+            }
+
+            // DATE_SECOND(date) - extract second from date (0-59)
+            "DATE_SECOND" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_SECOND requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Timelike;
+                Ok(Value::Number(serde_json::Number::from(dt.second())))
+            }
+
+            // DATE_DAYOFWEEK(date) - extract day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+            "DATE_DAYOFWEEK" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_DAYOFWEEK requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Datelike;
+                // chrono returns Monday=0, we want Sunday=0
+                let weekday = dt.weekday().num_days_from_sunday();
+                Ok(Value::Number(serde_json::Number::from(weekday)))
+            }
+
+            // DATE_QUARTER(date) - extract quarter (1-4)
+            "DATE_QUARTER" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError("DATE_QUARTER requires 1 argument".to_string()));
+                }
+                let dt = parse_datetime(&evaluated_args[0])?;
+                use chrono::Datelike;
+                let quarter = (dt.month() - 1) / 3 + 1;
+                Ok(Value::Number(serde_json::Number::from(quarter)))
+            }
+
+            // RANGE(start, end, step?) - generate array of numbers
+            "RANGE" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError("RANGE requires 2-3 arguments".to_string()));
+                }
+                let start = evaluated_args[0].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("RANGE: start must be a number".to_string())
+                })? as i64;
+                let end = evaluated_args[1].as_f64().ok_or_else(|| {
+                    DbError::ExecutionError("RANGE: end must be a number".to_string())
+                })? as i64;
+                let step = if evaluated_args.len() == 3 {
+                    evaluated_args[2].as_f64().ok_or_else(|| {
+                        DbError::ExecutionError("RANGE: step must be a number".to_string())
+                    })? as i64
+                } else {
+                    1
+                };
+                
+                if step == 0 {
+                    return Err(DbError::ExecutionError("RANGE: step cannot be 0".to_string()));
+                }
+                
+                let mut result = Vec::new();
+                if step > 0 {
+                    let mut i = start;
+                    while i <= end {
+                        result.push(Value::Number(serde_json::Number::from(i)));
+                        i += step;
+                    }
+                } else {
+                    let mut i = start;
+                    while i >= end {
+                        result.push(Value::Number(serde_json::Number::from(i)));
+                        i += step;
+                    }
+                }
+                Ok(Value::Array(result))
+            }
+
 
             // UPPER(string) - uppercase
             "UPPER" => {
@@ -5901,6 +6469,66 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             }
         }
 
+        BinaryOperator::BitwiseAnd => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(serde_json::Number::from(
+                    (a as i64) & (b as i64)
+                )))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot bitwise AND non-numbers".to_string(),
+                ))
+            }
+        }
+
+        BinaryOperator::BitwiseOr => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(serde_json::Number::from(
+                    (a as i64) | (b as i64)
+                )))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot bitwise OR non-numbers".to_string(),
+                ))
+            }
+        }
+
+        BinaryOperator::BitwiseXor => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(serde_json::Number::from(
+                    (a as i64) ^ (b as i64)
+                )))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot bitwise XOR non-numbers".to_string(),
+                ))
+            }
+        }
+
+        BinaryOperator::LeftShift => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(serde_json::Number::from(
+                    (a as i64) << (b as i64)
+                )))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot left shift non-numbers".to_string(),
+                ))
+            }
+        }
+
+        BinaryOperator::RightShift => {
+            if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
+                Ok(Value::Number(serde_json::Number::from(
+                    (a as i64) >> (b as i64)
+                )))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot right shift non-numbers".to_string(),
+                ))
+            }
+        }
+
         BinaryOperator::Exponent => {
             if let (Some(base), Some(exp)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(number_from_f64(base.powf(exp))))
@@ -5923,6 +6551,15 @@ fn evaluate_unary_op(op: &UnaryOperator, operand: &Value) -> DbResult<Value> {
             } else {
                 Err(DbError::ExecutionError(
                     "Cannot negate non-number".to_string(),
+                ))
+            }
+        }
+        UnaryOperator::BitwiseNot => {
+            if let Some(n) = operand.as_f64() {
+                Ok(Value::Number(serde_json::Number::from(!(n as i64))))
+            } else {
+                Err(DbError::ExecutionError(
+                    "Cannot bitwise NOT non-number".to_string(),
                 ))
             }
         }

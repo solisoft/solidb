@@ -26,6 +26,7 @@ pub enum BodyClause {
     Filter(FilterClause),
     Insert(InsertClause),
     Update(UpdateClause),
+    Upsert(UpsertClause),
     Remove(RemoveClause),
     GraphTraversal(GraphTraversalClause),
     ShortestPath(ShortestPathClause),
@@ -119,6 +120,16 @@ pub struct UpdateClause {
     pub changes: Expression,
     /// The collection to update in
     pub collection: String,
+}
+
+/// UPSERT search INSERT insert UPDATE update IN collection
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpsertClause {
+    pub search: Expression,
+    pub insert: Expression,
+    pub update: Expression,
+    pub collection: String,
+    pub replace: bool,
 }
 
 /// REMOVE document IN collection
@@ -259,12 +270,20 @@ pub enum BinaryOperator {
     NotLike,
     RegEx,
     NotRegEx,
+
+    // Bitwise
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    LeftShift,
+    RightShift,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOperator {
     Not,
     Negate,
+    BitwiseNot,
 }
 
 #[cfg(test)]

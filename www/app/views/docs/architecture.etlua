@@ -530,7 +530,7 @@
                     <i class="fas fa-quote-left text-cyan-400 mr-2"></i> String & Pattern
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"CONCAT", "CONCAT_SEPARATOR", "SPLIT", "SUBSTRING", "TRIM", "LTRIM", "RTRIM", "UPPER", "LOWER", "CONTAINS", "SUBSTITUTE", "REGEX_REPLACE", "LEVENSHTEIN"}) do %>
+                    <% for _, func in ipairs({"CONCAT", "CONCAT_SEPARATOR", "SPLIT", "SUBSTRING", "TRIM", "LTRIM", "RTRIM", "UPPER", "LOWER", "CONTAINS", "SUBSTITUTE", "REGEX_REPLACE", "LEVENSHTEIN", "LEFT", "RIGHT", "CHAR_LENGTH", "FIND_FIRST", "FIND_LAST", "REGEX_TEST", "REGEXP_MATCH"}) do %>
                       <span class="text-cyan-400/80 hover:text-cyan-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>
@@ -543,7 +543,7 @@
                     <i class="fas fa-calculator text-blue-400 mr-2"></i> Numeric & Math
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"ABS", "ROUND", "FLOOR", "CEIL", "SQRT", "POW", "RANDOM"}) do %>
+                    <% for _, func in ipairs({"ABS", "ROUND", "FLOOR", "CEIL", "SQRT", "POW", "RANDOM", "LOG", "LOG10", "LOG2", "EXP", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2", "PI"}) do %>
                       <span class="text-blue-400/80 hover:text-blue-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>
@@ -556,7 +556,7 @@
                     <i class="fas fa-list text-purple-400 mr-2"></i> Array Operations
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"LENGTH", "PUSH", "APPEND", "SLICE", "FLATTEN", "FIRST", "LAST", "NTH", "POSITION", "CONTAINS_ARRAY", "UNIQUE", "SORTED", "REVERSE", "UNION", "INTERSECTION", "MINUS"}) do %>
+                    <% for _, func in ipairs({"LENGTH", "PUSH", "APPEND", "SLICE", "FLATTEN", "FIRST", "LAST", "NTH", "POSITION", "CONTAINS_ARRAY", "UNIQUE", "SORTED", "REVERSE", "UNION", "INTERSECTION", "MINUS", "RANGE", "ZIP", "REMOVE_VALUE"}) do %>
                       <span class="text-purple-400/80 hover:text-purple-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>
@@ -595,7 +595,7 @@
                     <i class="fas fa-clock text-rose-400 mr-2"></i> Date & Time
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC", "TIME_BUCKET"}) do %>
+                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC", "TIME_BUCKET", "DATE_YEAR", "DATE_MONTH", "DATE_DAY", "DATE_HOUR", "DATE_MINUTE", "DATE_SECOND", "DATE_DAYOFWEEK", "DATE_QUARTER"}) do %>
                       <span class="text-rose-400/80 hover:text-rose-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>
@@ -634,7 +634,7 @@
                     <i class="fas fa-wrench text-amber-400 mr-2"></i> Utilities
                   </h5>
                   <div class="flex flex-wrap gap-x-2 gap-y-1">
-                    <% for _, func in ipairs({"UUIDV4", "UUIDV7", "MD5", "SHA256", "SLEEP", "ASSERT", "IF", "COLLECTION_COUNT"}) do %>
+                    <% for _, func in ipairs({"UUIDV4", "UUIDV7", "MD5", "SHA256", "BASE64_ENCODE", "BASE64_DECODE", "SLEEP", "ASSERT", "IF", "COLLECTION_COUNT", "COALESCE", "NOT_NULL", "FIRST_NOT_NULL"}) do %>
                       <span class="text-amber-400/80 hover:text-amber-300 transition-colors cursor-default"><%= func %></span>
                       <span class="text-gray-700 last:hidden">·</span>
                     <% end %>

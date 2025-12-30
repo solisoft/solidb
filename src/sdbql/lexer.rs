@@ -21,8 +21,10 @@ pub enum Token {
     Insert,
     Into,
     Update,
+    Upsert,
     With,
     Remove,
+    Replace,
 
     // Aggregation keywords
     Collect,
@@ -56,9 +58,18 @@ pub enum Token {
     Minus,         // -
     Star,          // *
     Slash,         // /
+    Percent,       // %
     Like,          // LIKE
     RegEx,         // =~
     NotRegEx,      // !~
+
+    // Bitwise operators
+    Ampersand,     // &
+    Pipe,          // |
+    Caret,         // ^
+    Tilde,         // ~
+    LeftShift,     // <<
+    RightShift,    // >>
 
     // Delimiters
     Dot,          // .
@@ -232,8 +243,10 @@ impl Lexer {
             "INSERT" => Token::Insert,
             "INTO" => Token::Into,
             "UPDATE" => Token::Update,
+            "UPSERT" => Token::Upsert,
             "WITH" => Token::With,
             "REMOVE" => Token::Remove,
+            "REPLACE" => Token::Replace,
             // Graph traversal keywords
             "OUTBOUND" => Token::Outbound,
             "INBOUND" => Token::Inbound,
@@ -329,6 +342,9 @@ impl Lexer {
                 if self.current_char == Some('=') {
                     self.advance();
                     Token::LessThanEq
+                } else if self.current_char == Some('<') {
+                    self.advance();
+                    Token::LeftShift
                 } else {
                     Token::LessThan
                 }
@@ -339,6 +355,9 @@ impl Lexer {
                 if self.current_char == Some('=') {
                     self.advance();
                     Token::GreaterThanEq
+                } else if self.current_char == Some('>') {
+                    self.advance();
+                    Token::RightShift
                 } else {
                     Token::GreaterThan
                 }
@@ -359,6 +378,26 @@ impl Lexer {
             Some('/') => {
                 self.advance();
                 Token::Slash
+            }
+            Some('%') => {
+                self.advance();
+                Token::Percent
+            }
+            Some('&') => {
+                self.advance();
+                Token::Ampersand
+            }
+            Some('|') => {
+                self.advance();
+                Token::Pipe
+            }
+            Some('^') => {
+                self.advance();
+                Token::Caret
+            }
+            Some('~') => {
+                self.advance();
+                Token::Tilde
             }
             Some('.') => {
                 self.advance();
@@ -551,6 +590,7 @@ mod tests {
         assert_eq!(tokenize("-")[0], Token::Minus);
         assert_eq!(tokenize("*")[0], Token::Star);
         assert_eq!(tokenize("/")[0], Token::Slash);
+        assert_eq!(tokenize("%")[0], Token::Percent);
     }
 
     #[test]

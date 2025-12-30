@@ -413,6 +413,35 @@ pub async fn execute_transactional_sdbql(
                     mutation_count += 1;
                 }
             }
+            BodyClause::Upsert(upsert_clause) => {
+                let full_coll_name = format!("{}:{}", db_name, upsert_clause.collection);
+                let collection = state.storage.get_collection(&full_coll_name)?;
+                
+                for ctx in &rows {
+                    let search_value = executor.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
+                    
+                    let mut found_doc_key: Option<String> = None;
+                    // Simple key lookup logic
+                    if let Some(s) = search_value.as_str() {
+                        if collection.get(s).is_ok() { found_doc_key = Some(s.to_string()); }
+                    } else if let Some(obj) = search_value.as_object() {
+                        if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
+                            if let Some(ks) = k.as_str() {
+                                if collection.get(ks).is_ok() { found_doc_key = Some(ks.to_string()); }
+                            }
+                        }
+                    }
+
+                    if let Some(key) = found_doc_key {
+                        let update_value = executor.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
+                        collection.update_tx(&mut tx, wal, &key, update_value)?;
+                    } else {
+                        let insert_value = executor.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
+                        collection.insert_tx(&mut tx, wal, insert_value)?;
+                    }
+                    mutation_count += 1;
+                }
+            }
             // Graph traversal clauses - not yet supported in transactions
             BodyClause::GraphTraversal(_) | BodyClause::ShortestPath(_) => {
                 return Err(DbError::ExecutionError(

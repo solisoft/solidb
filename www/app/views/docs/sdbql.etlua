@@ -297,98 +297,178 @@ FOR i IN 1..n
             </h2>
           </div>
           <div class="p-8">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
-                <h3
-                  class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider"
-                >
-                  Comparison
-                </h3>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >==</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >!=</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >&lt;</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >&lt;=</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >&gt;</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >IN</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >LIKE</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    title="RegEx match"
-                    >=~</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    title="RegEx not match"
-                    >!~</span
-                  >
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Comparison -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-balance-scale-right mr-2 opacity-50"></i> Comparison
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                  <!-- Equality -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">==</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">!=</code>
+                       <span class="text-xs text-gray-400">Equality check</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      status == "active"
+                    </code>
+                  </div>
+                  
+                  <!-- Relational -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;=</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;=</code>
+                       <span class="text-xs text-gray-400">Range comparison</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      age &gt;= 18
+                    </code>
+                  </div>
+
+                  <!-- Inclusion -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">IN</code>
+                       <span class="text-xs text-gray-400">Value in array</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      city IN ["Paris", "London"]
+                    </code>
+                  </div>
+
+                  <!-- Pattern Matching -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">LIKE</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">=~</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">!~</code>
+                       <span class="text-xs text-gray-400">Pattern & Regex</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        name LIKE "J%"
+                      </code>
+                       <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        email =~ "^[a-z]+@"
+                      </code>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
-                <h3
-                  class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider"
-                >
-                  Logical
-                </h3>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >AND</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >OR</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >NOT</span
-                  >
+
+              <!-- Logical -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-check-double mr-2 opacity-50"></i> Logical
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                  <!-- AND/OR -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">AND</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">OR</code>
+                       <span class="text-xs text-gray-400">Boolean logic</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      age > 18 AND active == true
+                    </code>
+                  </div>
+
+                  <!-- NOT -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">NOT</code>
+                       <span class="text-xs text-gray-400">Negation</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      NOT is_deleted
+                    </code>
+                  </div>
                 </div>
               </div>
-              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
-                <h3
-                  class="text-pink-300 font-bold mb-3 text-sm uppercase tracking-wider"
-                >
-                  Arithmetic
-                </h3>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >+</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >-</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >*</span
-                  >
-                  <span
-                    class="px-2 py-1 bg-gray-900 rounded text-xs font-mono text-gray-300 border border-white/10"
-                    >/</span
-                  >
+
+              <!-- Arithmetic -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-calculator mr-2 opacity-50"></i> Arithmetic
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                   <!-- Basic Math -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">+</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">-</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">*</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">/</code>
+                       <span class="text-xs text-gray-400">Basic operations</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      total * 1.2
+                    </code>
+                  </div>
+
+                   <!-- Modulo -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">%</code>
+                       <span class="text-xs text-gray-400">Modulo (remainder)</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      index % 2 == 0
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bitwise -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-microchip mr-2 opacity-50"></i> Bitwise
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                   <!-- Logic -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&amp;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">|</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">^</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~</code>
+                       <span class="text-xs text-gray-400">Logic & NOT</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        flags & 4 // Check bit
+                      </code>
+                       <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        mask | 1 // Set bit
+                      </code>
+                    </div>
+                  </div>
+
+                   <!-- Shift -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;&lt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;&gt;</code>
+                       <span class="text-xs text-gray-400">Shift Left/Right</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      1 &lt;&lt; 2 // Results in 4
+                    </code>
+                  </div>
                 </div>
               </div>
             </div>
@@ -715,6 +795,78 @@ FOR i IN nums
   FILTER doc._key == "alice"
   UPDATE doc WITH { status: "active" } IN users
   RETURN NEW</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- UPSERT -->
+            <div
+              class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden"
+            >
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-amber-300 flex items-center">
+                  <span
+                    class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >UPSERT</span
+                  >
+                  Update or Insert
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Atomically updates a document if it exists, or inserts it if it doesn't.
+                </p>
+                <div
+                  class="bg-gray-950/50 rounded-lg border border-white/5 p-4"
+                >
+                  <code class="text-sm text-gray-300"
+                    >UPSERT <span class="text-emerald-400">{ search }</span> INSERT
+                    <span class="text-emerald-400">{ insert }</span> UPDATE
+                    <span class="text-purple-400">{ update }</span> IN
+                    <span class="text-cyan-400">collection</span></code
+                  >
+                </div>
+
+                <div
+                  class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4 flex items-start"
+                >
+                  <svg
+                    class="w-5 h-5 text-amber-400 mt-0.5 mr-3 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    ></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-amber-300 font-bold mb-1 text-sm">
+                      Atomicity
+                    </h4>
+                    <p class="text-sm text-amber-200/70">
+                      In a transaction, UPSERT ensures that no other process
+                      inserts the document between the check and the insertion.
+                      The search condition should uniquely identify a single document
+                      (usually by <code>_key</code>).
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4
+                    class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2"
+                  >
+                    Example
+                  </h4>
+                  <pre><code class="language-sql text-sm">UPSERT { _key: "user123" }
+INSERT { _key: "user123", name: "Alice", visits: 1 }
+UPDATE { visits: 1 } // Merges if exists
+IN users
+RETURN NEW</code></pre>
                 </div>
               </div>
             </div>
@@ -1206,7 +1358,77 @@ FOR i IN nums
               <p class="text-sm text-gray-400 mb-3">
                 Returns base raised to exponent.
               </p>
-              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) // 8</code></pre>
+               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN POW(2, 3) // 8</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >LOG(x) / LOG10(x) / LOG2(x)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Natural, base-10, and base-2 logarithms.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LOG10(100) // 2</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >EXP(x)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Returns e raised to the power of x.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN EXP(1) // 2.718...</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >PI()</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Returns the value of PI.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PI() // 3.14159...</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >SIN(x) / COS(x) / TAN(x)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Trigonometric functions (radians).
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SIN(PI()/2) // 1</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors group"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <code
+                  class="text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30"
+                  >ASIN(x) / ACOS(x) / ATAN(x)</code
+                >
+              </div>
+              <p class="text-sm text-gray-400 mb-3">
+                Inverse trigonometric functions.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ATAN(1) * 4 // 3.14159...</code></pre>
             </div>
           </div>
         </div>
@@ -1419,6 +1641,54 @@ RETURN TRIM("--foo--", "-") // "foo"</code></pre>
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN JSON_STRINGIFY({a: 1}) // "{\"a\":1}"</code></pre>
             </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >LEFT(str, n) / RIGHT(str, n)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Extracts n characters from start or end.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEFT("Hello", 2) // "He"</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >CHAR_LENGTH(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns number of characters (Unicode aware).
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CHAR_LENGTH("日本語") // 3</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >FIND_FIRST(str, search) / FIND_LAST</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns index of first/last occurrence.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIND_FIRST("hello", "l") // 2</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >REGEX_TEST(str, pattern)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Tests if string matches regex. Alias: REGEX_MATCH.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REGEX_TEST("abc", "a.*") // true</code></pre>
+            </div>
           </div>
         </div>
 
@@ -1513,6 +1783,18 @@ RETURN IF(null, 1, 0) // 0</code></pre>
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN doc.age >= 18 ? "Adult" : "Minor"
 RETURN a ? b ? "both" : "a" : "none"</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30 w-fit mb-3"
+                >COALESCE(val1, val2, ...)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns the first non-null value. Alias: NOT_NULL.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COALESCE(null, 0, 5) // 0</code></pre>
             </div>
           </div>
         </div>
@@ -1702,6 +1984,54 @@ RETURN TYPENAME("hi") // "string"</code></pre>
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYS_IN_MONTH("2024-02-15T00:00:00Z")
 // 29 (leap year)</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3"
+                >DATE_YEAR/MONTH/DAY(date)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Extracts year, month, or day.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_MONTH(DATE_NOW())</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3"
+                >DATE_HOUR/MINUTE/SECOND(date)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Extracts time components.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_HOUR("2024-01-01T15:00:00Z") // 15</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3"
+                >DATE_DAYOFWEEK(date)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns day of week (0=Sunday to 6=Saturday).
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_DAYOFWEEK("2024-01-07") // 0</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3"
+                >DATE_QUARTER(date)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns quarter of the year (1-4).
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_QUARTER("2024-12-01") // 4</code></pre>
             </div>
           </div>
           <div
@@ -2459,6 +2789,19 @@ FOR m IN matches RETURN m.doc</code></pre>
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FLATTEN([[1, 2], [3]], 1) // [1, 2, 3]</code></pre>
             </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3"
+                >RANGE(start, end, step?)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Generates an array of numbers.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN RANGE(1, 5) // [1, 2, 3, 4, 5]
+RETURN RANGE(1, 5, 2) // [1, 3, 5]</code></pre>
+            </div>
           </div>
 
           <h4
@@ -2524,6 +2867,30 @@ FOR m IN matches RETURN m.doc</code></pre>
                 Returns elements in arr1 not in arr2.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MINUS([1, 2, 3], [2]) // [1, 3]</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3"
+                >ZIP(arr1, arr2)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Zips two arrays into an array of pairs.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ZIP([1, 2], ["a", "b"]) // [[1, "a"], [2, "b"]]</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3"
+                >REMOVE_VALUE(arr, val, limit?)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Removes all occurrences of value from array. Optional limit.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN REMOVE_VALUE([1, 2, 1, 3], 1) // [2, 3]</code></pre>
             </div>
           </div>
 
@@ -2715,6 +3082,45 @@ RETURN FLATTEN(nested, 2)  -- [1, 2, 3, 4, 5]</code></pre>
                 Calculates MD5 hash.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MD5("hello")</code></pre>
+            </div>
+
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3"
+                >SHA256(string)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Calculates SHA256 hash.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SHA256("hello")</code></pre>
+            </div>
+
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3"
+                >BASE64_ENCODE(string)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Encodes string to Base64.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_ENCODE("hello")</code></pre>
+            </div>
+
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-amber-500/20 px-2 py-1 rounded border border-amber-500/30 w-fit mb-3"
+                >BASE64_DECODE(string)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Decodes Base64 string.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN BASE64_DECODE("aGVsbG8=")</code></pre>
             </div>
             <div
               class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
