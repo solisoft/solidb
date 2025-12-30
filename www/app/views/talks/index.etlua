@@ -26,7 +26,8 @@
       dbHost: "<%= ENV["DB_HOST"] or "localhost:6745" %>",
       currentUser: <%- Params.currentUser %>,
       users: <%- Params.users %>,
-      dmChannels: <%- Params.dmChannels %>
+      dmChannels: <%- Params.dmChannels %>,
+      livequeryToken: "<%= Params.livequery_token %>"
     });
 
     // Apply syntax highlighting after component mounts

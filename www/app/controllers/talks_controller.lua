@@ -235,6 +235,9 @@ app.index = function()
   -- DB host for WebSocket connections (from env var or fallback)
   Params.db_host = os.getenv("DB_HOST") or "localhost:6745"
 
+  -- Generate LiveQuery token once for all WebSocket connections
+  Params.livequery_token = db:LiveQueryToken() or ""
+
   Logger("DEBUG: Final Params.db_name: " .. tostring(Params.db_name))
 
   -- Authentication check

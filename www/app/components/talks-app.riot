@@ -856,6 +856,34 @@
                 return this.props.dbHost || 'localhost:6745';
             },
 
+            // Get LiveQuery token - uses cached token from server initially, re-fetches when expired
+            async getLivequeryToken() {
+                // Use cached token if still valid (refresh 5 seconds before expiry)
+                if (this._cachedToken && this._tokenExpiry && Date.now() < this._tokenExpiry - 5000) {
+                    return this._cachedToken;
+                }
+
+                // Use token from props on first load
+                if (!this._cachedToken && this.props.livequeryToken) {
+                    this._cachedToken = this.props.livequeryToken;
+                    this._tokenExpiry = Date.now() + 30000; // Token expires in 30 seconds
+                    return this._cachedToken;
+                }
+
+                // Fetch new token when expired
+                try {
+                    const res = await fetch('/talks/livequery_token');
+                    if (!res.ok) throw new Error('Token fetch failed');
+                    const { token, expires_in } = await res.json();
+                    this._cachedToken = token;
+                    this._tokenExpiry = Date.now() + (expires_in || 30) * 1000;
+                    return token;
+                } catch (e) {
+                    console.error('Failed to fetch livequery token:', e);
+                    return null;
+                }
+            },
+
             // Mobile responsive methods
             initResponsive() {
                 this.handleResize = () => {
@@ -1226,9 +1254,8 @@
                 }
 
                 try {
-                    const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) return;
-                    const { token } = await tokenRes.json();
+                    const token = await this.getLivequeryToken();
+                    if (!token) return;
 
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
@@ -1290,9 +1317,8 @@
             },
             async connectChannelsListLiveQuery() {
                 try {
-                    const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) return;
-                    const { token } = await tokenRes.json();
+                    const token = await this.getLivequeryToken();
+                    if (!token) return;
 
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
@@ -1366,9 +1392,8 @@
             },
             async connectUsersLiveQuery() {
                 try {
-                    const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) return;
-                    const { token } = await tokenRes.json();
+                    const token = await this.getLivequeryToken();
+                    if (!token) return;
 
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
@@ -1407,9 +1432,8 @@
             // Connect to WebSocket using configured host
             async connectLiveQuery() {
                 try {
-                    const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) throw new Error('LiveQuery token fetch failed');
-                    const { token } = await tokenRes.json();
+                    const token = await this.getLivequeryToken();
+                    if (!token) throw new Error('LiveQuery token fetch failed');
 
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
@@ -2743,9 +2767,8 @@
             async connectSignaling() {
                 this.processedSignalIds = new Set();
                 try {
-                    const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) return;
-                    const { token } = await tokenRes.json();
+                    const token = await this.getLivequeryToken();
+                    if (!token) return;
 
                     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
