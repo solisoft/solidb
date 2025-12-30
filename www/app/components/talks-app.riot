@@ -1411,8 +1411,8 @@
                     if (!tokenRes.ok) throw new Error('LiveQuery token fetch failed');
                     const { token } = await tokenRes.json();
 
-                    const apiUrl = getApiUrl();
-                    const wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws/changefeed?token=${token}`;
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
                     this.ws = new WebSocket(wsUrl);
 
                     this.ws.onopen = () => {
