@@ -1,20 +1,28 @@
 <talks-app>
     <div class="flex h-full bg-[#1A1D21] text-[#D1D2D3] font-sans overflow-hidden" ondragenter={ onDragEnter }
         ondragleave={ onDragLeave } ondragover={ onDragOver } ondrop={ onDrop }>
+
+        <!-- Mobile Sidebar Overlay -->
+        <div if={ state.isMobile && state.showMobileSidebar } class="fixed inset-0 bg-black/50 z-40 lg:hidden" onclick={
+            closeMobileSidebar }></div>
+
         <talks-sidebar currentUser={ state.currentUser } channels={ state.channels } users={ state.users }
             unreadChannels={ state.unreadChannels } usersChannels={ state.usersChannels } favorites={ getFavorites() }
             connectionStatus={ state.connectionStatus } showStatusMenu={ state.showStatusMenu } getDMUrl={ getDMUrl }
             onNavigate={ onNavigate } onShowCreateChannel={ ()=> update({ showCreateChannelModal: true }) }
             onToggleDmPopup={ toggleDmPopup } onToggleStatusMenu={ toggleStatusMenu }
             onUpdateStatus={ updateStatus } currentChannel={ state.currentChannel }
-            currentChannelData={ state.currentChannelData } />
+            currentChannelData={ state.currentChannelData }
+            isMobile={ state.isMobile }
+            showMobileSidebar={ state.showMobileSidebar }
+            onCloseMobileSidebar={ closeMobileSidebar } />
 
             <main class="flex-1 flex flex-col min-w-0 h-full relative">
                 <talks-header currentChannelData={ state.currentChannelData } currentChannel={ state.currentChannel }
                     showMembersPanel={ state.showMembersPanel } users={ state.users } currentUser={ state.currentUser }
                     onToggleFavorite={ toggleFavorite } onToggleMembersPanel={ toggleMembersPanel } onStartCall={
                     startCall } onHangup={ hangup } isFavorite={ isFavorite } onSearch={ performSearch } onSearchClear={
-                    clearSearch } />
+                    clearSearch } isMobile={ state.isMobile } onToggleMobileSidebar={ toggleMobileSidebar } />
 
                 <talks-messages messages={ state.messages } currentUser={ state.currentUser } hasNewMessages={
                     state.hasNewMessages } ogCache={ state.ogCache } users={ state.users } onFetchOgMetadata={
@@ -38,15 +46,16 @@
                 state.callDuration } is-audio-enabled={ !state.isMuted } is-video-enabled={ state.isVideoEnabled }
                 is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
                 remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } is-fullscreen={
-                state.isCallFullscreen } on-toggle-fullscreen={ toggleCallFullscreen } on-accept-call={ acceptCall }
-                on-decline-call={ declineCall } on-toggle-audio={ toggleMute } on-toggle-video={ toggleVideo } onshare={
-                toggleScreenShare } on-hangup={ hangup } />
+                state.isCallFullscreen } is-mobile={ state.isMobile } on-toggle-fullscreen={ toggleCallFullscreen }
+                on-accept-call={ acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute }
+                on-toggle-video={ toggleVideo } onshare={ toggleScreenShare } on-hangup={ hangup } />
 
 
 
             <!-- Search Results Sidebar -->
             <div if={ state.showSearchSidebar }
-                class="w-96 bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full flex-shrink-0">
+                class={ 'bg-[#1A1D21] border-l border-gray-700 z-10 flex flex-col h-full flex-shrink-0 ' +
+                (state.isMobile ? 'fixed inset-y-0 right-0 w-full' : 'w-96' ) }>
                 <div class="flex items-center justify-between p-4 border-b border-gray-700">
                     <div class="flex items-center gap-2">
                         <i class="fas fa-search text-indigo-400"></i>
@@ -100,10 +109,13 @@
             </div>
 
             <!-- Thread Sidebar -->
-            <div class={ 'w-96 flex-shrink-0 h-full ' + (state.showThreadSidebar ? '' : 'hidden' ) }>
+            <div class={ 'flex-shrink-0 h-full ' + (state.showThreadSidebar ? '' : 'hidden' ) + ' ' + (state.isMobile
+                ? 'fixed inset-y-0 right-0 w-4/5 max-w-md bg-[#1A1D21] z-30 shadow-[-4px_0_20px_rgba(0,0,0,0.5)]'
+                : 'w-96' ) }>
                 <talks-thread parentMessage={ state.threadParentMessage } threadMessages={ state.threadMessages }
                     currentUser={ state.currentUser } users={ state.users } onClose={ closeThread } onReplySent={
-                    handleThreadReplySent } onUpdateMessage={ updateMessage } onDeleteMessage={ deleteMessage } />
+                    handleThreadReplySent } onUpdateMessage={ updateMessage } onDeleteMessage={ deleteMessage }
+                    isMobile={ state.isMobile } />
             </div>
 
             <!-- Fullscreen Image Lightbox -->
@@ -130,8 +142,9 @@
 
             <!-- Floating Emoji Picker -->
             <div if={ state.showEmojiPicker }
-                class="fixed p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar"
-                style={ getEmojiPickerStyle() }>
+                class={ 'fixed bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-[9990] animate-fade-in overflow-y-auto custom-scrollbar '
+                + (state.isMobile ? 'p-2 bottom-0 left-0 right-0 max-h-[50vh] rounded-t-xl' : 'p-3' ) } style={
+                getEmojiPickerStyle() }>
                 <div class="fixed inset-0 z-[-1]" onclick={ ()=> update({ showEmojiPicker: false }) }></div>
                 <div class="text-xs text-gray-500 uppercase font-bold mb-2">Smileys</div>
                 <div class="flex flex-wrap gap-1 mb-3">
@@ -152,8 +165,8 @@
 
             <!-- User Mention Picker -->
             <div if={ state.showUserPicker }
-                class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"
-                style={ getUserPickerStyle() }>
+                class={ 'fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] overflow-hidden animate-fade-in '
+                + (state.isMobile ? 'left-4 right-4 bottom-20 max-h-48' : 'w-64' ) } style={ getUserPickerStyle() }>
                 <div
                     class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">
                     People</div>
@@ -173,8 +186,8 @@
             <div if={ state.showCreateChannelModal } class="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick={ ()=> update({
                     showCreateChannelModal: false }) }></div>
-                <div
-                    class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+                <div class={ 'relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full overflow-hidden animate-fade-in-up '
+                    + (state.isMobile ? 'max-w-full mx-4 my-4 h-full max-h-[90vh]' : 'max-w-md' ) }>
                     <div class="p-6">
                         <h2 class="text-xl font-bold text-white mb-2">Create a Channel</h2>
                         <p class="text-gray-400 text-sm mb-6">Channels are where your team communicates. They're best
@@ -255,8 +268,9 @@
             <div if={ state.showDmPopup } class="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick={ toggleDmPopup }>
                 </div>
-                <div
-                    class="relative w-full max-w-lg bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[80vh]">
+                <div class={ 'relative bg-[#1A1D21] rounded-xl border border-gray-700 shadow-2xl overflow-hidden animate-fade-in-up flex flex-col '
+                    + (state.isMobile ? 'w-full max-w-full mx-4 my-4 h-full max-h-[90vh]'
+                    : 'w-full max-w-lg max-h-[80vh]' ) }>
                     <div class="p-4 border-b border-gray-700 flex flex-col gap-3">
                         <div class="flex items-center justify-between">
                             <h2 class="text-lg font-bold text-white">New Conversation</h2>
@@ -305,8 +319,8 @@
             <!-- Sound Activation Popup -->
             <div if={ state.showSoundPopup } class="fixed inset-0 z-[200] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
-                <div
-                    class="relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in-up text-center p-8">
+                <div class={ 'relative bg-[#1A1D21] border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up text-center '
+                    + (state.isMobile ? 'w-full max-w-full mx-4 my-4 p-6' : 'w-full max-w-sm p-8' ) }>
                     <div
                         class="w-16 h-16 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6">
                         <i class="fas fa-volume-up text-3xl"></i>
@@ -326,7 +340,8 @@
     <style>
         :host {
             display: block;
-            height: 100%;
+            height: 100vh;
+            height: 100dvh;
         }
 
         ::-webkit-scrollbar {
@@ -400,6 +415,34 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+
+        /* Respect user's motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+
+            .animate-fade-in,
+            .animate-slide-in-right,
+            .animate-fade-in-up {
+                animation: none;
+            }
+
+            .hover\:scale-105:hover {
+                transform: none;
+            }
+
+            .active\:scale-95:active {
+                transform: none;
+            }
+        }
+
+        /* Mobile performance optimizations */
+        @media (max-width: 639px) {
+
+            .animate-fade-in,
+            .animate-slide-in-right,
+            .animate-fade-in-up {
+                animation-duration: 0.15s;
+            }
+        }
     </style>
 
     <script>
@@ -409,6 +452,7 @@
         import Input from '/app/components/talks-input.riot.js'
         import Calls from '/app/components/talks-calls.riot.js'
         import Thread from '/app/components/talks-thread.riot.js'
+        import { getApiUrl } from '/api-config.js'
 
         export default {
             components: {
@@ -439,6 +483,10 @@
                     unreadChannels: {}, // { channel_id: boolean }
                     usersChannels: {}, // Cache of user_key -> dm_channel_id for sidebar
                     initialSyncDone: false, // Flag to avoid unread dots on first load
+                    // Mobile responsive state
+                    showMobileSidebar: false,
+                    isMobile: false,
+                    screenSize: 'desktop', // 'mobile', 'tablet', 'desktop'
                     incomingCall: null, // { caller, type, offer }
                     activeCall: null, // { peer, connection, startDate }
                     callDuration: 0,
@@ -807,6 +855,72 @@
             getDbHost() {
                 return this.props.dbHost || 'localhost:6745';
             },
+
+            // Mobile responsive methods
+            initResponsive() {
+                this.handleResize = () => {
+                    const width = window.innerWidth;
+                    const isMobile = width < 1024;
+                    const screenSize = width < 640 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
+
+                    this.update({
+                        isMobile,
+                        screenSize,
+                        showMobileSidebar: !isMobile ? false : this.state.showMobileSidebar
+                    });
+                };
+
+                this.handleTouchStart = (e) => {
+                    if (!this.state.isMobile) return;
+                    this.touchStartX = e.touches[0].clientX;
+                    this.touchStartY = e.touches[0].clientY;
+                };
+
+                this.handleTouchMove = (e) => {
+                    if (!this.state.isMobile || !this.touchStartX) return;
+
+                    const touchX = e.touches[0].clientX;
+                    const touchY = e.touches[0].clientY;
+                    const diffX = touchX - this.touchStartX;
+                    const diffY = touchY - this.touchStartY;
+
+                    // Only handle horizontal swipes
+                    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+                        if (diffX > 0 && !this.state.showMobileSidebar) {
+                            // Swipe right - open sidebar
+                            this.update({ showMobileSidebar: true });
+                        } else if (diffX < 0 && this.state.showMobileSidebar) {
+                            // Swipe left - close sidebar
+                            this.update({ showMobileSidebar: false });
+                        }
+                        this.touchStartX = null;
+                    }
+                };
+
+                this.handleTouchEnd = () => {
+                    this.touchStartX = null;
+                };
+
+                window.addEventListener('resize', this.handleResize);
+
+                // Add touch events for mobile gestures
+                if ('ontouchstart' in window) {
+                    window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
+                    window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
+                    window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
+                }
+
+                this.handleResize(); // Initial call
+            },
+
+            toggleMobileSidebar() {
+                this.update({ showMobileSidebar: !this.state.showMobileSidebar });
+            },
+
+            closeMobileSidebar() {
+                this.update({ showMobileSidebar: false });
+            },
+
             onMounted() {
                 // Use setTimeout to ensure DOM is fully rendered
                 setTimeout(() => this.scrollToBottom(true), 50);
@@ -827,6 +941,26 @@
 
                 // Connect to presence WebSocket to track online status
                 this.connectPresence();
+
+                // Mobile viewport and keyboard optimization
+                if (this.state.isMobile) {
+                    // Handle virtual keyboard
+                    this.handleVirtualKeyboard = () => {
+                        const viewport = document.querySelector('meta[name="viewport"]');
+                        if (!viewport) return;
+
+                        if (window.innerHeight < window.screen.height * 0.75) {
+                            // Keyboard is likely open
+                            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=' + window.innerHeight);
+                        } else {
+                            // Keyboard is likely closed
+                            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+                        }
+                    };
+
+                    window.addEventListener('resize', this.handleVirtualKeyboard);
+                    window.addEventListener('orientationchange', this.handleVirtualKeyboard);
+                }
 
                 // Connect to users Live Query for real-time presence UI updates
                 this.connectUsersLiveQuery();
@@ -853,11 +987,26 @@
                     }
                 };
                 window.addEventListener('beforeunload', this._beforeUnloadHandler);
+
+                // Initialize mobile responsive behavior
+                this.initResponsive();
             },
 
             onUnmounted() {
                 if (this._beforeUnloadHandler) {
                     window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+                }
+                if (this.handleResize) {
+                    window.removeEventListener('resize', this.handleResize);
+                }
+                if (this.handleTouchStart) {
+                    window.removeEventListener('touchstart', this.handleTouchStart);
+                    window.removeEventListener('touchmove', this.handleTouchMove);
+                    window.removeEventListener('touchend', this.handleTouchEnd);
+                }
+                if (this.handleVirtualKeyboard) {
+                    window.removeEventListener('resize', this.handleVirtualKeyboard);
+                    window.removeEventListener('orientationchange', this.handleVirtualKeyboard);
                 }
             },
 
@@ -1155,7 +1304,7 @@
                         const query = `
                             LET my_user_key = "${my_user_key}"
                             FOR c IN channels
-                                FILTER c.type == "system" OR c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                                FILTER c.type == "system" OR c.type == "standard" OR POSITION(TO_ARRAY(c.members), my_user_key) >= 0
                                 SORT c.type DESC, c.name ASC
                                 RETURN c
                         `;
@@ -1255,19 +1404,15 @@
                     setTimeout(() => this.connectUsersLiveQuery(), 5000);
                 }
             },
+            // Connect to WebSocket using configured host
             async connectLiveQuery() {
                 try {
-                    // Get a short-lived token for WebSocket connection
                     const tokenRes = await fetch('/talks/livequery_token');
-                    if (!tokenRes.ok) {
-                        console.error('Failed to get live query token');
-                        return;
-                    }
+                    if (!tokenRes.ok) throw new Error('LiveQuery token fetch failed');
                     const { token } = await tokenRes.json();
 
-                    // Connect to WebSocket on port 6745
-                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${wsProtocol}//${this.getDbHost()}/_api/ws/changefeed?token=${token}`;
+                    const apiUrl = getApiUrl();
+                    const wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws/changefeed?token=${token}`;
                     this.ws = new WebSocket(wsUrl);
 
                     this.ws.onopen = () => {
@@ -1278,7 +1423,7 @@
                             LET my_user_key = "${this.props.currentUser._key}"
                             LET my_channels = (
                                 FOR c IN channels
-                                    FILTER c.type == "standard" OR (LENGTH(TO_ARRAY(c.members)) > 0 AND POSITION(c.members, my_user_key) >= 0)
+                                    FILTER c.type == "standard" OR POSITION(TO_ARRAY(c.members), my_user_key) >= 0
                                     RETURN c._id
                             )
                             FOR m IN messages

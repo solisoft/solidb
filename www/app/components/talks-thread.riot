@@ -1,24 +1,28 @@
 <talks-thread>
-    <div class="flex flex-col h-full bg-[#1A1D21] border-l border-gray-700" onDragEnter={ onDragEnter } onDragLeave={
-        onDragLeave } onDragOver={ onDragOver } ondrop={ onDrop }>
+    <div class={ 'flex flex-col h-full bg-[#1A1D21] ' + 
+               (props.isMobile ? '' : 'border-l border-gray-700') } 
+         onDragEnter={ onDragEnter } onDragLeave={ onDragLeave } onDragOver={ onDragOver } ondrop={ onDrop }>
         <!-- Thread Header -->
-        <div class="flex items-center justify-between p-4 border-b border-gray-700 bg-[#222529]">
+        <div class={ 'flex items-center justify-between border-b border-gray-700 bg-[#222529] ' + 
+                   (props.isMobile ? 'p-3' : 'p-4') }>
             <div class="flex items-center gap-2">
                 <i class="fas fa-comments text-indigo-400"></i>
-                <span class="font-bold text-white">Thread</span>
+                <span class={ 'font-bold text-white ' + (props.isMobile ? 'text-sm' : '') }>Thread</span>
                 <span if={ props.threadMessages && props.threadMessages.length> 0 } class="text-gray-500 text-sm">
                     { props.threadMessages.length } { props.threadMessages.length === 1 ? 'reply' : 'replies' }
                 </span>
             </div>
             <button type="button" onclick={ (e)=> props.onClose && props.onClose(e) }
-                class="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700 transition-colors"
+                class={ 'text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors ' + 
+                       (props.isMobile ? 'p-3' : 'p-1.5') }
                 title="Close Thread">
                 <i class="fas fa-times"></i>
             </button>
         </div>
 
         <!-- Parent Message -->
-        <div if={ props.parentMessage } class="p-4 border-b border-gray-700 bg-[#1E2126]">
+        <div if={ props.parentMessage } class={ 'border-b border-gray-700 bg-[#1E2126] ' + 
+                                           (props.isMobile ? 'p-3' : 'p-4') }>
             <div class="flex items-start gap-3">
                 <div class={ getAvatarClass(props.parentMessage.sender) }>
                     { getInitials(props.parentMessage.sender) }

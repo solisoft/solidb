@@ -437,8 +437,17 @@ app.signup = function()
   local userId = createRes._id
   if not userId then
       -- Fallback if driver returns something else, fetch by email
-      local u = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email }).result[1]
-      userId = u._id
+      local res = db:Sdbql("FOR u IN users FILTER u.email == @email RETURN u", { email = email })
+      if res and res.result and #res.result > 0 then
+          local u = res.result[1]
+          userId = u._id
+      else
+          -- This should technically not happen if CreateDocument succeeded
+          Params.error = "Error retrieving created user"
+          Params.hide_header = true
+          Params.no_padding = true
+          return Page("talks/signup", "app")
+      end
   end
 
   RedirectTo("/talks")

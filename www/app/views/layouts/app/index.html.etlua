@@ -106,6 +106,7 @@
         getServerConfig,
         getAuthToken,
         clearAuthToken,
+        getApiUrl,
       } from '<%= PublicPath("/api-config.js") %>';
 
       document.addEventListener("DOMContentLoaded", (event) => {
@@ -167,10 +168,12 @@
             }
 
             try {
-              const config = getServerConfig();
               const token = getAuthToken();
+              const apiUrl = getApiUrl();
+              console.log("Attempting to change password at:", `${apiUrl}/auth/password`);
+              
               const response = await fetch(
-                `${config.host}:${config.port}/_api/auth/password`,
+                `${apiUrl}/auth/password`,
                 {
                   method: "PUT",
                   headers: {
@@ -196,7 +199,8 @@
                 errorDiv.classList.remove("hidden");
               }
             } catch (error) {
-              errorDiv.textContent = "Connection error";
+              console.error("Change password error:", error);
+              errorDiv.textContent = "Connection error: " + error.message;
               errorDiv.classList.remove("hidden");
             }
           });

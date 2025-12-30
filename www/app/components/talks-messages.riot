@@ -249,34 +249,27 @@
                                         }</span>
                                 </div>
                                 <div class="relative group/emoji">
-                                    <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) } class="p-1.5 rounded
-                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
-                                        group-hover:opacity-100"><i class="far fa-smile text-sm"></i></button>
+                                    <button onclick={ (e)=> props.onToggleEmojiPicker(e, message) } class={
+                                        getActionBtnClass() }><i class="far fa-smile text-sm"></i></button>
                                 </div>
                                 <div if={ !message.thread_count || message.thread_count===0 }
                                     class="relative group/reply">
-                                    <button onclick={ (e)=> this.handleThreadClick(message, e) } class="p-1.5 rounded
-                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
-                                        group-hover:opacity-100" title="Reply in thread"><i
+                                    <button onclick={ (e)=> this.handleThreadClick(message, e) } class={
+                                        getActionBtnClass() } title="Reply in thread"><i
                                             class="fas fa-reply text-sm"></i></button>
                                 </div>
                                 <div if={ props.currentChannel !=="mentions" } class="relative group/quote">
-                                    <button onclick={ (e)=> props.onQuoteMessage(message, e) } class="p-1.5 rounded
-                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
-                                        group-hover:opacity-100" title="Quote message"><i
+                                    <button onclick={ (e)=> props.onQuoteMessage(message, e) } class={
+                                        getActionBtnClass() } title="Quote message"><i
                                             class="fas fa-quote-right text-sm"></i></button>
                                 </div>
                                 <div if={ isOwner(message) } class="relative group/edit">
-                                    <button onclick={ (e)=> startEdit(message, e) } class="p-1.5 rounded
-                                        text-gray-500 hover:text-white hover:bg-gray-700 transition-colors opacity-0
-                                        group-hover:opacity-100" title="Edit message"><i
-                                            class="fas fa-edit text-sm"></i></button>
+                                    <button onclick={ (e)=> startEdit(message, e) } class={ getActionBtnClass() }
+                                        title="Edit message"><i class="fas fa-edit text-sm"></i></button>
                                 </div>
                                 <div if={ isOwner(message) } class="relative group/delete">
-                                    <button onclick={ (e)=> props.onDeleteMessage(message._key, e) } class="p-1.5
-                                        rounded
-                                        text-gray-500 hover:text-red-400 hover:bg-gray-700 transition-colors opacity-0
-                                        group-hover:opacity-100" title="Delete message"><i
+                                    <button onclick={ (e)=> props.onDeleteMessage(message._key, e) } class={
+                                        getDeleteBtnClass() } title="Delete message"><i
                                             class="fas fa-trash-alt text-sm"></i></button>
                                 </div>
                             </div>
@@ -348,6 +341,14 @@
                 } else if (e.key === 'Escape') {
                     this.cancelEdit();
                 }
+            },
+            getActionBtnClass() {
+                const base = 'p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-700 transition-colors';
+                return this.props.isMobile ? base + ' opacity-100' : base + ' opacity-0 group-hover:opacity-100';
+            },
+            getDeleteBtnClass() {
+                const base = 'p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-gray-700 transition-colors';
+                return this.props.isMobile ? base + ' opacity-100' : base + ' opacity-0 group-hover:opacity-100';
             },
             getAvatarClass(sender) {
                 const colors = [

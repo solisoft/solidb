@@ -235,8 +235,8 @@ pub fn create_router(
         .route("/_api/scripts/stats", get(super::script_handlers::get_script_stats_handler))
         .route("/_api/monitoring/ws", get(super::handlers::monitor_ws_handler))
         // Live Query Token (short-lived token for WebSocket connections)
-        .route("/_api/livequery/token", get(livequery_token_handler));
-        // .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
+        .route("/_api/livequery/token", get(livequery_token_handler))
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::auth_middleware));
 
     // Combine with public routes
     Router::new()
@@ -276,14 +276,7 @@ pub fn create_router(
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin([
-                    "http://localhost:8080"
-                        .parse::<axum::http::HeaderValue>()
-                        .unwrap(),
-                    "https://solidb.solisoft.net"
-                        .parse::<axum::http::HeaderValue>()
-                        .unwrap(),
-                ])
+                .allow_origin(Any)
                 .allow_methods([
                     Method::GET,
                     Method::POST,

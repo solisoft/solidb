@@ -1,7 +1,14 @@
 <talks-header>
     <header
-        class="absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center px-6 bg-[#1A1D21]/80 backdrop-blur-md">
+        class={ 'absolute top-0 left-0 right-0 z-20 h-16 border-b border-white/5 flex items-center justify-center bg-[#1A1D21]/80 backdrop-blur-md ' + 
+               (props.isMobile ? 'px-4' : 'px-6') }>
         <div class="flex items-center min-w-0 flex-1">
+            <!-- Mobile Hamburger Menu -->
+            <button if={ props.isMobile && props.onToggleMobileSidebar }
+                    onclick={ props.onToggleMobileSidebar }
+                    class="mr-3 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-700/50">
+                <i class="fas fa-bars text-lg"></i>
+            </button>
             <h2 class="text-xl font-bold text-white mr-2 truncate flex items-center">
                 <i if={ props.currentChannelData && props.currentChannelData.type==='private' }
                     class="fas fa-lock text-sm mr-2 text-gray-400"></i>
@@ -80,7 +87,8 @@
                     </div>
                 </div>
             </div>
-            <div class="mr-4 border-r border-gray-700 pr-4 flex items-center space-x-2">
+            <div class={ 'flex items-center space-x-2 ' + 
+                       (props.isMobile ? 'mr-2 border-r border-gray-700 pr-2' : 'mr-4 border-r border-gray-700 pr-4') }>
                 <div if={ hasActiveHuddle() && !isInHuddle() }
                     class="flex items-center gap-2 bg-green-600/20 border border-green-500/50 px-3 py-1.5 rounded-full animate-pulse">
                     <div class="flex -space-x-2">
@@ -104,26 +112,38 @@
                 </div>
 
                 <template if={ !hasActiveHuddle() || isInHuddle() }>
-                    <button onclick={ ()=> props.onStartCall('audio') } class="text-gray-400 hover:text-white p-2
-                        rounded-full hover:bg-gray-800 transition-colors" title="Start Audio Call">
+                    <button onclick={ ()=> props.onStartCall('audio') } class={ 'text-gray-400 hover:text-white transition-colors ' +
+                       (props.isMobile ? 'p-3 rounded-lg hover:bg-gray-700/50' : 'p-2 rounded-full hover:bg-gray-800') } 
+                        title="Start Audio Call">
                         <i class="fas fa-phone"></i>
                     </button>
-                    <button onclick={ ()=> props.onStartCall('video') } class="text-gray-400 hover:text-white p-2
-                        rounded-full hover:bg-gray-800 transition-colors" title="Start Video Call">
+                    <button onclick={ ()=> props.onStartCall('video') } class={ 'text-gray-400 hover:text-white transition-colors ' +
+                       (props.isMobile ? 'p-3 rounded-lg hover:bg-gray-700/50' : 'p-2 rounded-full hover:bg-gray-800') } 
+                        title="Start Video Call">
                         <i class="fas fa-video"></i>
                     </button>
                 </template>
             </div>
-            <div class="relative hidden sm:block">
-                <input type="text" placeholder="Search messages..." ref="searchInput" oninput={ (e)=>
-                handleSearchInput(e) }
-                onkeydown={ (e) => handleSearchKeydown(e) } onfocus={ () => props.onSearchFocus && props.onSearchFocus()
-                }
-                class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none
-                focus:border-indigo-500 w-64 transition-all text-gray-200">
-                <i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i>
+            <div class="relative">
+                <button if={ props.isMobile }
+                        onclick={ () => props.onSearch && props.onSearch('') }
+                        class="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-700/50">
+                    <i class="fas fa-search"></i>
+                </button>
+                <div class={ (props.isMobile ? 'hidden' : 'relative') + ' sm:block' }>
+                    <input type="text" placeholder="Search messages..." ref="searchInput" oninput={ (e)=>
+                    handleSearchInput(e) }
+                    onkeydown={ (e) => handleSearchKeydown(e) } onfocus={ () => props.onSearchFocus && props.onSearchFocus()
+                    }
+                    class="bg-[#222529] border border-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none
+                    focus:border-indigo-500 w-64 transition-all text-gray-200">
+                    <i class="fas fa-search absolute right-3 top-2.5 text-gray-500"></i>
+                </div>
             </div>
-            <button class="text-gray-400 hover:text-white"><i class="fas fa-info-circle"></i></button>
+            <button class={ 'text-gray-400 hover:text-white transition-colors ' +
+                        (props.isMobile ? 'p-2 rounded-lg hover:bg-gray-700/50' : '') }>
+                <i class="fas fa-info-circle"></i>
+            </button>
         </div>
     </header>
     <script>

@@ -157,11 +157,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr1477="expr1477" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr1478="expr1478" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Collection Settings</h3></div><div class="p-6"><div expr1479="expr1479" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr1481="expr1481"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr1482="expr1482" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"/></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><input expr1483="expr1483" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed capitalize"/><p class="mt-1 text-xs text-gray-500">Cannot be changed after creation</p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div expr1484="expr1484" class="bg-gray-800/30 rounded-lg p-4 border border-gray-600/30"></div><div expr1486="expr1486" class="space-y-4 animate-fade-in"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr1490="expr1490" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr1491="expr1491" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
+    '<div expr754="expr754" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr755="expr755" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Collection Settings</h3></div><div class="p-6"><div expr756="expr756" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr758="expr758"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr759="expr759" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"/></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><input expr760="expr760" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed capitalize"/><p class="mt-1 text-xs text-gray-500">Cannot be changed after creation</p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div expr761="expr761" class="bg-gray-800/30 rounded-lg p-4 border border-gray-600/30"></div><div expr763="expr763" class="space-y-4 animate-fade-in"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr767="expr767" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr768="expr768" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
     [
       {
-        redundantAttribute: 'expr1477',
-        selector: '[expr1477]',
+        redundantAttribute: 'expr754',
+        selector: '[expr754]',
 
         expressions: [
           {
@@ -172,8 +172,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr1478',
-        selector: '[expr1478]',
+        redundantAttribute: 'expr755',
+        selector: '[expr755]',
 
         expressions: [
           {
@@ -186,15 +186,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr1479',
-        selector: '[expr1479]',
+        redundantAttribute: 'expr756',
+        selector: '[expr756]',
 
         template: template(
-          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr1480="expr1480" class="text-sm text-red-300"> </p></div>',
+          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr757="expr757" class="text-sm text-red-300"> </p></div>',
           [
             {
-              redundantAttribute: 'expr1480',
-              selector: '[expr1480]',
+              redundantAttribute: 'expr757',
+              selector: '[expr757]',
 
               expressions: [
                 {
@@ -208,8 +208,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr1481',
-        selector: '[expr1481]',
+        redundantAttribute: 'expr758',
+        selector: '[expr758]',
 
         expressions: [
           {
@@ -220,8 +220,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr1482',
-        selector: '[expr1482]',
+        redundantAttribute: 'expr759',
+        selector: '[expr759]',
 
         expressions: [
           {
@@ -231,8 +231,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr1483',
-        selector: '[expr1483]',
+        redundantAttribute: 'expr760',
+        selector: '[expr760]',
 
         expressions: [
           {
@@ -244,15 +244,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.customShardingEnabled,
-        redundantAttribute: 'expr1484',
-        selector: '[expr1484]',
+        redundantAttribute: 'expr761',
+        selector: '[expr761]',
 
         template: template(
-          '<div class="flex items-start mb-3"><div class="flex-shrink-0"><svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-3"><h3 class="text-sm font-medium text-blue-300">Global Replication</h3><div class="mt-1 text-xs text-gray-400">\n                                        This collection is currently replicated to <strong>all nodes</strong> in the\n                                        cluster.\n                                    </div></div></div><button expr1485="expr1485" type="button" class="w-full flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-xs font-medium rounded-lg text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-colors">\n                                Enable Custom Sharding\n                            </button>',
+          '<div class="flex items-start mb-3"><div class="flex-shrink-0"><svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-3"><h3 class="text-sm font-medium text-blue-300">Global Replication</h3><div class="mt-1 text-xs text-gray-400">\n                                        This collection is currently replicated to <strong>all nodes</strong> in the\n                                        cluster.\n                                    </div></div></div><button expr762="expr762" type="button" class="w-full flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-xs font-medium rounded-lg text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-colors">\n                                Enable Custom Sharding\n                            </button>',
           [
             {
-              redundantAttribute: 'expr1485',
-              selector: '[expr1485]',
+              redundantAttribute: 'expr762',
+              selector: '[expr762]',
 
               expressions: [
                 {
@@ -268,15 +268,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.customShardingEnabled,
-        redundantAttribute: 'expr1486',
-        selector: '[expr1486]',
+        redundantAttribute: 'expr763',
+        selector: '[expr763]',
 
         template: template(
-          '<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr1487="expr1487" type="number" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-yellow-500/80">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication\n                                        Factor</label><input expr1488="expr1488" type="number" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-green-500/80">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr1489="expr1489" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div>',
+          '<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr764="expr764" type="number" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-yellow-500/80">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication\n                                        Factor</label><input expr765="expr765" type="number" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-green-500/80">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr766="expr766" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div>',
           [
             {
-              redundantAttribute: 'expr1487',
-              selector: '[expr1487]',
+              redundantAttribute: 'expr764',
+              selector: '[expr764]',
 
               expressions: [
                 {
@@ -297,8 +297,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1488',
-              selector: '[expr1488]',
+              redundantAttribute: 'expr765',
+              selector: '[expr765]',
 
               expressions: [
                 {
@@ -319,8 +319,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr1489',
-              selector: '[expr1489]',
+              redundantAttribute: 'expr766',
+              selector: '[expr766]',
 
               expressions: [
                 {
@@ -333,8 +333,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr1490',
-        selector: '[expr1490]',
+        redundantAttribute: 'expr767',
+        selector: '[expr767]',
 
         expressions: [
           {
@@ -345,8 +345,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr1491',
-        selector: '[expr1491]',
+        redundantAttribute: 'expr768',
+        selector: '[expr768]',
 
         expressions: [
           {

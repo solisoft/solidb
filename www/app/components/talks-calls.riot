@@ -243,9 +243,14 @@
             },
 
             getCallContainerClass() {
-                return this.props.isFullscreen
-                    ? 'fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in'
-                    : 'w-96 flex-shrink-0 h-full bg-gray-900 border-l border-gray-700 flex flex-col relative animate-fade-in overflow-hidden z-[1]';
+                if (this.props.isFullscreen) {
+                    return 'fixed inset-0 z-[10000] bg-gray-900 flex flex-col animate-fade-in';
+                }
+                // On mobile, use fixed overlay instead of pushing content
+                if (this.props.isMobile) {
+                    return 'fixed inset-y-0 right-0 w-4/5 max-w-md z-30 bg-gray-900 border-l border-gray-700 flex flex-col animate-fade-in overflow-hidden shadow-[-4px_0_20px_rgba(0,0,0,0.5)]';
+                }
+                return 'w-96 flex-shrink-0 h-full bg-gray-900 border-l border-gray-700 flex flex-col relative animate-fade-in overflow-hidden z-[1]';
             },
 
             getHeaderClass() {
