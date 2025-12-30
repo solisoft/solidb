@@ -48,7 +48,6 @@
       rel="stylesheet"
     />
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-    <script src="https://unpkg.com/@msgpack/msgpack@3.0.0/dist/msgpack.min.js"></script>
     <script src="<%= PublicPath('/app_vendor.js') %>"></script>
   </head>
 
