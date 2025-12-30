@@ -130,11 +130,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<footer class="p-0 flex-shrink-0"><div expr2773="expr2773"><div expr2774="expr2774"></div><div expr2778="expr2778"></div><div expr2784="expr2784"><textarea expr2785="expr2785" ref="messageInput" placeholder="Message"></textarea></div><div expr2786="expr2786"><div class="flex items-center space-x-1"><button expr2787="expr2787" class="text-gray-500 hover:text-white transition-colors p-2" title="Attach file"><i class="fas fa-paperclip"></i></button><button expr2788="expr2788"><i class="far fa-smile"></i></button></div><button expr2789="expr2789"><i expr2790="expr2790"></i> </button></div><input expr2791="expr2791" type="file" ref="fileInput" class="hidden" multiple/></div></footer>',
+    '<footer class="p-0 flex-shrink-0"><div expr4277="expr4277"><div expr4278="expr4278"></div><div expr4282="expr4282"></div><div expr4288="expr4288"><textarea expr4289="expr4289" ref="messageInput" placeholder="Message"></textarea></div><div expr4290="expr4290"><div class="flex items-center space-x-1"><button expr4291="expr4291" class="text-gray-500 hover:text-white transition-colors p-2" title="Attach file"><i class="fas fa-paperclip"></i></button><button expr4292="expr4292"><i class="far fa-smile"></i></button></div><button expr4293="expr4293"><i expr4294="expr4294"></i> </button></div><input expr4295="expr4295" type="file" ref="fileInput" class="hidden" multiple/></div></footer>',
     [
       {
-        redundantAttribute: 'expr2773',
-        selector: '[expr2773]',
+        redundantAttribute: 'expr4277',
+        selector: '[expr4277]',
 
         expressions: [
           {
@@ -168,11 +168,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.quotedMessage,
-        redundantAttribute: 'expr2774',
-        selector: '[expr2774]',
+        redundantAttribute: 'expr4278',
+        selector: '[expr4278]',
 
         template: template(
-          '<div class="flex items-center justify-between mb-1.5"><span expr2775="expr2775" class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5"><i class="fas fa-reply"></i> </span><button expr2776="expr2776" class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors"><i class="fas fa-times"></i></button></div><div expr2777="expr2777" class="text-gray-300/80 line-clamp-2 italic text-sm"> </div><i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>',
+          '<div class="flex items-center justify-between mb-1.5"><span expr4279="expr4279" class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5"><i class="fas fa-reply"></i> </span><button expr4280="expr4280" class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors"><i class="fas fa-times"></i></button></div><div expr4281="expr4281" class="text-gray-300/80 line-clamp-2 italic text-sm"> </div><i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>',
           [
             {
               expressions: [
@@ -185,8 +185,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2775',
-              selector: '[expr2775]',
+              redundantAttribute: 'expr4279',
+              selector: '[expr4279]',
 
               expressions: [
                 {
@@ -203,8 +203,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2776',
-              selector: '[expr2776]',
+              redundantAttribute: 'expr4280',
+              selector: '[expr4280]',
 
               expressions: [
                 {
@@ -215,8 +215,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2777',
-              selector: '[expr2777]',
+              redundantAttribute: 'expr4281',
+              selector: '[expr4281]',
 
               expressions: [
                 {
@@ -232,11 +232,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.files.length > 0,
-        redundantAttribute: 'expr2778',
-        selector: '[expr2778]',
+        redundantAttribute: 'expr4282',
+        selector: '[expr4282]',
 
         template: template(
-          '<div expr2779="expr2779"></div>',
+          '<div expr4283="expr4283"></div>',
           [
             {
               expressions: [
@@ -254,7 +254,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr2780="expr2780"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr2781="expr2781"> </span><span expr2782="expr2782" class="text-[10px] text-gray-500"> </span></div><button expr2783="expr2783"><i class="fas fa-times"></i></button>',
+                '<div expr4284="expr4284"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr4285="expr4285"> </span><span expr4286="expr4286" class="text-[10px] text-gray-500"> </span></div><button expr4287="expr4287"><i class="fas fa-times"></i></button>',
                 [
                   {
                     expressions: [
@@ -267,8 +267,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2780',
-                    selector: '[expr2780]',
+                    redundantAttribute: 'expr4284',
+                    selector: '[expr4284]',
 
                     expressions: [
                       {
@@ -280,8 +280,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2781',
-                    selector: '[expr2781]',
+                    redundantAttribute: 'expr4285',
+                    selector: '[expr4285]',
 
                     expressions: [
                       {
@@ -298,8 +298,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2782',
-                    selector: '[expr2782]',
+                    redundantAttribute: 'expr4286',
+                    selector: '[expr4286]',
 
                     expressions: [
                       {
@@ -313,8 +313,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2783',
-                    selector: '[expr2783]',
+                    redundantAttribute: 'expr4287',
+                    selector: '[expr4287]',
 
                     expressions: [
                       {
@@ -333,8 +333,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr2779',
-              selector: '[expr2779]',
+              redundantAttribute: 'expr4283',
+              selector: '[expr4283]',
               itemName: 'file',
               indexName: 'index',
               evaluate: _scope => _scope.props.files
@@ -343,8 +343,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr2784',
-        selector: '[expr2784]',
+        redundantAttribute: 'expr4288',
+        selector: '[expr4288]',
 
         expressions: [
           {
@@ -356,8 +356,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2785',
-        selector: '[expr2785]',
+        redundantAttribute: 'expr4289',
+        selector: '[expr4289]',
 
         expressions: [
           {
@@ -379,8 +379,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2786',
-        selector: '[expr2786]',
+        redundantAttribute: 'expr4290',
+        selector: '[expr4290]',
 
         expressions: [
           {
@@ -392,8 +392,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2787',
-        selector: '[expr2787]',
+        redundantAttribute: 'expr4291',
+        selector: '[expr4291]',
 
         expressions: [
           {
@@ -404,8 +404,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2788',
-        selector: '[expr2788]',
+        redundantAttribute: 'expr4292',
+        selector: '[expr4292]',
 
         expressions: [
           {
@@ -422,8 +422,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2789',
-        selector: '[expr2789]',
+        redundantAttribute: 'expr4293',
+        selector: '[expr4293]',
 
         expressions: [
           {
@@ -456,8 +456,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2790',
-        selector: '[expr2790]',
+        redundantAttribute: 'expr4294',
+        selector: '[expr4294]',
 
         expressions: [
           {
@@ -469,8 +469,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2791',
-        selector: '[expr2791]',
+        redundantAttribute: 'expr4295',
+        selector: '[expr4295]',
 
         expressions: [
           {

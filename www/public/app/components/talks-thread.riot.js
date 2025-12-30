@@ -374,11 +374,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr2004="expr2004"><div expr2005="expr2005"><div class="flex items-center gap-2"><i class="fas fa-comments text-indigo-400"></i><span expr2006="expr2006">Thread</span><span expr2007="expr2007" class="text-gray-500 text-sm"></span></div><button expr2008="expr2008" type="button" title="Close Thread"><i class="fas fa-times"></i></button></div><div expr2009="expr2009"></div><div ref="threadMessages" class="flex-1 overflow-y-auto px-4 py-2 space-y-2 custom-scrollbar"><div expr2020="expr2020" class="text-center text-gray-500 py-8"></div><div expr2021="expr2021" class="flex items-start gap-3 group hover:bg-[#222529]/30 -mx-4 px-4 py-2 transition-colors relative"></div></div><talks-input expr2041="expr2041"></talks-input><div expr2042="expr2042" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div></div>',
+    '<div expr4332="expr4332"><div expr4333="expr4333"><div class="flex items-center gap-2"><i class="fas fa-comments text-indigo-400"></i><span expr4334="expr4334">Thread</span><span expr4335="expr4335" class="text-gray-500 text-sm"></span></div><button expr4336="expr4336" type="button" title="Close Thread"><i class="fas fa-times"></i></button></div><div expr4337="expr4337"></div><div ref="threadMessages" class="flex-1 overflow-y-auto px-4 py-2 space-y-2 custom-scrollbar"><div expr4348="expr4348" class="text-center text-gray-500 py-8"></div><div expr4349="expr4349" class="flex items-start gap-3 group hover:bg-[#222529]/30 -mx-4 px-4 py-2 transition-colors relative"></div></div><talks-input expr4369="expr4369"></talks-input><div expr4370="expr4370" class="fixed bg-[#222529] border border-gray-700 rounded-lg shadow-2xl z-[9995] w-64 overflow-hidden animate-fade-in"></div></div>',
     [
       {
-        redundantAttribute: 'expr2004',
-        selector: '[expr2004]',
+        redundantAttribute: 'expr4332',
+        selector: '[expr4332]',
 
         expressions: [
           {
@@ -410,8 +410,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2005',
-        selector: '[expr2005]',
+        redundantAttribute: 'expr4333',
+        selector: '[expr4333]',
 
         expressions: [
           {
@@ -423,8 +423,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr2006',
-        selector: '[expr2006]',
+        redundantAttribute: 'expr4334',
+        selector: '[expr4334]',
 
         expressions: [
           {
@@ -438,8 +438,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.threadMessages && _scope.props.threadMessages.length> 0,
-        redundantAttribute: 'expr2007',
-        selector: '[expr2007]',
+        redundantAttribute: 'expr4335',
+        selector: '[expr4335]',
 
         template: template(
           ' ',
@@ -464,8 +464,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr2008',
-        selector: '[expr2008]',
+        redundantAttribute: 'expr4336',
+        selector: '[expr4336]',
 
         expressions: [
           {
@@ -484,11 +484,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.parentMessage,
-        redundantAttribute: 'expr2009',
-        selector: '[expr2009]',
+        redundantAttribute: 'expr4337',
+        selector: '[expr4337]',
 
         template: template(
-          '<div class="flex items-start gap-3"><div expr2010="expr2010"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr2011="expr2011" class="font-bold text-white mr-2"> </span><span expr2012="expr2012" class="text-xs text-gray-500"> </span></div><div expr2013="expr2013" class="text-[#D1D2D3] leading-snug"> </div><div expr2014="expr2014" class="mt-2 flex flex-wrap gap-2"></div></div></div>',
+          '<div class="flex items-start gap-3"><div expr4338="expr4338"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr4339="expr4339" class="font-bold text-white mr-2"> </span><span expr4340="expr4340" class="text-xs text-gray-500"> </span></div><div expr4341="expr4341" class="text-[#D1D2D3] leading-snug"> </div><div expr4342="expr4342" class="mt-2 flex flex-wrap gap-2"></div></div></div>',
           [
             {
               expressions: [
@@ -501,8 +501,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2010',
-              selector: '[expr2010]',
+              redundantAttribute: 'expr4338',
+              selector: '[expr4338]',
 
               expressions: [
                 {
@@ -529,8 +529,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2011',
-              selector: '[expr2011]',
+              redundantAttribute: 'expr4339',
+              selector: '[expr4339]',
 
               expressions: [
                 {
@@ -541,8 +541,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2012',
-              selector: '[expr2012]',
+              redundantAttribute: 'expr4340',
+              selector: '[expr4340]',
 
               expressions: [
                 {
@@ -556,8 +556,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2013',
-              selector: '[expr2013]',
+              redundantAttribute: 'expr4341',
+              selector: '[expr4341]',
 
               expressions: [
                 {
@@ -570,11 +570,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.parentMessage.attachments && _scope.props.parentMessage.attachments.length> 0,
-              redundantAttribute: 'expr2014',
-              selector: '[expr2014]',
+              redundantAttribute: 'expr4342',
+              selector: '[expr4342]',
 
               template: template(
-                '<div expr2015="expr2015" class="relative"></div>',
+                '<div expr4343="expr4343" class="relative"></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -582,7 +582,7 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<template expr2016="expr2016"></template><template expr2018="expr2018"></template>',
+                      '<template expr4344="expr4344"></template><template expr4346="expr4346"></template>',
                       [
                         {
                           type: bindingTypes.IF,
@@ -591,15 +591,15 @@ export default {
                             _scope.attachment
                           ),
 
-                          redundantAttribute: 'expr2016',
-                          selector: '[expr2016]',
+                          redundantAttribute: 'expr4344',
+                          selector: '[expr4344]',
 
                           template: template(
-                            '<img expr2017="expr2017" class="max-w-[120px] max-h-16 rounded border border-gray-700"/>',
+                            '<img expr4345="expr4345" class="max-w-[120px] max-h-16 rounded border border-gray-700"/>',
                             [
                               {
-                                redundantAttribute: 'expr2017',
-                                selector: '[expr2017]',
+                                redundantAttribute: 'expr4345',
+                                selector: '[expr4345]',
 
                                 expressions: [
                                   {
@@ -625,15 +625,15 @@ export default {
                         {
                           type: bindingTypes.IF,
                           evaluate: _scope => !_scope.isImage(_scope.attachment),
-                          redundantAttribute: 'expr2018',
-                          selector: '[expr2018]',
+                          redundantAttribute: 'expr4346',
+                          selector: '[expr4346]',
 
                           template: template(
-                            '<div class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 text-sm text-gray-400"><i class="fas fa-paperclip mr-2"></i><span expr2019="expr2019" class="truncate max-w-[100px]"> </span></div>',
+                            '<div class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 text-sm text-gray-400"><i class="fas fa-paperclip mr-2"></i><span expr4347="expr4347" class="truncate max-w-[100px]"> </span></div>',
                             [
                               {
-                                redundantAttribute: 'expr2019',
-                                selector: '[expr2019]',
+                                redundantAttribute: 'expr4347',
+                                selector: '[expr4347]',
 
                                 expressions: [
                                   {
@@ -649,8 +649,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr2015',
-                    selector: '[expr2015]',
+                    redundantAttribute: 'expr4343',
+                    selector: '[expr4343]',
                     itemName: 'attachment',
                     indexName: null,
                     evaluate: _scope => _scope.props.parentMessage.attachments
@@ -664,8 +664,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.props.threadMessages || _scope.props.threadMessages.length===0,
-        redundantAttribute: 'expr2020',
-        selector: '[expr2020]',
+        redundantAttribute: 'expr4348',
+        selector: '[expr4348]',
 
         template: template(
           '<i class="fas fa-comment-dots text-3xl mb-3 opacity-50"></i><p class="text-sm">No replies yet. Start the conversation!</p>',
@@ -678,11 +678,11 @@ export default {
         condition: null,
 
         template: template(
-          '<div expr2022="expr2022"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-0.5"><span expr2023="expr2023" class="font-bold text-white text-sm mr-2"> </span><span expr2024="expr2024" class="text-xs text-gray-500"> </span></div><div expr2025="expr2025" class="text-[#D1D2D3] text-sm leading-snug"></div><div expr2027="expr2027" class="mt-1"></div><div expr2031="expr2031" class="mt-2 flex flex-wrap gap-2"></div></div><div expr2038="expr2038" class="absolute top-2 right-2 flex items-center bg-[#1A1D21] border border-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10"></div>',
+          '<div expr4350="expr4350"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-0.5"><span expr4351="expr4351" class="font-bold text-white text-sm mr-2"> </span><span expr4352="expr4352" class="text-xs text-gray-500"> </span></div><div expr4353="expr4353" class="text-[#D1D2D3] text-sm leading-snug"></div><div expr4355="expr4355" class="mt-1"></div><div expr4359="expr4359" class="mt-2 flex flex-wrap gap-2"></div></div><div expr4366="expr4366" class="absolute top-2 right-2 flex items-center bg-[#1A1D21] border border-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10"></div>',
           [
             {
-              redundantAttribute: 'expr2022',
-              selector: '[expr2022]',
+              redundantAttribute: 'expr4350',
+              selector: '[expr4350]',
 
               expressions: [
                 {
@@ -709,8 +709,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2023',
-              selector: '[expr2023]',
+              redundantAttribute: 'expr4351',
+              selector: '[expr4351]',
 
               expressions: [
                 {
@@ -721,8 +721,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr2024',
-              selector: '[expr2024]',
+              redundantAttribute: 'expr4352',
+              selector: '[expr4352]',
 
               expressions: [
                 {
@@ -738,11 +738,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.editingMessageId !== _scope.message._key,
-              redundantAttribute: 'expr2025',
-              selector: '[expr2025]',
+              redundantAttribute: 'expr4353',
+              selector: '[expr4353]',
 
               template: template(
-                ' <span expr2026="expr2026" class="text-[10px] text-gray-500 ml-1"></span>',
+                ' <span expr4354="expr4354" class="text-[10px] text-gray-500 ml-1"></span>',
                 [
                   {
                     expressions: [
@@ -761,8 +761,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.message.edited,
-                    redundantAttribute: 'expr2026',
-                    selector: '[expr2026]',
+                    redundantAttribute: 'expr4354',
+                    selector: '[expr4354]',
 
                     template: template(
                       '(edited)',
@@ -775,15 +775,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.editingMessageId === _scope.message._key,
-              redundantAttribute: 'expr2027',
-              selector: '[expr2027]',
+              redundantAttribute: 'expr4355',
+              selector: '[expr4355]',
 
               template: template(
-                '<textarea expr2028="expr2028" class="w-full bg-[#222529] border border-blue-500 rounded p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"> </textarea><div class="flex justify-end gap-2 mt-1"><button expr2029="expr2029" class="text-xs text-gray-400 hover:text-white px-2 py-1">Cancel</button><button expr2030="expr2030" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Save\n                                Changes</button></div>',
+                '<textarea expr4356="expr4356" class="w-full bg-[#222529] border border-blue-500 rounded p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"> </textarea><div class="flex justify-end gap-2 mt-1"><button expr4357="expr4357" class="text-xs text-gray-400 hover:text-white px-2 py-1">Cancel</button><button expr4358="expr4358" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Save\n                                Changes</button></div>',
                 [
                   {
-                    redundantAttribute: 'expr2028',
-                    selector: '[expr2028]',
+                    redundantAttribute: 'expr4356',
+                    selector: '[expr4356]',
 
                     expressions: [
                       {
@@ -799,8 +799,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2029',
-                    selector: '[expr2029]',
+                    redundantAttribute: 'expr4357',
+                    selector: '[expr4357]',
 
                     expressions: [
                       {
@@ -811,8 +811,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2030',
-                    selector: '[expr2030]',
+                    redundantAttribute: 'expr4358',
+                    selector: '[expr4358]',
 
                     expressions: [
                       {
@@ -828,11 +828,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.message.attachments && _scope.message.attachments.length> 0,
-              redundantAttribute: 'expr2031',
-              selector: '[expr2031]',
+              redundantAttribute: 'expr4359',
+              selector: '[expr4359]',
 
               template: template(
-                '<div expr2032="expr2032" class="relative"></div>',
+                '<div expr4360="expr4360" class="relative"></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -840,7 +840,7 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<template expr2033="expr2033"></template><template expr2035="expr2035"></template>',
+                      '<template expr4361="expr4361"></template><template expr4363="expr4363"></template>',
                       [
                         {
                           type: bindingTypes.IF,
@@ -849,15 +849,15 @@ export default {
                             _scope.attachment
                           ),
 
-                          redundantAttribute: 'expr2033',
-                          selector: '[expr2033]',
+                          redundantAttribute: 'expr4361',
+                          selector: '[expr4361]',
 
                           template: template(
-                            '<img expr2034="expr2034" class="max-w-xs max-h-40 rounded border border-gray-700"/>',
+                            '<img expr4362="expr4362" class="max-w-xs max-h-40 rounded border border-gray-700"/>',
                             [
                               {
-                                redundantAttribute: 'expr2034',
-                                selector: '[expr2034]',
+                                redundantAttribute: 'expr4362',
+                                selector: '[expr4362]',
 
                                 expressions: [
                                   {
@@ -883,15 +883,15 @@ export default {
                         {
                           type: bindingTypes.IF,
                           evaluate: _scope => !_scope.isImage(_scope.attachment),
-                          redundantAttribute: 'expr2035',
-                          selector: '[expr2035]',
+                          redundantAttribute: 'expr4363',
+                          selector: '[expr4363]',
 
                           template: template(
-                            '<a expr2036="expr2036" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 text-sm text-blue-400 hover:text-blue-300"><i class="fas fa-paperclip mr-2"></i><span expr2037="expr2037" class="truncate max-w-[150px]"> </span></a>',
+                            '<a expr4364="expr4364" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 text-sm text-blue-400 hover:text-blue-300"><i class="fas fa-paperclip mr-2"></i><span expr4365="expr4365" class="truncate max-w-[150px]"> </span></a>',
                             [
                               {
-                                redundantAttribute: 'expr2036',
-                                selector: '[expr2036]',
+                                redundantAttribute: 'expr4364',
+                                selector: '[expr4364]',
 
                                 expressions: [
                                   {
@@ -906,8 +906,8 @@ export default {
                                 ]
                               },
                               {
-                                redundantAttribute: 'expr2037',
-                                selector: '[expr2037]',
+                                redundantAttribute: 'expr4365',
+                                selector: '[expr4365]',
 
                                 expressions: [
                                   {
@@ -923,8 +923,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr2032',
-                    selector: '[expr2032]',
+                    redundantAttribute: 'expr4360',
+                    selector: '[expr4360]',
                     itemName: 'attachment',
                     indexName: null,
                     evaluate: _scope => _scope.message.attachments
@@ -935,15 +935,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.isOwner(_scope.message) && _scope.state.editingMessageId !==_scope.message._key,
-              redundantAttribute: 'expr2038',
-              selector: '[expr2038]',
+              redundantAttribute: 'expr4366',
+              selector: '[expr4366]',
 
               template: template(
-                '<button expr2039="expr2039" class="p-1.5 text-gray-400 hover:text-white\n                        transition-colors" title="Edit"><i class="fas fa-edit text-xs"></i></button><button expr2040="expr2040" class="p-1.5 text-gray-400\n                        hover:text-red-400 transition-colors" title="Delete"><i class="fas fa-trash-alt text-xs"></i></button>',
+                '<button expr4367="expr4367" class="p-1.5 text-gray-400 hover:text-white\n                        transition-colors" title="Edit"><i class="fas fa-edit text-xs"></i></button><button expr4368="expr4368" class="p-1.5 text-gray-400\n                        hover:text-red-400 transition-colors" title="Delete"><i class="fas fa-trash-alt text-xs"></i></button>',
                 [
                   {
-                    redundantAttribute: 'expr2039',
-                    selector: '[expr2039]',
+                    redundantAttribute: 'expr4367',
+                    selector: '[expr4367]',
 
                     expressions: [
                       {
@@ -954,8 +954,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2040',
-                    selector: '[expr2040]',
+                    redundantAttribute: 'expr4368',
+                    selector: '[expr4368]',
 
                     expressions: [
                       {
@@ -971,8 +971,8 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr2021',
-        selector: '[expr2021]',
+        redundantAttribute: 'expr4349',
+        selector: '[expr4349]',
         itemName: 'message',
         indexName: null,
         evaluate: _scope => _scope.props.threadMessages
@@ -1060,17 +1060,17 @@ export default {
           }
         ],
 
-        redundantAttribute: 'expr2041',
-        selector: '[expr2041]'
+        redundantAttribute: 'expr4369',
+        selector: '[expr4369]'
       },
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showUserPicker,
-        redundantAttribute: 'expr2042',
-        selector: '[expr2042]',
+        redundantAttribute: 'expr4370',
+        selector: '[expr4370]',
 
         template: template(
-          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr2043="expr2043"></div></div>',
+          '<div class="p-2 border-b border-gray-700 bg-[#1A1D21] text-[10px] uppercase font-bold text-gray-500 tracking-wider">\n                People</div><div class="max-h-48 overflow-y-auto custom-scrollbar"><div expr4371="expr4371"></div></div>',
           [
             {
               expressions: [
@@ -1088,7 +1088,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr2044="expr2044" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr2045="expr2045" class="text-sm truncate font-medium"> </span>',
+                '<div expr4372="expr4372" class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"> </div><span expr4373="expr4373" class="text-sm truncate font-medium"> </span>',
                 [
                   {
                     expressions: [
@@ -1109,8 +1109,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2044',
-                    selector: '[expr2044]',
+                    redundantAttribute: 'expr4372',
+                    selector: '[expr4372]',
 
                     expressions: [
                       {
@@ -1128,8 +1128,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr2045',
-                    selector: '[expr2045]',
+                    redundantAttribute: 'expr4373',
+                    selector: '[expr4373]',
 
                     expressions: [
                       {
@@ -1145,8 +1145,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr2043',
-              selector: '[expr2043]',
+              redundantAttribute: 'expr4371',
+              selector: '[expr4371]',
               itemName: 'user',
               indexName: 'index',
               evaluate: _scope => _scope.state.filteredUsers

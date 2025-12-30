@@ -104,11 +104,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<aside expr555="expr555"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><div class="flex items-center"><button expr556="expr556" class="mr-3 p-2 text-gray-400 hover:text-white lg:hidden transition-colors"></button><h1 class="text-xl font-bold text-white">SoliDB Talks</h1></div><div class="flex items-center gap-2"><div expr557="expr557"></div><button expr558="expr558" class="p-2 text-gray-400 hover:text-white transition-colors"></button></div></div><div expr559="expr559"><div expr560="expr560" class="mb-6"></div><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><div class="relative group"><button expr571="expr571" class="hover:text-white"><i class="fas fa-plus"></i></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">\n                            Create Channel</div></div></div><nav><a expr572="expr572"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button expr579="expr579" class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr580="expr580"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr584="expr584" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr585="expr585" class="text-sm font-bold text-white truncate"> </p><div class="relative"><button expr586="expr586" class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group"><span expr587="expr587"></span><span expr588="expr588"> </span><i class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i></button><div expr589="expr589" class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up"></div><div expr593="expr593" class="fixed inset-0 z-40"></div></div></div><a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a></div></div></aside>',
+    '<aside expr4374="expr4374"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><div class="flex items-center"><button expr4375="expr4375" class="mr-3 p-2 text-gray-400 hover:text-white lg:hidden transition-colors"></button><h1 class="text-xl font-bold text-white">SoliDB Talks</h1></div><div class="flex items-center gap-2"><div expr4376="expr4376"></div><button expr4377="expr4377" class="p-2 text-gray-400 hover:text-white transition-colors"></button></div></div><div expr4378="expr4378"><div expr4379="expr4379" class="mb-6"></div><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><div class="relative group"><button expr4390="expr4390" class="hover:text-white"><i class="fas fa-plus"></i></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">\n                            Create Channel</div></div></div><nav><a expr4391="expr4391"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button expr4398="expr4398" class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr4399="expr4399"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr4403="expr4403" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr4404="expr4404" class="text-sm font-bold text-white truncate"> </p><div class="relative"><button expr4405="expr4405" class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group"><span expr4406="expr4406"></span><span expr4407="expr4407"> </span><i class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i></button><div expr4408="expr4408" class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up"></div><div expr4412="expr4412" class="fixed inset-0 z-40"></div></div></div><a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a></div></div></aside>',
     [
       {
-        redundantAttribute: 'expr555',
-        selector: '[expr555]',
+        redundantAttribute: 'expr4374',
+        selector: '[expr4374]',
 
         expressions: [
           {
@@ -122,8 +122,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.isMobile,
-        redundantAttribute: 'expr556',
-        selector: '[expr556]',
+        redundantAttribute: 'expr4375',
+        selector: '[expr4375]',
 
         template: template(
           '<i class="fas fa-bars text-xl"></i>',
@@ -141,8 +141,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr557',
-        selector: '[expr557]',
+        redundantAttribute: 'expr4376',
+        selector: '[expr4376]',
 
         expressions: [
           {
@@ -156,8 +156,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.isMobile,
-        redundantAttribute: 'expr558',
-        selector: '[expr558]',
+        redundantAttribute: 'expr4377',
+        selector: '[expr4377]',
 
         template: template(
           '<i class="fas fa-times text-lg"></i>',
@@ -175,8 +175,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr559',
-        selector: '[expr559]',
+        redundantAttribute: 'expr4378',
+        selector: '[expr4378]',
 
         expressions: [
           {
@@ -190,11 +190,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.favorites && _scope.props.favorites.length> 0,
-        redundantAttribute: 'expr560',
-        selector: '[expr560]',
+        redundantAttribute: 'expr4379',
+        selector: '[expr4379]',
 
         template: template(
-          '<div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Favorites</span></div><nav><a expr561="expr561"></a></nav>',
+          '<div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Favorites</span></div><nav><a expr4380="expr4380"></a></nav>',
           [
             {
               type: bindingTypes.EACH,
@@ -202,7 +202,7 @@ export default {
               condition: null,
 
               template: template(
-                '<span class="mr-2 w-4 text-center inline-block flex items-center justify-center"><template expr562="expr562"></template><template expr564="expr564"></template></span><span expr567="expr567" class="truncate"> </span><div expr568="expr568" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr570="expr570" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
+                '<span class="mr-2 w-4 text-center inline-block flex items-center justify-center"><template expr4381="expr4381"></template><template expr4383="expr4383"></template></span><span expr4386="expr4386" class="truncate"> </span><div expr4387="expr4387" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr4389="expr4389" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
                 [
                   {
                     expressions: [
@@ -231,15 +231,15 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.item.type === 'dm',
-                    redundantAttribute: 'expr562',
-                    selector: '[expr562]',
+                    redundantAttribute: 'expr4381',
+                    selector: '[expr4381]',
 
                     template: template(
-                      '<div expr563="expr563"></div>',
+                      '<div expr4382="expr4382"></div>',
                       [
                         {
-                          redundantAttribute: 'expr563',
-                          selector: '[expr563]',
+                          redundantAttribute: 'expr4382',
+                          selector: '[expr4382]',
 
                           expressions: [
                             {
@@ -259,17 +259,17 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.item.type !== 'dm',
-                    redundantAttribute: 'expr564',
-                    selector: '[expr564]',
+                    redundantAttribute: 'expr4383',
+                    selector: '[expr4383]',
 
                     template: template(
-                      '<i expr565="expr565" class="fas fa-lock text-xs"></i><span expr566="expr566"></span>',
+                      '<i expr4384="expr4384" class="fas fa-lock text-xs"></i><span expr4385="expr4385"></span>',
                       [
                         {
                           type: bindingTypes.IF,
                           evaluate: _scope => _scope.item.type === 'private',
-                          redundantAttribute: 'expr565',
-                          selector: '[expr565]',
+                          redundantAttribute: 'expr4384',
+                          selector: '[expr4384]',
 
                           template: template(
                             null,
@@ -279,8 +279,8 @@ export default {
                         {
                           type: bindingTypes.IF,
                           evaluate: _scope => _scope.item.type === 'standard',
-                          redundantAttribute: 'expr566',
-                          selector: '[expr566]',
+                          redundantAttribute: 'expr4385',
+                          selector: '[expr4385]',
 
                           template: template(
                             '#',
@@ -291,8 +291,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr567',
-                    selector: '[expr567]',
+                    redundantAttribute: 'expr4386',
+                    selector: '[expr4386]',
 
                     expressions: [
                       {
@@ -314,15 +314,15 @@ export default {
                       _scope.item
                     ),
 
-                    redundantAttribute: 'expr568',
-                    selector: '[expr568]',
+                    redundantAttribute: 'expr4387',
+                    selector: '[expr4387]',
 
                     template: template(
-                      '<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr569="expr569" class="text-[10px]"> </span>',
+                      '<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr4388="expr4388" class="text-[10px]"> </span>',
                       [
                         {
-                          redundantAttribute: 'expr569',
-                          selector: '[expr569]',
+                          redundantAttribute: 'expr4388',
+                          selector: '[expr4388]',
 
                           expressions: [
                             {
@@ -341,8 +341,8 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => !_scope.hasActiveHuddle(_scope.item) && _scope.props.unreadChannels[_scope.item._id],
-                    redundantAttribute: 'expr570',
-                    selector: '[expr570]',
+                    redundantAttribute: 'expr4389',
+                    selector: '[expr4389]',
 
                     template: template(
                       null,
@@ -352,8 +352,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr561',
-              selector: '[expr561]',
+              redundantAttribute: 'expr4380',
+              selector: '[expr4380]',
               itemName: 'item',
               indexName: null,
               evaluate: _scope => _scope.props.favorites
@@ -362,8 +362,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr571',
-        selector: '[expr571]',
+        redundantAttribute: 'expr4390',
+        selector: '[expr4390]',
 
         expressions: [
           {
@@ -379,7 +379,7 @@ export default {
         condition: null,
 
         template: template(
-          '<span class="mr-2 w-4 text-center inline-block"><i expr573="expr573" class="fas fa-lock text-xs"></i><i expr574="expr574" class="fas fa-at text-xs text-orange-400"></i><span expr575="expr575"></span></span> <div expr576="expr576" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr578="expr578" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
+          '<span class="mr-2 w-4 text-center inline-block"><i expr4392="expr4392" class="fas fa-lock text-xs"></i><i expr4393="expr4393" class="fas fa-at text-xs text-orange-400"></i><span expr4394="expr4394"></span></span> <div expr4395="expr4395" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr4397="expr4397" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
           [
             {
               expressions: [
@@ -418,8 +418,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.channel.type === 'private',
-              redundantAttribute: 'expr573',
-              selector: '[expr573]',
+              redundantAttribute: 'expr4392',
+              selector: '[expr4392]',
 
               template: template(
                 null,
@@ -429,8 +429,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.channel.type === 'system',
-              redundantAttribute: 'expr574',
-              selector: '[expr574]',
+              redundantAttribute: 'expr4393',
+              selector: '[expr4393]',
 
               template: template(
                 null,
@@ -440,8 +440,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.channel.type !=='private' && _scope.channel.type !=='system',
-              redundantAttribute: 'expr575',
-              selector: '[expr575]',
+              redundantAttribute: 'expr4394',
+              selector: '[expr4394]',
 
               template: template(
                 '#',
@@ -455,15 +455,15 @@ export default {
                 _scope.channel
               ),
 
-              redundantAttribute: 'expr576',
-              selector: '[expr576]',
+              redundantAttribute: 'expr4395',
+              selector: '[expr4395]',
 
               template: template(
-                '<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr577="expr577" class="text-[10px]"> </span>',
+                '<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr4396="expr4396" class="text-[10px]"> </span>',
                 [
                   {
-                    redundantAttribute: 'expr577',
-                    selector: '[expr577]',
+                    redundantAttribute: 'expr4396',
+                    selector: '[expr4396]',
 
                     expressions: [
                       {
@@ -482,8 +482,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => !_scope.hasActiveHuddle(_scope.channel) && _scope.props.unreadChannels[_scope.channel._id],
-              redundantAttribute: 'expr578',
-              selector: '[expr578]',
+              redundantAttribute: 'expr4397',
+              selector: '[expr4397]',
 
               template: template(
                 null,
@@ -493,15 +493,15 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr572',
-        selector: '[expr572]',
+        redundantAttribute: 'expr4391',
+        selector: '[expr4391]',
         itemName: 'channel',
         indexName: null,
         evaluate: _scope => _scope.state.sidebarChannels
       },
       {
-        redundantAttribute: 'expr579',
-        selector: '[expr579]',
+        redundantAttribute: 'expr4398',
+        selector: '[expr4398]',
 
         expressions: [
           {
@@ -517,7 +517,7 @@ export default {
         condition: _scope => !_scope.isFavorite(_scope.props.usersChannels[_scope.user._key]),
 
         template: template(
-          '<div expr581="expr581"></div><span expr582="expr582" class="flex-1 truncate"> </span><div expr583="expr583" class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
+          '<div expr4400="expr4400"></div><span expr4401="expr4401" class="flex-1 truncate"> </span><div expr4402="expr4402" class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>',
           [
             {
               expressions: [
@@ -544,8 +544,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr581',
-              selector: '[expr581]',
+              redundantAttribute: 'expr4400',
+              selector: '[expr4400]',
 
               expressions: [
                 {
@@ -566,8 +566,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr582',
-              selector: '[expr582]',
+              redundantAttribute: 'expr4401',
+              selector: '[expr4401]',
 
               expressions: [
                 {
@@ -590,8 +590,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.unreadChannels[_scope.props.usersChannels[_scope.user._key]],
-              redundantAttribute: 'expr583',
-              selector: '[expr583]',
+              redundantAttribute: 'expr4402',
+              selector: '[expr4402]',
 
               template: template(
                 null,
@@ -601,15 +601,15 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr580',
-        selector: '[expr580]',
+        redundantAttribute: 'expr4399',
+        selector: '[expr4399]',
         itemName: 'user',
         indexName: null,
         evaluate: _scope => _scope.props.users
       },
       {
-        redundantAttribute: 'expr584',
-        selector: '[expr584]',
+        redundantAttribute: 'expr4403',
+        selector: '[expr4403]',
 
         expressions: [
           {
@@ -627,8 +627,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr585',
-        selector: '[expr585]',
+        redundantAttribute: 'expr4404',
+        selector: '[expr4404]',
 
         expressions: [
           {
@@ -639,8 +639,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr586',
-        selector: '[expr586]',
+        redundantAttribute: 'expr4405',
+        selector: '[expr4405]',
 
         expressions: [
           {
@@ -651,8 +651,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr587',
-        selector: '[expr587]',
+        redundantAttribute: 'expr4406',
+        selector: '[expr4406]',
 
         expressions: [
           {
@@ -664,8 +664,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr588',
-        selector: '[expr588]',
+        redundantAttribute: 'expr4407',
+        selector: '[expr4407]',
 
         expressions: [
           {
@@ -687,15 +687,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.showStatusMenu,
-        redundantAttribute: 'expr589',
-        selector: '[expr589]',
+        redundantAttribute: 'expr4408',
+        selector: '[expr4408]',
 
         template: template(
-          '<div class="p-1 space-y-0.5"><button expr590="expr590" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active</button><button expr591="expr591" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy</button><button expr592="expr592" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off</button></div>',
+          '<div class="p-1 space-y-0.5"><button expr4409="expr4409" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active</button><button expr4410="expr4410" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy</button><button expr4411="expr4411" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off</button></div>',
           [
             {
-              redundantAttribute: 'expr590',
-              selector: '[expr590]',
+              redundantAttribute: 'expr4409',
+              selector: '[expr4409]',
 
               expressions: [
                 {
@@ -706,8 +706,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr591',
-              selector: '[expr591]',
+              redundantAttribute: 'expr4410',
+              selector: '[expr4410]',
 
               expressions: [
                 {
@@ -718,8 +718,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr592',
-              selector: '[expr592]',
+              redundantAttribute: 'expr4411',
+              selector: '[expr4411]',
 
               expressions: [
                 {
@@ -735,8 +735,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.showStatusMenu,
-        redundantAttribute: 'expr593',
-        selector: '[expr593]',
+        redundantAttribute: 'expr4412',
+        selector: '[expr4412]',
 
         template: template(
           null,
