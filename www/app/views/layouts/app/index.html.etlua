@@ -10,25 +10,46 @@
     />
     <meta property="og:image" content="/images/logo.jpg" />
     <link rel="stylesheet" href="<%= PublicPath("/app.css") %>" />
-    <link rel="icon" type="image/svg+xml" href="<%= PublicPath("/logo.svg") %>" />
+    <link rel="icon" type="image/png" href="<%= PublicPath("/favicon.png") %>" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- Apple PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Talks" />
+    <link rel="apple-touch-icon" href="/images/logo.jpg" />
+    <meta name="theme-color" content="#1A1D21" />
     <script src="<%= PublicPath("/app/components/talks-common.js") %>"></script>
     <script>
-      // Unregister Service Workers to clear stale cache
+      // Register Service Worker for PWA
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for(let registration of registrations) {
-            registration.unregister();
-          }
-        });
+        const registerSW = () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('ServiceWorker registered with scope:', registration.scope);
+              
+              // Check for updates
+              registration.onupdatefound = () => {
+                const installingWorker = registration.installing;
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed') {
+                    if (navigator.serviceWorker.controller) {
+                      console.log('New content is available; please refresh.');
+                    } else {
+                      console.log('Content is cached for offline use.');
+                    }
+                  }
+                };
+              };
+            })
+            .catch(error => {
+              console.error('ServiceWorker registration failed:', error);
+            });
+        };
 
-        // Clear caches
-        if ('caches' in window) {
-           caches.keys().then(function(names) {
-             for (let name of names) {
-               caches.delete(name);
-             }
-           });
+        if (document.readyState === 'complete') {
+          registerSW();
+        } else {
+          window.addEventListener('load', registerSW);
         }
       }
     </script>
