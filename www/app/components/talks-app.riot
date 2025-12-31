@@ -46,7 +46,7 @@
                 state.callDuration } is-audio-enabled={ !state.isMuted } is-video-enabled={ state.isVideoEnabled }
                 is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
                 remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } is-fullscreen={
-                state.isCallFullscreen } is-mobile={ state.isMobile } local-stream={ localStream }
+                state.isCallFullscreen } is-mobile={ state.isMobile } local-stream={ getLocalStream() }
                 on-toggle-fullscreen={ toggleCallFullscreen } on-accept-call={ acceptCall } on-decline-call={
                 declineCall } on-toggle-audio={ toggleMute } on-toggle-video={ toggleVideo } onshare={ toggleScreenShare
                 } on-hangup={ hangup } />
@@ -855,6 +855,11 @@
             // Get DB host from props or fallback to localhost:6745
             getDbHost() {
                 return this.props.dbHost || 'localhost:6745';
+            },
+
+            // Get local stream for passing to child components
+            getLocalStream() {
+                return this.localStream || null;
             },
 
             // Get LiveQuery token - uses cached token from server initially, re-fetches when expired
