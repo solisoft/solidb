@@ -46,10 +46,24 @@
             });
         };
 
+        // Listen for version messages from service worker
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'SW_VERSION') {
+            window.SW_VERSION = event.data.version;
+            document.title = document.title.replace(/ - v\d+$/, '') + ' - ' + event.data.version.replace('talks-', '');
+            console.log('Service Worker Version:', event.data.version);
+          }
+        });
+
         if (document.readyState === 'complete') {
           registerSW();
         } else {
           window.addEventListener('load', registerSW);
+        }
+
+        // Query version from existing service worker
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'GET_VERSION' });
         }
       }
     </script>

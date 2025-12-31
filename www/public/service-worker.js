@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v18";
+const CACHE_NAME = "talks-v19";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
@@ -16,7 +16,7 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate event - clean old caches
+// Activate event - clean old caches and broadcast version
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -28,6 +28,20 @@ self.addEventListener("activate", (event) => {
     })
   );
   self.clients.claim();
+
+  // Broadcast version to all clients
+  self.clients.matchAll().then(clients => {
+    clients.forEach(client => {
+      client.postMessage({ type: 'SW_VERSION', version: CACHE_NAME });
+    });
+  });
+});
+
+// Handle version query messages
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === 'GET_VERSION') {
+    event.source.postMessage({ type: 'SW_VERSION', version: CACHE_NAME });
+  }
 });
 
 // Fetch event - simplified: mostly pass through, only cache manifest/icons
