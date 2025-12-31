@@ -431,11 +431,11 @@ var queueManager = {
       return `${hours}h ${mins}m`;
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr723="expr723" style="background: red; color: white; padding: 10px; font-weight: bold;"></div><div class="space-y-6"><div class="flex items-center justify-between"><div><h2 class="text-2xl font-bold text-gray-100">Queue Management</h2><p expr724="expr724" class="mt-1 text-sm text-gray-400"> </p></div><div class="flex items-center space-x-3"><button expr725="expr725" class="p-2 text-gray-400 hover:text-white transition-colors" title="Refresh"><svg expr726="expr726" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div></div><div class="flex items-center justify-between border-b border-gray-700/50 pb-px"><nav class="flex space-x-2 p-1 bg-gray-900/50 rounded-xl border border-gray-700/30" aria-label="Tabs"><button expr727="expr727"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg><span>Queues</span><span expr728="expr728"> </span></button><button expr729="expr729"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>Schedules</span><span expr730="expr730"> </span></button></nav><div expr731="expr731" class="text-xs text-gray-500 font-medium px-4 py-1.5 bg-gray-800/40 rounded-full border border-gray-700/30 backdrop-blur-sm"> </div></div><div expr732="expr732" class="space-y-6"></div><div expr769="expr769" class="space-y-6"></div><div expr782="expr782" id="enqueueModalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr783="expr783" id="enqueueModalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Enqueue New Job</h3></div><div class="p-6 overflow-y-auto max-h-[80vh]"><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-300 mb-1">Queue Name</label><input expr784="expr784" type="text" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Script Path</label><input expr785="expr785" type="text" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g. process_data"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Params (JSON)</label><textarea expr786="expr786" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono text-sm" rows="3"> </textarea></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-300 mb-1">Priority</label><input expr787="expr787" type="number" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Max Retries</label><input expr788="expr788" type="number" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Scheduled At (optional)</label><input expr789="expr789" type="datetime-local" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Leave empty to run immediately</p></div></div><div class="flex justify-end space-x-3 pt-6 mt-2"><button expr790="expr790" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr791="expr791" type="button" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">\n                            Enqueue\n                        </button></div></div></div></div></div><div expr792="expr792" class="fixed inset-0 z-[9999] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr436="expr436" style="background: red; color: white; padding: 10px; font-weight: bold;"></div><div class="space-y-6"><div class="flex items-center justify-between"><div><h2 class="text-2xl font-bold text-gray-100">Queue Management</h2><p expr437="expr437" class="mt-1 text-sm text-gray-400"> </p></div><div class="flex items-center space-x-3"><button expr438="expr438" class="p-2 text-gray-400 hover:text-white transition-colors" title="Refresh"><svg expr439="expr439" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div></div><div class="flex items-center justify-between border-b border-gray-700/50 pb-px"><nav class="flex space-x-2 p-1 bg-gray-900/50 rounded-xl border border-gray-700/30" aria-label="Tabs"><button expr440="expr440"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg><span>Queues</span><span expr441="expr441"> </span></button><button expr442="expr442"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>Schedules</span><span expr443="expr443"> </span></button></nav><div expr444="expr444" class="text-xs text-gray-500 font-medium px-4 py-1.5 bg-gray-800/40 rounded-full border border-gray-700/30 backdrop-blur-sm"> </div></div><div expr445="expr445" class="space-y-6"></div><div expr482="expr482" class="space-y-6"></div><div expr495="expr495" id="enqueueModalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr496="expr496" id="enqueueModalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Enqueue New Job</h3></div><div class="p-6 overflow-y-auto max-h-[80vh]"><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-300 mb-1">Queue Name</label><input expr497="expr497" type="text" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Script Path</label><input expr498="expr498" type="text" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g. process_data"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Params (JSON)</label><textarea expr499="expr499" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors font-mono text-sm" rows="3"> </textarea></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-300 mb-1">Priority</label><input expr500="expr500" type="number" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Max Retries</label><input expr501="expr501" type="number" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-sm font-medium text-gray-300 mb-1">Scheduled At (optional)</label><input expr502="expr502" type="datetime-local" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Leave empty to run immediately</p></div></div><div class="flex justify-end space-x-3 pt-6 mt-2"><button expr503="expr503" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr504="expr504" type="button" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">\n                            Enqueue\n                        </button></div></div></div></div></div><div expr505="expr505" class="fixed inset-0 z-[9999] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr723',
-    selector: '[expr723]',
+    redundantAttribute: 'expr436',
+    selector: '[expr436]',
     template: template(' ', [{
       expressions: [{
         type: expressionTypes.TEXT,
@@ -444,24 +444,24 @@ var queueManager = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr724',
-    selector: '[expr724]',
+    redundantAttribute: 'expr437',
+    selector: '[expr437]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['Monitor and manage background jobs in ', _scope.props.db].join('')
     }]
   }, {
-    redundantAttribute: 'expr725',
-    selector: '[expr725]',
+    redundantAttribute: 'expr438',
+    selector: '[expr438]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.fetchQueues
     }]
   }, {
-    redundantAttribute: 'expr726',
-    selector: '[expr726]',
+    redundantAttribute: 'expr439',
+    selector: '[expr439]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -469,8 +469,8 @@ var queueManager = {
       evaluate: _scope => ['h-5 w-5 ', _scope.state.loading ? 'animate-spin' : ''].join('')
     }]
   }, {
-    redundantAttribute: 'expr727',
-    selector: '[expr727]',
+    redundantAttribute: 'expr440',
+    selector: '[expr440]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -482,8 +482,8 @@ var queueManager = {
       evaluate: _scope => ['flex items-center gap-2.5 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 ', 'state.activeTab === \'queues\' ? \'bg-indigo-600 text-white shadow-lg\\n                    shadow-indigo-600/20\' : \'text-gray-400 hover:text-gray-200 hover:bg-white/5\''].join('')
     }]
   }, {
-    redundantAttribute: 'expr728',
-    selector: '[expr728]',
+    redundantAttribute: 'expr441',
+    selector: '[expr441]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -495,8 +495,8 @@ var queueManager = {
       evaluate: _scope => ['ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ', _scope.state.activeTab === 'queues' ? 'bg-white/20 text-white' : 'bg-gray-800 text-gray-500'].join('')
     }]
   }, {
-    redundantAttribute: 'expr729',
-    selector: '[expr729]',
+    redundantAttribute: 'expr442',
+    selector: '[expr442]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -508,8 +508,8 @@ var queueManager = {
       evaluate: _scope => ['flex items-center gap-2.5 px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 ', 'state.activeTab === \'schedules\' ? \'bg-indigo-600 text-white shadow-lg\\n                    shadow-indigo-600/20\' : \'text-gray-400 hover:text-gray-200 hover:bg-white/5\''].join('')
     }]
   }, {
-    redundantAttribute: 'expr730',
-    selector: '[expr730]',
+    redundantAttribute: 'expr443',
+    selector: '[expr443]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -521,8 +521,8 @@ var queueManager = {
       evaluate: _scope => ['ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ', _scope.state.activeTab === 'schedules' ? 'bg-white/20 text-white' : 'bg-gray-800 text-gray-500'].join('')
     }]
   }, {
-    redundantAttribute: 'expr731',
-    selector: '[expr731]',
+    redundantAttribute: 'expr444',
+    selector: '[expr444]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -531,11 +531,11 @@ var queueManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.activeTab === 'queues',
-    redundantAttribute: 'expr732',
-    selector: '[expr732]',
-    template: template('<div class="flex justify-end"><button expr733="expr733" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"><svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>\n                    Enqueue Job\n                </button></div><div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"><div expr734="expr734"></div><div expr740="expr740" class="col-span-full py-12 text-center bg-gray-800 rounded-lg border border-dashed border-gray-700"></div></div><div expr741="expr741" class="space-y-4"></div><div expr759="expr759" class="flex items-center justify-between px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg sm:px-6"></div>', [{
-      redundantAttribute: 'expr733',
-      selector: '[expr733]',
+    redundantAttribute: 'expr445',
+    selector: '[expr445]',
+    template: template('<div class="flex justify-end"><button expr446="expr446" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"><svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>\n                    Enqueue Job\n                </button></div><div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"><div expr447="expr447"></div><div expr453="expr453" class="col-span-full py-12 text-center bg-gray-800 rounded-lg border border-dashed border-gray-700"></div></div><div expr454="expr454" class="space-y-4"></div><div expr472="expr472" class="flex items-center justify-between px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg sm:px-6"></div>', [{
+      redundantAttribute: 'expr446',
+      selector: '[expr446]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -545,7 +545,7 @@ var queueManager = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div class="p-5"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><div class="ml-5 w-0 flex-1"><dl><dt expr735="expr735" class="text-sm font-medium text-gray-400 truncate"> </dt><dd><div expr736="expr736" class="text-lg font-medium text-gray-100"> </div></dd></dl></div></div></div><div class="bg-gray-900/50 px-5 py-3 divide-x divide-gray-700 flex"><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Pending</span><span expr737="expr737" class="text-sm font-semibold text-yellow-500"> </span></div><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Running</span><span expr738="expr738" class="text-sm font-semibold text-blue-500"> </span></div><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Failed</span><span expr739="expr739" class="text-sm font-semibold text-red-500"> </span></div></div>', [{
+      template: template('<div class="p-5"><div class="flex items-center"><div class="flex-shrink-0"><svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><div class="ml-5 w-0 flex-1"><dl><dt expr448="expr448" class="text-sm font-medium text-gray-400 truncate"> </dt><dd><div expr449="expr449" class="text-lg font-medium text-gray-100"> </div></dd></dl></div></div></div><div class="bg-gray-900/50 px-5 py-3 divide-x divide-gray-700 flex"><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Pending</span><span expr450="expr450" class="text-sm font-semibold text-yellow-500"> </span></div><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Running</span><span expr451="expr451" class="text-sm font-semibold text-blue-500"> </span></div><div class="flex-1 text-center px-1"><span class="block text-xs font-medium text-gray-500 uppercase">Failed</span><span expr452="expr452" class="text-sm font-semibold text-red-500"> </span></div></div>', [{
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -557,73 +557,73 @@ var queueManager = {
           evaluate: _scope => ['bg-gray-800 overflow-hidden shadow rounded-lg border ', 'state.selectedQueue === queue.name ?\\n                    \'border-indigo-500 ring-1 ring-indigo-500\' : \'border-gray-700\'', ' cursor-pointer hover:bg-gray-750 transition-all'].join('')
         }]
       }, {
-        redundantAttribute: 'expr735',
-        selector: '[expr735]',
+        redundantAttribute: 'expr448',
+        selector: '[expr448]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.queue.name
         }]
       }, {
-        redundantAttribute: 'expr736',
-        selector: '[expr736]',
+        redundantAttribute: 'expr449',
+        selector: '[expr449]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.queue.total, ' jobs'].join('')
         }]
       }, {
-        redundantAttribute: 'expr737',
-        selector: '[expr737]',
+        redundantAttribute: 'expr450',
+        selector: '[expr450]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.queue.pending
         }]
       }, {
-        redundantAttribute: 'expr738',
-        selector: '[expr738]',
+        redundantAttribute: 'expr451',
+        selector: '[expr451]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.queue.running
         }]
       }, {
-        redundantAttribute: 'expr739',
-        selector: '[expr739]',
+        redundantAttribute: 'expr452',
+        selector: '[expr452]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.queue.failed
         }]
       }]),
-      redundantAttribute: 'expr734',
-      selector: '[expr734]',
+      redundantAttribute: 'expr447',
+      selector: '[expr447]',
       itemName: 'queue',
       indexName: null,
       evaluate: _scope => _scope.state.queues
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.queues.length === 0 && !_scope.state.loading,
-      redundantAttribute: 'expr740',
-      selector: '[expr740]',
+      redundantAttribute: 'expr453',
+      selector: '[expr453]',
       template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No active queues</h3><p class="mt-1 text-sm text-gray-500">Queues appear here once jobs are enqueued.</p>', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedQueue,
-      redundantAttribute: 'expr741',
-      selector: '[expr741]',
-      template: template('<div class="flex items-center justify-between"><h3 expr742="expr742" class="text-lg font-medium text-gray-100 italic"> </h3><div class="flex items-center space-x-3"><div class="flex items-center space-x-2"><span class="text-xs text-gray-400">Auto-refresh</span><button expr743="expr743"><span expr744="expr744" aria-hidden="true"></span></button></div><div class="flex space-x-1 bg-gray-900/50 border border-gray-700 p-1 rounded-xl"><button expr745="expr745"></button></div></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Priority</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Script</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Created</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Run At</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Retries</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Duration</th><th class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr746="expr746" class="hover:bg-gray-750 transition-colors"></tr><tr expr758="expr758"></tr></tbody></table></div>', [{
-        redundantAttribute: 'expr742',
-        selector: '[expr742]',
+      redundantAttribute: 'expr454',
+      selector: '[expr454]',
+      template: template('<div class="flex items-center justify-between"><h3 expr455="expr455" class="text-lg font-medium text-gray-100 italic"> </h3><div class="flex items-center space-x-3"><div class="flex items-center space-x-2"><span class="text-xs text-gray-400">Auto-refresh</span><button expr456="expr456"><span expr457="expr457" aria-hidden="true"></span></button></div><div class="flex space-x-1 bg-gray-900/50 border border-gray-700 p-1 rounded-xl"><button expr458="expr458"></button></div></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Priority</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Script</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Created</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Run At</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Retries</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                    Duration</th><th class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr459="expr459" class="hover:bg-gray-750 transition-colors"></tr><tr expr471="expr471"></tr></tbody></table></div>', [{
+        redundantAttribute: 'expr455',
+        selector: '[expr455]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => ['Jobs in "', _scope.state.selectedQueue, '"'].join('')
         }]
       }, {
-        redundantAttribute: 'expr743',
-        selector: '[expr743]',
+        redundantAttribute: 'expr456',
+        selector: '[expr456]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -635,8 +635,8 @@ var queueManager = {
           evaluate: _scope => ['relative inline-flex flex-shrink-0 h-5 w-9 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ', _scope.state.autoRefresh ? 'bg-indigo-600' : 'bg-gray-700'].join('')
         }]
       }, {
-        redundantAttribute: 'expr744',
-        selector: '[expr744]',
+        redundantAttribute: 'expr457',
+        selector: '[expr457]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -663,8 +663,8 @@ var queueManager = {
             evaluate: _scope => ['px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 cursor-pointer ', 'state.filterStatus === status.toLowerCase() ? \'bg-indigo-600 text-white shadow-lg\\n                                shadow-indigo-600/20\' :\\n                                \'text-gray-400 hover:text-gray-100 hover:bg-white/5\''].join('')
           }]
         }]),
-        redundantAttribute: 'expr745',
-        selector: '[expr745]',
+        redundantAttribute: 'expr458',
+        selector: '[expr458]',
         itemName: 'status',
         indexName: null,
         evaluate: _scope => ['All', 'Pending', 'Running', 'Completed', 'Failed']
@@ -672,9 +672,9 @@ var queueManager = {
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<td class="px-6 py-4 whitespace-nowrap"><span expr747="expr747"> </span><span expr748="expr748" class="ml-1 text-indigo-400" title="Spawned by cron job"></span></td><td expr749="expr749" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><div expr750="expr750" class="text-sm font-medium text-gray-100"> </div><div expr751="expr751" class="text-xs text-gray-500 font-mono truncate max-w-xs"> </div><div expr752="expr752" class="text-xs text-red-400 font-mono mt-1 break-words max-w-xs"></div></td><td expr753="expr753" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr754="expr754" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr755="expr755" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr756="expr756" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr757="expr757" class="cursor-pointer text-gray-500 hover:text-red-400 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
-          redundantAttribute: 'expr747',
-          selector: '[expr747]',
+        template: template('<td class="px-6 py-4 whitespace-nowrap"><span expr460="expr460"> </span><span expr461="expr461" class="ml-1 text-indigo-400" title="Spawned by cron job"></span></td><td expr462="expr462" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><div expr463="expr463" class="text-sm font-medium text-gray-100"> </div><div expr464="expr464" class="text-xs text-gray-500 font-mono truncate max-w-xs"> </div><div expr465="expr465" class="text-xs text-red-400 font-mono mt-1 break-words max-w-xs"></div></td><td expr466="expr466" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr467="expr467" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr468="expr468" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr469="expr469" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr470="expr470" class="cursor-pointer text-gray-500 hover:text-red-400 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
+          redundantAttribute: 'expr460',
+          selector: '[expr460]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -688,28 +688,28 @@ var queueManager = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.job.cron_job_id,
-          redundantAttribute: 'expr748',
-          selector: '[expr748]',
+          redundantAttribute: 'expr461',
+          selector: '[expr461]',
           template: template('<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>', [])
         }, {
-          redundantAttribute: 'expr749',
-          selector: '[expr749]',
+          redundantAttribute: 'expr462',
+          selector: '[expr462]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.job.priority].join('')
           }]
         }, {
-          redundantAttribute: 'expr750',
-          selector: '[expr750]',
+          redundantAttribute: 'expr463',
+          selector: '[expr463]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.job.script_path
           }]
         }, {
-          redundantAttribute: 'expr751',
-          selector: '[expr751]',
+          redundantAttribute: 'expr464',
+          selector: '[expr464]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -718,8 +718,8 @@ var queueManager = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.job.last_error,
-          redundantAttribute: 'expr752',
-          selector: '[expr752]',
+          redundantAttribute: 'expr465',
+          selector: '[expr465]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -728,40 +728,40 @@ var queueManager = {
             }]
           }])
         }, {
-          redundantAttribute: 'expr753',
-          selector: '[expr753]',
+          redundantAttribute: 'expr466',
+          selector: '[expr466]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.formatDate(_scope.job.created_at)].join('')
           }]
         }, {
-          redundantAttribute: 'expr754',
-          selector: '[expr754]',
+          redundantAttribute: 'expr467',
+          selector: '[expr467]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.formatDate(_scope.job.run_at)].join('')
           }]
         }, {
-          redundantAttribute: 'expr755',
-          selector: '[expr755]',
+          redundantAttribute: 'expr468',
+          selector: '[expr468]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.job.retry_count, ' / ', _scope.job.max_retries].join('')
           }]
         }, {
-          redundantAttribute: 'expr756',
-          selector: '[expr756]',
+          redundantAttribute: 'expr469',
+          selector: '[expr469]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.formatDuration(_scope.job)].join('')
           }]
         }, {
-          redundantAttribute: 'expr757',
-          selector: '[expr757]',
+          redundantAttribute: 'expr470',
+          selector: '[expr470]',
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
@@ -773,26 +773,26 @@ var queueManager = {
             evaluate: _scope => _scope.job.status === 'Pending' ? 'Cancel Job' : 'Remove Job'
           }]
         }]),
-        redundantAttribute: 'expr746',
-        selector: '[expr746]',
+        redundantAttribute: 'expr459',
+        selector: '[expr459]',
         itemName: 'job',
         indexName: null,
         evaluate: _scope => _scope.state.jobs
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.jobs.length === 0,
-        redundantAttribute: 'expr758',
-        selector: '[expr758]',
+        redundantAttribute: 'expr471',
+        selector: '[expr471]',
         template: template('<td colspan="6" class="px-6 py-10 text-center text-gray-500">\n                                    No jobs in this queue.\n                                </td>', [])
       }])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedQueue,
-      redundantAttribute: 'expr759',
-      selector: '[expr759]',
-      template: template('<div class="flex-1 flex justify-between sm:hidden"><button expr760="expr760" class="relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">\n                        Previous\n                    </button><button expr761="expr761" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm\n                        font-medium\n                        rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">\n                        Next\n                    </button></div><div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between"><div><p expr762="expr762" class="text-sm text-gray-400"></p><p expr766="expr766" class="text-sm text-gray-400"></p></div><div><nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination"><button expr767="expr767" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-600 bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"><span class="sr-only">Previous</span><svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button><button expr768="expr768" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-600\n                                bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50\n                                disabled:cursor-not-allowed"><span class="sr-only">Next</span><svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button></nav></div></div>', [{
-        redundantAttribute: 'expr760',
-        selector: '[expr760]',
+      redundantAttribute: 'expr472',
+      selector: '[expr472]',
+      template: template('<div class="flex-1 flex justify-between sm:hidden"><button expr473="expr473" class="relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">\n                        Previous\n                    </button><button expr474="expr474" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-600 text-sm\n                        font-medium\n                        rounded-md text-gray-300 bg-gray-900 hover:bg-gray-800 disabled:opacity-50">\n                        Next\n                    </button></div><div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between"><div><p expr475="expr475" class="text-sm text-gray-400"></p><p expr479="expr479" class="text-sm text-gray-400"></p></div><div><nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination"><button expr480="expr480" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-600 bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"><span class="sr-only">Previous</span><svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button><button expr481="expr481" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-600\n                                bg-gray-900 text-sm font-medium text-gray-400 hover:bg-gray-800 disabled:opacity-50\n                                disabled:cursor-not-allowed"><span class="sr-only">Next</span><svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button></nav></div></div>', [{
+        redundantAttribute: 'expr473',
+        selector: '[expr473]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -804,8 +804,8 @@ var queueManager = {
           evaluate: _scope => _scope.state.page === 1
         }]
       }, {
-        redundantAttribute: 'expr761',
-        selector: '[expr761]',
+        redundantAttribute: 'expr474',
+        selector: '[expr474]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -819,27 +819,27 @@ var queueManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.totalJobs > 0,
-        redundantAttribute: 'expr762',
-        selector: '[expr762]',
-        template: template('\n                            Showing\n                            <span expr763="expr763" class="font-medium text-white"> </span>\n                            to\n                            <span expr764="expr764" class="font-medium text-white"> </span>\n                            of\n                            <span expr765="expr765" class="font-medium text-white"> </span>\n                            results\n                        ', [{
-          redundantAttribute: 'expr763',
-          selector: '[expr763]',
+        redundantAttribute: 'expr475',
+        selector: '[expr475]',
+        template: template('\n                            Showing\n                            <span expr476="expr476" class="font-medium text-white"> </span>\n                            to\n                            <span expr477="expr477" class="font-medium text-white"> </span>\n                            of\n                            <span expr478="expr478" class="font-medium text-white"> </span>\n                            results\n                        ', [{
+          redundantAttribute: 'expr476',
+          selector: '[expr476]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => (_scope.state.page - 1) * _scope.state.limit + 1
           }]
         }, {
-          redundantAttribute: 'expr764',
-          selector: '[expr764]',
+          redundantAttribute: 'expr477',
+          selector: '[expr477]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.min(_scope.state.page * _scope.state.limit, _scope.state.totalJobs)
           }]
         }, {
-          redundantAttribute: 'expr765',
-          selector: '[expr765]',
+          redundantAttribute: 'expr478',
+          selector: '[expr478]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -849,12 +849,12 @@ var queueManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.totalJobs === 0,
-        redundantAttribute: 'expr766',
-        selector: '[expr766]',
+        redundantAttribute: 'expr479',
+        selector: '[expr479]',
         template: template('\n                            No results\n                        ', [])
       }, {
-        redundantAttribute: 'expr767',
-        selector: '[expr767]',
+        redundantAttribute: 'expr480',
+        selector: '[expr480]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -866,8 +866,8 @@ var queueManager = {
           evaluate: _scope => _scope.state.page === 1
         }]
       }, {
-        redundantAttribute: 'expr768',
-        selector: '[expr768]',
+        redundantAttribute: 'expr481',
+        selector: '[expr481]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -883,11 +883,11 @@ var queueManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.activeTab === 'schedules',
-    redundantAttribute: 'expr769',
-    selector: '[expr769]',
-    template: template('<div class="flex justify-end"><button expr770="expr770" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"><svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>\n                    New Schedule\n                </button></div><div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-700"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Cron</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Queue</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Priority</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Script</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Retries</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Next Run</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Last Run</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="divide-y divide-gray-700"><tr expr771="expr771" class="hover:bg-gray-750 transition-colors"></tr><tr expr781="expr781"></tr></tbody></table></div>', [{
-      redundantAttribute: 'expr770',
-      selector: '[expr770]',
+    redundantAttribute: 'expr482',
+    selector: '[expr482]',
+    template: template('<div class="flex justify-end"><button expr483="expr483" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"><svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>\n                    New Schedule\n                </button></div><div class="bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-700"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Cron</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Queue</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Priority</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Script</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Retries</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Next Run</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Last Run</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="divide-y divide-gray-700"><tr expr484="expr484" class="hover:bg-gray-750 transition-colors"></tr><tr expr494="expr494"></tr></tbody></table></div>', [{
+      redundantAttribute: 'expr483',
+      selector: '[expr483]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -897,110 +897,110 @@ var queueManager = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td expr772="expr772" class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white"> </td><td expr773="expr773" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300 font-mono bg-gray-900/50 rounded px-2 py-1"> </td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><span expr774="expr774" class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-xs"> </span></td><td expr775="expr775" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td><td expr776="expr776" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr777="expr777" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr778="expr778" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr779="expr779" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr780="expr780" class="text-red-400\n                                    hover:text-red-300 ml-4 transition-colors">Delete</button></td>', [{
-        redundantAttribute: 'expr772',
-        selector: '[expr772]',
+      template: template('<td expr485="expr485" class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white"> </td><td expr486="expr486" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300 font-mono bg-gray-900/50 rounded px-2 py-1"> </td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><span expr487="expr487" class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-xs"> </span></td><td expr488="expr488" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td><td expr489="expr489" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr490="expr490" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td expr491="expr491" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr492="expr492" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr493="expr493" class="text-red-400\n                                    hover:text-red-300 ml-4 transition-colors">Delete</button></td>', [{
+        redundantAttribute: 'expr485',
+        selector: '[expr485]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.schedule.name].join('')
         }]
       }, {
-        redundantAttribute: 'expr773',
-        selector: '[expr773]',
+        redundantAttribute: 'expr486',
+        selector: '[expr486]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.schedule.cron_expression].join('')
         }]
       }, {
-        redundantAttribute: 'expr774',
-        selector: '[expr774]',
+        redundantAttribute: 'expr487',
+        selector: '[expr487]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.schedule.queue
         }]
       }, {
-        redundantAttribute: 'expr775',
-        selector: '[expr775]',
+        redundantAttribute: 'expr488',
+        selector: '[expr488]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.schedule.priority
         }]
       }, {
-        redundantAttribute: 'expr776',
-        selector: '[expr776]',
+        redundantAttribute: 'expr489',
+        selector: '[expr489]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.schedule.script_path
         }]
       }, {
-        redundantAttribute: 'expr777',
-        selector: '[expr777]',
+        redundantAttribute: 'expr490',
+        selector: '[expr490]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.schedule.max_retries
         }]
       }, {
-        redundantAttribute: 'expr778',
-        selector: '[expr778]',
+        redundantAttribute: 'expr491',
+        selector: '[expr491]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.formatDate(_scope.schedule.next_run)
         }]
       }, {
-        redundantAttribute: 'expr779',
-        selector: '[expr779]',
+        redundantAttribute: 'expr492',
+        selector: '[expr492]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.formatDate(_scope.schedule.last_run)
         }]
       }, {
-        redundantAttribute: 'expr780',
-        selector: '[expr780]',
+        redundantAttribute: 'expr493',
+        selector: '[expr493]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteSchedule(_scope.schedule._key)
         }]
       }]),
-      redundantAttribute: 'expr771',
-      selector: '[expr771]',
+      redundantAttribute: 'expr484',
+      selector: '[expr484]',
       itemName: 'schedule',
       indexName: null,
       evaluate: _scope => _scope.state.schedules
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.schedules.length === 0,
-      redundantAttribute: 'expr781',
-      selector: '[expr781]',
+      redundantAttribute: 'expr494',
+      selector: '[expr494]',
       template: template('<td colspan="9" class="px-6 py-12 text-center text-gray-500">No schedules defined.</td>', [])
     }])
   }, {
-    redundantAttribute: 'expr782',
-    selector: '[expr782]',
+    redundantAttribute: 'expr495',
+    selector: '[expr495]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr783',
-    selector: '[expr783]',
+    redundantAttribute: 'expr496',
+    selector: '[expr496]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => e => e.stopPropagation()
     }]
   }, {
-    redundantAttribute: 'expr784',
-    selector: '[expr784]',
+    redundantAttribute: 'expr497',
+    selector: '[expr497]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -1010,8 +1010,8 @@ var queueManager = {
       evaluate: _scope => _scope.state.newJob.queue
     }]
   }, {
-    redundantAttribute: 'expr785',
-    selector: '[expr785]',
+    redundantAttribute: 'expr498',
+    selector: '[expr498]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -1021,8 +1021,8 @@ var queueManager = {
       evaluate: _scope => _scope.state.newJob.script
     }]
   }, {
-    redundantAttribute: 'expr786',
-    selector: '[expr786]',
+    redundantAttribute: 'expr499',
+    selector: '[expr499]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -1033,8 +1033,8 @@ var queueManager = {
       evaluate: _scope => _scope.updateNewJob('params')
     }]
   }, {
-    redundantAttribute: 'expr787',
-    selector: '[expr787]',
+    redundantAttribute: 'expr500',
+    selector: '[expr500]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -1044,8 +1044,8 @@ var queueManager = {
       evaluate: _scope => _scope.state.newJob.priority
     }]
   }, {
-    redundantAttribute: 'expr788',
-    selector: '[expr788]',
+    redundantAttribute: 'expr501',
+    selector: '[expr501]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -1055,8 +1055,8 @@ var queueManager = {
       evaluate: _scope => _scope.state.newJob.max_retries
     }]
   }, {
-    redundantAttribute: 'expr789',
-    selector: '[expr789]',
+    redundantAttribute: 'expr502',
+    selector: '[expr502]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -1066,16 +1066,16 @@ var queueManager = {
       evaluate: _scope => _scope.state.newJob.scheduled_at
     }]
   }, {
-    redundantAttribute: 'expr790',
-    selector: '[expr790]',
+    redundantAttribute: 'expr503',
+    selector: '[expr503]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.hideModal
     }]
   }, {
-    redundantAttribute: 'expr791',
-    selector: '[expr791]',
+    redundantAttribute: 'expr504',
+    selector: '[expr504]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -1084,27 +1084,27 @@ var queueManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showScheduleModal,
-    redundantAttribute: 'expr792',
-    selector: '[expr792]',
-    template: template('<div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div expr793="expr793" class="fixed inset-0 bg-black bg-opacity-75" aria-hidden="true"></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="relative inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-gray-700"><div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 class="text-lg leading-6 font-medium text-gray-100 mb-4" id="modal-title">Create Schedule\n                    </h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-400">Name</label><input expr794="expr794" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Daily Cleanup"/></div><div><label class="block text-sm font-medium text-gray-400">Cron Expression</label><input expr795="expr795" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="0 */5 * * * * *"/><p class="mt-1 text-xs text-gray-500">Format: sec min hour day month day_of_week year (e.g.\n                                "0 */5 * * * * *" = every 5 min)</p></div><div><label class="block text-sm font-medium text-gray-400">Queue Name</label><input expr796="expr796" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="default"/></div><div><label class="block text-sm font-medium text-gray-400">Script Path</label><input expr797="expr797" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="scripts/my_job.js"/></div><div><label class="block text-sm font-medium text-gray-400">Params (JSON)</label><textarea expr798="expr798" rows="3" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"></textarea></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-400">Priority</label><input expr799="expr799" type="number" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="0"/><p class="mt-1 text-xs text-gray-500">Higher = runs first</p></div><div><label class="block text-sm font-medium text-gray-400">Max Retries</label><input expr800="expr800" type="number" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="3"/></div></div></div></div><div class="bg-gray-800 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-700"><button expr801="expr801" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm transition-colors">\n                        Create\n                    </button><button expr802="expr802" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-600 shadow-sm px-4 py-2 bg-gray-700 text-base font-medium text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors">\n                        Cancel\n                    </button></div></div></div>', [{
-      redundantAttribute: 'expr793',
-      selector: '[expr793]',
+    redundantAttribute: 'expr505',
+    selector: '[expr505]',
+    template: template('<div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div expr506="expr506" class="fixed inset-0 bg-black bg-opacity-75" aria-hidden="true"></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="relative inline-block align-bottom bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-gray-700"><div class="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 class="text-lg leading-6 font-medium text-gray-100 mb-4" id="modal-title">Create Schedule\n                    </h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-400">Name</label><input expr507="expr507" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Daily Cleanup"/></div><div><label class="block text-sm font-medium text-gray-400">Cron Expression</label><input expr508="expr508" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="0 */5 * * * * *"/><p class="mt-1 text-xs text-gray-500">Format: sec min hour day month day_of_week year (e.g.\n                                "0 */5 * * * * *" = every 5 min)</p></div><div><label class="block text-sm font-medium text-gray-400">Queue Name</label><input expr509="expr509" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="default"/></div><div><label class="block text-sm font-medium text-gray-400">Script Path</label><input expr510="expr510" type="text" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="scripts/my_job.js"/></div><div><label class="block text-sm font-medium text-gray-400">Params (JSON)</label><textarea expr511="expr511" rows="3" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"></textarea></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-400">Priority</label><input expr512="expr512" type="number" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="0"/><p class="mt-1 text-xs text-gray-500">Higher = runs first</p></div><div><label class="block text-sm font-medium text-gray-400">Max Retries</label><input expr513="expr513" type="number" class="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="3"/></div></div></div></div><div class="bg-gray-800 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-gray-700"><button expr514="expr514" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm transition-colors">\n                        Create\n                    </button><button expr515="expr515" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-600 shadow-sm px-4 py-2 bg-gray-700 text-base font-medium text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors">\n                        Cancel\n                    </button></div></div></div>', [{
+      redundantAttribute: 'expr506',
+      selector: '[expr506]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.hideScheduleModal
       }]
     }, {
-      redundantAttribute: 'expr794',
-      selector: '[expr794]',
+      redundantAttribute: 'expr507',
+      selector: '[expr507]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
         evaluate: _scope => _scope.updateNewSchedule('name')
       }]
     }, {
-      redundantAttribute: 'expr795',
-      selector: '[expr795]',
+      redundantAttribute: 'expr508',
+      selector: '[expr508]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -1114,8 +1114,8 @@ var queueManager = {
         evaluate: _scope => _scope.state.newSchedule.cron_expression
       }]
     }, {
-      redundantAttribute: 'expr796',
-      selector: '[expr796]',
+      redundantAttribute: 'expr509',
+      selector: '[expr509]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -1125,16 +1125,16 @@ var queueManager = {
         evaluate: _scope => _scope.state.newSchedule.queue
       }]
     }, {
-      redundantAttribute: 'expr797',
-      selector: '[expr797]',
+      redundantAttribute: 'expr510',
+      selector: '[expr510]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
         evaluate: _scope => _scope.updateNewSchedule('script')
       }]
     }, {
-      redundantAttribute: 'expr798',
-      selector: '[expr798]',
+      redundantAttribute: 'expr511',
+      selector: '[expr511]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -1144,8 +1144,8 @@ var queueManager = {
         evaluate: _scope => _scope.state.newSchedule.params
       }]
     }, {
-      redundantAttribute: 'expr799',
-      selector: '[expr799]',
+      redundantAttribute: 'expr512',
+      selector: '[expr512]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -1155,8 +1155,8 @@ var queueManager = {
         evaluate: _scope => _scope.state.newSchedule.priority
       }]
     }, {
-      redundantAttribute: 'expr800',
-      selector: '[expr800]',
+      redundantAttribute: 'expr513',
+      selector: '[expr513]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -1166,16 +1166,16 @@ var queueManager = {
         evaluate: _scope => _scope.state.newSchedule.max_retries
       }]
     }, {
-      redundantAttribute: 'expr801',
-      selector: '[expr801]',
+      redundantAttribute: 'expr514',
+      selector: '[expr514]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.createSchedule
       }]
     }, {
-      redundantAttribute: 'expr802',
-      selector: '[expr802]',
+      redundantAttribute: 'expr515',
+      selector: '[expr515]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',

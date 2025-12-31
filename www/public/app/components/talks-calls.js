@@ -335,9 +335,9 @@ var talksCalls = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr405="expr405"><div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full"><div expr406="expr406" class="bg-gray-900/90 backdrop-blur border border-gray-700/50 rounded-lg shadow-2xl p-4 flex items-center gap-4 animate-fade-in-down w-full transform transition-all hover:translate-x-1"></div></div><div expr413="expr413"></div></div>', [{
-    redundantAttribute: 'expr405',
-    selector: '[expr405]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr134="expr134"><div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full"><div expr135="expr135" class="bg-gray-900/90 backdrop-blur border border-gray-700/50 rounded-lg shadow-2xl p-4 flex items-center gap-4 animate-fade-in-down w-full transform transition-all hover:translate-x-1"></div></div><div expr142="expr142"></div></div>', [{
+    redundantAttribute: 'expr134',
+    selector: '[expr134]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -348,33 +348,33 @@ var talksCalls = {
     type: bindingTypes.EACH,
     getKey: null,
     condition: null,
-    template: template('<div class="relative"><div class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden border-2 border-gray-700 shadow-inner"><span expr407="expr407" class="text-lg font-bold text-gray-300"> </span></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center animate-ping"></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center"><i class="fas fa-phone text-[10px] text-white"></i></div></div><div class="flex-1 min-w-0"><h3 expr408="expr408" class="text-white font-bold text-sm truncate leading-tight shadow-black drop-shadow-md"> </h3><p expr409="expr409" class="text-indigo-400 text-xs truncate flex items-center gap-1"><i expr410="expr410"></i> </p></div><div class="flex items-center gap-2"><button expr411="expr411" class="w-10 h-10 rounded-full bg-red-600/20\n                        hover:bg-red-600 text-red-500 hover:text-white flex items-center justify-center transition-all\n                        border border-red-600/50 hover:border-red-600 shadow-lg hover:shadow-red-900/50 group" title="Decline"><i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i></button><button expr412="expr412" class="w-10 h-10 rounded-full bg-green-600/20\n                        hover:bg-green-600 text-green-500 hover:text-white flex items-center justify-center\n                        transition-all border border-green-600/50 hover:border-green-600 shadow-lg\n                        hover:shadow-green-900/50 group animate-pulse hover:animate-none" title="Accept"><i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i></button></div>', [{
-      redundantAttribute: 'expr407',
-      selector: '[expr407]',
+    template: template('<div class="relative"><div class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden border-2 border-gray-700 shadow-inner"><span expr136="expr136" class="text-lg font-bold text-gray-300"> </span></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center animate-ping"></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center"><i class="fas fa-phone text-[10px] text-white"></i></div></div><div class="flex-1 min-w-0"><h3 expr137="expr137" class="text-white font-bold text-sm truncate leading-tight shadow-black drop-shadow-md"> </h3><p expr138="expr138" class="text-indigo-400 text-xs truncate flex items-center gap-1"><i expr139="expr139"></i> </p></div><div class="flex items-center gap-2"><button expr140="expr140" class="w-10 h-10 rounded-full bg-red-600/20\n                        hover:bg-red-600 text-red-500 hover:text-white flex items-center justify-center transition-all\n                        border border-red-600/50 hover:border-red-600 shadow-lg hover:shadow-red-900/50 group" title="Decline"><i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i></button><button expr141="expr141" class="w-10 h-10 rounded-full bg-green-600/20\n                        hover:bg-green-600 text-green-500 hover:text-white flex items-center justify-center\n                        transition-all border border-green-600/50 hover:border-green-600 shadow-lg\n                        hover:shadow-green-900/50 group animate-pulse hover:animate-none" title="Accept"><i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i></button></div>', [{
+      redundantAttribute: 'expr136',
+      selector: '[expr136]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.getInitials(_scope.getUsername(_scope.call.caller))
       }]
     }, {
-      redundantAttribute: 'expr408',
-      selector: '[expr408]',
+      redundantAttribute: 'expr137',
+      selector: '[expr137]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.getUsername(_scope.call.caller)
       }]
     }, {
-      redundantAttribute: 'expr409',
-      selector: '[expr409]',
+      redundantAttribute: 'expr138',
+      selector: '[expr138]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
         evaluate: _scope => [_scope.call.type === 'video' ? "Incoming Video..." : "Incoming Audio..."].join('')
       }]
     }, {
-      redundantAttribute: 'expr410',
-      selector: '[expr410]',
+      redundantAttribute: 'expr139',
+      selector: '[expr139]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -382,33 +382,33 @@ var talksCalls = {
         evaluate: _scope => _scope.call.type === 'video' ? 'fas fa-video' : 'fas fa-microphone'
       }]
     }, {
-      redundantAttribute: 'expr411',
-      selector: '[expr411]',
+      redundantAttribute: 'expr140',
+      selector: '[expr140]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => _scope.handleDecline(e, _scope.call)
       }]
     }, {
-      redundantAttribute: 'expr412',
-      selector: '[expr412]',
+      redundantAttribute: 'expr141',
+      selector: '[expr141]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => _scope.handleAccept(e, _scope.call)
       }]
     }]),
-    redundantAttribute: 'expr406',
-    selector: '[expr406]',
+    redundantAttribute: 'expr135',
+    selector: '[expr135]',
     itemName: 'call',
     indexName: null,
     evaluate: _scope => _scope.props.incomingCalls || []
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.activeCall,
-    redundantAttribute: 'expr413',
-    selector: '[expr413]',
-    template: template('<div expr414="expr414"><div class="flex items-center gap-3 pointer-events-auto"><div expr415="expr415"><div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span expr416="expr416" class="text-white font-medium text-sm"> </span></div></div><div expr417="expr417" class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow pointer-events-auto"></div></div><div expr418="expr418"><div expr419="expr419"><div expr420="expr420"></div></div><div expr430="expr430"><video expr431="expr431" ref="localVideo" autoplay playsinline muted></video><div class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">\n                        You</div><canvas id="audio-viz-local" class="absolute bottom-0 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas></div></div><div expr432="expr432"><div expr433="expr433"><button expr434="expr434"><i expr435="expr435"></i></button><button expr436="expr436"><i expr437="expr437"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr438="expr438" title="Share Screen"><i class="fas fa-desktop"></i></button><button expr439="expr439"><i expr440="expr440"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr441="expr441"><i class="fas fa-phone-slash"></i></button></div></div>', [{
+    redundantAttribute: 'expr142',
+    selector: '[expr142]',
+    template: template('<div expr143="expr143"><div class="flex items-center gap-3 pointer-events-auto"><div expr144="expr144"><div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span expr145="expr145" class="text-white font-medium text-sm"> </span></div></div><div expr146="expr146" class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow pointer-events-auto"></div></div><div expr147="expr147"><div expr148="expr148"><div expr149="expr149"></div></div><div expr159="expr159"><video expr160="expr160" ref="localVideo" autoplay playsinline muted></video><div class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">\n                        You</div><canvas id="audio-viz-local" class="absolute bottom-0 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas></div></div><div expr161="expr161"><div expr162="expr162"><button expr163="expr163"><i expr164="expr164"></i></button><button expr165="expr165"><i expr166="expr166"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr167="expr167" title="Share Screen"><i class="fas fa-desktop"></i></button><button expr168="expr168"><i expr169="expr169"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr170="expr170"><i class="fas fa-phone-slash"></i></button></div></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -416,8 +416,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getCallContainerClass()
       }]
     }, {
-      redundantAttribute: 'expr414',
-      selector: '[expr414]',
+      redundantAttribute: 'expr143',
+      selector: '[expr143]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -425,8 +425,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getHeaderClass()
       }]
     }, {
-      redundantAttribute: 'expr415',
-      selector: '[expr415]',
+      redundantAttribute: 'expr144',
+      selector: '[expr144]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -434,8 +434,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getDurationBadgeClass()
       }]
     }, {
-      redundantAttribute: 'expr416',
-      selector: '[expr416]',
+      redundantAttribute: 'expr145',
+      selector: '[expr145]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -444,8 +444,8 @@ var talksCalls = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.props.isFullscreen,
-      redundantAttribute: 'expr417',
-      selector: '[expr417]',
+      redundantAttribute: 'expr146',
+      selector: '[expr146]',
       template: template(' ', [{
         expressions: [{
           type: expressionTypes.TEXT,
@@ -454,8 +454,8 @@ var talksCalls = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr418',
-      selector: '[expr418]',
+      redundantAttribute: 'expr147',
+      selector: '[expr147]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -463,8 +463,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getVideoGridClass()
       }]
     }, {
-      redundantAttribute: 'expr419',
-      selector: '[expr419]',
+      redundantAttribute: 'expr148',
+      selector: '[expr148]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -475,7 +475,7 @@ var talksCalls = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div expr421="expr421" class="absolute inset-0 flex flex-col items-center justify-center z-0"></div><video expr424="expr424" autoplay playsinline></video><div expr425="expr425" class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity"></div><div expr427="expr427"> <i expr428="expr428" class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i></div><canvas expr429="expr429" class="absolute bottom-10 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>', [{
+      template: template('<div expr150="expr150" class="absolute inset-0 flex flex-col items-center justify-center z-0"></div><video expr153="expr153" autoplay playsinline></video><div expr154="expr154" class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity"></div><div expr156="expr156"> <i expr157="expr157" class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i></div><canvas expr158="expr158" class="absolute bottom-10 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>', [{
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -490,11 +490,11 @@ var talksCalls = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.peer.hasVideo,
-        redundantAttribute: 'expr421',
-        selector: '[expr421]',
-        template: template('<div expr422="expr422"> </div><div expr423="expr423"> </div>', [{
-          redundantAttribute: 'expr422',
-          selector: '[expr422]',
+        redundantAttribute: 'expr150',
+        selector: '[expr150]',
+        template: template('<div expr151="expr151"> </div><div expr152="expr152"> </div>', [{
+          redundantAttribute: 'expr151',
+          selector: '[expr151]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -506,8 +506,8 @@ var talksCalls = {
             evaluate: _scope => _scope.getPlaceholderClass()
           }]
         }, {
-          redundantAttribute: 'expr423',
-          selector: '[expr423]',
+          redundantAttribute: 'expr152',
+          selector: '[expr152]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -520,8 +520,8 @@ var talksCalls = {
           }]
         }])
       }, {
-        redundantAttribute: 'expr424',
-        selector: '[expr424]',
+        redundantAttribute: 'expr153',
+        selector: '[expr153]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -536,11 +536,11 @@ var talksCalls = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.isFullscreen,
-        redundantAttribute: 'expr425',
-        selector: '[expr425]',
-        template: template('<button expr426="expr426"><i class="fas fa-thumbtack text-xs transform rotate-45"></i></button>', [{
-          redundantAttribute: 'expr426',
-          selector: '[expr426]',
+        redundantAttribute: 'expr154',
+        selector: '[expr154]',
+        template: template('<button expr155="expr155"><i class="fas fa-thumbtack text-xs transform rotate-45"></i></button>', [{
+          redundantAttribute: 'expr155',
+          selector: '[expr155]',
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
@@ -558,8 +558,8 @@ var talksCalls = {
           }]
         }])
       }, {
-        redundantAttribute: 'expr427',
-        selector: '[expr427]',
+        redundantAttribute: 'expr156',
+        selector: '[expr156]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -573,12 +573,12 @@ var talksCalls = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.isPinned(_scope.peer.user._key),
-        redundantAttribute: 'expr428',
-        selector: '[expr428]',
+        redundantAttribute: 'expr157',
+        selector: '[expr157]',
         template: template(null, [])
       }, {
-        redundantAttribute: 'expr429',
-        selector: '[expr429]',
+        redundantAttribute: 'expr158',
+        selector: '[expr158]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -586,14 +586,14 @@ var talksCalls = {
           evaluate: _scope => 'audio-viz-' + _scope.peer.user._key
         }]
       }]),
-      redundantAttribute: 'expr420',
-      selector: '[expr420]',
+      redundantAttribute: 'expr149',
+      selector: '[expr149]',
       itemName: 'peer',
       indexName: null,
       evaluate: _scope => _scope.getSortedPeers()
     }, {
-      redundantAttribute: 'expr430',
-      selector: '[expr430]',
+      redundantAttribute: 'expr159',
+      selector: '[expr159]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -601,8 +601,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getLocalVideoContainerClass()
       }]
     }, {
-      redundantAttribute: 'expr431',
-      selector: '[expr431]',
+      redundantAttribute: 'expr160',
+      selector: '[expr160]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -610,8 +610,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getLocalVideoClass()
       }]
     }, {
-      redundantAttribute: 'expr432',
-      selector: '[expr432]',
+      redundantAttribute: 'expr161',
+      selector: '[expr161]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -619,8 +619,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getControlsFooterClass()
       }]
     }, {
-      redundantAttribute: 'expr433',
-      selector: '[expr433]',
+      redundantAttribute: 'expr162',
+      selector: '[expr162]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -628,8 +628,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getControlsContainerClass()
       }]
     }, {
-      redundantAttribute: 'expr434',
-      selector: '[expr434]',
+      redundantAttribute: 'expr163',
+      selector: '[expr163]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -641,8 +641,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getAudioButtonClass()
       }]
     }, {
-      redundantAttribute: 'expr435',
-      selector: '[expr435]',
+      redundantAttribute: 'expr164',
+      selector: '[expr164]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -650,8 +650,8 @@ var talksCalls = {
         evaluate: _scope => _scope.props.isAudioEnabled ? 'fas fa-microphone' : 'fas fa-microphone-slash'
       }]
     }, {
-      redundantAttribute: 'expr436',
-      selector: '[expr436]',
+      redundantAttribute: 'expr165',
+      selector: '[expr165]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -663,8 +663,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getVideoButtonClass()
       }]
     }, {
-      redundantAttribute: 'expr437',
-      selector: '[expr437]',
+      redundantAttribute: 'expr166',
+      selector: '[expr166]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -672,8 +672,8 @@ var talksCalls = {
         evaluate: _scope => _scope.props.isVideoEnabled ? 'fas fa-video' : 'fas fa-video-slash'
       }]
     }, {
-      redundantAttribute: 'expr438',
-      selector: '[expr438]',
+      redundantAttribute: 'expr167',
+      selector: '[expr167]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -685,8 +685,8 @@ var talksCalls = {
         evaluate: _scope => _scope.getScreenShareButtonClass()
       }]
     }, {
-      redundantAttribute: 'expr439',
-      selector: '[expr439]',
+      redundantAttribute: 'expr168',
+      selector: '[expr168]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -703,8 +703,8 @@ var talksCalls = {
         evaluate: _scope => _scope.props.isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"
       }]
     }, {
-      redundantAttribute: 'expr440',
-      selector: '[expr440]',
+      redundantAttribute: 'expr169',
+      selector: '[expr169]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -712,8 +712,8 @@ var talksCalls = {
         evaluate: _scope => _scope.props.isFullscreen ? 'fas fa-compress' : 'fas fa-expand'
       }]
     }, {
-      redundantAttribute: 'expr441',
-      selector: '[expr441]',
+      redundantAttribute: 'expr170',
+      selector: '[expr170]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',

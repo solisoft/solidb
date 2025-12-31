@@ -969,6 +969,15 @@
                 // Sound permission popup always on load
                 this.update({ showSoundPopup: true });
 
+                // Request notification permission for DMs and mentions
+                if ('Notification' in window && Notification.permission === 'default') {
+                    // Delay request to avoid overwhelming user
+                    setTimeout(() => {
+                        Notification.requestPermission().then(permission => {
+                            console.log('Notification permission:', permission);
+                        });
+                    }, 3000);
+                }
 
                 // Connect to live query WebSocket for real-time updates
                 this.connectLiveQuery();
@@ -1526,7 +1535,7 @@
                                         updated.push(m);
                                         hasNewItems = true;
 
-                                        // Sound notification
+                                        // Sound and browser notification
                                         if (this.state.initialSyncDone && m.sender !== this.getUsername(this.props.currentUser)) {
                                             const myUsername = this.getUsername(this.props.currentUser);
                                             const myEmail = this.props.currentUser.email;
@@ -1535,8 +1544,18 @@
                                             const isMention = m.text && m.text.includes('@' + myUsername);
                                             const isQuote = m.quoted_message && (m.quoted_message.sender === myUsername || m.quoted_message.sender === myEmail);
 
+                                            // Check if this is a DM from a channel we're not viewing
+                                            const messageChannel = this.state.channels?.find(c => c._id === m.channel_id);
+                                            const isDM = messageChannel?.type === 'dm';
+                                            const isViewingThisChannel = this.state.currentChannel === messageChannel?._key;
+
                                             if (isMention || isQuote) {
                                                 this.playSound('notification');
+                                                this.sendBrowserNotification(m, 'mention');
+                                            } else if (isDM && !isViewingThisChannel) {
+                                                // DM from another channel we're not viewing
+                                                this.playSound('notification');
+                                                this.sendBrowserNotification(m, 'dm');
                                             } else if (document.hidden || !document.hasFocus()) {
                                                 this.playSound('discreet');
                                             }
@@ -2765,6 +2784,59 @@
                         });
                         this.callingOscillators = [];
                     }
+                }
+            },
+
+            // Send browser notification for DMs and @mentions
+            sendBrowserNotification(message, type) {
+                // Check if notifications are supported and permitted
+                if (!('Notification' in window) || Notification.permission !== 'granted') {
+                    return;
+                }
+
+                // Don't notify if document is focused and visible
+                if (document.hasFocus() && !document.hidden) {
+                    return;
+                }
+
+                const channel = this.state.channels?.find(c => c._id === message.channel_id);
+                const senderName = message.sender || 'Someone';
+                const channelName = channel ? this.formatChannelName(channel, this.props.currentUser, this.state.users) : 'a channel';
+
+                // Truncate message text for notification body
+                const bodyText = message.text ? message.text.substring(0, 100) + (message.text.length > 100 ? '...' : '') : 'New message';
+
+                let title;
+                if (type === 'dm') {
+                    title = `💬 ${senderName}`;
+                } else if (type === 'mention') {
+                    title = `@${senderName} mentioned you`;
+                } else {
+                    title = `${senderName} in ${channelName}`;
+                }
+
+                try {
+                    const notification = new Notification(title, {
+                        body: bodyText,
+                        icon: '/images/logo.jpg',
+                        tag: message._key, // Prevent duplicate notifications
+                        requireInteraction: false,
+                        silent: true // We play our own sound
+                    });
+
+                    // Click notification to focus and navigate to channel
+                    notification.onclick = () => {
+                        window.focus();
+                        if (channel) {
+                            this.selectChannel(channel._key);
+                        }
+                        notification.close();
+                    };
+
+                    // Auto-close notification after 5 seconds
+                    setTimeout(() => notification.close(), 5000);
+                } catch (e) {
+                    console.error('Failed to send notification:', e);
                 }
             },
 
