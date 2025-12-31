@@ -247,101 +247,101 @@ var systemMonitor = {
       chart.update();
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div><div class="flex items-center justify-between mb-8"><h1 class="text-3xl font-bold leading-tight text-gray-100">System Monitoring</h1><div class="flex items-center space-x-4"><span expr677="expr677" class="flex items-center text-sm text-green-400"></span><span expr678="expr678" class="flex items-center text-sm text-red-400"></span></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>\n                    CPU Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="cpuChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Current Load: <strong expr679="expr679" class="text-indigo-400"> </strong></span><span>Cores: <strong expr680="expr680" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-green-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>\n                    Memory Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="memChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Used: <strong expr681="expr681" class="text-green-400"> </strong></span><span>Total: <strong expr682="expr682" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-yellow-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>\n                    Active Activity\n                </h3><div class="relative h-64 w-full"><canvas id="activityChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span expr683="expr683" class="text-blue-400"> </span><span expr684="expr684" class="text-yellow-400"> </span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>\n                    System Information\n                </h3><dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 text-sm"><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">OS Platform</dt><dd expr685="expr685" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Kernel Version</dt><dd expr686="expr686" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Host Name</dt><dd expr687="expr687" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Uptime</dt><dd expr688="expr688" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">SolidDB Version</dt><dd class="text-gray-200 font-medium">0.3.0</dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Process ID</dt><dd expr689="expr689" class="text-gray-200 font-medium"> </dd></div></dl></div></div></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div><div class="flex items-center justify-between mb-8"><h1 class="text-3xl font-bold leading-tight text-gray-100">System Monitoring</h1><div class="flex items-center space-x-4"><span expr434="expr434" class="flex items-center text-sm text-green-400"></span><span expr435="expr435" class="flex items-center text-sm text-red-400"></span></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>\n                    CPU Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="cpuChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Current Load: <strong expr436="expr436" class="text-indigo-400"> </strong></span><span>Cores: <strong expr437="expr437" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-green-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>\n                    Memory Usage History\n                </h3><div class="relative h-64 w-full"><canvas id="memChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span>Used: <strong expr438="expr438" class="text-green-400"> </strong></span><span>Total: <strong expr439="expr439" class="text-gray-200"> </strong></span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-yellow-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>\n                    Active Activity\n                </h3><div class="relative h-64 w-full"><canvas id="activityChart"></canvas></div><div class="mt-4 flex justify-between text-sm text-gray-400 border-t border-gray-700 pt-3"><span expr440="expr440" class="text-blue-400"> </span><span expr441="expr441" class="text-yellow-400"> </span></div></div><div class="bg-gray-800 rounded-lg shadow border border-gray-700 p-6"><h3 class="text-lg font-medium text-gray-100 mb-4 flex items-center"><svg class="h-5 w-5 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>\n                    System Information\n                </h3><dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 text-sm"><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">OS Platform</dt><dd expr442="expr442" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Kernel Version</dt><dd expr443="expr443" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Host Name</dt><dd expr444="expr444" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Uptime</dt><dd expr445="expr445" class="text-gray-200 font-medium"> </dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">SolidDB Version</dt><dd class="text-gray-200 font-medium">0.3.0</dd></div><div class="border-b border-gray-700 pb-2"><dt class="text-gray-400">Process ID</dt><dd expr446="expr446" class="text-gray-200 font-medium"> </dd></div></dl></div></div></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.connected,
-    redundantAttribute: 'expr677',
-    selector: '[expr677]',
+    redundantAttribute: 'expr434',
+    selector: '[expr434]',
     template: template('<span class="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>\n                    Live\n                ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.connected,
-    redundantAttribute: 'expr678',
-    selector: '[expr678]',
+    redundantAttribute: 'expr435',
+    selector: '[expr435]',
     template: template('<span class="w-2 h-2 bg-red-400 rounded-full mr-2"></span>\n                    Disconnected\n                ', [])
   }, {
-    redundantAttribute: 'expr679',
-    selector: '[expr679]',
+    redundantAttribute: 'expr436',
+    selector: '[expr436]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.state.current.cpu, '%'].join('')
     }]
   }, {
-    redundantAttribute: 'expr680',
-    selector: '[expr680]',
+    redundantAttribute: 'expr437',
+    selector: '[expr437]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.info.cores
     }]
   }, {
-    redundantAttribute: 'expr681',
-    selector: '[expr681]',
+    redundantAttribute: 'expr438',
+    selector: '[expr438]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.current.mem_used)
     }]
   }, {
-    redundantAttribute: 'expr682',
-    selector: '[expr682]',
+    redundantAttribute: 'expr439',
+    selector: '[expr439]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.current.mem_total)
     }]
   }, {
-    redundantAttribute: 'expr683',
-    selector: '[expr683]',
+    redundantAttribute: 'expr440',
+    selector: '[expr440]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['Scripts: ', _scope.state.current.active_scripts].join('')
     }]
   }, {
-    redundantAttribute: 'expr684',
-    selector: '[expr684]',
+    redundantAttribute: 'expr441',
+    selector: '[expr441]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['WS: ', _scope.state.current.active_ws].join('')
     }]
   }, {
-    redundantAttribute: 'expr685',
-    selector: '[expr685]',
+    redundantAttribute: 'expr442',
+    selector: '[expr442]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.info.os
     }]
   }, {
-    redundantAttribute: 'expr686',
-    selector: '[expr686]',
+    redundantAttribute: 'expr443',
+    selector: '[expr443]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.info.kernel
     }]
   }, {
-    redundantAttribute: 'expr687',
-    selector: '[expr687]',
+    redundantAttribute: 'expr444',
+    selector: '[expr444]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.info.hostname
     }]
   }, {
-    redundantAttribute: 'expr688',
-    selector: '[expr688]',
+    redundantAttribute: 'expr445',
+    selector: '[expr445]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatDuration(_scope.state.info.uptime)
     }]
   }, {
-    redundantAttribute: 'expr689',
-    selector: '[expr689]',
+    redundantAttribute: 'expr446',
+    selector: '[expr446]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,

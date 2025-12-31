@@ -73,9 +73,9 @@
             <div class={ getVideoGridClass() }>
                 <div class={ getInnerGridClass() }>
 
-                    <!-- Remote Peers -->
-                    <div each={ peer in props.callPeers } class={ getPeerContainerClass(peer) } style={
-                        getGridStyle(peer, props.callPeers.length + (props.localStreamHasVideo ? 1 : 0)) }>
+                    <!-- Remote Peers (sorted by priority: pinned > screen share > audio level) -->
+                    <div each={ peer in getSortedPeers() } class={ getPeerContainerClass(peer) } style={
+                        getGridStyle(peer, getSortedPeers().length + (props.localStreamHasVideo ? 1 : 0)) }>
 
                         <!-- Placeholder -->
                         <div if={ !peer.hasVideo }
@@ -161,12 +161,15 @@
             ...window.TalksMixin,
             onMounted() {
                 this.state = {
-                    pinnedPeers: []
+                    pinnedPeers: [],
+                    sortedPeers: [] // Cache for sorted peers
                 }
                 // Lazy initialize - don't create AudioContext until needed
                 this.audioCtx = null;
                 this.analysers = {};
+                this.audioLevels = {}; // Track audio level per participant
                 this.animationFrameId = null;
+                this.lastSortTime = 0; // Throttle sorting
             },
 
             onUnmounted() {
@@ -247,10 +250,19 @@
 
                 Object.keys(this.analysers).forEach(key => {
                     const { analyser, dataArray, canvas } = this.analysers[key];
-                    if (!canvas) return;
+                    if (!analyser) return;
 
                     analyser.getByteFrequencyData(dataArray);
 
+                    // Calculate RMS audio level for sorting
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    this.audioLevels[key] = sum / dataArray.length;
+
+                    // Draw visualization if canvas exists
+                    if (!canvas) return;
                     const ctx = canvas.getContext('2d');
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -268,6 +280,43 @@
 
                         x += barWidth + 1;
                     }
+                });
+
+                // Trigger re-sort every 500ms
+                const now = Date.now();
+                if (now - this.lastSortTime > 500) {
+                    this.lastSortTime = now;
+                    this.update(); // This will cause getSortedPeers() to be called
+                }
+            },
+
+            getSortedPeers() {
+                if (!this.props.callPeers || this.props.callPeers.length === 0) {
+                    return [];
+                }
+
+                const pinned = this.state.pinnedPeers || [];
+                const levels = this.audioLevels || {};
+
+                // Sort by priority: Pinned > Screen sharing > Audio level
+                return [...this.props.callPeers].sort((a, b) => {
+                    const aKey = a.user._key;
+                    const bKey = b.user._key;
+
+                    // 1. Pinned peers first
+                    const aPinned = pinned.includes(aKey);
+                    const bPinned = pinned.includes(bKey);
+                    if (aPinned && !bPinned) return -1;
+                    if (!aPinned && bPinned) return 1;
+
+                    // 2. Screen sharers next
+                    if (a.isScreenSharing && !b.isScreenSharing) return -1;
+                    if (!a.isScreenSharing && b.isScreenSharing) return 1;
+
+                    // 3. Sort by audio level (highest first)
+                    const aLevel = levels[aKey] || 0;
+                    const bLevel = levels[bKey] || 0;
+                    return bLevel - aLevel;
                 });
             },
 
