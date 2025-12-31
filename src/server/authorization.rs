@@ -207,7 +207,124 @@ pub const USER_ROLES_COLLECTION: &str = "_user_roles";
 pub struct AuthorizationService;
 
 impl AuthorizationService {
-    /// Check if the given permissions satisfy the required action on a resource
+    /// Check if any permission in the set satisfies the requirement
+    fn has_permission(permissions: &HashSet<Permission>, required: &Permission) -> bool {
+        for perm in permissions {
+            // Exact match
+            if perm == required {
+                return true;
+            }
+
+            // Check if action implies required action
+            if !perm.action.implies(&required.action) {
+                continue;
+            }
+
+            // Global scope covers all databases
+            if perm.scope == PermissionScope::Global {
+                return true;
+            }
+
+            // Database scope must match
+            if perm.scope == PermissionScope::Database
+                && required.scope == PermissionScope::Database
+                && perm.database == required.database
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Resolve permissions from roles
+    pub fn resolve_permissions(roles: &[Role]) -> HashSet<Permission> {
+        let mut permissions = HashSet::new();
+        for role in roles {
+            for perm in &role.permissions {
+                permissions.insert(perm.clone());
+            }
+        }
+        permissions
+    }
+
+    /// Get effective permissions for a user from Claims and AppState
+    ///
+    /// This method:
+    /// 1. Checks the permission cache first
+    /// 2. If not cached, loads roles from DB and resolves permissions
+    /// 3. Caches the result for future calls
+    pub async fn get_effective_permissions(
+        claims: &crate::server::auth::Claims,
+        state: &crate::server::handlers::AppState,
+    ) -> DbResult<HashSet<Permission>> {
+        use crate::server::permission_cache::CachedPermissions;
+
+        // Check cache first
+        if let Some(cached) = state.permission_cache.get(&claims.sub) {
+            return Ok(cached.permissions);
+        }
+
+        // Get role names from claims
+        let role_names = claims.roles.clone().unwrap_or_default();
+        if role_names.is_empty() {
+            // No roles assigned - grant admin to all authenticated users for backward compatibility
+            // This will only happen during migration period
+            let mut permissions = HashSet::new();
+            permissions.insert(Permission::global_admin());
+            return Ok(permissions);
+        }
+
+        // Load roles from DB or cache
+        let mut roles = Vec::new();
+        let db = state.storage.get_database("_system")?;
+        let roles_coll = db.get_collection(ROLES_COLLECTION)?;
+
+        for role_name in &role_names {
+            // Try cache first
+            if let Some(role) = state.permission_cache.get_role(role_name) {
+                roles.push(role);
+            } else {
+                // Load from DB
+                if let Ok(doc) = roles_coll.get(role_name) {
+                    if let Ok(role) = serde_json::from_value::<Role>(doc.data) {
+                        state.permission_cache.set_role(role.clone());
+                        roles.push(role);
+                    }
+                }
+            }
+        }
+
+        // Resolve permissions
+        let permissions = Self::resolve_permissions(&roles);
+
+        // Cache the result
+        let cached = CachedPermissions::new(
+            permissions.clone(),
+            role_names,
+            claims.scoped_databases.clone(),
+        );
+        state.permission_cache.set(claims.sub.clone(), cached);
+
+        Ok(permissions)
+    }
+
+    /// Check if a user (from Claims) has permission for an action
+    ///
+    /// This is the main entry point for permission checking in handlers.
+    /// It loads permissions from the user's roles and checks against the required action.
+    pub async fn check_permission(
+        claims: &crate::server::auth::Claims,
+        state: &crate::server::handlers::AppState,
+        required_action: PermissionAction,
+        database: Option<&str>,
+    ) -> DbResult<()> {
+        let permissions = Self::get_effective_permissions(claims, state).await?;
+        let scoped_databases = claims.scoped_databases.as_ref().map(|v| v.as_slice());
+        Self::check_permission_raw(&permissions, required_action, database, scoped_databases)
+    }
+
+    /// Check if the given permissions satisfy the required action on a resource (raw version)
     ///
     /// # Arguments
     /// * `permissions` - Set of permissions the user has
@@ -218,7 +335,7 @@ impl AuthorizationService {
     /// # Returns
     /// * `Ok(())` if permission is granted
     /// * `Err(DbError::Forbidden)` if permission is denied
-    pub fn check_permission(
+    pub fn check_permission_raw(
         permissions: &HashSet<Permission>,
         required_action: PermissionAction,
         database: Option<&str>,
@@ -261,47 +378,6 @@ impl AuthorizationService {
             )))
         }
     }
-
-    /// Check if any permission in the set satisfies the requirement
-    fn has_permission(permissions: &HashSet<Permission>, required: &Permission) -> bool {
-        for perm in permissions {
-            // Exact match
-            if perm == required {
-                return true;
-            }
-
-            // Check if action implies required action
-            if !perm.action.implies(&required.action) {
-                continue;
-            }
-
-            // Global scope covers all databases
-            if perm.scope == PermissionScope::Global {
-                return true;
-            }
-
-            // Database scope must match
-            if perm.scope == PermissionScope::Database
-                && required.scope == PermissionScope::Database
-                && perm.database == required.database
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Resolve permissions from roles
-    pub fn resolve_permissions(roles: &[Role]) -> HashSet<Permission> {
-        let mut permissions = HashSet::new();
-        for role in roles {
-            for perm in &role.permissions {
-                permissions.insert(perm.clone());
-            }
-        }
-        permissions
-    }
 }
 
 #[cfg(test)]
@@ -329,10 +405,10 @@ mod tests {
         permissions.insert(Permission::global_admin());
 
         // Admin should have access to everything
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Admin, None, None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, None, None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Read, None, None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("mydb"), None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Admin, None, None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, None, None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, None, None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("mydb"), None).is_ok());
     }
 
     #[test]
@@ -342,9 +418,9 @@ mod tests {
         permissions.insert(Permission::global_read());
 
         // Write+Read should allow read and write but not admin
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Read, None, None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, None, None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Admin, None, None).is_err());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, None, None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, None, None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Admin, None, None).is_err());
     }
 
     #[test]
@@ -353,11 +429,11 @@ mod tests {
         permissions.insert(Permission::database_permission(PermissionAction::Write, "allowed_db"));
 
         // Should work for allowed_db
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("allowed_db"), None).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Read, Some("allowed_db"), None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("allowed_db"), None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, Some("allowed_db"), None).is_ok());
 
         // Should fail for other databases
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("other_db"), None).is_err());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("other_db"), None).is_err());
     }
 
     #[test]
@@ -369,11 +445,11 @@ mod tests {
         let scoped_dbs = vec!["db1".to_string(), "db2".to_string()];
 
         // Should work for scoped databases
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("db1"), Some(&scoped_dbs)).is_ok());
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("db2"), Some(&scoped_dbs)).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db1"), Some(&scoped_dbs)).is_ok());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db2"), Some(&scoped_dbs)).is_ok());
 
         // Should fail for non-scoped databases
-        assert!(AuthorizationService::check_permission(&permissions, PermissionAction::Write, Some("db3"), Some(&scoped_dbs)).is_err());
+        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db3"), Some(&scoped_dbs)).is_err());
     }
 
     #[test]

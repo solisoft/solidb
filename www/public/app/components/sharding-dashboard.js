@@ -225,15 +225,15 @@ var shardingDashboard = {
       });
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="mt-8 space-y-8 animate-fade-in"><div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-800/40 backdrop-blur-md p-4 rounded-xl border border-white/5 shadow-lg"><div class="flex items-center gap-3 w-full md:w-auto"><div class="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20"><svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><div class="flex-1"><label class="block text-xs text-gray-400 font-medium uppercase tracking-wider mb-1 flex justify-between">\n                        Active Collection\n                        <span expr187="expr187" class="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30"></span></label><div class="relative group"><select expr188="expr188" class="appearance-none w-full md:w-64 bg-gray-900/50 border border-gray-700 text-white text-sm rounded-lg pl-4 pr-10 py-2.5 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all cursor-pointer hover:border-gray-600"><option value>Select collection...</option><option expr189="expr189"></option></select><div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-400 group-hover:text-indigo-400 transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div></div><button expr190="expr190" class="p-2.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-400 hover:text-white transition-all border border-transparent hover:border-gray-600 group" title="Refresh Data"><svg expr191="expr191" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div><div expr192="expr192" class="flex justify-center items-center py-20"></div><div expr193="expr193" class="text-center py-20 bg-gray-800/20 rounded-2xl border border-dashed border-gray-700"></div><div expr194="expr194" class="space-y-8 animate-fade-in-up"></div></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="mt-8 space-y-8 animate-fade-in"><div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-800/40 backdrop-blur-md p-4 rounded-xl border border-white/5 shadow-lg"><div class="flex items-center gap-3 w-full md:w-auto"><div class="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20"><svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><div class="flex-1"><label class="block text-xs text-gray-400 font-medium uppercase tracking-wider mb-1 flex justify-between">\n                        Active Collection\n                        <span expr327="expr327" class="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30"></span></label><div class="relative group"><select expr328="expr328" class="appearance-none w-full md:w-64 bg-gray-900/50 border border-gray-700 text-white text-sm rounded-lg pl-4 pr-10 py-2.5 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all cursor-pointer hover:border-gray-600"><option value>Select collection...</option><option expr329="expr329"></option></select><div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-400 group-hover:text-indigo-400 transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div></div><button expr330="expr330" class="p-2.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 text-gray-400 hover:text-white transition-all border border-transparent hover:border-gray-600 group" title="Refresh Data"><svg expr331="expr331" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div><div expr332="expr332" class="flex justify-center items-center py-20"></div><div expr333="expr333" class="text-center py-20 bg-gray-800/20 rounded-2xl border border-dashed border-gray-700"></div><div expr334="expr334" class="space-y-8 animate-fade-in-up"></div></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.selectedCollection?.type === 'blob',
-    redundantAttribute: 'expr187',
-    selector: '[expr187]',
+    redundantAttribute: 'expr327',
+    selector: '[expr327]',
     template: template('BLOB', [])
   }, {
-    redundantAttribute: 'expr188',
-    selector: '[expr188]',
+    redundantAttribute: 'expr328',
+    selector: '[expr328]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onchange',
@@ -260,22 +260,22 @@ var shardingDashboard = {
         evaluate: _scope => _scope.c.name === _scope.state.selectedName
       }]
     }]),
-    redundantAttribute: 'expr189',
-    selector: '[expr189]',
+    redundantAttribute: 'expr329',
+    selector: '[expr329]',
     itemName: 'c',
     indexName: null,
     evaluate: _scope => _scope.state.collections
   }, {
-    redundantAttribute: 'expr190',
-    selector: '[expr190]',
+    redundantAttribute: 'expr330',
+    selector: '[expr330]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.loadCollections
     }]
   }, {
-    redundantAttribute: 'expr191',
-    selector: '[expr191]',
+    redundantAttribute: 'expr331',
+    selector: '[expr331]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -285,39 +285,39 @@ var shardingDashboard = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading && !_scope.state.selectedCollection,
-    redundantAttribute: 'expr192',
-    selector: '[expr192]',
+    redundantAttribute: 'expr332',
+    selector: '[expr332]',
     template: template('<div class="relative"><div class="h-12 w-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin"></div><div class="absolute inset-0 flex items-center justify-center"><div class="h-6 w-6 rounded-full bg-indigo-500/10"></div></div></div><span class="ml-4 text-indigo-300 font-medium animate-pulse">Analyzing Cluster Topology...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.collections.length === 0,
-    redundantAttribute: 'expr193',
-    selector: '[expr193]',
+    redundantAttribute: 'expr333',
+    selector: '[expr333]',
     template: template('<div class="h-16 w-16 mx-auto bg-gray-800 rounded-full flex items-center justify-center mb-4"><svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div><h3 class="text-lg font-medium text-white">No Sharded Collections</h3><p class="text-gray-500 mt-2">Enable sharding on a collection to see status here.</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.selectedCollection,
-    redundantAttribute: 'expr194',
-    selector: '[expr194]',
-    template: template('<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-all hover:shadow-lg hover:shadow-indigo-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><span expr195="expr195" class="text-xs font-medium text-gray-500 uppercase tracking-wider"> </span></div><div expr196="expr196" class="text-3xl font-bold text-white tracking-tight"> </div><div expr197="expr197" class="mt-2 text-xs text-gray-400"> </div></div><div expr198="expr198" class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-pink-500/30 transition-all hover:shadow-lg hover:shadow-pink-500/10"></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-purple-500/30 transition-all hover:shadow-lg hover:shadow-purple-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Disk Usage</span></div><div expr200="expr200" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Compressed storage</div></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-emerald-500/30 transition-all hover:shadow-lg hover:shadow-emerald-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Cluster Health</span></div><div class="flex items-baseline gap-1"><div expr201="expr201" class="text-3xl font-bold text-white tracking-tight"> </div><span expr202="expr202" class="text-sm text-gray-500"> </span></div><div class="mt-2 flex items-center gap-2"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span><span class="text-xs text-emerald-400 font-medium">System Operational</span></div></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-blue-500/30 transition-all hover:shadow-lg hover:shadow-blue-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Replication</span></div><div expr203="expr203" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Factor configuration</div></div></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-8"><div class="bg-gray-800/60 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden flex flex-col h-full shadow-xl"><div class="p-6 border-b border-white/5 bg-white/5"><h4 class="text-lg font-semibold text-white flex items-center gap-2"><svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>\n                            Node Topology\n                        </h4></div><div class="p-6 space-y-4 overflow-y-auto max-h-[600px] custom-scrollbar"><div expr204="expr204"></div></div></div><div class="lg:col-span-2 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden flex flex-col h-full shadow-xl"><div expr221="expr221" class="p-6 border-b border-white/5 bg-white/5 flex justify-between items-center"><h4 class="text-lg font-semibold text-white flex items-center gap-2"><svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>\n                            Shard Allocation Map\n                        </h4> </div><div class="overflow-x-auto custom-scrollbar flex-1"><table class="w-full text-left border-collapse"><thead><tr class="bg-gray-900/50 text-xs uppercase tracking-wider text-gray-400 border-b border-white/5"><th class="px-6 py-4 font-semibold">Shard ID</th><th class="px-6 py-4 font-semibold">Primary Node</th><th class="px-6 py-4 font-semibold">Replicas</th><th class="px-6 py-4 font-semibold text-right">Metrics</th><th class="px-6 py-4 font-semibold text-center">Status</th></tr></thead><tbody class="divide-y divide-white/5"><tr expr222="expr222" class="hover:bg-white/5 transition-colors group"></tr></tbody></table></div></div></div><div class="text-center text-xs text-gray-500 mt-8"><p>Status updates automatically on layout changes. Disk usage is approximate compressed size.</p></div>', [{
-      redundantAttribute: 'expr195',
-      selector: '[expr195]',
+    redundantAttribute: 'expr334',
+    selector: '[expr334]',
+    template: template('<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-indigo-500/30 transition-all hover:shadow-lg hover:shadow-indigo-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div><span expr335="expr335" class="text-xs font-medium text-gray-500 uppercase tracking-wider"> </span></div><div expr336="expr336" class="text-3xl font-bold text-white tracking-tight"> </div><div expr337="expr337" class="mt-2 text-xs text-gray-400"> </div></div><div expr338="expr338" class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-pink-500/30 transition-all hover:shadow-lg hover:shadow-pink-500/10"></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-purple-500/30 transition-all hover:shadow-lg hover:shadow-purple-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Disk Usage</span></div><div expr340="expr340" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Compressed storage</div></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-emerald-500/30 transition-all hover:shadow-lg hover:shadow-emerald-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Cluster Health</span></div><div class="flex items-baseline gap-1"><div expr341="expr341" class="text-3xl font-bold text-white tracking-tight"> </div><span expr342="expr342" class="text-sm text-gray-500"> </span></div><div class="mt-2 flex items-center gap-2"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span><span class="text-xs text-emerald-400 font-medium">System Operational</span></div></div><div class="relative group bg-gray-800/40 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-blue-500/30 transition-all hover:shadow-lg hover:shadow-blue-500/10"><div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Replication</span></div><div expr343="expr343" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Factor configuration</div></div></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-8"><div class="bg-gray-800/60 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden flex flex-col h-full shadow-xl"><div class="p-6 border-b border-white/5 bg-white/5"><h4 class="text-lg font-semibold text-white flex items-center gap-2"><svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>\n                            Node Topology\n                        </h4></div><div class="p-6 space-y-4 overflow-y-auto max-h-[600px] custom-scrollbar"><div expr344="expr344"></div></div></div><div class="lg:col-span-2 bg-gray-800/60 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden flex flex-col h-full shadow-xl"><div expr361="expr361" class="p-6 border-b border-white/5 bg-white/5 flex justify-between items-center"><h4 class="text-lg font-semibold text-white flex items-center gap-2"><svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>\n                            Shard Allocation Map\n                        </h4> </div><div class="overflow-x-auto custom-scrollbar flex-1"><table class="w-full text-left border-collapse"><thead><tr class="bg-gray-900/50 text-xs uppercase tracking-wider text-gray-400 border-b border-white/5"><th class="px-6 py-4 font-semibold">Shard ID</th><th class="px-6 py-4 font-semibold">Primary Node</th><th class="px-6 py-4 font-semibold">Replicas</th><th class="px-6 py-4 font-semibold text-right">Metrics</th><th class="px-6 py-4 font-semibold text-center">Status</th></tr></thead><tbody class="divide-y divide-white/5"><tr expr362="expr362" class="hover:bg-white/5 transition-colors group"></tr></tbody></table></div></div></div><div class="text-center text-xs text-gray-500 mt-8"><p>Status updates automatically on layout changes. Disk usage is approximate compressed size.</p></div>', [{
+      redundantAttribute: 'expr335',
+      selector: '[expr335]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.selectedCollection.type === 'blob' ? 'Total Files' : 'Total Docs'
       }]
     }, {
-      redundantAttribute: 'expr196',
-      selector: '[expr196]',
+      redundantAttribute: 'expr336',
+      selector: '[expr336]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.selectedCollection.total_documents?.toLocaleString() || 0
       }]
     }, {
-      redundantAttribute: 'expr197',
-      selector: '[expr197]',
+      redundantAttribute: 'expr337',
+      selector: '[expr337]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -326,11 +326,11 @@ var shardingDashboard = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedCollection.type === 'blob',
-      redundantAttribute: 'expr198',
-      selector: '[expr198]',
-      template: template('<div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-pink-500/10 text-pink-400 group-hover:bg-pink-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Chunks</span></div><div expr199="expr199" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Distributed storage blocks</div>', [{
-        redundantAttribute: 'expr199',
-        selector: '[expr199]',
+      redundantAttribute: 'expr338',
+      selector: '[expr338]',
+      template: template('<div class="flex justify-between items-start mb-4"><div class="p-2 rounded-lg bg-pink-500/10 text-pink-400 group-hover:bg-pink-500 group-hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div><span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Chunks</span></div><div expr339="expr339" class="text-3xl font-bold text-white tracking-tight"> </div><div class="mt-2 text-xs text-gray-400">Distributed storage blocks</div>', [{
+        redundantAttribute: 'expr339',
+        selector: '[expr339]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -338,32 +338,32 @@ var shardingDashboard = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr200',
-      selector: '[expr200]',
+      redundantAttribute: 'expr340',
+      selector: '[expr340]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.selectedCollection.total_size_formatted || '0 B'
       }]
     }, {
-      redundantAttribute: 'expr201',
-      selector: '[expr201]',
+      redundantAttribute: 'expr341',
+      selector: '[expr341]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.selectedCollection.cluster?.healthy_nodes || 0
       }]
     }, {
-      redundantAttribute: 'expr202',
-      selector: '[expr202]',
+      redundantAttribute: 'expr342',
+      selector: '[expr342]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['/ ', _scope.state.selectedCollection.cluster?.total_nodes || 0, '\n                            Nodes'].join('')
       }]
     }, {
-      redundantAttribute: 'expr203',
-      selector: '[expr203]',
+      redundantAttribute: 'expr343',
+      selector: '[expr343]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -373,7 +373,7 @@ var shardingDashboard = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div expr205="expr205"></div><div class="p-4 pl-5"><div class="flex justify-between items-start mb-3"><div><div expr206="expr206" class="text-sm font-mono text-gray-300 font-medium tracking-wide"> </div><div expr207="expr207" class="text-xs text-gray-500 font-mono mt-0.5"> </div></div><span expr208="expr208"><span expr209="expr209"></span> </span></div><div expr210="expr210"><div><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Shards</div><div class="flex flex-col gap-0.5"><div expr211="expr211" class="text-sm font-semibold text-white"> <span class="text-xs font-normal text-gray-500 ml-1">primary</span></div><div expr212="expr212" class="text-sm font-semibold text-gray-300"> <span class="text-xs font-normal text-gray-500 ml-1">replicas</span></div></div></div><div expr213="expr213"></div><div class="text-right"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Storage</div><div expr216="expr216" class="text-lg font-semibold text-white"> </div><div expr217="expr217" class="text-[0.65rem] text-gray-500 mt-0.5"></div></div></div></div>', [{
+      template: template('<div expr345="expr345"></div><div class="p-4 pl-5"><div class="flex justify-between items-start mb-3"><div><div expr346="expr346" class="text-sm font-mono text-gray-300 font-medium tracking-wide"> </div><div expr347="expr347" class="text-xs text-gray-500 font-mono mt-0.5"> </div></div><span expr348="expr348"><span expr349="expr349"></span> </span></div><div expr350="expr350"><div><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Shards</div><div class="flex flex-col gap-0.5"><div expr351="expr351" class="text-sm font-semibold text-white"> <span class="text-xs font-normal text-gray-500 ml-1">primary</span></div><div expr352="expr352" class="text-sm font-semibold text-gray-300"> <span class="text-xs font-normal text-gray-500 ml-1">replicas</span></div></div></div><div expr353="expr353"></div><div class="text-right"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Storage</div><div expr356="expr356" class="text-lg font-semibold text-white"> </div><div expr357="expr357" class="text-[0.65rem] text-gray-500 mt-0.5"></div></div></div></div>', [{
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -381,8 +381,8 @@ var shardingDashboard = {
           evaluate: _scope => ['group relative overflow-hidden bg-gray-900/50 rounded-xl border transition-all duration-300 transform hover:scale-[1.02] ', _scope.getStatusBorderClass(_scope.node.status)].join('')
         }]
       }, {
-        redundantAttribute: 'expr205',
-        selector: '[expr205]',
+        redundantAttribute: 'expr345',
+        selector: '[expr345]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -390,24 +390,24 @@ var shardingDashboard = {
           evaluate: _scope => ['absolute left-0 top-0 bottom-0 w-1 ', _scope.getStatusBarColor(_scope.node.status)].join('')
         }]
       }, {
-        redundantAttribute: 'expr206',
-        selector: '[expr206]',
+        redundantAttribute: 'expr346',
+        selector: '[expr346]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.extractPort(_scope.node.address)
         }]
       }, {
-        redundantAttribute: 'expr207',
-        selector: '[expr207]',
+        redundantAttribute: 'expr347',
+        selector: '[expr347]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.node.node_id ? _scope.node.node_id.substring(0, 8) + '...' : ''
         }]
       }, {
-        redundantAttribute: 'expr208',
-        selector: '[expr208]',
+        redundantAttribute: 'expr348',
+        selector: '[expr348]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 1,
@@ -419,8 +419,8 @@ var shardingDashboard = {
           evaluate: _scope => ['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ', _scope.getStatusBadgeClass(_scope.node.status)].join('')
         }]
       }, {
-        redundantAttribute: 'expr209',
-        selector: '[expr209]',
+        redundantAttribute: 'expr349',
+        selector: '[expr349]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -428,8 +428,8 @@ var shardingDashboard = {
           evaluate: _scope => ['flex h-1.5 w-1.5 mr-1.5 rounded-full ', _scope.getStatusDotClass(_scope.node.status)].join('')
         }]
       }, {
-        redundantAttribute: 'expr210',
-        selector: '[expr210]',
+        redundantAttribute: 'expr350',
+        selector: '[expr350]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -437,16 +437,16 @@ var shardingDashboard = {
           evaluate: _scope => ['grid ', _scope.state.selectedCollection.type === 'blob' ? 'grid-cols-3' : 'grid-cols-2', ' gap-4 mt-4 pt-4 border-t border-white/5'].join('')
         }]
       }, {
-        redundantAttribute: 'expr211',
-        selector: '[expr211]',
+        redundantAttribute: 'expr351',
+        selector: '[expr351]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.node.primary_shards || 0].join('')
         }]
       }, {
-        redundantAttribute: 'expr212',
-        selector: '[expr212]',
+        redundantAttribute: 'expr352',
+        selector: '[expr352]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -455,19 +455,19 @@ var shardingDashboard = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.selectedCollection.type === 'blob',
-        redundantAttribute: 'expr213',
-        selector: '[expr213]',
-        template: template('<div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Chunks</div><div class="flex flex-col gap-0.5"><div expr214="expr214" class="text-sm font-semibold text-white"> <span class="text-xs font-normal text-gray-500 ml-1">primary</span></div><div expr215="expr215" class="text-sm font-semibold text-gray-300"> <span class="text-xs font-normal text-gray-500 ml-1">replicas</span></div></div>', [{
-          redundantAttribute: 'expr214',
-          selector: '[expr214]',
+        redundantAttribute: 'expr353',
+        selector: '[expr353]',
+        template: template('<div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Chunks</div><div class="flex flex-col gap-0.5"><div expr354="expr354" class="text-sm font-semibold text-white"> <span class="text-xs font-normal text-gray-500 ml-1">primary</span></div><div expr355="expr355" class="text-sm font-semibold text-gray-300"> <span class="text-xs font-normal text-gray-500 ml-1">replicas</span></div></div>', [{
+          redundantAttribute: 'expr354',
+          selector: '[expr354]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => [_scope.node.primary_chunks?.toLocaleString() || 0].join('')
           }]
         }, {
-          redundantAttribute: 'expr215',
-          selector: '[expr215]',
+          redundantAttribute: 'expr355',
+          selector: '[expr355]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -475,8 +475,8 @@ var shardingDashboard = {
           }]
         }])
       }, {
-        redundantAttribute: 'expr216',
-        selector: '[expr216]',
+        redundantAttribute: 'expr356',
+        selector: '[expr356]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -485,13 +485,13 @@ var shardingDashboard = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.node.primary_size > 0 || _scope.node.replica_size > 0,
-        redundantAttribute: 'expr217',
-        selector: '[expr217]',
-        template: template('<span expr218="expr218" class="text-indigo-400" title="Primary\n                                                Data"></span><span expr219="expr219" class="mx-1\n                                                border-r border-gray-600 h-3 inline-block align-middle\n                                                opacity-50"></span><span expr220="expr220" class="text-purple-400" title="Replica\n                                                Data"></span>', [{
+        redundantAttribute: 'expr357',
+        selector: '[expr357]',
+        template: template('<span expr358="expr358" class="text-indigo-400" title="Primary\n                                                Data"></span><span expr359="expr359" class="mx-1\n                                                border-r border-gray-600 h-3 inline-block align-middle\n                                                opacity-50"></span><span expr360="expr360" class="text-purple-400" title="Replica\n                                                Data"></span>', [{
           type: bindingTypes.IF,
           evaluate: _scope => _scope.node.primary_size > 0,
-          redundantAttribute: 'expr218',
-          selector: '[expr218]',
+          redundantAttribute: 'expr358',
+          selector: '[expr358]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -502,14 +502,14 @@ var shardingDashboard = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.node.primary_size > 0 && _scope.node.replica_size > 0,
-          redundantAttribute: 'expr219',
-          selector: '[expr219]',
+          redundantAttribute: 'expr359',
+          selector: '[expr359]',
           template: template(null, [])
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.node.replica_size > 0,
-          redundantAttribute: 'expr220',
-          selector: '[expr220]',
+          redundantAttribute: 'expr360',
+          selector: '[expr360]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -519,14 +519,14 @@ var shardingDashboard = {
           }])
         }])
       }]),
-      redundantAttribute: 'expr204',
-      selector: '[expr204]',
+      redundantAttribute: 'expr344',
+      selector: '[expr344]',
       itemName: 'node',
       indexName: null,
       evaluate: _scope => _scope.state.nodes
     }, {
-      redundantAttribute: 'expr221',
-      selector: '[expr221]',
+      redundantAttribute: 'expr361',
+      selector: '[expr361]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -536,17 +536,17 @@ var shardingDashboard = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4"><div class="flex items-center"><div expr223="expr223" class="h-8 w-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono font-bold text-sm group-hover:bg-indigo-500 group-hover:text-white group-hover:border-indigo-500 transition-all duration-300"> </div></div></td><td class="px-6 py-4"><div class="flex items-center gap-2"><span expr224="expr224"> <span expr225="expr225" class="ml-1.5 font-mono"> </span></span></div></td><td class="px-6 py-4"><div class="flex flex-wrap gap-1.5"><span expr226="expr226"></span><span expr229="expr229" class="text-gray-600 text-xs italic py-1"></span></div></td><td class="px-6 py-4 text-right"><div expr230="expr230" class="text-sm font-medium text-white"> <span expr231="expr231" class="text-gray-500 text-xs font-normal"> </span></div><div expr232="expr232" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 text-center"><span expr233="expr233"> </span></td>', [{
-        redundantAttribute: 'expr223',
-        selector: '[expr223]',
+      template: template('<td class="px-6 py-4"><div class="flex items-center"><div expr363="expr363" class="h-8 w-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-mono font-bold text-sm group-hover:bg-indigo-500 group-hover:text-white group-hover:border-indigo-500 transition-all duration-300"> </div></div></td><td class="px-6 py-4"><div class="flex items-center gap-2"><span expr364="expr364"> <span expr365="expr365" class="ml-1.5 font-mono"> </span></span></div></td><td class="px-6 py-4"><div class="flex flex-wrap gap-1.5"><span expr366="expr366"></span><span expr369="expr369" class="text-gray-600 text-xs italic py-1"></span></div></td><td class="px-6 py-4 text-right"><div expr370="expr370" class="text-sm font-medium text-white"> <span expr371="expr371" class="text-gray-500 text-xs font-normal"> </span></div><div expr372="expr372" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 text-center"><span expr373="expr373"> </span></td>', [{
+        redundantAttribute: 'expr363',
+        selector: '[expr363]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.shard.shard_id].join('')
         }]
       }, {
-        redundantAttribute: 'expr224',
-        selector: '[expr224]',
+        redundantAttribute: 'expr364',
+        selector: '[expr364]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -558,8 +558,8 @@ var shardingDashboard = {
           evaluate: _scope => ['inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ', _scope.shard.primary?.healthy ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse'].join('')
         }]
       }, {
-        redundantAttribute: 'expr225',
-        selector: '[expr225]',
+        redundantAttribute: 'expr365',
+        selector: '[expr365]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -569,7 +569,7 @@ var shardingDashboard = {
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<span expr227="expr227"></span><span expr228="expr228" class="font-mono"> </span>', [{
+        template: template('<span expr367="expr367"></span><span expr368="expr368" class="font-mono"> </span>', [{
           expressions: [{
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
@@ -577,8 +577,8 @@ var shardingDashboard = {
             evaluate: _scope => ['inline-flex items-center px-2 py-0.5 rounded text-xs border ', _scope.replica.healthy ? 'bg-gray-700/50 text-gray-300 border-gray-600' : 'bg-red-500/10 text-red-400 border-red-500/20'].join('')
           }]
         }, {
-          redundantAttribute: 'expr227',
-          selector: '[expr227]',
+          redundantAttribute: 'expr367',
+          selector: '[expr367]',
           expressions: [{
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
@@ -586,52 +586,52 @@ var shardingDashboard = {
             evaluate: _scope => ['w-1.5 h-1.5 rounded-full mr-1.5 ', _scope.replica.healthy ? 'bg-gray-400' : 'bg-red-500'].join('')
           }]
         }, {
-          redundantAttribute: 'expr228',
-          selector: '[expr228]',
+          redundantAttribute: 'expr368',
+          selector: '[expr368]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.extractPort(_scope.replica.address)
           }]
         }]),
-        redundantAttribute: 'expr226',
-        selector: '[expr226]',
+        redundantAttribute: 'expr366',
+        selector: '[expr366]',
         itemName: 'replica',
         indexName: null,
         evaluate: _scope => _scope.shard.replicas || []
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.shard.replicas || _scope.shard.replicas.length === 0,
-        redundantAttribute: 'expr229',
-        selector: '[expr229]',
+        redundantAttribute: 'expr369',
+        selector: '[expr369]',
         template: template('No replicas', [])
       }, {
-        redundantAttribute: 'expr230',
-        selector: '[expr230]',
+        redundantAttribute: 'expr370',
+        selector: '[expr370]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [(_scope.shard.document_count || 0).toLocaleString()].join('')
         }]
       }, {
-        redundantAttribute: 'expr231',
-        selector: '[expr231]',
+        redundantAttribute: 'expr371',
+        selector: '[expr371]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.state.selectedCollection.type === 'blob' ? 'files' : 'docs'
         }]
       }, {
-        redundantAttribute: 'expr232',
-        selector: '[expr232]',
+        redundantAttribute: 'expr372',
+        selector: '[expr372]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.shard.disk_size_formatted || '0 B'
         }]
       }, {
-        redundantAttribute: 'expr233',
-        selector: '[expr233]',
+        redundantAttribute: 'expr373',
+        selector: '[expr373]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -643,8 +643,8 @@ var shardingDashboard = {
           evaluate: _scope => ['inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ', _scope.getShardStatusBadgeClass(_scope.shard.status)].join('')
         }]
       }]),
-      redundantAttribute: 'expr222',
-      selector: '[expr222]',
+      redundantAttribute: 'expr362',
+      selector: '[expr362]',
       itemName: 'shard',
       indexName: null,
       evaluate: _scope => _scope.state.shards

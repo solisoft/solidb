@@ -1,5 +1,5 @@
 use crate::error::DbError;
-use crate::server::authorization::{Role, UserRole, ROLES_COLLECTION, USER_ROLES_COLLECTION};
+use crate::server::authorization::{Role, UserRole};
 use crate::storage::StorageEngine;
 use crate::sync::log::SyncLog;
 use crate::sync::{LogEntry, Operation};
@@ -28,7 +28,7 @@ use std::sync::RwLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Rate limiting configuration
-const MAX_LOGIN_ATTEMPTS: usize = 5;
+const MAX_LOGIN_ATTEMPTS: usize = 20;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// In-memory rate limiter for login attempts
@@ -64,7 +64,7 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
 }
 
 const ADMIN_DB: &str = "_system";
-const ADMIN_COLL: &str = "_admins";
+pub const ADMIN_COLL: &str = "_admins";
 pub const API_KEYS_COLL: &str = "_api_keys";
 pub const ROLES_COLL: &str = "_roles";
 pub const USER_ROLES_COLL: &str = "_user_roles";
@@ -384,14 +384,15 @@ impl AuthService {
                 .map_err(|e| DbError::InternalError(format!("Invalid user data: {}", e)))?;
 
             // Check if user already has a role assignment
-            let existing_assignment = user_roles_coll.scan(None)
-                .any(|d| {
-                    if let Ok(ur) = serde_json::from_value::<UserRole>(d.to_value()) {
-                        ur.username == user.username
-                    } else {
-                        false
+            let mut existing_assignment = false;
+            for d in user_roles_coll.scan(None) {
+                if let Ok(ur) = serde_json::from_value::<UserRole>(d.to_value()) {
+                    if ur.username == user.username {
+                        existing_assignment = true;
+                        break;
                     }
-                });
+                }
+            }
 
             if !existing_assignment {
                 // Assign admin role to existing user

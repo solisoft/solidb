@@ -532,6 +532,139 @@
         </div>
       </section>
 
+      </section>
+
+      <!-- Schema Management Section -->
+      <section id="schemas" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               Schema Management
+            </h2>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- PUT /_api/schema/:collection -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                 <code class="text-gray-300">/_api/schema/:collection</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Set or update the JSON schema for a collection.</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Schema name (e.g. "users_v1").</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">validation_mode</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">One of: <code class="bg-gray-800 px-1 rounded">off</code>, <code class="bg-gray-800 px-1 rounded">lenient</code>, <code class="bg-gray-800 px-1 rounded">strict</code>.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">schema</td>
+                         <td class="p-3 font-mono">object</td>
+                         <td class="p-3">The JSON Schema object (Draft 7+).</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {
+                   "name": "users_v1",
+                   "validation_mode": "strict",
+                   "schema": {
+                     "type": "object",
+                     "required": ["email"],
+                     "properties": { "email": { "type": "string" } }
+                   }
+                 }
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "schema_updated",
+                     "collection": "users"
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- GET /_api/schema/:collection -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/schema/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400">Get the current schema for a collection.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "name": "users_v1",
+                     "validation_mode": "strict",
+                     "schema": { ... }
+                   }
+                 </div>
+               </div>
+            </div>
+
+             <!-- DELETE /_api/schema/:collection -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/schema/:collection</code>
+              </div>
+               <p class="text-sm text-gray-400">Remove the schema (disables validation).</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "schema_removed",
+                     "collection": "users"
+                   }
+                 </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Documents Section -->
       <section id="documents" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

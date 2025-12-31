@@ -99,8 +99,9 @@
                             </button>
                         </div>
 
-                        <!-- Name Tag -->
+                        <!-- Name Tag with Mute Indicator -->
                         <div class={ getNameTagClass() }>
+                            <i if={ peer.isMuted } class="fas fa-microphone-slash mr-2 text-red-500" title="Muted"></i>
                             { getUsername(peer.user) }
                             <i if={ isPinned(peer.user._key) }
                                 class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i>

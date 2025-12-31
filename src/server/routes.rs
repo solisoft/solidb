@@ -36,18 +36,56 @@ pub fn create_router(
         tracing::info!("Authentication initialized successfully");
     }
 
-    // Initialize _scripts collection in _system db
+    // Initialize system collections in _system db
     if let Ok(db) = storage.get_database("_system") {
+         // Initialize _scripts collection
          if db.get_collection("_scripts").is_err() {
              tracing::info!("Initializing _scripts collection...");
              if let Err(e) = db.create_collection("_scripts".to_string(), None) {
                  tracing::warn!("Failed to create _scripts collection (might exist): {}", e);
              }
          }
+
+         // Initialize _roles collection for RBAC
+         let roles_coll_exists = db.get_collection("_roles").is_ok();
+         if !roles_coll_exists {
+             tracing::info!("Initializing _roles collection...");
+             if let Err(e) = db.create_collection("_roles".to_string(), None) {
+                 tracing::warn!("Failed to create _roles collection (might exist): {}", e);
+             }
+         }
+         // Seed builtin roles if missing
+         if let Ok(roles_coll) = db.get_collection("_roles") {
+             use crate::server::authorization::Role;
+             for role in Role::builtin_roles() {
+                 // Check if role already exists
+                 if roles_coll.get(&role.name).is_err() {
+                     if let Ok(role_json) = serde_json::to_value(&role) {
+                         if let Err(e) = roles_coll.insert(role_json) {
+                             tracing::warn!("Failed to insert builtin role {}: {}", role.name, e);
+                         } else {
+                             tracing::info!("Created builtin role: {}", role.name);
+                         }
+                     }
+                 }
+             }
+         }
+
+         // Initialize _user_roles collection for RBAC
+         if db.get_collection("_user_roles").is_err() {
+             tracing::info!("Initializing _user_roles collection...");
+             if let Err(e) = db.create_collection("_user_roles".to_string(), None) {
+                 tracing::warn!("Failed to create _user_roles collection (might exist): {}", e);
+             }
+         }
     }
 
     // Use the shared shard coordinator passed in from main.rs
     // This ensures all parts of the application share the same shard table cache
+
+    // Initialize permission cache with builtin roles
+    let permission_cache = crate::server::permission_cache::PermissionCache::new();
+    permission_cache.initialize_builtin_roles();
 
     let state = AppState {
         storage: Arc::new(storage),
@@ -60,6 +98,7 @@ pub fn create_router(
         request_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
         script_stats,
+        permission_cache,
     };
 
 
@@ -229,6 +268,23 @@ pub fn create_router(
         .route("/_api/auth/api-keys", post(create_api_key_handler))
         .route("/_api/auth/api-keys", get(list_api_keys_handler))
         .route("/_api/auth/api-keys/{key_id}", delete(delete_api_key_handler))
+        // Role management (RBAC)
+        .route("/_api/auth/roles", get(super::role_handlers::list_roles))
+        .route("/_api/auth/roles", post(super::role_handlers::create_role))
+        .route("/_api/auth/roles/{name}", get(super::role_handlers::get_role))
+        .route("/_api/auth/roles/{name}", put(super::role_handlers::update_role))
+        .route("/_api/auth/roles/{name}", delete(super::role_handlers::delete_role))
+        // User management
+        .route("/_api/auth/users", get(super::role_handlers::list_users))
+        .route("/_api/auth/users", post(super::role_handlers::create_user))
+        .route("/_api/auth/users/{username}", delete(super::role_handlers::delete_user))
+        // User role management
+        .route("/_api/auth/users/{username}/roles", get(super::role_handlers::get_user_roles))
+        .route("/_api/auth/users/{username}/roles", post(super::role_handlers::assign_role))
+        .route("/_api/auth/users/{username}/roles/{role}", delete(super::role_handlers::revoke_role))
+        // Self-service endpoints
+        .route("/_api/auth/me", get(super::role_handlers::get_current_user))
+        .route("/_api/auth/me/permissions", get(super::role_handlers::get_my_permissions))
         // Queue Management
         .route("/_api/database/{db}/queues", get(super::queue_handlers::list_queues_handler))
         .route("/_api/database/{db}/queues/{name}/jobs", get(super::queue_handlers::list_jobs_handler))

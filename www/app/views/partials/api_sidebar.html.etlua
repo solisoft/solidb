@@ -22,6 +22,12 @@
           <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
           Collections
         </a>
+        
+        <!-- Schema Management -->
+        <a href="#schemas" class="group flex items-center px-2 py-2 text-sm font-medium text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-teal-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(20,184,166,0.5)]"></span>
+          Schema Management
+        </a>
 
         <!-- Documents -->
         <a href="#documents" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">

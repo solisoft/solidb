@@ -71,28 +71,28 @@ var databasesTable = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr736="expr736" class="flex justify-center items-center py-12"></div><div expr737="expr737" class="text-center py-12"></div><div expr740="expr740" class="text-center py-12"></div><table expr742="expr742" class="min-w-full divide-y\n      divide-gray-700"></table></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr621="expr621" class="flex justify-center items-center py-12"></div><div expr622="expr622" class="text-center py-12"></div><div expr625="expr625" class="text-center py-12"></div><table expr627="expr627" class="min-w-full divide-y\n      divide-gray-700"></table></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr736',
-    selector: '[expr736]',
+    redundantAttribute: 'expr621',
+    selector: '[expr621]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading databases...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr737',
-    selector: '[expr737]',
-    template: template('<p expr738="expr738" class="text-red-400"> </p><button expr739="expr739" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
-      redundantAttribute: 'expr738',
-      selector: '[expr738]',
+    redundantAttribute: 'expr622',
+    selector: '[expr622]',
+    template: template('<p expr623="expr623" class="text-red-400"> </p><button expr624="expr624" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
+      redundantAttribute: 'expr623',
+      selector: '[expr623]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Error loading databases: ', _scope.state.error].join('')
       }]
     }, {
-      redundantAttribute: 'expr739',
-      selector: '[expr739]',
+      redundantAttribute: 'expr624',
+      selector: '[expr624]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -102,11 +102,11 @@ var databasesTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length === 0,
-    redundantAttribute: 'expr740',
-    selector: '[expr740]',
-    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No databases</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new database.</p><div class="mt-6"><button expr741="expr741" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Database\n        </button></div>', [{
-      redundantAttribute: 'expr741',
-      selector: '[expr741]',
+    redundantAttribute: 'expr625',
+    selector: '[expr625]',
+    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No databases</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new database.</p><div class="mt-6"><button expr626="expr626" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Database\n        </button></div>', [{
+      redundantAttribute: 'expr626',
+      selector: '[expr626]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -116,15 +116,15 @@ var databasesTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.databases.length > 0,
-    redundantAttribute: 'expr742',
-    selector: '[expr742]',
-    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Collections</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr743="expr743" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
+    redundantAttribute: 'expr627',
+    selector: '[expr627]',
+    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Collections</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr628="expr628" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><a expr744="expr744" class="text-sm font-medium text-gray-100 hover:text-indigo-400 transition-colors"> </a></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr745="expr745" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr746="expr746"> </span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr747="expr747" class="text-red-400\n              hover:text-red-300 transition-colors" title="Delete database"></button><span expr748="expr748" class="text-gray-600"></span></td>', [{
-        redundantAttribute: 'expr744',
-        selector: '[expr744]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><a expr629="expr629" class="text-sm font-medium text-gray-100 hover:text-indigo-400 transition-colors"> </a></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr630="expr630" class="text-sm text-gray-400"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr631="expr631"> </span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr632="expr632" class="text-red-400\n              hover:text-red-300 transition-colors" title="Delete database"></button><span expr633="expr633" class="text-gray-600"></span></td>', [{
+        redundantAttribute: 'expr629',
+        selector: '[expr629]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -136,16 +136,16 @@ var databasesTable = {
           evaluate: _scope => ['/database/', _scope.db.name, '/collections'].join('')
         }]
       }, {
-        redundantAttribute: 'expr745',
-        selector: '[expr745]',
+        redundantAttribute: 'expr630',
+        selector: '[expr630]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.db.collections
         }]
       }, {
-        redundantAttribute: 'expr746',
-        selector: '[expr746]',
+        redundantAttribute: 'expr631',
+        selector: '[expr631]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -159,8 +159,8 @@ var databasesTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.db.name !== '_system',
-        redundantAttribute: 'expr747',
-        selector: '[expr747]',
+        redundantAttribute: 'expr632',
+        selector: '[expr632]',
         template: template('<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>', [{
           expressions: [{
             type: expressionTypes.EVENT,
@@ -171,12 +171,12 @@ var databasesTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.db.name === '_system',
-        redundantAttribute: 'expr748',
-        selector: '[expr748]',
+        redundantAttribute: 'expr633',
+        selector: '[expr633]',
         template: template('Protected', [])
       }]),
-      redundantAttribute: 'expr743',
-      selector: '[expr743]',
+      redundantAttribute: 'expr628',
+      selector: '[expr628]',
       itemName: 'db',
       indexName: null,
       evaluate: _scope => _scope.state.databases

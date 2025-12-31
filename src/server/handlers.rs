@@ -89,6 +89,8 @@ pub struct AppState {
     pub system_monitor: Arc<std::sync::Mutex<sysinfo::System>>,
     pub queue_worker: Option<Arc<crate::queue::QueueWorker>>,
     pub script_stats: Arc<ScriptStats>,
+    // RBAC permission cache
+    pub permission_cache: crate::server::permission_cache::PermissionCache,
 }
 
 // ==================== Auth Types ====================
@@ -233,6 +235,9 @@ pub async fn create_api_key_handler(
         name: req.name.clone(),
         key_hash,
         created_at: created_at.clone(),
+        roles: vec!["admin".to_string()], // New API keys get admin role by default
+        scoped_databases: None,
+        expires_at: None,
     };
 
     let doc_value = serde_json::to_value(&api_key)
@@ -848,10 +853,14 @@ pub async fn login_handler(
 
     // 5. Deserialize user
     let user: crate::server::auth::User = serde_json::from_value(doc.to_value())
-        .map_err(|_| DbError::InternalError("Corrupted user data".to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Failed to deserialize user '{}': {}", req.username, e);
+            DbError::InternalError("Corrupted user data".to_string())
+        })?;
 
     // 6. Verify password
     if !crate::server::auth::AuthService::verify_password(&req.password, &user.password_hash) {
+        tracing::warn!("Password verification failed for user '{}'", req.username);
         return Err(DbError::BadRequest("Invalid credentials".to_string()));
     }
 
@@ -984,14 +993,14 @@ pub async fn create_collection(
 
     // Parse validation mode
     let validation_mode = match req.validation_mode.to_lowercase().as_str() {
-        "strict" => crate::storage::schema::ValidationMode::Strict,
-        "lenient" => crate::storage::schema::ValidationMode::Lenient,
-        _ => crate::storage::schema::ValidationMode::Off,
+        "strict" => crate::storage::schema::SchemaValidationMode::Strict,
+        "lenient" => crate::storage::schema::SchemaValidationMode::Lenient,
+        _ => crate::storage::schema::SchemaValidationMode::Off,
     };
 
     // Set schema if provided
     if let Some(schema) = req.schema {
-        collection.set_json_schema(crate::storage::schema::JsonSchema::new(
+        collection.set_json_schema(crate::storage::schema::CollectionSchema::new(
             "default".to_string(),
             schema,
             validation_mode,
@@ -4567,20 +4576,21 @@ pub async fn set_collection_schema(
 
     // Parse validation mode
     let validation_mode = match req.validation_mode.to_lowercase().as_str() {
-        "strict" => crate::storage::schema::ValidationMode::Strict,
-        "lenient" => crate::storage::schema::ValidationMode::Lenient,
-        _ => crate::storage::schema::ValidationMode::Off,
+        "strict" => crate::storage::schema::SchemaValidationMode::Strict,
+        "lenient" => crate::storage::schema::SchemaValidationMode::Lenient,
+        _ => crate::storage::schema::SchemaValidationMode::Off,
     };
 
     // Set schema
-    collection.set_json_schema(crate::storage::schema::JsonSchema::new(
+    let schema_clone = req.schema.clone();
+    collection.set_json_schema(crate::storage::schema::CollectionSchema::new(
         "default".to_string(),
         req.schema,
         validation_mode,
     ))?;
 
     Ok(Json(SchemaResponse {
-        schema: Some(req.schema),
+        schema: Some(schema_clone),
         validation_mode: req.validation_mode.clone(),
         collection: coll_name,
     }))
@@ -4597,9 +4607,9 @@ pub async fn get_collection_schema(
     let schema = collection.get_json_schema();
     let (schema_value, validation_mode) = if let Some(s) = schema {
         let mode_str = match s.validation_mode {
-            crate::storage::schema::ValidationMode::Strict => "strict".to_string(),
-            crate::storage::schema::ValidationMode::Lenient => "lenient".to_string(),
-            crate::storage::schema::ValidationMode::Off => "off".to_string(),
+            crate::storage::schema::SchemaValidationMode::Strict => "strict".to_string(),
+            crate::storage::schema::SchemaValidationMode::Lenient => "lenient".to_string(),
+            crate::storage::schema::SchemaValidationMode::Off => "off".to_string(),
         };
         (Some(s.schema.clone()), mode_str)
     } else {

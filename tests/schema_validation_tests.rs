@@ -11,15 +11,17 @@ use solidb::storage::StorageEngine;
 use serde_json::json;
 use tempfile::TempDir;
 
-fn create_test_engine() -> StorageEngine {
+fn create_test_engine() -> (StorageEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine")
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.initialize().expect("Failed to initialize storage engine");
+    (engine, tmp_dir)
 }
 
 #[test]
 fn test_collection_without_schema() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
 
@@ -40,7 +42,7 @@ fn test_collection_without_schema() {
 
 #[test]
 fn test_set_schema_strict() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
 
@@ -57,9 +59,9 @@ fn test_set_schema_strict() {
         "additionalProperties": false
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Schema should be retrievable
@@ -67,7 +69,7 @@ fn test_set_schema_strict() {
     assert!(retrieved_schema.is_some());
     let retrieved = retrieved_schema.unwrap();
     assert_eq!(retrieved.name, "default");
-    assert_eq!(retrieved.validation_mode, ValidationMode::Strict);
+    assert_eq!(retrieved.validation_mode, SchemaValidationMode::Strict);
 
     // Valid document should insert successfully
     let valid_doc = json!({
@@ -80,7 +82,7 @@ fn test_set_schema_strict() {
 
 #[test]
 fn test_schema_rejects_invalid_document() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
 
@@ -96,9 +98,9 @@ fn test_schema_rejects_invalid_document() {
         "required": ["name", "age"]
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Invalid document (missing required field, wrong type)
@@ -119,7 +121,7 @@ fn test_schema_rejects_invalid_document() {
 
 #[test]
 fn test_schema_lenient_mode() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
 
@@ -135,9 +137,9 @@ fn test_schema_lenient_mode() {
         "required": ["name"]
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Lenient))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Lenient))
         .unwrap();
 
     // Invalid document should still be accepted in lenient mode
@@ -151,7 +153,7 @@ fn test_schema_lenient_mode() {
 
 #[test]
 fn test_schema_validation_on_update() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("products".to_string(), None).unwrap();
 
@@ -167,9 +169,9 @@ fn test_schema_validation_on_update() {
         "required": ["name", "price"]
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Insert valid document
@@ -196,7 +198,7 @@ fn test_schema_validation_on_update() {
 
 #[test]
 fn test_remove_schema() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("items".to_string(), None).unwrap();
 
@@ -210,9 +212,9 @@ fn test_remove_schema() {
         }
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Schema should be present
@@ -235,7 +237,7 @@ fn test_remove_schema() {
 
 #[test]
 fn test_schema_additional_properties_false() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
 
@@ -252,9 +254,9 @@ fn test_schema_additional_properties_false() {
         "additionalProperties": false
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Document with only allowed fields should work
@@ -276,7 +278,7 @@ fn test_schema_additional_properties_false() {
 
 #[test]
 fn test_schema_with_nested_objects() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("orders".to_string(), None).unwrap();
 
@@ -298,14 +300,13 @@ fn test_schema_with_nested_objects() {
                     "required": ["productId", "quantity"]
                 }
             }
-        }
         },
         "required": ["orderId", "items"]
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_schema(JsonSchema::new("default".to_string(), schema, ValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
     // Valid nested document should work
@@ -322,7 +323,7 @@ fn test_schema_with_nested_objects() {
 
 #[test]
 fn test_invalid_schema_rejection() {
-    let engine = create_test_engine();
+    let (engine, _tmp_dir) = create_test_engine();
     let db = engine.get_database("_system").unwrap();
     db.create_collection("test".to_string(), None).unwrap();
 
@@ -334,11 +335,11 @@ fn test_invalid_schema_rejection() {
         "minLength": -1 // Negative minLength is invalid
     });
 
-    use solidb::storage::schema::{JsonSchema, ValidationMode};
-    let result = collection.set_json_schema(JsonSchema::new(
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
+    let result = collection.set_json_schema(CollectionSchema::new(
         "default".to_string(),
         invalid_schema,
-        ValidationMode::Strict,
+        SchemaValidationMode::Strict,
     ));
 
     // Should fail to set invalid schema

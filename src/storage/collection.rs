@@ -12,6 +12,7 @@ use super::index::{
     IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
 };
 use crate::error::{DbError, DbResult};
+use crate::storage::schema::CollectionSchema;
 
 /// Key prefixes for different data types
 const DOC_PREFIX: &str = "doc:";
@@ -28,6 +29,7 @@ const SHARD_TABLE_KEY: &str = "_stats:shard_table";   // Sharding assignment tab
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
+const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
 
 /// Type of change event
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -3322,6 +3324,48 @@ impl Collection {
         }
 
         Ok(total_deleted)
+    }
+
+    // ===========================================
+    // JSON Schema Methods
+    // ===========================================
+
+    /// Set JSON schema for this collection
+    pub fn set_json_schema(&self, schema: CollectionSchema) -> DbResult<()> {
+        let db = self.db.write().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+
+        let schema_json = serde_json::to_vec(&schema)?;
+        db.put_cf(cf, SCHEMA_KEY.as_bytes(), &schema_json)
+            .map_err(|e| DbError::InternalError(format!("Failed to set schema: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get JSON schema for this collection
+    pub fn get_json_schema(&self) -> Option<CollectionSchema> {
+        let db = self.db.read().unwrap();
+        if let Some(cf) = db.cf_handle(&self.name) {
+            if let Ok(Some(bytes)) = db.get_cf(cf, SCHEMA_KEY.as_bytes()) {
+                return serde_json::from_slice(&bytes).ok();
+            }
+        }
+        None
+    }
+
+    /// Remove JSON schema from this collection
+    pub fn remove_json_schema(&self) -> DbResult<()> {
+        let db = self.db.write().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+
+        db.delete_cf(cf, SCHEMA_KEY.as_bytes())
+            .map_err(|e| DbError::InternalError(format!("Failed to remove schema: {}", e)))?;
+
+        Ok(())
     }
 }
 

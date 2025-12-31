@@ -55,6 +55,10 @@ local app = {
 
   monitoring = function()
     Page("dashboard/monitoring", "app")
+  end,
+
+  users = function()
+    Page("dashboard/users", "app")
   end
 }
 

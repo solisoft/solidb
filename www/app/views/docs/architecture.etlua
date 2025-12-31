@@ -95,7 +95,7 @@
                 <i class="fas fa-file-alt text-amber-400 mr-3"></i>
                 <h4 class="text-white font-semibold">Document Store</h4>
               </div>
-              <p class="text-sm text-gray-400">Schema-free JSON documents with auto-generated keys (UUIDv7). Full CRUD operations with atomic updates.</p>
+              <p class="text-sm text-gray-400">Schema-free JSON documents with optional JSON Schema validation. Auto-generated keys (UUIDv7) and atomic updates.</p>
             </div>
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
@@ -330,6 +330,79 @@
                 <p class="text-xs text-gray-500">Expiration</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JSON Schema Validation Section -->
+      <section id="json-schema" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-teal-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(20,184,166,0.5)]">
+              <i class="fas fa-check-double text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">JSON Schema Validation</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            While SoliDB is schema-less by default, it supports <strong>optional JSON Schema validation</strong> at the collection level. This allows you to enforce data integrity rules while maintaining flexibility.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-teal-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-shield-alt mr-2"></i> Validation Modes
+              </h4>
+              <ul class="space-y-3 text-sm text-gray-400">
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">off</span>
+                  <span>No validation (default). Any valid JSON is accepted.</span>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">strict</span>
+                  <span>Rejects any document that violates the schema. Returns formatted error details.</span>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">lenient</span>
+                  <span>Accepts invalid documents but logs warnings. Useful for schema migrations or testing.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-teal-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-cog mr-2"></i> Configuration
+              </h4>
+              <p class="text-sm text-gray-400 mb-4">
+                Schemas are stored in the <code class="text-teal-300">_schema</code> system collection and can be updated at any time.
+              </p>
+              <div class="bg-black/40 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10">
+                <div class="text-teal-300">// Example Schema Object</div>
+                {
+                  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"users_v1"</span>,
+                  <span class="text-purple-400">"validation_mode"</span>: <span class="text-green-400">"strict"</span>,
+                  <span class="text-purple-400">"schema"</span>: {
+                    <span class="text-purple-400">"type"</span>: <span class="text-green-400">"object"</span>,
+                    <span class="text-purple-400">"required"</span>: [<span class="text-green-400">"email"</span>],
+                    <span class="text-purple-400">"properties"</span>: {
+                      <span class="text-purple-400">"email"</span>: { <span class="text-purple-400">"type"</span>: <span class="text-green-400">"string"</span> }
+                    }
+                  }
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-teal-900/10 rounded-xl p-5 border border-teal-500/20">
+             <div class="flex items-start">
+               <i class="fas fa-info-circle text-teal-400 mt-1 mr-3"></i>
+               <div>
+                 <h4 class="text-teal-400 font-bold mb-1">Standard Compliance</h4>
+                 <p class="text-sm text-gray-300">
+                   SoliDB uses the <code class="text-teal-300">jsonschema</code> crate, supporting Draft 7, Draft 2019-09, and Draft 2020-12 specifications. Complex validation rules like <code class="text-white/80">oneOf</code>, <code class="text-white/80">pattern</code>, and <code class="text-white/80">dependencies</code> are fully supported.
+                 </p>
+               </div>
+             </div>
           </div>
         </div>
       </section>

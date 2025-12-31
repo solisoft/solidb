@@ -3161,6 +3161,13 @@
                                 }
                             }
                             break;
+                        case 'mute_state':
+                            // Track remote peer mute state
+                            if (!this.remotePeerStates) this.remotePeerStates = {};
+                            if (!this.remotePeerStates[fromUser]) this.remotePeerStates[fromUser] = {};
+                            this.remotePeerStates[fromUser].isMuted = data.isMuted;
+                            this.updateCallPeers();
+                            break;
                     }
                 } catch (e) {
                     console.error('[handleSignal] Error:', e);
@@ -3369,7 +3376,8 @@
                         user: user,
                         stream: stream,
                         hasVideo: stream ? stream.getVideoTracks().length > 0 : false,
-                        isScreenSharing: !!peerState.isScreenSharing
+                        isScreenSharing: !!peerState.isScreenSharing,
+                        isMuted: !!peerState.isMuted
                     });
                 });
                 this.update({ callPeers: peers });
@@ -3480,7 +3488,13 @@
                     const audioTrack = this.localStream.getAudioTracks()[0];
                     if (audioTrack) {
                         audioTrack.enabled = !audioTrack.enabled;
-                        this.update({ isMuted: !audioTrack.enabled });
+                        const isMuted = !audioTrack.enabled;
+                        this.update({ isMuted });
+
+                        // Broadcast mute state to all peers
+                        Object.keys(this.peerConnections).forEach(key => {
+                            this.sendSignal(key, 'mute_state', { isMuted });
+                        });
                     }
                 }
             },
