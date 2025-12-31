@@ -457,9 +457,9 @@ var clusterDashboard = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 bg-gray-900 shadow-xl rounded-2xl overflow-hidden border border-gray-800 relative group"><div class="absolute top-4 left-4 z-10 pointer-events-none"><h3 class="text-lg font-bold text-white flex items-center gap-2"><span expr690="expr690"></span>\n                        Cluster Topology\n                    </h3><p expr691="expr691" class="text-xs text-gray-400 mt-1"> </p></div><div expr692="expr692" class="flex justify-center items-center h-[500px]"></div><div class="w-full h-[500px] bg-[#0f1117] relative overflow-hidden" id="graph-container"><canvas id="cluster-canvas" class="w-full h-full block cursor-move"></canvas><div class="absolute bottom-4 right-4 text-[10px] text-gray-600 pointer-events-none">\n                        FPS: <span id="fps-counter">0</span></div></div></div><div class="space-y-4 h-[500px] overflow-y-auto pr-2 custom-scrollbar"><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg relative overflow-hidden"><div class="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3 flex justify-between">\n                        Node Status\n                        <span expr693="expr693" class="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 font-mono"> </span></h4><div class="flex items-center justify-between mb-4"><span expr694="expr694" class="text-2xl font-bold text-white tracking-tight"> </span><div class="relative"><div expr695="expr695"></div><div expr696="expr696"></div></div></div><div class="space-y-3 pt-2 border-t border-gray-700/50"><div class="flex justify-between text-sm"><span class="text-gray-500">Uptime</span><span expr697="expr697" class="text-gray-300 font-mono"> </span></div><div class="flex justify-between text-sm"><span class="text-gray-500">Version</span><span class="text-gray-300">0.1.0</span></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">System Load (1m)</h4><div class="flex items-end justify-between"><span expr698="expr698" class="text-3xl font-bold text-white tracking-tight"> </span><div class="flex flex-col items-end"><span class="text-xs text-gray-500">Avg Load</span><span expr699="expr699"> </span></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg space-y-5"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Resources</h4><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Process CPU</span><span expr700="expr700" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 overflow-hidden"><div expr701="expr701" class="h-1.5 rounded-full shadow-[0_0_10px_currentColor] transition-all duration-500 relative"></div></div></div><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Memory</span><span expr702="expr702" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 overflow-hidden"><div expr703="expr703" class="h-1.5 rounded-full shadow-[0_0_10px_currentColor] transition-all duration-500 relative"></div></div><div expr704="expr704" class="text-[10px] text-right text-gray-500 mt-1 font-mono"> </div></div><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Disk Usage</span><span expr705="expr705" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 mb-3"><div class="bg-amber-500 h-1.5 rounded-full w-full opacity-50"></div></div><div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-700/50"><div><div class="text-[10px] text-gray-500 uppercase tracking-wider">Total Files</div><div expr706="expr706" class="text-sm font-mono text-gray-300"> </div></div><div class="text-right"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Total Chunks</div><div expr707="expr707" class="text-sm font-mono text-gray-300"> </div></div><div class="mt-2"><div class="text-[10px] text-gray-500 uppercase tracking-wider">SST Size</div><div expr708="expr708" class="text-sm font-mono text-gray-300"> </div></div><div class="text-right mt-2"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Memtable</div><div expr709="expr709" class="text-sm font-mono text-gray-300"> </div></div><div class="col-span-2 mt-2 pt-2 border-t border-gray-700/30 flex justify-between"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Est. Live Data</div><div expr710="expr710" class="text-sm font-mono text-emerald-400"> </div></div></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-4">Network I/O</h4><div class="grid grid-cols-2 gap-4"><div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50"><div class="flex items-center gap-2 mb-1"><svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg><span class="text-[10px] text-gray-400 uppercase">RX Rate</span></div><div expr711="expr711" class="text-lg font-bold text-gray-200 font-mono"> </div><div expr712="expr712" class="text-[10px] text-gray-500 mt-1"> </div></div><div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50"><div class="flex items-center gap-2 mb-1"><svg class="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg><span class="text-[10px] text-gray-400 uppercase">TX Rate</span></div><div expr713="expr713" class="text-lg font-bold text-gray-200 font-mono"> </div><div expr714="expr714" class="text-[10px] text-gray-500 mt-1"> </div></div></div></div></div></div><div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-xl"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50"><div class="flex items-center gap-3"><h3 class="text-lg font-semibold text-gray-100">Peer Connections</h3><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-gray-700 text-gray-400 border border-gray-600">\n                        LIST\n                    </span></div><span expr715="expr715" class="px-3 py-1 rounded-full bg-gray-700 text-xs text-gray-300 border border-gray-600"> </span></div><div expr716="expr716" class="p-8 text-center"></div><table expr717="expr717" class="min-w-full divide-y\n                divide-gray-700"></table></div></div>', [{
-    redundantAttribute: 'expr690',
-    selector: '[expr690]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 bg-gray-900 shadow-xl rounded-2xl overflow-hidden border border-gray-800 relative group"><div class="absolute top-4 left-4 z-10 pointer-events-none"><h3 class="text-lg font-bold text-white flex items-center gap-2"><span expr679="expr679"></span>\n                        Cluster Topology\n                    </h3><p expr680="expr680" class="text-xs text-gray-400 mt-1"> </p></div><div expr681="expr681" class="flex justify-center items-center h-[500px]"></div><div class="w-full h-[500px] bg-[#0f1117] relative overflow-hidden" id="graph-container"><canvas id="cluster-canvas" class="w-full h-full block cursor-move"></canvas><div class="absolute bottom-4 right-4 text-[10px] text-gray-600 pointer-events-none">\n                        FPS: <span id="fps-counter">0</span></div></div></div><div class="space-y-4 h-[500px] overflow-y-auto pr-2 custom-scrollbar"><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg relative overflow-hidden"><div class="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3 flex justify-between">\n                        Node Status\n                        <span expr682="expr682" class="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 font-mono"> </span></h4><div class="flex items-center justify-between mb-4"><span expr683="expr683" class="text-2xl font-bold text-white tracking-tight"> </span><div class="relative"><div expr684="expr684"></div><div expr685="expr685"></div></div></div><div class="space-y-3 pt-2 border-t border-gray-700/50"><div class="flex justify-between text-sm"><span class="text-gray-500">Uptime</span><span expr686="expr686" class="text-gray-300 font-mono"> </span></div><div class="flex justify-between text-sm"><span class="text-gray-500">Version</span><span class="text-gray-300">0.1.0</span></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">System Load (1m)</h4><div class="flex items-end justify-between"><span expr687="expr687" class="text-3xl font-bold text-white tracking-tight"> </span><div class="flex flex-col items-end"><span class="text-xs text-gray-500">Avg Load</span><span expr688="expr688"> </span></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg space-y-5"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Resources</h4><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Process CPU</span><span expr689="expr689" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 overflow-hidden"><div expr690="expr690" class="h-1.5 rounded-full shadow-[0_0_10px_currentColor] transition-all duration-500 relative"></div></div></div><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Memory</span><span expr691="expr691" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 overflow-hidden"><div expr692="expr692" class="h-1.5 rounded-full shadow-[0_0_10px_currentColor] transition-all duration-500 relative"></div></div><div expr693="expr693" class="text-[10px] text-right text-gray-500 mt-1 font-mono"> </div></div><div><div class="flex justify-between mb-1"><span class="text-xs text-gray-400">Disk Usage</span><span expr694="expr694" class="text-xs text-gray-300 font-mono"> </span></div><div class="w-full bg-gray-700/50 rounded-full h-1.5 mb-3"><div class="bg-amber-500 h-1.5 rounded-full w-full opacity-50"></div></div><div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-700/50"><div><div class="text-[10px] text-gray-500 uppercase tracking-wider">Total Files</div><div expr695="expr695" class="text-sm font-mono text-gray-300"> </div></div><div class="text-right"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Total Chunks</div><div expr696="expr696" class="text-sm font-mono text-gray-300"> </div></div><div class="mt-2"><div class="text-[10px] text-gray-500 uppercase tracking-wider">SST Size</div><div expr697="expr697" class="text-sm font-mono text-gray-300"> </div></div><div class="text-right mt-2"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Memtable</div><div expr698="expr698" class="text-sm font-mono text-gray-300"> </div></div><div class="col-span-2 mt-2 pt-2 border-t border-gray-700/30 flex justify-between"><div class="text-[10px] text-gray-500 uppercase tracking-wider">Est. Live Data</div><div expr699="expr699" class="text-sm font-mono text-emerald-400"> </div></div></div></div></div><div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg"><h4 class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-4">Network I/O</h4><div class="grid grid-cols-2 gap-4"><div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50"><div class="flex items-center gap-2 mb-1"><svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg><span class="text-[10px] text-gray-400 uppercase">RX Rate</span></div><div expr700="expr700" class="text-lg font-bold text-gray-200 font-mono"> </div><div expr701="expr701" class="text-[10px] text-gray-500 mt-1"> </div></div><div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50"><div class="flex items-center gap-2 mb-1"><svg class="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg><span class="text-[10px] text-gray-400 uppercase">TX Rate</span></div><div expr702="expr702" class="text-lg font-bold text-gray-200 font-mono"> </div><div expr703="expr703" class="text-[10px] text-gray-500 mt-1"> </div></div></div></div></div></div><div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-xl"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50"><div class="flex items-center gap-3"><h3 class="text-lg font-semibold text-gray-100">Peer Connections</h3><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-gray-700 text-gray-400 border border-gray-600">\n                        LIST\n                    </span></div><span expr704="expr704" class="px-3 py-1 rounded-full bg-gray-700 text-xs text-gray-300 border border-gray-600"> </span></div><div expr705="expr705" class="p-8 text-center"></div><table expr706="expr706" class="min-w-full divide-y\n                divide-gray-700"></table></div></div>', [{
+    redundantAttribute: 'expr679',
+    selector: '[expr679]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -467,8 +467,8 @@ var clusterDashboard = {
       evaluate: _scope => ['w-2 h-2 rounded-full ', _scope.getStatusColorBg(), ' shadow-[0_0_10px_currentColor]'].join('')
     }]
   }, {
-    redundantAttribute: 'expr691',
-    selector: '[expr691]',
+    redundantAttribute: 'expr680',
+    selector: '[expr680]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -477,28 +477,28 @@ var clusterDashboard = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr692',
-    selector: '[expr692]',
+    redundantAttribute: 'expr681',
+    selector: '[expr681]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>', [])
   }, {
-    redundantAttribute: 'expr693',
-    selector: '[expr693]',
+    redundantAttribute: 'expr682',
+    selector: '[expr682]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['ID: ', _scope.state.status.node_id ? _scope.state.status.node_id.substring(0, 6) : '...'].join('')
     }]
   }, {
-    redundantAttribute: 'expr694',
-    selector: '[expr694]',
+    redundantAttribute: 'expr683',
+    selector: '[expr683]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.getStatusLabel()
     }]
   }, {
-    redundantAttribute: 'expr695',
-    selector: '[expr695]',
+    redundantAttribute: 'expr684',
+    selector: '[expr684]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -506,8 +506,8 @@ var clusterDashboard = {
       evaluate: _scope => ['h-3 w-3 rounded-full ', _scope.getStatusColorBg()].join('')
     }]
   }, {
-    redundantAttribute: 'expr696',
-    selector: '[expr696]',
+    redundantAttribute: 'expr685',
+    selector: '[expr685]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -515,24 +515,24 @@ var clusterDashboard = {
       evaluate: _scope => ['absolute top-0 right-0 h-3 w-3 rounded-full ', _scope.getStatusColorBg(), ' animate-ping opacity-75'].join('')
     }]
   }, {
-    redundantAttribute: 'expr697',
-    selector: '[expr697]',
+    redundantAttribute: 'expr686',
+    selector: '[expr686]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatUptime(_scope.state.status.stats?.uptime_secs || 0)
     }]
   }, {
-    redundantAttribute: 'expr698',
-    selector: '[expr698]',
+    redundantAttribute: 'expr687',
+    selector: '[expr687]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => (_scope.state.status.stats?.system_load_avg || 0).toFixed(2)
     }]
   }, {
-    redundantAttribute: 'expr699',
-    selector: '[expr699]',
+    redundantAttribute: 'expr688',
+    selector: '[expr688]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -544,16 +544,16 @@ var clusterDashboard = {
       evaluate: _scope => ['text-[10px] ', (_scope.state.status.stats?.system_load_avg || 0) > 4 ? 'text-red-400' : 'text-green-400'].join('')
     }]
   }, {
-    redundantAttribute: 'expr700',
-    selector: '[expr700]',
+    redundantAttribute: 'expr689',
+    selector: '[expr689]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.state.status.stats?.cpu_usage_percent.toFixed(1) || 0, '%'].join('')
     }]
   }, {
-    redundantAttribute: 'expr701',
-    selector: '[expr701]',
+    redundantAttribute: 'expr690',
+    selector: '[expr690]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -561,16 +561,16 @@ var clusterDashboard = {
       evaluate: _scope => ['width: ', Math.min(_scope.state.status.stats?.cpu_usage_percent || 0, 100), '%; background: linear-gradient(90deg, #10b981, #34d399); color: #34d399'].join('')
     }]
   }, {
-    redundantAttribute: 'expr702',
-    selector: '[expr702]',
+    redundantAttribute: 'expr691',
+    selector: '[expr691]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.getMemoryPercent(), '%'].join('')
     }]
   }, {
-    redundantAttribute: 'expr703',
-    selector: '[expr703]',
+    redundantAttribute: 'expr692',
+    selector: '[expr692]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -578,96 +578,96 @@ var clusterDashboard = {
       evaluate: _scope => ['width: ', _scope.getMemoryPercent(), '%; background: linear-gradient(90deg, #6366f1, #818cf8); color: #818cf8'].join('')
     }]
   }, {
-    redundantAttribute: 'expr704',
-    selector: '[expr704]',
+    redundantAttribute: 'expr693',
+    selector: '[expr693]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.formatBytes((_scope.state.status.stats?.memory_used_mb || 0) * 1024 * 1024), ' / ', _scope.formatBytes((_scope.state.status.stats?.memory_total_mb || 0) * 1024 * 1024)].join('')
     }]
   }, {
-    redundantAttribute: 'expr705',
-    selector: '[expr705]',
+    redundantAttribute: 'expr694',
+    selector: '[expr694]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.status.stats?.storage_bytes || 0)
     }]
   }, {
-    redundantAttribute: 'expr706',
-    selector: '[expr706]',
+    redundantAttribute: 'expr695',
+    selector: '[expr695]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.status.stats?.total_file_count || 0
     }]
   }, {
-    redundantAttribute: 'expr707',
-    selector: '[expr707]',
+    redundantAttribute: 'expr696',
+    selector: '[expr696]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.state.status.stats?.total_chunk_count || 0
     }]
   }, {
-    redundantAttribute: 'expr708',
-    selector: '[expr708]',
+    redundantAttribute: 'expr697',
+    selector: '[expr697]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.status.stats?.total_sst_size || 0)
     }]
   }, {
-    redundantAttribute: 'expr709',
-    selector: '[expr709]',
+    redundantAttribute: 'expr698',
+    selector: '[expr698]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.status.stats?.total_memtable_size || 0)
     }]
   }, {
-    redundantAttribute: 'expr710',
-    selector: '[expr710]',
+    redundantAttribute: 'expr699',
+    selector: '[expr699]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.formatBytes(_scope.state.status.stats?.total_live_size || 0)
     }]
   }, {
-    redundantAttribute: 'expr711',
-    selector: '[expr711]',
+    redundantAttribute: 'expr700',
+    selector: '[expr700]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.formatBytes(_scope.state.rxRate), '/s'].join('')
     }]
   }, {
-    redundantAttribute: 'expr712',
-    selector: '[expr712]',
+    redundantAttribute: 'expr701',
+    selector: '[expr701]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['Total: ', _scope.formatBytes(_scope.state.status.stats?.network_rx_bytes || 0)].join('')
     }]
   }, {
-    redundantAttribute: 'expr713',
-    selector: '[expr713]',
+    redundantAttribute: 'expr702',
+    selector: '[expr702]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.formatBytes(_scope.state.txRate), '/s'].join('')
     }]
   }, {
-    redundantAttribute: 'expr714',
-    selector: '[expr714]',
+    redundantAttribute: 'expr703',
+    selector: '[expr703]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => ['Total: ', _scope.formatBytes(_scope.state.status.stats?.network_tx_bytes || 0)].join('')
     }]
   }, {
-    redundantAttribute: 'expr715',
-    selector: '[expr715]',
+    redundantAttribute: 'expr704',
+    selector: '[expr704]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -676,21 +676,21 @@ var clusterDashboard = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.status.peers || _scope.state.status.peers.length === 0,
-    redundantAttribute: 'expr716',
-    selector: '[expr716]',
+    redundantAttribute: 'expr705',
+    selector: '[expr705]',
     template: template('<div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-700/50 mb-3 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div><h3 class="text-sm font-medium text-gray-300">No Peers Discovered</h3><p class="text-xs text-gray-500 mt-1 max-w-xs mx-auto">\n                    This node appears to be running standalone or hasn\'t discovered any peers yet.\n                </p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.status.peers && _scope.state.status.peers.length > 0,
-    redundantAttribute: 'expr717',
-    selector: '[expr717]',
-    template: template('<thead class="bg-gray-900/30"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Address</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Stats</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Replication</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last\n                            Heartbeat</th></tr></thead><tbody class="divide-y divide-gray-700/50"><tr expr718="expr718" class="hover:bg-gray-700/30 transition-colors"></tr></tbody>', [{
+    redundantAttribute: 'expr706',
+    selector: '[expr706]',
+    template: template('<thead class="bg-gray-900/30"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Address</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Stats</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">\n                            Replication</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last\n                            Heartbeat</th></tr></thead><tbody class="divide-y divide-gray-700/50"><tr expr707="expr707" class="hover:bg-gray-700/30 transition-colors"></tr></tbody>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-200"><div class="flex items-center gap-3"><div expr719="expr719"></div><span expr720="expr720" class="font-mono text-gray-300"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr721="expr721"> </span></td><td class="px-6 py-4 whitespace-nowrap"><div expr722="expr722" class="flex flex-col gap-1"></div><span expr727="expr727" class="text-xs text-gray-600 italic"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><span expr728="expr728" class="font-mono"> </span><span class="text-xs text-gray-600">\n                                ops lag</span></td><td expr729="expr729" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td>', [{
-        redundantAttribute: 'expr719',
-        selector: '[expr719]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-200"><div class="flex items-center gap-3"><div expr708="expr708"></div><span expr709="expr709" class="font-mono text-gray-300"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr710="expr710"> </span></td><td class="px-6 py-4 whitespace-nowrap"><div expr711="expr711" class="flex flex-col gap-1"></div><span expr716="expr716" class="text-xs text-gray-600 italic"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><span expr717="expr717" class="font-mono"> </span><span class="text-xs text-gray-600">\n                                ops lag</span></td><td expr718="expr718" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td>', [{
+        redundantAttribute: 'expr708',
+        selector: '[expr708]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -698,16 +698,16 @@ var clusterDashboard = {
           evaluate: _scope => ['w-1.5 h-1.5 rounded-full ', _scope.peer.is_connected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500'].join('')
         }]
       }, {
-        redundantAttribute: 'expr720',
-        selector: '[expr720]',
+        redundantAttribute: 'expr709',
+        selector: '[expr709]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.peer.address
         }]
       }, {
-        redundantAttribute: 'expr721',
-        selector: '[expr721]',
+        redundantAttribute: 'expr710',
+        selector: '[expr710]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -721,19 +721,19 @@ var clusterDashboard = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.peer.stats,
-        redundantAttribute: 'expr722',
-        selector: '[expr722]',
-        template: template('<div class="flex items-center gap-1.5"><span expr723="expr723" class="font-mono text-xs text-gray-300"> </span><span class="text-[10px] text-gray-500 uppercase tracking-tighter">chunks</span></div><div class="flex flex-col"><span expr724="expr724" class="font-mono text-[10px] text-gray-400"> </span><span expr725="expr725" class="font-mono text-[10px]\n                                        text-indigo-400"></span><span expr726="expr726" class="font-mono text-[10px] text-emerald-500 font-bold border-t border-gray-700/50 mt-0.5 pt-0.5"> </span></div>', [{
-          redundantAttribute: 'expr723',
-          selector: '[expr723]',
+        redundantAttribute: 'expr711',
+        selector: '[expr711]',
+        template: template('<div class="flex items-center gap-1.5"><span expr712="expr712" class="font-mono text-xs text-gray-300"> </span><span class="text-[10px] text-gray-500 uppercase tracking-tighter">chunks</span></div><div class="flex flex-col"><span expr713="expr713" class="font-mono text-[10px] text-gray-400"> </span><span expr714="expr714" class="font-mono text-[10px]\n                                        text-indigo-400"></span><span expr715="expr715" class="font-mono text-[10px] text-emerald-500 font-bold border-t border-gray-700/50 mt-0.5 pt-0.5"> </span></div>', [{
+          redundantAttribute: 'expr712',
+          selector: '[expr712]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => _scope.peer.stats.total_chunk_count
           }]
         }, {
-          redundantAttribute: 'expr724',
-          selector: '[expr724]',
+          redundantAttribute: 'expr713',
+          selector: '[expr713]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -742,8 +742,8 @@ var clusterDashboard = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.peer.stats.total_memtable_size > 0,
-          redundantAttribute: 'expr725',
-          selector: '[expr725]',
+          redundantAttribute: 'expr714',
+          selector: '[expr714]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -752,8 +752,8 @@ var clusterDashboard = {
             }]
           }])
         }, {
-          redundantAttribute: 'expr726',
-          selector: '[expr726]',
+          redundantAttribute: 'expr715',
+          selector: '[expr715]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -763,28 +763,28 @@ var clusterDashboard = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.peer.stats,
-        redundantAttribute: 'expr727',
-        selector: '[expr727]',
+        redundantAttribute: 'expr716',
+        selector: '[expr716]',
         template: template('No Data', [])
       }, {
-        redundantAttribute: 'expr728',
-        selector: '[expr728]',
+        redundantAttribute: 'expr717',
+        selector: '[expr717]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.peer.replication_lag
         }]
       }, {
-        redundantAttribute: 'expr729',
-        selector: '[expr729]',
+        redundantAttribute: 'expr718',
+        selector: '[expr718]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.formatLastSeen(_scope.peer.last_seen_secs_ago)].join('')
         }]
       }]),
-      redundantAttribute: 'expr718',
-      selector: '[expr718]',
+      redundantAttribute: 'expr707',
+      selector: '[expr707]',
       itemName: 'peer',
       indexName: null,
       evaluate: _scope => _scope.state.status.peers

@@ -14,24 +14,6 @@ export default {
         this.drawVisualizers();
     },
 
-    // DEBUG HELPERS (REMOVE AFTER FIX)
-    isPWAMode() {
-        return window.matchMedia('(display-mode: standalone)').matches ||
-            window.navigator.standalone === true;
-    },
-
-    getVideoRefStatus() {
-        const video = this.$refs.localVideo;
-        return video ? 'FOUND' : 'NOT FOUND';
-    },
-
-    getVideoSrcStatus() {
-        const video = this.$refs.localVideo;
-        if (!video) return 'NO VIDEO EL';
-        if (!video.srcObject) return 'NULL srcObject';
-        return 'HAS srcObject';
-    },
-
     onUnmounted() {
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
@@ -354,11 +336,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr153="expr153"><div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full"><div expr154="expr154" class="bg-gray-900/90 backdrop-blur border border-gray-700/50 rounded-lg shadow-2xl p-4 flex items-center gap-4 animate-fade-in-down w-full transform transition-all hover:translate-x-1"></div></div><div expr161="expr161"></div></div>',
+    '<div expr343="expr343"><div class="fixed top-16 right-4 z-[10000] flex flex-col gap-3 pointer-events-auto max-w-sm w-full"><div expr344="expr344" class="bg-gray-900/90 backdrop-blur border border-gray-700/50 rounded-lg shadow-2xl p-4 flex items-center gap-4 animate-fade-in-down w-full transform transition-all hover:translate-x-1"></div></div><div expr351="expr351"></div></div>',
     [
       {
-        redundantAttribute: 'expr153',
-        selector: '[expr153]',
+        redundantAttribute: 'expr343',
+        selector: '[expr343]',
 
         expressions: [
           {
@@ -375,11 +357,11 @@ export default {
         condition: null,
 
         template: template(
-          '<div class="relative"><div class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden border-2 border-gray-700 shadow-inner"><span expr155="expr155" class="text-lg font-bold text-gray-300"> </span></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center animate-ping"></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center"><i class="fas fa-phone text-[10px] text-white"></i></div></div><div class="flex-1 min-w-0"><h3 expr156="expr156" class="text-white font-bold text-sm truncate leading-tight shadow-black drop-shadow-md"> </h3><p expr157="expr157" class="text-indigo-400 text-xs truncate flex items-center gap-1"><i expr158="expr158"></i> </p></div><div class="flex items-center gap-2"><button expr159="expr159" class="w-10 h-10 rounded-full bg-red-600/20\n                        hover:bg-red-600 text-red-500 hover:text-white flex items-center justify-center transition-all\n                        border border-red-600/50 hover:border-red-600 shadow-lg hover:shadow-red-900/50 group" title="Decline"><i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i></button><button expr160="expr160" class="w-10 h-10 rounded-full bg-green-600/20\n                        hover:bg-green-600 text-green-500 hover:text-white flex items-center justify-center\n                        transition-all border border-green-600/50 hover:border-green-600 shadow-lg\n                        hover:shadow-green-900/50 group animate-pulse hover:animate-none" title="Accept"><i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i></button></div>',
+          '<div class="relative"><div class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden border-2 border-gray-700 shadow-inner"><span expr345="expr345" class="text-lg font-bold text-gray-300"> </span></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center animate-ping"></div><div class="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-gray-900 flex items-center justify-center"><i class="fas fa-phone text-[10px] text-white"></i></div></div><div class="flex-1 min-w-0"><h3 expr346="expr346" class="text-white font-bold text-sm truncate leading-tight shadow-black drop-shadow-md"> </h3><p expr347="expr347" class="text-indigo-400 text-xs truncate flex items-center gap-1"><i expr348="expr348"></i> </p></div><div class="flex items-center gap-2"><button expr349="expr349" class="w-10 h-10 rounded-full bg-red-600/20\n                        hover:bg-red-600 text-red-500 hover:text-white flex items-center justify-center transition-all\n                        border border-red-600/50 hover:border-red-600 shadow-lg hover:shadow-red-900/50 group" title="Decline"><i class="fas fa-phone-slash text-sm transform group-hover:rotate-12 transition-transform"></i></button><button expr350="expr350" class="w-10 h-10 rounded-full bg-green-600/20\n                        hover:bg-green-600 text-green-500 hover:text-white flex items-center justify-center\n                        transition-all border border-green-600/50 hover:border-green-600 shadow-lg\n                        hover:shadow-green-900/50 group animate-pulse hover:animate-none" title="Accept"><i class="fas fa-phone text-sm transform group-hover:-rotate-12 transition-transform"></i></button></div>',
           [
             {
-              redundantAttribute: 'expr155',
-              selector: '[expr155]',
+              redundantAttribute: 'expr345',
+              selector: '[expr345]',
 
               expressions: [
                 {
@@ -393,8 +375,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr156',
-              selector: '[expr156]',
+              redundantAttribute: 'expr346',
+              selector: '[expr346]',
 
               expressions: [
                 {
@@ -408,8 +390,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr157',
-              selector: '[expr157]',
+              redundantAttribute: 'expr347',
+              selector: '[expr347]',
 
               expressions: [
                 {
@@ -425,8 +407,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr158',
-              selector: '[expr158]',
+              redundantAttribute: 'expr348',
+              selector: '[expr348]',
 
               expressions: [
                 {
@@ -438,8 +420,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr159',
-              selector: '[expr159]',
+              redundantAttribute: 'expr349',
+              selector: '[expr349]',
 
               expressions: [
                 {
@@ -450,8 +432,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr160',
-              selector: '[expr160]',
+              redundantAttribute: 'expr350',
+              selector: '[expr350]',
 
               expressions: [
                 {
@@ -464,8 +446,8 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr154',
-        selector: '[expr154]',
+        redundantAttribute: 'expr344',
+        selector: '[expr344]',
         itemName: 'call',
         indexName: null,
         evaluate: _scope => _scope.props.incomingCalls || []
@@ -473,11 +455,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.props.activeCall,
-        redundantAttribute: 'expr161',
-        selector: '[expr161]',
+        redundantAttribute: 'expr351',
+        selector: '[expr351]',
 
         template: template(
-          '<div expr162="expr162"><div class="flex items-center gap-3 pointer-events-auto"><div expr163="expr163"><div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span expr164="expr164" class="text-white font-medium text-sm"> </span></div></div><div expr165="expr165" class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow pointer-events-auto"></div></div><div class="fixed top-20 left-4 bg-black/90 text-green-400 text-xs p-3 rounded-lg z-[99999] font-mono max-w-xs"><div expr166="expr166"> </div><div expr167="expr167"> </div><div expr168="expr168"> </div><div expr169="expr169"> </div><div expr170="expr170"> </div></div><div expr171="expr171"><div expr172="expr172"><div expr173="expr173"></div></div><div expr183="expr183"><video expr184="expr184" ref="localVideo" autoplay playsinline muted></video><div class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">\n                        You</div><canvas id="audio-viz-local" class="absolute bottom-0 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas></div></div><div expr185="expr185"><div expr186="expr186"><button expr187="expr187"><i expr188="expr188"></i></button><button expr189="expr189"><i expr190="expr190"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr191="expr191" title="Share Screen"><i class="fas fa-desktop"></i></button><button expr192="expr192"><i expr193="expr193"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr194="expr194"><i class="fas fa-phone-slash"></i></button></div></div>',
+          '<div expr352="expr352"><div class="flex items-center gap-3 pointer-events-auto"><div expr353="expr353"><div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div><span expr354="expr354" class="text-white font-medium text-sm"> </span></div></div><div expr355="expr355" class="text-white/80 text-sm font-medium px-2 shadow-sm text-shadow pointer-events-auto"></div></div><div expr356="expr356"><div expr357="expr357"><div expr358="expr358"></div></div><div expr368="expr368"><video expr369="expr369" ref="localVideo" autoplay playsinline muted></video><div class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">\n                        You</div><canvas id="audio-viz-local" class="absolute bottom-0 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas></div></div><div expr370="expr370"><div expr371="expr371"><button expr372="expr372"><i expr373="expr373"></i></button><button expr374="expr374"><i expr375="expr375"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr376="expr376" title="Share Screen"><i class="fas fa-desktop"></i></button><button expr377="expr377"><i expr378="expr378"></i></button><div class="w-px h-8 bg-gray-700 mx-1"></div><button expr379="expr379"><i class="fas fa-phone-slash"></i></button></div></div>',
           [
             {
               expressions: [
@@ -490,8 +472,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr162',
-              selector: '[expr162]',
+              redundantAttribute: 'expr352',
+              selector: '[expr352]',
 
               expressions: [
                 {
@@ -503,8 +485,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr163',
-              selector: '[expr163]',
+              redundantAttribute: 'expr353',
+              selector: '[expr353]',
 
               expressions: [
                 {
@@ -516,8 +498,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr164',
-              selector: '[expr164]',
+              redundantAttribute: 'expr354',
+              selector: '[expr354]',
 
               expressions: [
                 {
@@ -533,8 +515,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.isFullscreen,
-              redundantAttribute: 'expr165',
-              selector: '[expr165]',
+              redundantAttribute: 'expr355',
+              selector: '[expr355]',
 
               template: template(
                 ' ',
@@ -557,98 +539,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr166',
-              selector: '[expr166]',
-
-              expressions: [
-                {
-                  type: expressionTypes.TEXT,
-                  childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    'PWA Mode: ',
-                    _scope.isPWAMode() ? 'YES' : 'NO'
-                  ].join(
-                    ''
-                  )
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr167',
-              selector: '[expr167]',
-
-              expressions: [
-                {
-                  type: expressionTypes.TEXT,
-                  childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    'localStream: ',
-                    _scope.props.localStream ? 'EXISTS' : 'NULL'
-                  ].join(
-                    ''
-                  )
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr168',
-              selector: '[expr168]',
-
-              expressions: [
-                {
-                  type: expressionTypes.TEXT,
-                  childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    'localStreamHasVideo: ',
-                    _scope.props.localStreamHasVideo ? 'TRUE' : 'FALSE'
-                  ].join(
-                    ''
-                  )
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr169',
-              selector: '[expr169]',
-
-              expressions: [
-                {
-                  type: expressionTypes.TEXT,
-                  childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    'videoRef: ',
-                    _scope.getVideoRefStatus()
-                  ].join(
-                    ''
-                  )
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr170',
-              selector: '[expr170]',
-
-              expressions: [
-                {
-                  type: expressionTypes.TEXT,
-                  childNodeIndex: 0,
-
-                  evaluate: _scope => [
-                    'srcObject: ',
-                    _scope.getVideoSrcStatus()
-                  ].join(
-                    ''
-                  )
-                }
-              ]
-            },
-            {
-              redundantAttribute: 'expr171',
-              selector: '[expr171]',
+              redundantAttribute: 'expr356',
+              selector: '[expr356]',
 
               expressions: [
                 {
@@ -660,8 +552,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr172',
-              selector: '[expr172]',
+              redundantAttribute: 'expr357',
+              selector: '[expr357]',
 
               expressions: [
                 {
@@ -678,7 +570,7 @@ export default {
               condition: null,
 
               template: template(
-                '<div expr174="expr174" class="absolute inset-0 flex flex-col items-center justify-center z-0"></div><video expr177="expr177" autoplay playsinline></video><div expr178="expr178" class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity"></div><div expr180="expr180"> <i expr181="expr181" class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i></div><canvas expr182="expr182" class="absolute bottom-10 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>',
+                '<div expr359="expr359" class="absolute inset-0 flex flex-col items-center justify-center z-0"></div><video expr362="expr362" autoplay playsinline></video><div expr363="expr363" class="absolute top-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity"></div><div expr365="expr365"> <i expr366="expr366" class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i></div><canvas expr367="expr367" class="absolute bottom-10 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>',
                 [
                   {
                     expressions: [
@@ -706,15 +598,15 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => !_scope.peer.hasVideo,
-                    redundantAttribute: 'expr174',
-                    selector: '[expr174]',
+                    redundantAttribute: 'expr359',
+                    selector: '[expr359]',
 
                     template: template(
-                      '<div expr175="expr175"> </div><div expr176="expr176"> </div>',
+                      '<div expr360="expr360"> </div><div expr361="expr361"> </div>',
                       [
                         {
-                          redundantAttribute: 'expr175',
-                          selector: '[expr175]',
+                          redundantAttribute: 'expr360',
+                          selector: '[expr360]',
 
                           expressions: [
                             {
@@ -738,8 +630,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr176',
-                          selector: '[expr176]',
+                          redundantAttribute: 'expr361',
+                          selector: '[expr361]',
 
                           expressions: [
                             {
@@ -762,8 +654,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr177',
-                    selector: '[expr177]',
+                    redundantAttribute: 'expr362',
+                    selector: '[expr362]',
 
                     expressions: [
                       {
@@ -786,15 +678,15 @@ export default {
                   {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.props.isFullscreen,
-                    redundantAttribute: 'expr178',
-                    selector: '[expr178]',
+                    redundantAttribute: 'expr363',
+                    selector: '[expr363]',
 
                     template: template(
-                      '<button expr179="expr179"><i class="fas fa-thumbtack text-xs transform rotate-45"></i></button>',
+                      '<button expr364="expr364"><i class="fas fa-thumbtack text-xs transform rotate-45"></i></button>',
                       [
                         {
-                          redundantAttribute: 'expr179',
-                          selector: '[expr179]',
+                          redundantAttribute: 'expr364',
+                          selector: '[expr364]',
 
                           expressions: [
                             {
@@ -823,8 +715,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr180',
-                    selector: '[expr180]',
+                    redundantAttribute: 'expr365',
+                    selector: '[expr365]',
 
                     expressions: [
                       {
@@ -854,8 +746,8 @@ export default {
                       _scope.peer.user._key
                     ),
 
-                    redundantAttribute: 'expr181',
-                    selector: '[expr181]',
+                    redundantAttribute: 'expr366',
+                    selector: '[expr366]',
 
                     template: template(
                       null,
@@ -863,8 +755,8 @@ export default {
                     )
                   },
                   {
-                    redundantAttribute: 'expr182',
-                    selector: '[expr182]',
+                    redundantAttribute: 'expr367',
+                    selector: '[expr367]',
 
                     expressions: [
                       {
@@ -878,15 +770,15 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr173',
-              selector: '[expr173]',
+              redundantAttribute: 'expr358',
+              selector: '[expr358]',
               itemName: 'peer',
               indexName: null,
               evaluate: _scope => _scope.props.callPeers
             },
             {
-              redundantAttribute: 'expr183',
-              selector: '[expr183]',
+              redundantAttribute: 'expr368',
+              selector: '[expr368]',
 
               expressions: [
                 {
@@ -898,8 +790,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr184',
-              selector: '[expr184]',
+              redundantAttribute: 'expr369',
+              selector: '[expr369]',
 
               expressions: [
                 {
@@ -911,8 +803,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr185',
-              selector: '[expr185]',
+              redundantAttribute: 'expr370',
+              selector: '[expr370]',
 
               expressions: [
                 {
@@ -924,8 +816,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr186',
-              selector: '[expr186]',
+              redundantAttribute: 'expr371',
+              selector: '[expr371]',
 
               expressions: [
                 {
@@ -937,8 +829,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr187',
-              selector: '[expr187]',
+              redundantAttribute: 'expr372',
+              selector: '[expr372]',
 
               expressions: [
                 {
@@ -955,8 +847,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr188',
-              selector: '[expr188]',
+              redundantAttribute: 'expr373',
+              selector: '[expr373]',
 
               expressions: [
                 {
@@ -968,8 +860,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr189',
-              selector: '[expr189]',
+              redundantAttribute: 'expr374',
+              selector: '[expr374]',
 
               expressions: [
                 {
@@ -986,8 +878,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr190',
-              selector: '[expr190]',
+              redundantAttribute: 'expr375',
+              selector: '[expr375]',
 
               expressions: [
                 {
@@ -999,8 +891,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr191',
-              selector: '[expr191]',
+              redundantAttribute: 'expr376',
+              selector: '[expr376]',
 
               expressions: [
                 {
@@ -1017,8 +909,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr192',
-              selector: '[expr192]',
+              redundantAttribute: 'expr377',
+              selector: '[expr377]',
 
               expressions: [
                 {
@@ -1041,8 +933,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr193',
-              selector: '[expr193]',
+              redundantAttribute: 'expr378',
+              selector: '[expr378]',
 
               expressions: [
                 {
@@ -1054,8 +946,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr194',
-              selector: '[expr194]',
+              redundantAttribute: 'expr379',
+              selector: '[expr379]',
 
               expressions: [
                 {

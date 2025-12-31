@@ -69,16 +69,6 @@
                 </div>
             </div>
 
-            <!-- DEBUG PANEL (REMOVE AFTER FIX) -->
-            <div
-                class="fixed top-20 left-4 bg-black/90 text-green-400 text-xs p-3 rounded-lg z-[99999] font-mono max-w-xs">
-                <div>PWA Mode: { isPWAMode() ? 'YES' : 'NO' }</div>
-                <div>localStream: { props.localStream ? 'EXISTS' : 'NULL' }</div>
-                <div>localStreamHasVideo: { props.localStreamHasVideo ? 'TRUE' : 'FALSE' }</div>
-                <div>videoRef: { getVideoRefStatus() }</div>
-                <div>srcObject: { getVideoSrcStatus() }</div>
-            </div>
-
             <!-- Video Grid -->
             <div class={ getVideoGridClass() }>
                 <div class={ getInnerGridClass() }>
@@ -177,22 +167,6 @@
                 this.analysers = {};
                 this.animationFrameId = null;
                 this.drawVisualizers();
-            },
-
-            // DEBUG HELPERS (REMOVE AFTER FIX)
-            isPWAMode() {
-                return window.matchMedia('(display-mode: standalone)').matches ||
-                    window.navigator.standalone === true;
-            },
-            getVideoRefStatus() {
-                const video = this.$refs.localVideo;
-                return video ? 'FOUND' : 'NOT FOUND';
-            },
-            getVideoSrcStatus() {
-                const video = this.$refs.localVideo;
-                if (!video) return 'NO VIDEO EL';
-                if (!video.srcObject) return 'NULL srcObject';
-                return 'HAS srcObject';
             },
 
             onUnmounted() {
