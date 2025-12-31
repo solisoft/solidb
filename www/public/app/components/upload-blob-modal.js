@@ -210,28 +210,28 @@ var uploadBlobModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr311="expr311" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr76="expr76" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.visible,
-    redundantAttribute: 'expr311',
-    selector: '[expr311]',
-    template: template('<div expr312="expr312" class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700 my-8"><div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-gray-100">Upload Blob</h3><button expr313="expr313" class="text-gray-400 hover:text-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr314="expr314" class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg flex items-start"></div><form expr316="expr316"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr317="expr317"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400 justify-center"><span class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span></span><p class="pl-1">or drag and drop</p></div><p expr318="expr318" class="text-xs text-gray-500"></p><p expr319="expr319" class="text-sm text-indigo-400 font-semibold"></p></div></div><input expr320="expr320" type="file" ref="fileInput" class="hidden"/></div><div expr321="expr321" class="mb-6"></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr324="expr324" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors bg-gray-700 hover:bg-gray-600 rounded-md">\n                        Cancel\n                    </button><button expr325="expr325" type="submit" class="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"><svg expr326="expr326" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>', [{
+    redundantAttribute: 'expr76',
+    selector: '[expr76]',
+    template: template('<div expr77="expr77" class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700 my-8"><div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-gray-100">Upload Blob</h3><button expr78="expr78" class="text-gray-400 hover:text-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr79="expr79" class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg flex items-start"></div><form expr81="expr81"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr82="expr82"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400 justify-center"><span class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span></span><p class="pl-1">or drag and drop</p></div><p expr83="expr83" class="text-xs text-gray-500"></p><p expr84="expr84" class="text-sm text-indigo-400 font-semibold"></p></div></div><input expr85="expr85" type="file" ref="fileInput" class="hidden"/></div><div expr86="expr86" class="mb-6"></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr89="expr89" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors bg-gray-700 hover:bg-gray-600 rounded-md">\n                        Cancel\n                    </button><button expr90="expr90" type="submit" class="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"><svg expr91="expr91" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>', [{
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleBackdropClick
       }]
     }, {
-      redundantAttribute: 'expr312',
-      selector: '[expr312]',
+      redundantAttribute: 'expr77',
+      selector: '[expr77]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => e.stopPropagation()
       }]
     }, {
-      redundantAttribute: 'expr313',
-      selector: '[expr313]',
+      redundantAttribute: 'expr78',
+      selector: '[expr78]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -240,11 +240,11 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.error,
-      redundantAttribute: 'expr314',
-      selector: '[expr314]',
-      template: template('<svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span expr315="expr315" class="text-red-300 text-sm whitespace-pre-wrap"> </span>', [{
-        redundantAttribute: 'expr315',
-        selector: '[expr315]',
+      redundantAttribute: 'expr79',
+      selector: '[expr79]',
+      template: template('<svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span expr80="expr80" class="text-red-300 text-sm whitespace-pre-wrap"> </span>', [{
+        redundantAttribute: 'expr80',
+        selector: '[expr80]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -252,16 +252,16 @@ var uploadBlobModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr316',
-      selector: '[expr316]',
+      redundantAttribute: 'expr81',
+      selector: '[expr81]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onsubmit',
         evaluate: _scope => _scope.handleSubmit
       }]
     }, {
-      redundantAttribute: 'expr317',
-      selector: '[expr317]',
+      redundantAttribute: 'expr82',
+      selector: '[expr82]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -291,14 +291,14 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => !_scope.state.selectedFile,
-      redundantAttribute: 'expr318',
-      selector: '[expr318]',
+      redundantAttribute: 'expr83',
+      selector: '[expr83]',
       template: template('\n                                Any file up to 1GB\n                            ', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedFile,
-      redundantAttribute: 'expr319',
-      selector: '[expr319]',
+      redundantAttribute: 'expr84',
+      selector: '[expr84]',
       template: template(' ', [{
         expressions: [{
           type: expressionTypes.TEXT,
@@ -307,8 +307,8 @@ var uploadBlobModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr320',
-      selector: '[expr320]',
+      redundantAttribute: 'expr85',
+      selector: '[expr85]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -317,19 +317,19 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.uploading,
-      redundantAttribute: 'expr321',
-      selector: '[expr321]',
-      template: template('<div class="flex justify-between mb-1"><span class="text-sm font-medium text-indigo-400">Uploading...</span><span expr322="expr322" class="text-sm font-medium text-indigo-400"> </span></div><div class="w-full bg-gray-700 rounded-full h-2.5"><div expr323="expr323" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"></div></div>', [{
-        redundantAttribute: 'expr322',
-        selector: '[expr322]',
+      redundantAttribute: 'expr86',
+      selector: '[expr86]',
+      template: template('<div class="flex justify-between mb-1"><span class="text-sm font-medium text-indigo-400">Uploading...</span><span expr87="expr87" class="text-sm font-medium text-indigo-400"> </span></div><div class="w-full bg-gray-700 rounded-full h-2.5"><div expr88="expr88" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"></div></div>', [{
+        redundantAttribute: 'expr87',
+        selector: '[expr87]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.state.progress, '%'].join('')
         }]
       }, {
-        redundantAttribute: 'expr323',
-        selector: '[expr323]',
+        redundantAttribute: 'expr88',
+        selector: '[expr88]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -338,16 +338,16 @@ var uploadBlobModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr324',
-      selector: '[expr324]',
+      redundantAttribute: 'expr89',
+      selector: '[expr89]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleClose
       }]
     }, {
-      redundantAttribute: 'expr325',
-      selector: '[expr325]',
+      redundantAttribute: 'expr90',
+      selector: '[expr90]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -361,8 +361,8 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.uploading,
-      redundantAttribute: 'expr326',
-      selector: '[expr326]',
+      redundantAttribute: 'expr91',
+      selector: '[expr91]',
       template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
     }])
   }]),

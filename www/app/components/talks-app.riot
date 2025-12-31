@@ -3303,11 +3303,19 @@
                 this.update({ callPeers: peers });
             },
 
-            attachLocalStream() {
+            attachLocalStream(retries = 5) {
                 this.$nextTick(() => {
                     const video = this.root.querySelector('[ref="localVideo"]');
                     if (video && this.localStream) {
+                        console.log('[attachLocalStream] Found video element, attaching stream');
                         video.srcObject = this.localStream;
+                        video.play().catch(e => console.warn('[attachLocalStream] play() failed:', e));
+                    } else if (retries > 0) {
+                        // PWA might render slower, retry with increasing delay
+                        console.log(`[attachLocalStream] Video not ready, retrying... (${retries} left)`);
+                        setTimeout(() => this.attachLocalStream(retries - 1), 200);
+                    } else {
+                        console.error('[attachLocalStream] Failed to attach stream after retries');
                     }
                 });
             },
