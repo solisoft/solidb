@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v6";
+const CACHE_NAME = "talks-v8";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
@@ -37,6 +37,13 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // Skip non-GET requests and WebSocket connections
   if (event.request.method !== "GET" || event.request.url.includes("/ws/")) {
+    return;
+  }
+
+  // Skip video/audio requests and range requests to let browser handle them
+  if (event.request.headers.has('range') ||
+    event.request.destination === 'video' ||
+    event.request.destination === 'audio') {
     return;
   }
 

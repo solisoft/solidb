@@ -195,6 +195,19 @@ pub fn create_router(
             "/_api/database/{db}/ttl/{collection}/{name}",
             delete(delete_ttl_index),
         )
+        // Schema routes
+        .route(
+            "/_api/database/{db}/collection/{name}/schema",
+            post(super::handlers::set_collection_schema),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/schema",
+            get(super::handlers::get_collection_schema),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/schema",
+            delete(super::handlers::delete_collection_schema),
+        )
         // Transaction routes
         .route("/_api/database/{db}/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/commit", post(super::transaction_handlers::commit_transaction))

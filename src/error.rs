@@ -56,6 +56,13 @@ pub enum DbError {
 
     #[error("Isolation violation: {0}")]
     IsolationViolation(String),
+
+    // Schema validation errors
+    #[error("Schema validation failed: {0}")]
+    SchemaValidationError(String),
+
+    #[error("Schema compilation failed: {0}")]
+    SchemaCompilationError(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;

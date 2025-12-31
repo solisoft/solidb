@@ -630,6 +630,16 @@ pub struct CreateCollectionRequest {
     /// Replication factor (optional, default: 1 = no replicas)
     #[serde(rename = "replicationFactor")]
     pub replication_factor: Option<u16>,
+    /// JSON Schema for validation (optional)
+    #[serde(rename = "schema")]
+    pub schema: Option<serde_json::Value>,
+    /// Validation mode: "off", "strict", or "lenient"
+    #[serde(rename = "validationMode", default = "default_validation_mode")]
+    pub validation_mode: String,
+}
+
+fn default_validation_mode() -> String {
+    "off".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -685,6 +695,31 @@ pub struct UpdateCollectionPropertiesRequest {
     /// Whether to propagate this update to other nodes (default: true)
     #[serde(default)]
     pub propagate: Option<bool>,
+    /// JSON Schema for validation (optional)
+    #[serde(rename = "schema")]
+    pub schema: Option<serde_json::Value>,
+    /// Validation mode: "off", "strict", or "lenient"
+    #[serde(rename = "validationMode")]
+    pub validation_mode: Option<String>,
+}
+
+/// Schema management request
+#[derive(Debug, Deserialize)]
+pub struct SetSchemaRequest {
+    /// JSON Schema document
+    pub schema: serde_json::Value,
+    /// Validation mode: "off", "strict", or "lenient"
+    #[serde(rename = "validationMode")]
+    pub validation_mode: String,
+}
+
+/// Schema response
+#[derive(Debug, Serialize)]
+pub struct SchemaResponse {
+    pub schema: Option<serde_json::Value>,
+    #[serde(rename = "validationMode")]
+    pub validation_mode: String,
+    pub collection: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -947,6 +982,22 @@ pub async fn create_collection(
 
     let collection = database.get_collection(&req.name)?;
 
+    // Parse validation mode
+    let validation_mode = match req.validation_mode.to_lowercase().as_str() {
+        "strict" => crate::storage::schema::ValidationMode::Strict,
+        "lenient" => crate::storage::schema::ValidationMode::Lenient,
+        _ => crate::storage::schema::ValidationMode::Off,
+    };
+
+    // Set schema if provided
+    if let Some(schema) = req.schema {
+        collection.set_json_schema(crate::storage::schema::JsonSchema::new(
+            "default".to_string(),
+            schema,
+            validation_mode,
+        ))?;
+    }
+
     // Store sharding configuration if specified
     // Auto-configure sharding for blob collections OR use explicitly provided config
     let shard_config = if let Some(num_shards) = req.num_shards {
@@ -958,7 +1009,7 @@ pub async fn create_collection(
         })
     } else if req.collection_type.as_deref() == Some("blob") {
         // Blob collections are NOT auto-sharded by default - users can explicitly shard them if needed
-        // Chunks will be distributed across the cluster for fault tolerance
+        // Chunks will be distributed across cluster for fault tolerance
         tracing::info!("Blob collection {} will use cluster-wide chunk distribution", req.name);
         None
     } else {
@@ -4501,6 +4552,78 @@ fn generate_cluster_status(state: &AppState, sys: &mut sysinfo::System) -> Clust
             stats,
         }
     }
+}
+
+// ==================== Schema Handlers ====================
+
+/// Set or update JSON schema for a collection
+pub async fn set_collection_schema(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<SetSchemaRequest>,
+) -> Result<Json<SchemaResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    // Parse validation mode
+    let validation_mode = match req.validation_mode.to_lowercase().as_str() {
+        "strict" => crate::storage::schema::ValidationMode::Strict,
+        "lenient" => crate::storage::schema::ValidationMode::Lenient,
+        _ => crate::storage::schema::ValidationMode::Off,
+    };
+
+    // Set schema
+    collection.set_json_schema(crate::storage::schema::JsonSchema::new(
+        "default".to_string(),
+        req.schema,
+        validation_mode,
+    ))?;
+
+    Ok(Json(SchemaResponse {
+        schema: Some(req.schema),
+        validation_mode: req.validation_mode.clone(),
+        collection: coll_name,
+    }))
+}
+
+/// Get JSON schema for a collection
+pub async fn get_collection_schema(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<SchemaResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    let schema = collection.get_json_schema();
+    let (schema_value, validation_mode) = if let Some(s) = schema {
+        let mode_str = match s.validation_mode {
+            crate::storage::schema::ValidationMode::Strict => "strict".to_string(),
+            crate::storage::schema::ValidationMode::Lenient => "lenient".to_string(),
+            crate::storage::schema::ValidationMode::Off => "off".to_string(),
+        };
+        (Some(s.schema.clone()), mode_str)
+    } else {
+        (None, "off".to_string())
+    };
+
+    Ok(Json(SchemaResponse {
+        schema: schema_value,
+        validation_mode,
+        collection: coll_name,
+    }))
+}
+
+/// Remove JSON schema from a collection
+pub async fn delete_collection_schema(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<StatusCode, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    collection.remove_json_schema()?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn cluster_status(State(state): State<AppState>) -> Json<ClusterStatusResponse> {

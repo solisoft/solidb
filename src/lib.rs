@@ -13,6 +13,9 @@ pub mod driver;
 // Synchronization module (new architecture)
 pub mod sync;
 
+// Schema validation module
+pub use storage::schema::{CollectionSchema as JsonSchema, SchemaValidationMode, SchemaValidator, SchemaCompilationError, SchemaValidationError, ValidationViolation, ValidationResult};
+
 pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};
 pub use server::create_router;

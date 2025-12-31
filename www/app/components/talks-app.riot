@@ -3197,6 +3197,14 @@
                 const pc = new RTCPeerConnection(config);
                 this.peerConnections[remoteUserKey] = pc;
 
+                // Explicitly add transceivers to ensure media lines (m-lines) are present in SDP
+                // This ensures audio works even if the initial stream track is missing or delayed
+                pc.addTransceiver('audio', { direction: 'sendrecv' });
+
+                if (callType === 'video') {
+                    pc.addTransceiver('video', { direction: 'sendrecv' });
+                }
+
                 if (this.localStream) {
                     this.localStream.getTracks().forEach(track => pc.addTrack(track, this.localStream));
                 }
@@ -3239,7 +3247,11 @@
                 if (isInitiator) {
                     console.log(`[setupPeerConnection] Creating initial offer for ${remoteUserKey}`);
                     try {
-                        const offer = await pc.createOffer();
+                        const offerOptions = {
+                            offerToReceiveAudio: true,
+                            offerToReceiveVideo: callType === 'video'
+                        };
+                        const offer = await pc.createOffer(offerOptions);
                         await pc.setLocalDescription(offer);
                         console.log(`[setupPeerConnection] Sending offer to ${remoteUserKey}`);
                         await this.sendSignal(remoteUserKey, 'offer', {

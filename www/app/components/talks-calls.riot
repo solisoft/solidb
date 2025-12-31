@@ -105,6 +105,8 @@
                             <i if={ isPinned(peer.user._key) }
                                 class="fas fa-thumbtack ml-2 text-[10px] text-blue-400"></i>
                         </div>
+                        <canvas id={ 'audio-viz-' + peer.user._key }
+                            class="absolute bottom-10 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>
                     </div>
 
                 </div>
@@ -115,6 +117,8 @@
                     <div
                         class="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-white text-[10px] backdrop-blur z-20">
                         You</div>
+                    <canvas id="audio-viz-local"
+                        class="absolute bottom-0 left-0 right-0 h-8 w-full z-20 pointer-events-none opacity-80"></canvas>
                 </div>
             </div>
 
@@ -159,6 +163,19 @@
                 this.state = {
                     pinnedPeers: []
                 }
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                this.analysers = {};
+                this.animationFrameId = null;
+                this.drawVisualizers();
+            },
+
+            onUnmounted() {
+                if (this.animationFrameId) {
+                    cancelAnimationFrame(this.animationFrameId);
+                }
+                if (this.audioCtx) {
+                    this.audioCtx.close().catch(e => console.error("Error closing AudioContext:", e));
+                }
             },
 
             onUpdated() {
@@ -166,6 +183,16 @@
             },
 
             updateStreams() {
+                // Local Audio Viz
+                if (this.props.localStream) {
+                    const videoEl = this.$refs.localVideo;
+                    if (videoEl && videoEl.srcObject !== this.props.localStream) {
+                        videoEl.srcObject = this.props.localStream;
+                    }
+                    this.attachAudioAnalyzer(this.props.localStream, 'local');
+                }
+
+                // Remote Audio Viz
                 if (this.props.callPeers) {
                     this.props.callPeers.forEach(peer => {
                         const videoEl = this.$('#remote-video-' + peer.user._key);
@@ -173,8 +200,65 @@
                             videoEl.srcObject = peer.stream;
                             videoEl.play().catch(e => { });
                         }
+                        if (peer.stream) {
+                            this.attachAudioAnalyzer(peer.stream, peer.user._key);
+                        }
                     });
                 }
+            },
+
+            attachAudioAnalyzer(stream, key) {
+                if (this.analysers[key]) return;
+
+                try {
+                    // Check if stream has audio tracks
+                    const audioTracks = stream.getAudioTracks();
+                    if (audioTracks.length === 0) return;
+
+                    const source = this.audioCtx.createMediaStreamSource(stream);
+                    const analyser = this.audioCtx.createAnalyser();
+                    analyser.fftSize = 64; // Small size for simple bars (32 bins)
+                    source.connect(analyser);
+
+                    const canvas = key === 'local' ? this.$('#audio-viz-local') : this.$('#audio-viz-' + key);
+
+                    this.analysers[key] = {
+                        analyser,
+                        dataArray: new Uint8Array(analyser.frequencyBinCount),
+                        canvas
+                    };
+                } catch (e) {
+                    console.error("Error attaching audio analyzer for", key, e);
+                }
+            },
+
+            drawVisualizers() {
+                this.animationFrameId = requestAnimationFrame(this.drawVisualizers.bind(this));
+
+                Object.keys(this.analysers).forEach(key => {
+                    const { analyser, dataArray, canvas } = this.analysers[key];
+                    if (!canvas) return;
+
+                    analyser.getByteFrequencyData(dataArray);
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    const barWidth = (width / dataArray.length) * 2.5;
+                    let x = 0;
+
+                    for (let i = 0; i < dataArray.length; i++) {
+                        const barHeight = (dataArray[i] / 255) * height;
+
+                        // Green gradient bars
+                        ctx.fillStyle = `rgba(74, 222, 128, ${dataArray[i] / 255})`; // green-400 with opacity based on loudness
+                        ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+
+                        x += barWidth + 1;
+                    }
+                });
             },
 
             getWrapperClass() {
