@@ -150,17 +150,17 @@ var collectionSettingsModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr698="expr698" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr699="expr699" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Collection Settings</h3></div><div class="p-6"><div expr700="expr700" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr702="expr702"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr703="expr703" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"/></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><input expr704="expr704" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed capitalize"/><p class="mt-1 text-xs text-gray-500">Cannot be changed after creation</p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div expr705="expr705" class="bg-gray-800/30 rounded-lg p-4 border border-gray-600/30"></div><div expr707="expr707" class="space-y-4 animate-fade-in"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr711="expr711" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr712="expr712" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
-    redundantAttribute: 'expr698',
-    selector: '[expr698]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr655="expr655" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr656="expr656" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Collection Settings</h3></div><div class="p-6"><div expr657="expr657" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr659="expr659"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr660="expr660" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed"/></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><input expr661="expr661" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 cursor-not-allowed capitalize"/><p class="mt-1 text-xs text-gray-500">Cannot be changed after creation</p></div><div class="mb-6 border-t border-gray-700/50 pt-4"><h4 class="text-sm font-medium text-gray-300 mb-4">Sharding Configuration</h4><div expr662="expr662" class="bg-gray-800/30 rounded-lg p-4 border border-gray-600/30"></div><div expr664="expr664" class="space-y-4 animate-fade-in"></div></div><div class="flex justify-end space-x-3 pt-2"><button expr668="expr668" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                            Cancel\n                        </button><button expr669="expr669" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
+    redundantAttribute: 'expr655',
+    selector: '[expr655]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr699',
-    selector: '[expr699]',
+    redundantAttribute: 'expr656',
+    selector: '[expr656]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -169,11 +169,11 @@ var collectionSettingsModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr700',
-    selector: '[expr700]',
-    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr701="expr701" class="text-sm text-red-300"> </p></div>', [{
-      redundantAttribute: 'expr701',
-      selector: '[expr701]',
+    redundantAttribute: 'expr657',
+    selector: '[expr657]',
+    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr658="expr658" class="text-sm text-red-300"> </p></div>', [{
+      redundantAttribute: 'expr658',
+      selector: '[expr658]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -181,23 +181,23 @@ var collectionSettingsModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr702',
-    selector: '[expr702]',
+    redundantAttribute: 'expr659',
+    selector: '[expr659]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onsubmit',
       evaluate: _scope => _scope.handleSubmit
     }]
   }, {
-    redundantAttribute: 'expr703',
-    selector: '[expr703]',
+    redundantAttribute: 'expr660',
+    selector: '[expr660]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.name
     }]
   }, {
-    redundantAttribute: 'expr704',
-    selector: '[expr704]',
+    redundantAttribute: 'expr661',
+    selector: '[expr661]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.collectionType
@@ -205,11 +205,11 @@ var collectionSettingsModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.customShardingEnabled,
-    redundantAttribute: 'expr705',
-    selector: '[expr705]',
-    template: template('<div class="flex items-start mb-3"><div class="flex-shrink-0"><svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-3"><h3 class="text-sm font-medium text-blue-300">Global Replication</h3><div class="mt-1 text-xs text-gray-400">\n                                        This collection is currently replicated to <strong>all nodes</strong> in the\n                                        cluster.\n                                    </div></div></div><button expr706="expr706" type="button" class="w-full flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-xs font-medium rounded-lg text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-colors">\n                                Enable Custom Sharding\n                            </button>', [{
-      redundantAttribute: 'expr706',
-      selector: '[expr706]',
+    redundantAttribute: 'expr662',
+    selector: '[expr662]',
+    template: template('<div class="flex items-start mb-3"><div class="flex-shrink-0"><svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><div class="ml-3"><h3 class="text-sm font-medium text-blue-300">Global Replication</h3><div class="mt-1 text-xs text-gray-400">\n                                        This collection is currently replicated to <strong>all nodes</strong> in the\n                                        cluster.\n                                    </div></div></div><button expr663="expr663" type="button" class="w-full flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-xs font-medium rounded-lg text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-colors">\n                                Enable Custom Sharding\n                            </button>', [{
+      redundantAttribute: 'expr663',
+      selector: '[expr663]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -219,11 +219,11 @@ var collectionSettingsModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.customShardingEnabled,
-    redundantAttribute: 'expr707',
-    selector: '[expr707]',
-    template: template('<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr708="expr708" type="number" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-yellow-500/80">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication\n                                        Factor</label><input expr709="expr709" type="number" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-green-500/80">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr710="expr710" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div>', [{
-      redundantAttribute: 'expr708',
-      selector: '[expr708]',
+    redundantAttribute: 'expr664',
+    selector: '[expr664]',
+    template: template('<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr665="expr665" type="number" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-yellow-500/80">⚠️ Changing triggers data rebalance</p></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication\n                                        Factor</label><input expr666="expr666" type="number" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-green-500/80">Can be updated</p></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr667="expr667" type="text" disabled class="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-400 text-sm cursor-not-allowed"/><p class="mt-1 text-xs text-gray-500">Cannot be changed</p></div>', [{
+      redundantAttribute: 'expr665',
+      selector: '[expr665]',
       expressions: [{
         type: expressionTypes.VALUE,
         evaluate: _scope => _scope.state.numShards
@@ -238,8 +238,8 @@ var collectionSettingsModal = {
         evaluate: _scope => _scope.state.initialNumShards || 1
       }]
     }, {
-      redundantAttribute: 'expr709',
-      selector: '[expr709]',
+      redundantAttribute: 'expr666',
+      selector: '[expr666]',
       expressions: [{
         type: expressionTypes.VALUE,
         evaluate: _scope => _scope.state.replicationFactor
@@ -254,24 +254,24 @@ var collectionSettingsModal = {
         evaluate: _scope => _scope.state.initialReplicationFactor || 1
       }]
     }, {
-      redundantAttribute: 'expr710',
-      selector: '[expr710]',
+      redundantAttribute: 'expr667',
+      selector: '[expr667]',
       expressions: [{
         type: expressionTypes.VALUE,
         evaluate: _scope => _scope.state.shardKey
       }]
     }])
   }, {
-    redundantAttribute: 'expr711',
-    selector: '[expr711]',
+    redundantAttribute: 'expr668',
+    selector: '[expr668]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleClose
     }]
   }, {
-    redundantAttribute: 'expr712',
-    selector: '[expr712]',
+    redundantAttribute: 'expr669',
+    selector: '[expr669]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,

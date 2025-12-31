@@ -339,62 +339,62 @@ var scriptsManager = {
       return new Date(ts).toLocaleString();
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div expr622="expr622" class="space-y-6"></div><div expr641="expr641" class="space-y-6"></div><div expr651="expr651" class="space-y-6"></div></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div expr447="expr447" class="space-y-6"></div><div expr466="expr466" class="space-y-6"></div><div expr476="expr476" class="space-y-6"></div></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.view === 'list',
-    redundantAttribute: 'expr622',
-    selector: '[expr622]',
-    template: template('<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0"><div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 mr-6"><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active Scripts</div><div expr623="expr623" class="text-xl font-bold text-indigo-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active WS</div><div expr624="expr624" class="text-xl font-bold text-green-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total Scripts</div><div expr625="expr625" class="text-lg font-bold text-gray-200 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total WS</div><div expr626="expr626" class="text-lg font-bold text-gray-200 mt-1"> </div></div></div><div class="flex items-center space-x-3"><button expr627="expr627" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>\n                        New Script\n                    </button><button expr628="expr628" class="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10 ml-3"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>\n                        Logs\n                    </button><button expr629="expr629" title="Refresh Stats" class="inline-flex items-center p-2 border border-gray-600 rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none transition-colors h-10 w-10 justify-center"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/4">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/6">\n                                Methods</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Path</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr630="expr630" class="hover:bg-gray-750 transition-colors"></tr><tr expr639="expr639"></tr></tbody></table></div>', [{
-      redundantAttribute: 'expr623',
-      selector: '[expr623]',
+    redundantAttribute: 'expr447',
+    selector: '[expr447]',
+    template: template('<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0"><div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 mr-6"><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active Scripts</div><div expr448="expr448" class="text-xl font-bold text-indigo-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Active WS</div><div expr449="expr449" class="text-xl font-bold text-green-400 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total Scripts</div><div expr450="expr450" class="text-lg font-bold text-gray-200 mt-1"> </div></div><div class="bg-gray-800 rounded-lg p-3 border border-gray-700"><div class="text-xs text-gray-400 uppercase tracking-wider font-medium">Total WS</div><div expr451="expr451" class="text-lg font-bold text-gray-200 mt-1"> </div></div></div><div class="flex items-center space-x-3"><button expr452="expr452" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>\n                        New Script\n                    </button><button expr453="expr453" class="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors h-10 ml-3"><svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>\n                        Logs\n                    </button><button expr454="expr454" title="Refresh Stats" class="inline-flex items-center p-2 border border-gray-600 rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none transition-colors h-10 w-10 justify-center"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/4">\n                                Name</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-1/6">\n                                Methods</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Path</th><th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr455="expr455" class="hover:bg-gray-750 transition-colors"></tr><tr expr464="expr464"></tr></tbody></table></div>', [{
+      redundantAttribute: 'expr448',
+      selector: '[expr448]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.stats.active_scripts
       }]
     }, {
-      redundantAttribute: 'expr624',
-      selector: '[expr624]',
+      redundantAttribute: 'expr449',
+      selector: '[expr449]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.stats.active_ws
       }]
     }, {
-      redundantAttribute: 'expr625',
-      selector: '[expr625]',
+      redundantAttribute: 'expr450',
+      selector: '[expr450]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.stats.total_scripts_executed
       }]
     }, {
-      redundantAttribute: 'expr626',
-      selector: '[expr626]',
+      redundantAttribute: 'expr451',
+      selector: '[expr451]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.stats.total_ws_connections
       }]
     }, {
-      redundantAttribute: 'expr627',
-      selector: '[expr627]',
+      redundantAttribute: 'expr452',
+      selector: '[expr452]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.showCreate
       }]
     }, {
-      redundantAttribute: 'expr628',
-      selector: '[expr628]',
+      redundantAttribute: 'expr453',
+      selector: '[expr453]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.showLogs
       }]
     }, {
-      redundantAttribute: 'expr629',
-      selector: '[expr629]',
+      redundantAttribute: 'expr454',
+      selector: '[expr454]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -404,9 +404,9 @@ var scriptsManager = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap"><div expr631="expr631" class="text-sm font-medium text-gray-100"> </div><div expr632="expr632" class="text-xs text-gray-500 truncate max-w-xs"></div></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"><div class="flex flex-wrap gap-2"><span expr633="expr633"></span></div></td><td expr634="expr634" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono group cursor-pointer" title="Click to copy URL"><span expr635="expr635" class="text-gray-600"> </span><span expr636="expr636" class="text-indigo-300 group-hover:text-white transition-colors"> </span><span class="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-gray-700 px-1 rounded text-gray-300">Copy</span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div class="flex items-center justify-end space-x-3"><button expr637="expr637" class="text-indigo-400\n                                        hover:text-indigo-300 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr638="expr638" class="text-red-400 hover:text-red-300\n                                        transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></td>', [{
-        redundantAttribute: 'expr631',
-        selector: '[expr631]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap"><div expr456="expr456" class="text-sm font-medium text-gray-100"> </div><div expr457="expr457" class="text-xs text-gray-500 truncate max-w-xs"></div></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"><div class="flex flex-wrap gap-2"><span expr458="expr458"></span></div></td><td expr459="expr459" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono group cursor-pointer" title="Click to copy URL"><span expr460="expr460" class="text-gray-600"> </span><span expr461="expr461" class="text-indigo-300 group-hover:text-white transition-colors"> </span><span class="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-gray-700 px-1 rounded text-gray-300">Copy</span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><div class="flex items-center justify-end space-x-3"><button expr462="expr462" class="text-indigo-400\n                                        hover:text-indigo-300 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr463="expr463" class="text-red-400 hover:text-red-300\n                                        transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></td>', [{
+        redundantAttribute: 'expr456',
+        selector: '[expr456]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -415,8 +415,8 @@ var scriptsManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.script.description,
-        redundantAttribute: 'expr632',
-        selector: '[expr632]',
+        redundantAttribute: 'expr457',
+        selector: '[expr457]',
         template: template(' ', [{
           expressions: [{
             type: expressionTypes.TEXT,
@@ -440,65 +440,65 @@ var scriptsManager = {
             evaluate: _scope => ['inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ', _scope.getMethodBadgeClass(_scope.method)].join('')
           }]
         }]),
-        redundantAttribute: 'expr633',
-        selector: '[expr633]',
+        redundantAttribute: 'expr458',
+        selector: '[expr458]',
         itemName: 'method',
         indexName: null,
         evaluate: _scope => _scope.script.methods
       }, {
-        redundantAttribute: 'expr634',
-        selector: '[expr634]',
+        redundantAttribute: 'expr459',
+        selector: '[expr459]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.copyUrl(_scope.script)
         }]
       }, {
-        redundantAttribute: 'expr635',
-        selector: '[expr635]',
+        redundantAttribute: 'expr460',
+        selector: '[expr460]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => ['/api/custom/', _scope.props.db, '/'].join('')
         }]
       }, {
-        redundantAttribute: 'expr636',
-        selector: '[expr636]',
+        redundantAttribute: 'expr461',
+        selector: '[expr461]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.script.path
         }]
       }, {
-        redundantAttribute: 'expr637',
-        selector: '[expr637]',
+        redundantAttribute: 'expr462',
+        selector: '[expr462]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.editScript(_scope.script)
         }]
       }, {
-        redundantAttribute: 'expr638',
-        selector: '[expr638]',
+        redundantAttribute: 'expr463',
+        selector: '[expr463]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteScript(_scope.script)
         }]
       }]),
-      redundantAttribute: 'expr630',
-      selector: '[expr630]',
+      redundantAttribute: 'expr455',
+      selector: '[expr455]',
       itemName: 'script',
       indexName: null,
       evaluate: _scope => _scope.state.scripts
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.scripts.length === 0,
-      redundantAttribute: 'expr639',
-      selector: '[expr639]',
-      template: template('<td colspan="4" class="px-6 py-16 text-center"><div class="flex flex-col items-center justify-center"><svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><p class="text-gray-400 text-lg font-medium">No scripts found</p><p class="text-gray-500 text-sm mt-1">Get started by creating a new Lua script.</p><button expr640="expr640" class="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium">Create\n                                        your first script &rarr;</button></div></td>', [{
-        redundantAttribute: 'expr640',
-        selector: '[expr640]',
+      redundantAttribute: 'expr464',
+      selector: '[expr464]',
+      template: template('<td colspan="4" class="px-6 py-16 text-center"><div class="flex flex-col items-center justify-center"><svg class="h-12 w-12 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><p class="text-gray-400 text-lg font-medium">No scripts found</p><p class="text-gray-500 text-sm mt-1">Get started by creating a new Lua script.</p><button expr465="expr465" class="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium">Create\n                                        your first script &rarr;</button></div></td>', [{
+        redundantAttribute: 'expr465',
+        selector: '[expr465]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -509,19 +509,19 @@ var scriptsManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.view === 'edit',
-    redundantAttribute: 'expr641',
-    selector: '[expr641]',
-    template: template('<div class="flex items-center justify-between"><h2 expr642="expr642" class="text-2xl font-bold text-gray-100"> </h2></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 p-6 space-y-6"><div class="grid grid-cols-1 gap-6 sm:grid-cols-2"><div><label class="block text-sm font-medium text-gray-300">Name</label><input expr643="expr643" type="text" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="My Script"/></div><div><label class="block text-sm font-medium text-gray-300">URL Path</label><div class="mt-1 flex rounded-md shadow-sm"><span expr644="expr644" class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-600 bg-gray-700 text-gray-400 sm:text-sm"> </span><input expr645="expr645" type="text" class="flex-1 min-w-0 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-none rounded-r-md text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="my-endpoint"/></div></div></div><div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">HTTP Methods</label><div class="flex space-x-4"><label expr646="expr646" class="inline-flex items-center cursor-pointer group"></label></div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Lua Code</label><div id="ace-editor" class="h-96 w-full rounded-md border border-gray-600"></div><p class="mt-2 text-sm text-gray-500">Global objects: <code class="text-indigo-400">db</code>, <code class="text-indigo-400">solidb</code>,\n                        <code class="text-indigo-400">request</code></p></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr649="expr649" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Cancel</button><button expr650="expr650" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"> </button></div></div>', [{
-      redundantAttribute: 'expr642',
-      selector: '[expr642]',
+    redundantAttribute: 'expr466',
+    selector: '[expr466]',
+    template: template('<div class="flex items-center justify-between"><h2 expr467="expr467" class="text-2xl font-bold text-gray-100"> </h2></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 p-6 space-y-6"><div class="grid grid-cols-1 gap-6 sm:grid-cols-2"><div><label class="block text-sm font-medium text-gray-300">Name</label><input expr468="expr468" type="text" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="My Script"/></div><div><label class="block text-sm font-medium text-gray-300">URL Path</label><div class="mt-1 flex rounded-md shadow-sm"><span expr469="expr469" class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-600 bg-gray-700 text-gray-400 sm:text-sm"> </span><input expr470="expr470" type="text" class="flex-1 min-w-0 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-none rounded-r-md text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="my-endpoint"/></div></div></div><div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">HTTP Methods</label><div class="flex space-x-4"><label expr471="expr471" class="inline-flex items-center cursor-pointer group"></label></div></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Lua Code</label><div id="ace-editor" class="h-96 w-full rounded-md border border-gray-600"></div><p class="mt-2 text-sm text-gray-500">Global objects: <code class="text-indigo-400">db</code>, <code class="text-indigo-400">solidb</code>,\n                        <code class="text-indigo-400">request</code></p></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr474="expr474" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Cancel</button><button expr475="expr475" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"> </button></div></div>', [{
+      redundantAttribute: 'expr467',
+      selector: '[expr467]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.currentScript.id ? 'Edit Script' : 'Create Script'
       }]
     }, {
-      redundantAttribute: 'expr643',
-      selector: '[expr643]',
+      redundantAttribute: 'expr468',
+      selector: '[expr468]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -531,16 +531,16 @@ var scriptsManager = {
         evaluate: _scope => _scope.state.currentScript.name
       }]
     }, {
-      redundantAttribute: 'expr644',
-      selector: '[expr644]',
+      redundantAttribute: 'expr469',
+      selector: '[expr469]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['/api/custom/', _scope.props.db, '/'].join('')
       }]
     }, {
-      redundantAttribute: 'expr645',
-      selector: '[expr645]',
+      redundantAttribute: 'expr470',
+      selector: '[expr470]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'oninput',
@@ -553,9 +553,9 @@ var scriptsManager = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<input expr647="expr647" type="checkbox" class="h-4 w-4 bg-gray-700 border-gray-600 rounded text-indigo-600 focus:ring-indigo-500"/><span expr648="expr648"> </span>', [{
-        redundantAttribute: 'expr647',
-        selector: '[expr647]',
+      template: template('<input expr472="expr472" type="checkbox" class="h-4 w-4 bg-gray-700 border-gray-600 rounded text-indigo-600 focus:ring-indigo-500"/><span expr473="expr473"> </span>', [{
+        redundantAttribute: 'expr472',
+        selector: '[expr472]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: true,
@@ -567,8 +567,8 @@ var scriptsManager = {
           evaluate: _scope => _scope.toggleMethod(_scope.method)
         }]
       }, {
-        redundantAttribute: 'expr648',
-        selector: '[expr648]',
+        redundantAttribute: 'expr473',
+        selector: '[expr473]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -580,22 +580,22 @@ var scriptsManager = {
           evaluate: _scope => ['ml-2 ', _scope.getMethodTextClass(_scope.method), ' font-medium'].join('')
         }]
       }]),
-      redundantAttribute: 'expr646',
-      selector: '[expr646]',
+      redundantAttribute: 'expr471',
+      selector: '[expr471]',
       itemName: 'method',
       indexName: null,
       evaluate: _scope => ['GET', 'POST', 'PUT', 'DELETE', 'WS']
     }, {
-      redundantAttribute: 'expr649',
-      selector: '[expr649]',
+      redundantAttribute: 'expr474',
+      selector: '[expr474]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.cancel
       }]
     }, {
-      redundantAttribute: 'expr650',
-      selector: '[expr650]',
+      redundantAttribute: 'expr475',
+      selector: '[expr475]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -609,11 +609,11 @@ var scriptsManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.view === 'logs',
-    redundantAttribute: 'expr651',
-    selector: '[expr651]',
-    template: template('<div class="flex items-center justify-between"><h2 class="text-2xl font-bold text-gray-100">Script Logs</h2><div class="flex items-center space-x-3"><select expr652="expr652" class="bg-gray-700 text-gray-300 border-gray-600 rounded-md text-sm py-1 h-9 px-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"><option value>All Scripts</option><option expr653="expr653"></option></select><button expr654="expr654" class="p-2 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button><button expr655="expr655" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Back</button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-40">\n                                Time</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-48">\n                                Script</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Message</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr656="expr656" class="hover:bg-gray-750 transition-colors"></tr><tr expr660="expr660"></tr></tbody></table></div>', [{
-      redundantAttribute: 'expr652',
-      selector: '[expr652]',
+    redundantAttribute: 'expr476',
+    selector: '[expr476]',
+    template: template('<div class="flex items-center justify-between"><h2 class="text-2xl font-bold text-gray-100">Script Logs</h2><div class="flex items-center space-x-3"><select expr477="expr477" class="bg-gray-700 text-gray-300 border-gray-600 rounded-md text-sm py-1 h-9 px-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"><option value>All Scripts</option><option expr478="expr478"></option></select><button expr479="expr479" class="p-2 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button><button expr480="expr480" class="px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none">Back</button></div></div><div class="bg-gray-800 shadow rounded-lg border border-gray-700 overflow-hidden"><table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-900/50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-40">\n                                Time</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-48">\n                                Script</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                Message</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr481="expr481" class="hover:bg-gray-750 transition-colors"></tr><tr expr485="expr485"></tr></tbody></table></div>', [{
+      redundantAttribute: 'expr477',
+      selector: '[expr477]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -635,22 +635,22 @@ var scriptsManager = {
           evaluate: _scope => _scope.s.id || _scope.s._key
         }]
       }]),
-      redundantAttribute: 'expr653',
-      selector: '[expr653]',
+      redundantAttribute: 'expr478',
+      selector: '[expr478]',
       itemName: 's',
       indexName: null,
       evaluate: _scope => _scope.state.scripts
     }, {
-      redundantAttribute: 'expr654',
-      selector: '[expr654]',
+      redundantAttribute: 'expr479',
+      selector: '[expr479]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.fetchLogs
       }]
     }, {
-      redundantAttribute: 'expr655',
-      selector: '[expr655]',
+      redundantAttribute: 'expr480',
+      selector: '[expr480]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -660,41 +660,41 @@ var scriptsManager = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td expr657="expr657" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td><td expr658="expr658" class="px-6 py-4 whitespace-nowrap text-sm text-indigo-400 font-medium"> </td><td expr659="expr659" class="px-6 py-4 text-sm text-gray-200 font-mono break-all"> </td>', [{
-        redundantAttribute: 'expr657',
-        selector: '[expr657]',
+      template: template('<td expr482="expr482" class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono"> </td><td expr483="expr483" class="px-6 py-4 whitespace-nowrap text-sm text-indigo-400 font-medium"> </td><td expr484="expr484" class="px-6 py-4 text-sm text-gray-200 font-mono break-all"> </td>', [{
+        redundantAttribute: 'expr482',
+        selector: '[expr482]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.formatTime(_scope.log.timestamp)
         }]
       }, {
-        redundantAttribute: 'expr658',
-        selector: '[expr658]',
+        redundantAttribute: 'expr483',
+        selector: '[expr483]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.log.script_name || _scope.log.script_id
         }]
       }, {
-        redundantAttribute: 'expr659',
-        selector: '[expr659]',
+        redundantAttribute: 'expr484',
+        selector: '[expr484]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.log.message
         }]
       }]),
-      redundantAttribute: 'expr656',
-      selector: '[expr656]',
+      redundantAttribute: 'expr481',
+      selector: '[expr481]',
       itemName: 'log',
       indexName: null,
       evaluate: _scope => _scope.state.logs
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.logs.length === 0,
-      redundantAttribute: 'expr660',
-      selector: '[expr660]',
+      redundantAttribute: 'expr485',
+      selector: '[expr485]',
       template: template('<td colspan="3" class="px-6 py-16 text-center"><p class="text-gray-500 mb-2">No logs found</p><p class="text-xs text-gray-600">Use <code class="text-indigo-400">solidb.log("message")</code> in your scripts.</p></td>', [])
     }])
   }]),

@@ -240,25 +240,25 @@ var documentModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr576="expr576" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr577="expr577" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 expr578="expr578" class="text-xl font-semibold text-white tracking-tight"> </h3></div><div class="p-6 overflow-y-auto" style="max-height: calc(90vh - 80px);"><div expr579="expr579" class="mb-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700/50"></div><div expr585="expr585" class="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-lg"></div><form expr587="expr587"><div expr588="expr588" class="mb-6"></div><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div><p class="mt-2 text-xs text-gray-500">Enter valid JSON (without _key, _id, _rev - they will be added\n              automatically)</p></div><div class="flex justify-end space-x-3 pt-2"><button expr589="expr589" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-green-600/20 transition-all flex items-center disabled:opacity-50 disabled:shadow-none mr-auto"></button><button expr591="expr591" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button><button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Save\n              Document</button></div></form></div></div></div>', [{
-    redundantAttribute: 'expr576',
-    selector: '[expr576]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr533="expr533" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr534="expr534" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 expr535="expr535" class="text-xl font-semibold text-white tracking-tight"> </h3></div><div class="p-6 overflow-y-auto" style="max-height: calc(90vh - 80px);"><div expr536="expr536" class="mb-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700/50"></div><div expr542="expr542" class="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-lg"></div><form expr544="expr544"><div expr545="expr545" class="mb-6"></div><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Document Data (JSON)</label><div ref="editor" style="height: 400px; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div><p class="mt-2 text-xs text-gray-500">Enter valid JSON (without _key, _id, _rev - they will be added\n              automatically)</p></div><div class="flex justify-end space-x-3 pt-2"><button expr546="expr546" type="button" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-green-600/20 transition-all flex items-center disabled:opacity-50 disabled:shadow-none mr-auto"></button><button expr548="expr548" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button><button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Save\n              Document</button></div></form></div></div></div>', [{
+    redundantAttribute: 'expr533',
+    selector: '[expr533]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr577',
-    selector: '[expr577]',
+    redundantAttribute: 'expr534',
+    selector: '[expr534]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => e => e.stopPropagation()
     }]
   }, {
-    redundantAttribute: 'expr578',
-    selector: '[expr578]',
+    redundantAttribute: 'expr535',
+    selector: '[expr535]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -267,43 +267,43 @@ var documentModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.document,
-    redundantAttribute: 'expr579',
-    selector: '[expr579]',
-    template: template('<div class="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr580="expr580" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_key:</span><span expr581="expr581" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_rev:</span><span expr582="expr582" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_created_at:</span><span expr583="expr583" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_updated_at:</span><span expr584="expr584" class="text-gray-400 ml-2"> </span></div></div>', [{
-      redundantAttribute: 'expr580',
-      selector: '[expr580]',
+    redundantAttribute: 'expr536',
+    selector: '[expr536]',
+    template: template('<div class="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-mono"><div><span class="text-gray-500">_id:</span><span expr537="expr537" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_key:</span><span expr538="expr538" class="text-indigo-300 ml-2"> </span></div><div><span class="text-gray-500">_rev:</span><span expr539="expr539" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_created_at:</span><span expr540="expr540" class="text-gray-400 ml-2"> </span></div><div><span class="text-gray-500">_updated_at:</span><span expr541="expr541" class="text-gray-400 ml-2"> </span></div></div>', [{
+      redundantAttribute: 'expr537',
+      selector: '[expr537]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.document._id
       }]
     }, {
-      redundantAttribute: 'expr581',
-      selector: '[expr581]',
+      redundantAttribute: 'expr538',
+      selector: '[expr538]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.document._key
       }]
     }, {
-      redundantAttribute: 'expr582',
-      selector: '[expr582]',
+      redundantAttribute: 'expr539',
+      selector: '[expr539]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.document._rev
       }]
     }, {
-      redundantAttribute: 'expr583',
-      selector: '[expr583]',
+      redundantAttribute: 'expr540',
+      selector: '[expr540]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.document._created_at || '-'
       }]
     }, {
-      redundantAttribute: 'expr584',
-      selector: '[expr584]',
+      redundantAttribute: 'expr541',
+      selector: '[expr541]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -313,11 +313,11 @@ var documentModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr585',
-    selector: '[expr585]',
-    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr586="expr586" class="text-sm text-red-300"> </p></div>', [{
-      redundantAttribute: 'expr586',
-      selector: '[expr586]',
+    redundantAttribute: 'expr542',
+    selector: '[expr542]',
+    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr543="expr543" class="text-sm text-red-300"> </p></div>', [{
+      redundantAttribute: 'expr543',
+      selector: '[expr543]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -325,8 +325,8 @@ var documentModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr587',
-    selector: '[expr587]',
+    redundantAttribute: 'expr544',
+    selector: '[expr544]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onsubmit',
@@ -335,15 +335,15 @@ var documentModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.document,
-    redundantAttribute: 'expr588',
-    selector: '[expr588]',
+    redundantAttribute: 'expr545',
+    selector: '[expr545]',
     template: template('<label class="block text-sm font-medium text-gray-300 mb-2">Document Key (optional)</label><input type="text" ref="keyInput" pattern="[a-zA-Z0-9_-]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="Leave empty to auto-generate"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, hyphens, and underscores allowed</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.isBlob && _scope.state.document,
-    redundantAttribute: 'expr589',
-    selector: '[expr589]',
-    template: template('<svg expr590="expr590" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
+    redundantAttribute: 'expr546',
+    selector: '[expr546]',
+    template: template('<svg expr547="expr547" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -361,13 +361,13 @@ var documentModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.downloading,
-      redundantAttribute: 'expr590',
-      selector: '[expr590]',
+      redundantAttribute: 'expr547',
+      selector: '[expr547]',
       template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
     }])
   }, {
-    redundantAttribute: 'expr591',
-    selector: '[expr591]',
+    redundantAttribute: 'expr548',
+    selector: '[expr548]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',

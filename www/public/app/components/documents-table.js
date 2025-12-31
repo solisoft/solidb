@@ -288,9 +288,9 @@ var documentsTable = {
       });
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr773="expr773"><div expr774="expr774" class="absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center z-50"></div><div expr777="expr777" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900/90 text-red-100 px-4 py-2 rounded-md shadow-lg border border-red-500/50 flex items-center"></div><div expr778="expr778" class="flex justify-center items-center py-12"></div><div expr779="expr779" class="text-center py-12"></div><div expr782="expr782" class="text-center py-12"></div><div expr790="expr790" class="px-4 py-2\n      bg-gray-700/50 border-b border-gray-600 text-sm text-gray-400 flex items-center"></div><div expr791="expr791" class="max-h-[60vh] overflow-y-auto"></div><div expr799="expr799" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>', [{
-    redundantAttribute: 'expr773',
-    selector: '[expr773]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr583="expr583"><div expr584="expr584" class="absolute inset-0 bg-gray-900/80 flex flex-col items-center justify-center z-50"></div><div expr587="expr587" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-900/90 text-red-100 px-4 py-2 rounded-md shadow-lg border border-red-500/50 flex items-center"></div><div expr588="expr588" class="flex justify-center items-center py-12"></div><div expr589="expr589" class="text-center py-12"></div><div expr592="expr592" class="text-center py-12"></div><div expr600="expr600" class="px-4 py-2\n      bg-gray-700/50 border-b border-gray-600 text-sm text-gray-400 flex items-center"></div><div expr601="expr601" class="max-h-[60vh] overflow-y-auto"></div><div expr609="expr609" class="bg-gray-800 px-6 py-4 border-t\n      border-gray-700 flex items-center justify-between"></div></div>', [{
+    redundantAttribute: 'expr583',
+    selector: '[expr583]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -317,19 +317,19 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.uploading,
-    redundantAttribute: 'expr774',
-    selector: '[expr774]',
-    template: template('<div class="w-64"><div class="flex justify-between mb-2"><span class="text-indigo-400 font-medium">Uploading...</span><span expr775="expr775" class="text-indigo-400 font-medium"> </span></div><div class="w-full bg-gray-700 rounded-full h-2"><div expr776="expr776" class="bg-indigo-500 h-2 rounded-full transition-all duration-200"></div></div></div>', [{
-      redundantAttribute: 'expr775',
-      selector: '[expr775]',
+    redundantAttribute: 'expr584',
+    selector: '[expr584]',
+    template: template('<div class="w-64"><div class="flex justify-between mb-2"><span class="text-indigo-400 font-medium">Uploading...</span><span expr585="expr585" class="text-indigo-400 font-medium"> </span></div><div class="w-full bg-gray-700 rounded-full h-2"><div expr586="expr586" class="bg-indigo-500 h-2 rounded-full transition-all duration-200"></div></div></div>', [{
+      redundantAttribute: 'expr585',
+      selector: '[expr585]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => [_scope.state.uploadProgress, '%'].join('')
       }]
     }, {
-      redundantAttribute: 'expr776',
-      selector: '[expr776]',
+      redundantAttribute: 'expr586',
+      selector: '[expr586]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -340,8 +340,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.uploadError,
-    redundantAttribute: 'expr777',
-    selector: '[expr777]',
+    redundantAttribute: 'expr587',
+    selector: '[expr587]',
     template: template('<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> ', [{
       expressions: [{
         type: expressionTypes.TEXT,
@@ -352,25 +352,25 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr778',
-    selector: '[expr778]',
+    redundantAttribute: 'expr588',
+    selector: '[expr588]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading documents...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr779',
-    selector: '[expr779]',
-    template: template('<p expr780="expr780" class="text-red-400"> </p><button expr781="expr781" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
-      redundantAttribute: 'expr780',
-      selector: '[expr780]',
+    redundantAttribute: 'expr589',
+    selector: '[expr589]',
+    template: template('<p expr590="expr590" class="text-red-400"> </p><button expr591="expr591" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
+      redundantAttribute: 'expr590',
+      selector: '[expr590]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Error loading documents: ', _scope.state.error].join('')
       }]
     }, {
-      redundantAttribute: 'expr781',
-      selector: '[expr781]',
+      redundantAttribute: 'expr591',
+      selector: '[expr591]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -380,31 +380,31 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length === 0,
-    redundantAttribute: 'expr782',
-    selector: '[expr782]',
-    template: template('<svg expr783="expr783" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr784="expr784" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><h3 expr785="expr785" class="mt-2 text-sm font-medium text-gray-300"> </h3><p expr786="expr786" class="mt-1 text-sm text-gray-500"> </p><div class="mt-6"><button expr787="expr787" class="inline-flex items-center px-4 py-2\n          border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><button expr788="expr788" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><input expr789="expr789" type="file" ref="fileInput" class="hidden" multiple/></div>', [{
+    redundantAttribute: 'expr592',
+    selector: '[expr592]',
+    template: template('<svg expr593="expr593" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr594="expr594" class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><h3 expr595="expr595" class="mt-2 text-sm font-medium text-gray-300"> </h3><p expr596="expr596" class="mt-1 text-sm text-gray-500"> </p><div class="mt-6"><button expr597="expr597" class="inline-flex items-center px-4 py-2\n          border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><button expr598="expr598" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"></button><input expr599="expr599" type="file" ref="fileInput" class="hidden" multiple/></div>', [{
       type: bindingTypes.IF,
       evaluate: _scope => !_scope.state.isBlob,
-      redundantAttribute: 'expr783',
-      selector: '[expr783]',
+      redundantAttribute: 'expr593',
+      selector: '[expr593]',
       template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.isBlob,
-      redundantAttribute: 'expr784',
-      selector: '[expr784]',
+      redundantAttribute: 'expr594',
+      selector: '[expr594]',
       template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>', [])
     }, {
-      redundantAttribute: 'expr785',
-      selector: '[expr785]',
+      redundantAttribute: 'expr595',
+      selector: '[expr595]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.isBlob ? 'No files' : 'No documents'
       }]
     }, {
-      redundantAttribute: 'expr786',
-      selector: '[expr786]',
+      redundantAttribute: 'expr596',
+      selector: '[expr596]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -413,8 +413,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => !_scope.state.isBlob,
-      redundantAttribute: 'expr787',
-      selector: '[expr787]',
+      redundantAttribute: 'expr597',
+      selector: '[expr597]',
       template: template('\n          Create Document\n        ', [{
         expressions: [{
           type: expressionTypes.EVENT,
@@ -425,8 +425,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.isBlob,
-      redundantAttribute: 'expr788',
-      selector: '[expr788]',
+      redundantAttribute: 'expr598',
+      selector: '[expr598]',
       template: template('\n          Upload File\n        ', [{
         expressions: [{
           type: expressionTypes.EVENT,
@@ -435,8 +435,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
         }]
       }])
     }, {
-      redundantAttribute: 'expr789',
-      selector: '[expr789]',
+      redundantAttribute: 'expr599',
+      selector: '[expr599]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -446,21 +446,21 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.isBlob && !_scope.state.loading && !_scope.state.error && _scope.state.documents.length > 0,
-    redundantAttribute: 'expr790',
-    selector: '[expr790]',
+    redundantAttribute: 'expr600',
+    selector: '[expr600]',
     template: template('<svg class="w-4 h-4 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>\n      Drag and drop files here to upload\n    ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.documents.length > 0,
-    redundantAttribute: 'expr791',
-    selector: '[expr791]',
-    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr792="expr792" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>', [{
+    redundantAttribute: 'expr601',
+    selector: '[expr601]',
+    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n              Document\n            </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n              Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr602="expr602" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr793="expr793" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr794="expr794" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr795="expr795" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr796="expr796" class="inline-block"></div><button expr797="expr797" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr798="expr798" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
-        redundantAttribute: 'expr793',
-        selector: '[expr793]',
+      template: template('<td class="px-6 py-4"><div class="overflow-x-auto max-w-[calc(100vw-250px)] scrollbar-hidden"><span expr603="expr603" class="text-sm text-gray-400 font-mono whitespace-nowrap"> </span></div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3 w-32"><button expr604="expr604" class="text-blue-400 hover:text-blue-300\n                transition-colors cursor-pointer" title="View document"></button><button expr605="expr605" class="text-green-400 hover:text-green-300 transition-colors cursor-pointer" title="Download blob"></button><div expr606="expr606" class="inline-block"></div><button expr607="expr607" class="text-indigo-400 hover:text-indigo-300 transition-colors\n                cursor-pointer" title="Edit metadata"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button expr608="expr608" class="text-red-400 hover:text-red-300\n                transition-colors cursor-pointer" title="Delete"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
+        redundantAttribute: 'expr603',
+        selector: '[expr603]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -469,8 +469,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.isBlob,
-        redundantAttribute: 'expr794',
-        selector: '[expr794]',
+        redundantAttribute: 'expr604',
+        selector: '[expr604]',
         template: template('<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>', [{
           expressions: [{
             type: expressionTypes.EVENT,
@@ -481,8 +481,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId !== _scope.doc._key,
-        redundantAttribute: 'expr795',
-        selector: '[expr795]',
+        redundantAttribute: 'expr605',
+        selector: '[expr605]',
         template: template('<svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>', [{
           expressions: [{
             type: expressionTypes.EVENT,
@@ -493,28 +493,28 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.isBlob && _scope.state.downloadingDocId === _scope.doc._key,
-        redundantAttribute: 'expr796',
-        selector: '[expr796]',
+        redundantAttribute: 'expr606',
+        selector: '[expr606]',
         template: template('<svg class="animate-spin h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>', [])
       }, {
-        redundantAttribute: 'expr797',
-        selector: '[expr797]',
+        redundantAttribute: 'expr607',
+        selector: '[expr607]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.editDocument(_scope.doc)
         }]
       }, {
-        redundantAttribute: 'expr798',
-        selector: '[expr798]',
+        redundantAttribute: 'expr608',
+        selector: '[expr608]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteDocument(_scope.doc._key)
         }]
       }]),
-      redundantAttribute: 'expr792',
-      selector: '[expr792]',
+      redundantAttribute: 'expr602',
+      selector: '[expr602]',
       itemName: 'doc',
       indexName: 'idx',
       evaluate: _scope => _scope.state.documents
@@ -522,19 +522,19 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.totalCount > 0,
-    redundantAttribute: 'expr799',
-    selector: '[expr799]',
-    template: template('<div expr800="expr800" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr801="expr801" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr802="expr802" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>', [{
-      redundantAttribute: 'expr800',
-      selector: '[expr800]',
+    redundantAttribute: 'expr609',
+    selector: '[expr609]',
+    template: template('<div expr610="expr610" class="text-sm text-gray-400"> </div><div class="flex space-x-2"><button expr611="expr611" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">\n          Previous\n        </button><button expr612="expr612" class="px-3 py-1 text-sm border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 disabled:opacity-50\n          disabled:cursor-not-allowed transition-colors">\n          Next\n        </button></div>', [{
+      redundantAttribute: 'expr610',
+      selector: '[expr610]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Showing ', _scope.state.offset + 1, ' to ', Math.min(_scope.state.offset + _scope.state.limit, _scope.state.totalCount), ' of ', _scope.state.totalCount, ' documents'].join('')
       }]
     }, {
-      redundantAttribute: 'expr801',
-      selector: '[expr801]',
+      redundantAttribute: 'expr611',
+      selector: '[expr611]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -546,8 +546,8 @@ ${_scope.state.isDragging ? 'border-2 border-dashed border-indigo-500 bg-indigo-
         evaluate: _scope => _scope.state.offset === 0
       }]
     }, {
-      redundantAttribute: 'expr802',
-      selector: '[expr802]',
+      redundantAttribute: 'expr612',
+      selector: '[expr612]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
