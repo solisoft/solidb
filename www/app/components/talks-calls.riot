@@ -163,19 +163,19 @@
                 this.state = {
                     pinnedPeers: []
                 }
-                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                // Lazy initialize - don't create AudioContext until needed
+                this.audioCtx = null;
                 this.analysers = {};
                 this.animationFrameId = null;
-                this.drawVisualizers();
             },
 
             onUnmounted() {
                 if (this.animationFrameId) {
                     cancelAnimationFrame(this.animationFrameId);
+                    this.animationFrameId = null;
                 }
-                if (this.audioCtx) {
-                    this.audioCtx.close().catch(e => console.error("Error closing AudioContext:", e));
-                }
+                // Don't close the audio context on unmount - let it live
+                // Closing it can cause issues with other audio in the app
             },
 
             onUpdated() {
@@ -183,9 +183,9 @@
             },
 
             updateStreams() {
-                // Local Audio Viz
+                // Local Audio Viz - use querySelector as fallback
                 if (this.props.localStream) {
-                    const videoEl = this.$refs.localVideo;
+                    const videoEl = this.$refs?.localVideo || this.$('[ref="localVideo"]');
                     if (videoEl && videoEl.srcObject !== this.props.localStream) {
                         videoEl.srcObject = this.props.localStream;
                     }
@@ -215,6 +215,11 @@
                     const audioTracks = stream.getAudioTracks();
                     if (audioTracks.length === 0) return;
 
+                    // Lazy create AudioContext
+                    if (!this.audioCtx) {
+                        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
                     const source = this.audioCtx.createMediaStreamSource(stream);
                     const analyser = this.audioCtx.createAnalyser();
                     analyser.fftSize = 64; // Small size for simple bars (32 bins)
@@ -227,6 +232,11 @@
                         dataArray: new Uint8Array(analyser.frequencyBinCount),
                         canvas
                     };
+
+                    // Start the draw loop if not already running
+                    if (!this.animationFrameId) {
+                        this.drawVisualizers();
+                    }
                 } catch (e) {
                     console.error("Error attaching audio analyzer for", key, e);
                 }

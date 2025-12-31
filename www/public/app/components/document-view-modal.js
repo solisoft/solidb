@@ -160,33 +160,33 @@ var documentViewModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr454="expr454" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr455="expr455" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center"><h3 class="text-xl font-semibold text-white tracking-tight">View Document</h3><button expr456="expr456" class="text-gray-400 hover:text-white transition-colors"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div class="p-6 flex flex-col h-full overflow-hidden"><div ref="editor" style="height: 500px; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div><div class="flex justify-end space-x-3 mt-6"><button expr457="expr457" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n            Close\n          </button><button expr458="expr458" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-green-600/20 transition-all disabled:opacity-50 disabled:shadow-none flex items-center"></button><button expr460="expr460" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">\n            Edit\n          </button></div></div></div></div>', [{
-    redundantAttribute: 'expr454',
-    selector: '[expr454]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr275="expr275" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr276="expr276" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center"><h3 class="text-xl font-semibold text-white tracking-tight">View Document</h3><button expr277="expr277" class="text-gray-400 hover:text-white transition-colors"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div class="p-6 flex flex-col h-full overflow-hidden"><div ref="editor" style="height: 500px; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1);"></div><div class="flex justify-end space-x-3 mt-6"><button expr278="expr278" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n            Close\n          </button><button expr279="expr279" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-green-600/20 transition-all disabled:opacity-50 disabled:shadow-none flex items-center"></button><button expr281="expr281" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">\n            Edit\n          </button></div></div></div></div>', [{
+    redundantAttribute: 'expr275',
+    selector: '[expr275]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr455',
-    selector: '[expr455]',
+    redundantAttribute: 'expr276',
+    selector: '[expr276]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => e => e.stopPropagation()
     }]
   }, {
-    redundantAttribute: 'expr456',
-    selector: '[expr456]',
+    redundantAttribute: 'expr277',
+    selector: '[expr277]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleClose
     }]
   }, {
-    redundantAttribute: 'expr457',
-    selector: '[expr457]',
+    redundantAttribute: 'expr278',
+    selector: '[expr278]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -195,9 +195,9 @@ var documentViewModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.isBlob,
-    redundantAttribute: 'expr458',
-    selector: '[expr458]',
-    template: template('<svg expr459="expr459" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
+    redundantAttribute: 'expr279',
+    selector: '[expr279]',
+    template: template('<svg expr280="expr280" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> ', [{
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -215,13 +215,13 @@ var documentViewModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.downloading,
-      redundantAttribute: 'expr459',
-      selector: '[expr459]',
+      redundantAttribute: 'expr280',
+      selector: '[expr280]',
       template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
     }])
   }, {
-    redundantAttribute: 'expr460',
-    selector: '[expr460]',
+    redundantAttribute: 'expr281',
+    selector: '[expr281]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
