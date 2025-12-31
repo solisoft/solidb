@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v8";
+const CACHE_NAME = "talks-v9";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
@@ -63,8 +63,9 @@ self.addEventListener("fetch", (event) => {
         // Return cached and update in background
         fetch(event.request).then((response) => {
           if (response && response.status === 200) {
+            const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, response);
+              cache.put(event.request, responseToCache);
             });
           }
         }).catch(() => { });
