@@ -1,8 +1,7 @@
-const CACHE_NAME = "talks-v12";
+const CACHE_NAME = "talks-v13";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
-  "/app.css",
   "/images/icon-192.png",
   "/images/icon-512.png"
 ];
@@ -14,7 +13,6 @@ self.addEventListener("install", (event) => {
       return cache.addAll(STATIC_ASSETS);
     })
   );
-  // Activate immediately
   self.skipWaiting();
 });
 
@@ -29,62 +27,42 @@ self.addEventListener("activate", (event) => {
       );
     })
   );
-  // Take control immediately
   self.clients.claim();
 });
 
-// Fetch event - network first, fallback to cache
+// Fetch event - simplified: mostly pass through, only cache manifest/icons
 self.addEventListener("fetch", (event) => {
-  // Skip non-GET requests and WebSocket connections
-  if (event.request.method !== "GET" || event.request.url.includes("/ws/")) {
-    return;
-  }
-
-  // Skip video/audio requests and range requests to let browser handle them
-  if (event.request.headers.has('range') ||
+  // Skip non-GET, WebSocket, range, video, audio requests entirely
+  if (event.request.method !== "GET" ||
+    event.request.url.includes("/ws/") ||
+    event.request.headers.has('range') ||
     event.request.destination === 'video' ||
     event.request.destination === 'audio') {
     return;
   }
 
-  // For navigation requests, use network first
+  // For navigation, just go to network
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request)
-        .catch(() => caches.match("/talks"))
+      fetch(event.request).catch(() => caches.match("/talks"))
     );
     return;
   }
 
-  // For static assets, try cache first then network
+  // For everything else, network first with simple cache fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return cached and update in background
-        fetch(event.request).then((response) => {
-          if (response && response.status === 200) {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-        }).catch(() => { });
-        return cachedResponse;
-      }
-
-      // Not in cache, fetch from network
-      return fetch(event.request).then((response) => {
-        // Cache static assets
-        if (response && response.status === 200) {
-          const url = new URL(event.request.url);
-          if (url.pathname.match(/\.(css|js|svg|png|jpg|jpeg|webp|woff2?)$/)) {
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, response.clone());
-            });
-          }
+    fetch(event.request)
+      .then((response) => {
+        // Only cache our static assets, clone BEFORE consuming
+        const url = new URL(event.request.url);
+        if (STATIC_ASSETS.includes(url.pathname)) {
+          const clonedResponse = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clonedResponse);
+          });
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
