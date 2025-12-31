@@ -102,7 +102,6 @@ impl SchemaValidator {
                         Ok(())
                     }
                 }
-                }
                 SchemaValidationMode::Lenient => {
                     for error in validator.iter_errors(document) {
                         tracing::warn!(

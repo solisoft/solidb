@@ -3102,7 +3102,7 @@
                                 return;
                             }
 
-                            await this.setupPeerConnection(fromUser, false, null);
+                            await this.setupPeerConnection(fromUser, false, data.call_type);
                             const pc = this.peerConnections[fromUser];
                             if (pc) {
                                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -3232,7 +3232,7 @@
                     this.localStream = stream;
                     this.attachLocalStream();
 
-                    await this.setupPeerConnection(incoming.from_user, false, null);
+                    await this.setupPeerConnection(incoming.from_user, false, incoming.type);
                     const pc = this.peerConnections[incoming.from_user];
 
                     await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));

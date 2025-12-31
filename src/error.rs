@@ -63,6 +63,16 @@ pub enum DbError {
 
     #[error("Schema compilation failed: {0}")]
     SchemaCompilationError(String),
+
+    // Authorization errors
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
+    #[error("Role not found: {0}")]
+    RoleNotFound(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;

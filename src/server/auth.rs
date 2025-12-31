@@ -1,4 +1,5 @@
 use crate::error::DbError;
+use crate::server::authorization::{Role, UserRole, ROLES_COLLECTION, USER_ROLES_COLLECTION};
 use crate::storage::StorageEngine;
 use crate::sync::log::SyncLog;
 use crate::sync::{LogEntry, Operation};
@@ -65,7 +66,10 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
 const ADMIN_DB: &str = "_system";
 const ADMIN_COLL: &str = "_admins";
 pub const API_KEYS_COLL: &str = "_api_keys";
+pub const ROLES_COLL: &str = "_roles";
+pub const USER_ROLES_COLL: &str = "_user_roles";
 const DEFAULT_USER: &str = "admin";
+const RBAC_CONFIG_KEY: &str = "rbac_migrated";
 
 // Secret for JWT signing - MUST be set via JWT_SECRET env var in production
 static JWT_SECRET: Lazy<String> = Lazy::new(|| {
@@ -100,6 +104,12 @@ pub struct Claims {
     pub exp: usize,  // expiration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub livequery: Option<bool>,  // If true, this token is only valid for live queries
+    /// Role names assigned to this user (for RBAC)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<String>>,
+    /// Database restrictions (for scoped API keys)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoped_databases: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -116,6 +126,15 @@ pub struct ApiKey {
     pub name: String,
     pub key_hash: String,
     pub created_at: String,
+    /// Role names assigned to this API key (for RBAC)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
+    /// Database restrictions (None means all databases)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoped_databases: Option<Vec<String>>,
+    /// Optional expiration timestamp (RFC3339)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +267,201 @@ impl AuthService {
             }
         }
 
+        // Initialize RBAC system collections
+        Self::init_rbac(storage, replication_log, should_skip_defaults)?;
+
+        Ok(())
+    }
+
+    /// Initialize RBAC system: create collections, builtin roles, and migrate existing users
+    fn init_rbac(storage: &StorageEngine, replication_log: Option<&SyncLog>, should_skip_defaults: bool) -> Result<(), DbError> {
+        let db = storage.get_database(ADMIN_DB)?;
+
+        // Ensure _roles collection exists
+        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ROLES_COLL) {
+            if should_skip_defaults {
+                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", ROLES_COLL);
+            } else {
+                tracing::info!("Creating {} collection for RBAC", ROLES_COLL);
+                db.create_collection(ROLES_COLL.to_string(), None)?;
+            }
+        }
+
+        // Ensure _user_roles collection exists
+        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(USER_ROLES_COLL) {
+            if should_skip_defaults {
+                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", USER_ROLES_COLL);
+            } else {
+                tracing::info!("Creating {} collection for RBAC", USER_ROLES_COLL);
+                db.create_collection(USER_ROLES_COLL.to_string(), None)?;
+            }
+        }
+
+        // Ensure _config collection exists for migration tracking
+        let config_coll = "_config";
+        if let Err(DbError::CollectionNotFound(_)) = db.get_collection(config_coll) {
+            if !should_skip_defaults {
+                tracing::info!("Creating {} collection for system configuration", config_coll);
+                db.create_collection(config_coll.to_string(), None)?;
+            }
+        }
+
+        // Skip the rest if joining cluster (will sync from peers)
+        if should_skip_defaults {
+            return Ok(());
+        }
+
+        // Check if RBAC has already been initialized
+        let already_migrated = if let Ok(config) = db.get_collection(config_coll) {
+            config.get(RBAC_CONFIG_KEY).is_ok()
+        } else {
+            false
+        };
+
+        if already_migrated {
+            tracing::debug!("RBAC already initialized, skipping migration");
+            return Ok(());
+        }
+
+        // Initialize builtin roles
+        if let Ok(roles_coll) = db.get_collection(ROLES_COLL) {
+            for role in Role::builtin_roles() {
+                // Only insert if role doesn't exist
+                if roles_coll.get(&role.name).is_err() {
+                    let role_value = serde_json::to_value(&role)
+                        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+                    roles_coll.insert(role_value.clone())?;
+                    tracing::info!("Created builtin role: {}", role.name);
+
+                    // Record for replication
+                    if let Some(log) = replication_log {
+                        let entry = LogEntry {
+                            sequence: 0,
+                            node_id: "".to_string(),
+                            database: ADMIN_DB.to_string(),
+                            collection: ROLES_COLL.to_string(),
+                            operation: Operation::Insert,
+                            key: role.name.clone(),
+                            data: serde_json::to_vec(&role_value).ok(),
+                            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                            origin_sequence: None,
+                        };
+                        let _ = log.append(entry);
+                    }
+                }
+            }
+        }
+
+        // Migrate existing users: assign admin role to all existing users
+        Self::migrate_existing_users_to_admin(storage, replication_log)?;
+
+        // Migrate existing API keys: assign admin role
+        Self::migrate_existing_api_keys_to_admin(storage, replication_log)?;
+
+        // Mark RBAC as initialized
+        if let Ok(config) = db.get_collection(config_coll) {
+            let migration_record = serde_json::json!({
+                "_key": RBAC_CONFIG_KEY,
+                "migrated_at": chrono::Utc::now().to_rfc3339(),
+                "version": "1.0"
+            });
+            config.insert(migration_record)?;
+            tracing::info!("RBAC migration completed successfully");
+        }
+
+        Ok(())
+    }
+
+    /// Migrate existing users to have admin role
+    fn migrate_existing_users_to_admin(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+        let db = storage.get_database(ADMIN_DB)?;
+        let admins_coll = db.get_collection(ADMIN_COLL)?;
+        let user_roles_coll = db.get_collection(USER_ROLES_COLL)?;
+
+        // Get all existing admin users
+        for doc in admins_coll.scan(None) {
+            let user: User = serde_json::from_value(doc.to_value())
+                .map_err(|e| DbError::InternalError(format!("Invalid user data: {}", e)))?;
+
+            // Check if user already has a role assignment
+            let existing_assignment = user_roles_coll.scan(None)
+                .any(|d| {
+                    if let Ok(ur) = serde_json::from_value::<UserRole>(d.to_value()) {
+                        ur.username == user.username
+                    } else {
+                        false
+                    }
+                });
+
+            if !existing_assignment {
+                // Assign admin role to existing user
+                let user_role = UserRole::new_global(&user.username, "admin", "migration");
+                let user_role_value = serde_json::to_value(&user_role)
+                    .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+
+                user_roles_coll.insert(user_role_value.clone())?;
+                tracing::info!("Migrated user '{}' to admin role", user.username);
+
+                // Record for replication
+                if let Some(log) = replication_log {
+                    let entry = LogEntry {
+                        sequence: 0,
+                        node_id: "".to_string(),
+                        database: ADMIN_DB.to_string(),
+                        collection: USER_ROLES_COLL.to_string(),
+                        operation: Operation::Insert,
+                        key: user_role.id.clone(),
+                        data: serde_json::to_vec(&user_role_value).ok(),
+                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                        origin_sequence: None,
+                    };
+                    let _ = log.append(entry);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Migrate existing API keys to have admin role
+    fn migrate_existing_api_keys_to_admin(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+        let db = storage.get_database(ADMIN_DB)?;
+        let api_keys_coll = db.get_collection(API_KEYS_COLL)?;
+
+        // Get all existing API keys and add admin role if not already set
+        for doc in api_keys_coll.scan(None) {
+            let api_key: ApiKey = serde_json::from_value(doc.to_value())
+                .map_err(|e| DbError::InternalError(format!("Invalid API key data: {}", e)))?;
+
+            // Only migrate if roles is empty (backward compatibility)
+            if api_key.roles.is_empty() {
+                let mut updated_key = api_key.clone();
+                updated_key.roles = vec!["admin".to_string()];
+
+                let updated_value = serde_json::to_value(&updated_key)
+                    .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+
+                api_keys_coll.update(&api_key.id, updated_value.clone())?;
+                tracing::info!("Migrated API key '{}' to admin role", api_key.name);
+
+                // Record for replication
+                if let Some(log) = replication_log {
+                    let entry = LogEntry {
+                        sequence: 0,
+                        node_id: "".to_string(),
+                        database: ADMIN_DB.to_string(),
+                        collection: API_KEYS_COLL.to_string(),
+                        operation: Operation::Update,
+                        key: api_key.id.clone(),
+                        data: serde_json::to_vec(&updated_value).ok(),
+                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                        origin_sequence: None,
+                    };
+                    let _ = log.append(entry);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -275,6 +489,11 @@ impl AuthService {
 
     /// Create JWT for user
     pub fn create_jwt(username: &str) -> Result<String, DbError> {
+        Self::create_jwt_with_roles(username, None, None)
+    }
+
+    /// Create JWT for user with roles
+    pub fn create_jwt_with_roles(username: &str, roles: Option<Vec<String>>, scoped_databases: Option<Vec<String>>) -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -285,6 +504,8 @@ impl AuthService {
             sub: username.to_owned(),
             exp: expiration,
             livequery: None,
+            roles,
+            scoped_databases,
         };
 
         encode(
@@ -309,6 +530,8 @@ impl AuthService {
             sub: "livequery".to_owned(),
             exp: expiration,
             livequery: Some(true),
+            roles: None,
+            scoped_databases: None,
         };
 
         encode(
@@ -370,16 +593,55 @@ impl AuthService {
 
             // Constant-time comparison to prevent timing attacks
             if constant_time_eq(incoming_hash.as_bytes(), api_key.key_hash.as_bytes()) {
-                // Return synthetic claims for the API key
+                // Check if API key has expired
+                if let Some(ref expires_at) = api_key.expires_at {
+                    if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expires_at) {
+                        if expiry < chrono::Utc::now() {
+                            return Err(DbError::BadRequest("API key has expired".to_string()));
+                        }
+                    }
+                }
+
+                // Return claims with roles and scoped_databases from the API key
                 return Ok(Claims {
                     sub: format!("api-key:{}", api_key.name),
-                    exp: usize::MAX, // Never expires
+                    exp: usize::MAX, // Claims never expire (API key expiry checked above)
                     livequery: None,
+                    roles: if api_key.roles.is_empty() { None } else { Some(api_key.roles) },
+                    scoped_databases: api_key.scoped_databases,
                 });
             }
         }
 
         Err(DbError::BadRequest("Invalid API key".to_string()))
+    }
+
+    /// Get roles for a user from _user_roles collection
+    pub fn get_user_roles(storage: &StorageEngine, username: &str) -> Option<Vec<String>> {
+        let db = match storage.get_database(ADMIN_DB) {
+            Ok(db) => db,
+            Err(_) => return None,
+        };
+
+        let user_roles_coll = match db.get_collection(USER_ROLES_COLL) {
+            Ok(coll) => coll,
+            Err(_) => return None,
+        };
+
+        let mut roles = Vec::new();
+        for doc in user_roles_coll.scan(None) {
+            if let Ok(user_role) = serde_json::from_value::<UserRole>(doc.to_value()) {
+                if user_role.username == username {
+                    roles.push(user_role.role);
+                }
+            }
+        }
+
+        if roles.is_empty() {
+            None
+        } else {
+            Some(roles)
+        }
     }
 }
 
@@ -417,6 +679,8 @@ pub async fn auth_middleware(
                 sub: "cluster-internal".to_string(),
                 exp: usize::MAX,
                 livequery: None,
+                roles: Some(vec!["admin".to_string()]), // Cluster internal has admin access
+                scoped_databases: None,
             };
             req.extensions_mut().insert(claims);
             return Ok(next.run(req).await);
@@ -484,10 +748,14 @@ pub async fn auth_middleware(
                                 if let Ok(doc) = collection.get(username) {
                                     if let Ok(user) = serde_json::from_value::<User>(doc.to_value()) {
                                         if AuthService::verify_password(password, &user.password_hash) {
+                                            // Load user roles from _user_roles
+                                            let roles = AuthService::get_user_roles(&state.storage, username);
                                             let claims = Claims {
                                                 sub: username.to_string(),
                                                 exp: usize::MAX,
                                                 livequery: None,
+                                                roles,
+                                                scoped_databases: None,
                                             };
                                             req.extensions_mut().insert(claims);
                                             return Ok(next.run(req).await);
@@ -592,11 +860,15 @@ mod tests {
             sub: "user1".to_string(),
             exp: 12345,
             livequery: Some(true),
+            roles: Some(vec!["admin".to_string()]),
+            scoped_databases: None,
         };
-        
+
         assert_eq!(claims.sub, "user1");
         assert_eq!(claims.exp, 12345);
         assert_eq!(claims.livequery, Some(true));
+        assert_eq!(claims.roles, Some(vec!["admin".to_string()]));
+        assert_eq!(claims.scoped_databases, None);
     }
 
     #[test]
@@ -617,10 +889,15 @@ mod tests {
             name: "My Key".to_string(),
             key_hash: "hash123".to_string(),
             created_at: "2024-01-01T00:00:00Z".to_string(),
+            roles: vec!["admin".to_string()],
+            scoped_databases: Some(vec!["db1".to_string()]),
+            expires_at: None,
         };
-        
+
         assert_eq!(api_key.id, "key1");
         assert_eq!(api_key.name, "My Key");
+        assert_eq!(api_key.roles, vec!["admin".to_string()]);
+        assert_eq!(api_key.scoped_databases, Some(vec!["db1".to_string()]));
     }
 
     #[test]
@@ -629,16 +906,34 @@ mod tests {
             sub: "user".to_string(),
             exp: 1000,
             livequery: None,
+            roles: None,
+            scoped_databases: None,
         };
-        
+
         let json = serde_json::to_string(&claims).unwrap();
         assert!(json.contains("user"));
         assert!(json.contains("1000"));
-        // livequery should be skipped when None
+        // Optional fields should be skipped when None
         assert!(!json.contains("livequery"));
-        
+        assert!(!json.contains("roles"));
+        assert!(!json.contains("scoped_databases"));
+
         let deserialized: Claims = serde_json::from_str(&json).unwrap();
         assert_eq!(claims.sub, deserialized.sub);
+
+        // Test with roles
+        let claims_with_roles = Claims {
+            sub: "user".to_string(),
+            exp: 1000,
+            livequery: None,
+            roles: Some(vec!["admin".to_string(), "editor".to_string()]),
+            scoped_databases: Some(vec!["db1".to_string()]),
+        };
+
+        let json = serde_json::to_string(&claims_with_roles).unwrap();
+        assert!(json.contains("roles"));
+        assert!(json.contains("admin"));
+        assert!(json.contains("scoped_databases"));
     }
 
     #[test]
