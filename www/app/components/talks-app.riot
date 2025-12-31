@@ -46,9 +46,10 @@
                 state.callDuration } is-audio-enabled={ !state.isMuted } is-video-enabled={ state.isVideoEnabled }
                 is-screen-sharing={ state.isScreenSharing } local-stream-has-video={ state.localStreamHasVideo }
                 remote-stream-has-video={ state.remoteStreamHasVideo } call-peers={ state.callPeers } is-fullscreen={
-                state.isCallFullscreen } is-mobile={ state.isMobile } on-toggle-fullscreen={ toggleCallFullscreen }
-                on-accept-call={ acceptCall } on-decline-call={ declineCall } on-toggle-audio={ toggleMute }
-                on-toggle-video={ toggleVideo } onshare={ toggleScreenShare } on-hangup={ hangup } />
+                state.isCallFullscreen } is-mobile={ state.isMobile } local-stream={ localStream }
+                on-toggle-fullscreen={ toggleCallFullscreen } on-accept-call={ acceptCall } on-decline-call={
+                declineCall } on-toggle-audio={ toggleMute } on-toggle-video={ toggleVideo } onshare={ toggleScreenShare
+                } on-hangup={ hangup } />
 
 
 

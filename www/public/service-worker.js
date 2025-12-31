@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v10";
+const CACHE_NAME = "talks-v11";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
