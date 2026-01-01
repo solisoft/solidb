@@ -23,6 +23,8 @@
       <thead class="bg-gray-900/50">
         <tr>
           <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Roles</th>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Databases</th>
           <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Created</th>
           <th class="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
         </tr>
@@ -56,8 +58,28 @@
         <form id="createKeyForm">
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-300 mb-2">Key Name</label>
-            <input type="text" id="keyName" required placeholder="e.g., backend-service, ci-pipeline" 
+            <input type="text" id="keyName" required placeholder="e.g., backend-service, ci-pipeline"
               class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Role</label>
+            <div id="roleCheckboxes" class="space-y-2 max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <!-- Loaded dynamically -->
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Database Access</label>
+            <div id="databaseCheckboxes" class="space-y-2 max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" name="allDatabases" id="allDatabasesCheckbox" checked
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+                <span class="text-sm text-gray-300">All databases</span>
+                <span class="text-xs text-gray-500">(no restrictions)</span>
+              </label>
+              <div id="specificDatabases" class="hidden pl-4 space-y-2 border-l border-gray-700 ml-2">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
           </div>
           <div class="flex justify-end gap-3 pt-2">
             <button type="button" id="cancelCreate" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button>
@@ -109,7 +131,94 @@
   import { getServerConfig, getAuthToken, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
 
   const config = getServerConfig();
-  const baseUrl = config ? `${config.host}:${config.port}` : '';
+  const baseUrl = config ? (config.port ? `${config.host}:${config.port}` : config.host) : '';
+
+  let availableRoles = [];
+  let availableDatabases = [];
+
+  async function loadDatabases() {
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/databases`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Databases response:', data);
+        availableDatabases = (data.databases || []).filter(db => db !== '_system');
+        console.log('Available databases (filtered):', availableDatabases);
+        renderDatabaseCheckboxes();
+      } else {
+        console.error('Failed to load databases:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading databases:', error);
+    }
+  }
+
+  function renderDatabaseCheckboxes() {
+    const container = document.getElementById('specificDatabases');
+    console.log('Rendering databases, container:', container, 'databases:', availableDatabases);
+    if (!container) {
+      console.error('specificDatabases container not found!');
+      return;
+    }
+
+    if (availableDatabases.length === 0) {
+      container.innerHTML = '<span class="text-xs text-gray-500">No databases available (only _system exists)</span>';
+      return;
+    }
+
+    const html = availableDatabases.map(db => `
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="checkbox" name="databases" value="${db}"
+          class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+        <span class="text-sm text-gray-300">${db}</span>
+      </label>
+    `).join('');
+    console.log('Generated HTML:', html);
+    container.innerHTML = html;
+  }
+
+  function getSelectedDatabases() {
+    const allDbCheckbox = document.getElementById('allDatabasesCheckbox');
+    if (allDbCheckbox && allDbCheckbox.checked) {
+      return null; // null means all databases
+    }
+    const checkboxes = document.querySelectorAll('input[name="databases"]:checked');
+    const selected = Array.from(checkboxes).map(cb => cb.value);
+    return selected.length > 0 ? selected : null;
+  }
+
+  async function loadRoles() {
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/auth/roles`);
+      if (response.ok) {
+        const data = await response.json();
+        // API returns array directly, not { roles: [...] }
+        availableRoles = Array.isArray(data) ? data : (data.roles || []);
+        renderRoleCheckboxes();
+      }
+    } catch (error) {
+      console.error('Error loading roles:', error);
+    }
+  }
+
+  function renderRoleCheckboxes() {
+    const container = document.getElementById('roleCheckboxes');
+    if (!container) return;
+
+    container.innerHTML = availableRoles.map(role => `
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="radio" name="role" value="${role.name}" ${role.name === 'admin' ? 'checked' : ''}
+          class="w-4 h-4 border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+        <span class="text-sm text-gray-300">${role.name}</span>
+        <span class="text-xs text-gray-500">${role.description || ''}</span>
+      </label>
+    `).join('');
+  }
+
+  function getSelectedRoles() {
+    const selected = document.querySelector('input[name="role"]:checked');
+    return selected ? [selected.value] : ['admin'];
+  }
 
   // Modal Management
   function openModal(modalId) {
@@ -198,9 +307,30 @@
               <span class="text-white font-medium">${key.name}</span>
             </div>
           </td>
+          <td class="px-6 py-4">
+            <div class="flex flex-wrap gap-1">
+              ${(key.roles || []).map(role => `
+                <span class="px-2 py-0.5 text-xs rounded-full ${
+                  role === 'admin' ? 'bg-red-500/20 text-red-400' :
+                  role === 'editor' ? 'bg-blue-500/20 text-blue-400' :
+                  'bg-gray-500/20 text-gray-400'
+                }">${role}</span>
+              `).join('')}
+            </div>
+          </td>
+          <td class="px-6 py-4">
+            ${key.scoped_databases && key.scoped_databases.length > 0
+              ? `<div class="flex flex-wrap gap-1">
+                  ${key.scoped_databases.map(db => `
+                    <span class="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">${db}</span>
+                  `).join('')}
+                </div>`
+              : `<span class="text-xs text-green-400">All databases</span>`
+            }
+          </td>
           <td class="px-6 py-4 text-gray-400 text-sm">${new Date(key.created_at).toLocaleString()}</td>
           <td class="px-6 py-4 text-right">
-            <button onclick="deleteKey('${key.id}', '${key.name}')" 
+            <button onclick="deleteKey('${key.id}', '${key.name}')"
               class="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded">
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -211,7 +341,7 @@
       `).join('');
     } catch (error) {
       console.error('Error loading API keys:', error);
-      tbody.innerHTML = `<tr><td colspan="3" class="px-6 py-4 text-center text-red-400">Failed to load API keys</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-400">Failed to load API keys</td></tr>`;
     }
   }
 
@@ -233,9 +363,27 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     loadApiKeys();
+    loadRoles();
+    loadDatabases();
+
+    // Toggle specific databases visibility
+    document.getElementById('allDatabasesCheckbox').addEventListener('change', (e) => {
+      const specificDbs = document.getElementById('specificDatabases');
+      console.log('Toggle clicked, checked:', e.target.checked, 'specificDbs:', specificDbs);
+      if (e.target.checked) {
+        specificDbs.classList.add('hidden');
+      } else {
+        specificDbs.classList.remove('hidden');
+        console.log('Showing databases, innerHTML:', specificDbs.innerHTML);
+      }
+    });
 
     document.getElementById('createKeyBtn').addEventListener('click', () => {
       document.getElementById('keyName').value = '';
+      document.getElementById('allDatabasesCheckbox').checked = true;
+      document.getElementById('specificDatabases').classList.add('hidden');
+      renderRoleCheckboxes(); // Reset checkboxes
+      renderDatabaseCheckboxes(); // Reset database checkboxes
       openModal('createKeyModal');
       setTimeout(() => document.getElementById('keyName').focus(), 100);
     });
@@ -246,12 +394,15 @@
       e.preventDefault();
       const name = document.getElementById('keyName').value.trim();
       if (!name) return;
-      
+
+      const roles = getSelectedRoles();
+      const scoped_databases = getSelectedDatabases();
+
       try {
         const response = await authenticatedFetch(`${baseUrl}/_api/auth/api-keys`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name, roles, scoped_databases })
         });
         
         if (response.ok) {

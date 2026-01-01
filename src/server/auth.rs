@@ -150,6 +150,8 @@ pub struct ApiKeyListItem {
     pub id: String,
     pub name: String,
     pub created_at: String,
+    pub roles: Vec<String>,
+    pub scoped_databases: Option<Vec<String>>,
 }
 
 pub struct AuthService;

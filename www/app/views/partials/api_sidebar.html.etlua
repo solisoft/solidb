@@ -11,15 +11,21 @@
           Performance
         </a>
 
+        <!-- Authentication -->
+        <a href="#auth" class="group flex items-center px-2 py-2 text-sm font-medium text-slate-400 hover:text-slate-300 hover:bg-slate-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(100,116,139,0.5)]"></span>
+          Authentication
+        </a>
+
         <!-- Databases -->
-        <a href="#databases" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+        <a href="#databases" class="group flex items-center px-2 py-2 text-sm font-medium text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(99,102,241,0.5)]"></span>
           Databases
         </a>
 
         <!-- Collections -->
-        <a href="#collections" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+        <a href="#collections" class="group flex items-center px-2 py-2 text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>
           Collections
         </a>
         
@@ -30,20 +36,20 @@
         </a>
 
         <!-- Documents -->
-        <a href="#documents" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform"></span>
+        <a href="#documents" class="group flex items-center px-2 py-2 text-sm font-medium text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
           Documents
         </a>
 
          <!-- SDBQL Queries -->
-        <a href="#queries" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
+        <a href="#queries" class="group flex items-center px-2 py-2 text-sm font-medium text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(249,115,22,0.5)]"></span>
           SDBQL Queries
         </a>
 
         <!-- Indexes -->
-        <a href="#indexes" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
+        <a href="#indexes" class="group flex items-center px-2 py-2 text-sm font-medium text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(234,179,8,0.5)]"></span>
           Indexes
         </a>
 
@@ -77,10 +83,28 @@
           Cluster
         </a>
 
-         <!-- Authentication -->
-        <a href="#auth" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-400 hover:text-gray-300 hover:bg-gray-500/10 rounded-lg transition-all duration-200">
-          <span class="w-1.5 h-1.5 rounded-full bg-gray-500 mr-3 group-hover:scale-125 transition-transform"></span>
-          Authentication
+        <!-- RBAC -->
+        <a href="#roles" class="group flex items-center px-2 py-2 text-sm font-medium text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-violet-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(139,92,246,0.5)]"></span>
+          Roles & Users
+        </a>
+
+        <!-- Queues -->
+        <a href="#queues" class="group flex items-center px-2 py-2 text-sm font-medium text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-sky-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(14,165,233,0.5)]"></span>
+          Queues
+        </a>
+
+        <!-- Cron Jobs -->
+        <a href="#cron" class="group flex items-center px-2 py-2 text-sm font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(244,63,94,0.5)]"></span>
+          Cron Jobs
+        </a>
+
+        <!-- Health -->
+        <a href="#health" class="group flex items-center px-2 py-2 text-sm font-medium text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+          Health
         </a>
 
       </nav>

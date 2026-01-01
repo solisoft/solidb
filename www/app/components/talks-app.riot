@@ -2704,6 +2704,8 @@
                                 this.ringtoneInterval = null;
                                 return;
                             }
+                            // Clear previous oscillators before adding new ones
+                            this.ringtoneOscillators = [];
                             const now = ctx.currentTime;
                             // Authentic 24 CTU style: 4 fast high-pitched beeps
                             const tones = [1600, 2400, 1600, 2400];

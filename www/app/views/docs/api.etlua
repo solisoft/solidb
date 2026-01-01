@@ -468,7 +468,37 @@
                  </div>
                </div>
             </div>
-            
+
+            <!-- GET /_api/database/:db/collection/:name/count -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/count</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get document count for a collection.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "count": 12345 }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/database/:db/collection/:name/prune -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/prune</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Delete old document revisions to free up space.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "pruned": 500 }
+                </div>
+              </div>
+            </div>
+
             <!-- DELETE /_api/database/:db/collection/:name -->
             <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
@@ -544,11 +574,11 @@
             </h2>
           </div>
           <div class="divide-y divide-white/5">
-            <!-- PUT /_api/schema/:collection -->
+            <!-- POST /_api/database/:db/collection/:name/schema -->
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">
-                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
-                 <code class="text-gray-300">/_api/schema/:collection</code>
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
                </div>
                <p class="text-sm text-gray-400 mb-4">Set or update the JSON schema for a collection.</p>
                
@@ -615,11 +645,11 @@
                </div>
              </div>
 
-             <!-- GET /_api/schema/:collection -->
+             <!-- GET /_api/database/:db/collection/:name/schema -->
             <div class="p-6 hover:bg-white/5 transition-colors">
               <div class="flex items-center gap-3 mb-2">
                  <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
-                <code class="text-gray-300">/_api/schema/:collection</code>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
               </div>
               <p class="text-sm text-gray-400">Get the current schema for a collection.</p>
 
@@ -639,11 +669,11 @@
                </div>
             </div>
 
-             <!-- DELETE /_api/schema/:collection -->
+             <!-- DELETE /_api/database/:db/collection/:name/schema -->
              <div class="p-6 hover:bg-white/5 transition-colors">
               <div class="flex items-center gap-3 mb-2">
                  <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
-                <code class="text-gray-300">/_api/schema/:collection</code>
+                <code class="text-gray-300">/_api/database/:db/collection/:name/schema</code>
               </div>
                <p class="text-sm text-gray-400">Remove the schema (disables validation).</p>
 
@@ -710,6 +740,27 @@
                  </div>
                </div>
              </div>
+
+            <!-- POST batch -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/document/:collection/_batch</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Insert multiple documents in a single request. More efficient than individual inserts.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
+                </div>
+              </div>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "inserted": 2, "documents": [...] }
+                </div>
+              </div>
+            </div>
 
             <!-- GET -->
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -1255,10 +1306,34 @@
                  </div>
                </div>
             </div>
+
+            <!-- GET - List Geo Indexes -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all geo indexes on a collection.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "indexes": [{ "name": "location_idx", "field": "location" }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE - Delete Geo Index -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/geo/:collection/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a geo index by name.</p>
+            </div>
           </div>
         </div>
       </section>
-      
+
       <!-- TTL Indexes Section -->
       <section id="ttl-indexes" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -1515,6 +1590,59 @@
               </div>
               <p class="text-sm text-gray-400">Delete a script.</p>
             </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/scripts/stats</code>
+              </div>
+              <p class="text-sm text-gray-400">Get script execution statistics.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "total_executions": 1234,
+                     "total_errors": 5,
+                     "avg_execution_time_ms": 12.5,
+                     "scripts": [
+                       { "path": "greet", "executions": 500, "errors": 1, "avg_time_ms": 8.2 }
+                     ]
+                   }
+                 </div>
+               </div>
+            </div>
+
+            <!-- Custom Lua API Execution -->
+            <div class="p-6 hover:bg-white/5 transition-colors border-t border-white/5">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/api/custom/:path</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Execute a registered Lua script. The <code class="text-fuchsia-400">:path</code> matches the script's registered path. Request body and query parameters are passed to the script.</p>
+              <p class="text-xs text-gray-500 mb-4">Scripts handle their own authentication if needed. The response format depends on what the Lua script returns.</p>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                <span class="text-gray-500">// Example: GET /api/custom/greet?name=Alice</span><br>
+                <span class="text-gray-500">// Calls the script registered with path "greet"</span>
+              </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   <span class="text-gray-500">// Response depends on script return value</span><br>
+                   { "msg": "Hello, Alice!" }
+                 </div>
+               </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1700,6 +1828,89 @@
                  </div>
                </div>
             </div>
+
+            <!-- Transaction Document Operations -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Insert a document within a transaction.</p>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                { "_key": "doc1", "name": "Alice", "age": 30 }
+              </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">201 Created</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   { "_key": "doc1", "tx_id": "transaction_123" }
+                 </div>
+               </div>
+            </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection/:key</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Update a document within a transaction.</p>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                { "name": "Alice Updated", "age": 31 }
+              </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   { "_key": "doc1", "tx_id": "transaction_123", "status": "updated" }
+                 </div>
+               </div>
+            </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection/:key</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a document within a transaction.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">204 No Content</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/query</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Execute a query within a transaction context.</p>
+              <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                { "query": "FOR doc IN users FILTER doc.age > 25 RETURN doc" }
+              </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "result": [ { "_key": "doc1", "name": "Alice", "age": 30 } ],
+                     "tx_id": "transaction_123"
+                   }
+                 </div>
+               </div>
+            </div>
            </div>
          </div>
        </section>
@@ -1817,6 +2028,14 @@
                 <code class="text-gray-300">/_api/cluster/status/ws</code>
               </div>
               <p class="text-sm text-gray-400">WebSocket endpoint for live cluster status updates.</p>
+            </div>
+              <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/monitoring/ws</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-2">WebSocket endpoint for real-time server monitoring. Streams system metrics including CPU, memory, disk usage, and request statistics.</p>
+              <p class="text-xs text-gray-500">Requires authentication. Connect with a valid JWT token.</p>
             </div>
            </div>
          </div>
@@ -2035,7 +2254,348 @@
                  <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN</p>
                </div>
             </div>
+
+            <!-- GET /_api/auth/me -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/me</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get current authenticated user info and roles.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                  </div>
+                  { "username": "admin", "roles": ["admin"], "permissions": [...] }
+                </div>
+              </div>
+            </div>
+
+            <!-- GET /_api/auth/me/permissions -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/me/permissions</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get effective permissions for the current user.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                  </div>
+                  { "permissions": [{"action": "admin", "scope": "global", "database": null}] }
+                </div>
+              </div>
+            </div>
            </div>
+         </div>
+       </section>
+
+       <!-- RBAC Roles Section -->
+       <section id="roles" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              Roles (RBAC)
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Role-Based Access Control. Builtin roles: <code class="text-fuchsia-400">admin</code>, <code class="text-fuchsia-400">editor</code>, <code class="text-fuchsia-400">viewer</code>.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/auth/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all roles. Requires admin permission.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  [{ "name": "admin", "description": "Full system access", "permissions": [...], "is_builtin": true }]
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a custom role. Requires admin permission.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "name": "analyst", "description": "Read-only analyst", "permissions": [{"action": "read", "scope": "database", "database": "analytics"}] }
+                </div>
+              </div>
+            </div>
+
+            <!-- GET /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Get a specific role by name.</p>
+            </div>
+
+            <!-- PUT /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Update a custom role. Cannot modify builtin roles.</p>
+            </div>
+
+            <!-- DELETE /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a custom role. Cannot delete builtin roles.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Users Section -->
+       <section id="users" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+              Users
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">User management endpoints. All require admin permission.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/auth/users -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/users</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all users with their roles.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "users": [{ "username": "admin", "created_at": "2025-01-01T00:00:00Z", "roles": ["admin"] }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/users -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/users</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new user.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "username": "newuser", "password": "securepass123", "initial_role": "viewer" }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/auth/users/:username -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/users/:username</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a user.</p>
+            </div>
+
+            <!-- GET /_api/auth/users/:username/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get roles assigned to a user.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "roles": [{ "id": "uuid", "role": "admin", "database": null, "assigned_at": "..." }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/users/:username/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Assign a role to a user.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "role": "editor", "database": "mydb" }
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Set <code>database</code> to null for global role assignment.</p>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/auth/users/:username/roles/:role -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles/:role</code>
+              </div>
+              <p class="text-sm text-gray-400">Revoke a role from a user. Use <code>?database=mydb</code> for database-scoped revocation.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Queue Section -->
+       <section id="queues" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Queues
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Background job queue management.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/database/:db/queues -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/queues</code>
+              </div>
+              <p class="text-sm text-gray-400">List all queues in a database.</p>
+            </div>
+
+            <!-- GET /_api/database/:db/queues/:name/jobs -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/queues/:name/jobs</code>
+              </div>
+              <p class="text-sm text-gray-400">List jobs in a queue.</p>
+            </div>
+
+            <!-- POST /_api/database/:db/queues/:name/enqueue -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/queues/:name/enqueue</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Add a job to a queue.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "payload": { "task": "send_email", "to": "user@example.com" }, "priority": 1 }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/database/:db/queues/jobs/:id -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/queues/jobs/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Cancel a pending job.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Cron Section -->
+       <section id="cron" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Cron Jobs
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Scheduled task management using cron expressions.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/database/:db/cron -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/cron</code>
+              </div>
+              <p class="text-sm text-gray-400">List all cron jobs.</p>
+            </div>
+
+            <!-- POST /_api/database/:db/cron -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/cron</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a cron job.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "name": "daily_cleanup", "schedule": "0 0 * * *", "script_id": "cleanup_script", "enabled": true }
+                </div>
+              </div>
+            </div>
+
+            <!-- PUT /_api/database/:db/cron/:id -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/cron/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Update a cron job.</p>
+            </div>
+
+            <!-- DELETE /_api/database/:db/cron/:id -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/cron/:id</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a cron job.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Health Section -->
+       <section id="health" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+              Health
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Health check endpoint. No authentication required.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/health -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/health</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Check if the server is running.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "status": "ok", "timestamp": "2025-01-01T00:00:00Z" }
+                </div>
+              </div>
+            </div>
+          </div>
          </div>
        </section>
 

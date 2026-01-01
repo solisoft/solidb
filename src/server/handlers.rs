@@ -188,6 +188,9 @@ pub async fn change_password_handler(
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
     pub name: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    pub scoped_databases: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -196,6 +199,8 @@ pub struct CreateApiKeyResponse {
     pub name: String,
     pub key: String,  // Raw key - only returned on creation!
     pub created_at: String,
+    pub roles: Vec<String>,
+    pub scoped_databases: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -230,13 +235,20 @@ pub async fn create_api_key_handler(
 
     let collection = db.get_collection(crate::server::auth::API_KEYS_COLL)?;
 
+    // Use provided roles, default to admin if empty
+    let roles = if req.roles.is_empty() {
+        vec!["admin".to_string()]
+    } else {
+        req.roles.clone()
+    };
+
     let api_key = crate::server::auth::ApiKey {
         id: id.clone(),
         name: req.name.clone(),
         key_hash,
         created_at: created_at.clone(),
-        roles: vec!["admin".to_string()], // New API keys get admin role by default
-        scoped_databases: None,
+        roles: roles.clone(),
+        scoped_databases: req.scoped_databases.clone(),
         expires_at: None,
     };
 
@@ -270,6 +282,8 @@ pub async fn create_api_key_handler(
         name: req.name,
         key: raw_key,
         created_at,
+        roles,
+        scoped_databases: req.scoped_databases,
     }))
 }
 
@@ -297,6 +311,8 @@ pub async fn list_api_keys_handler(
             id: api_key.id,
             name: api_key.name,
             created_at: api_key.created_at,
+            roles: api_key.roles,
+            scoped_databases: api_key.scoped_databases,
         });
     }
 
