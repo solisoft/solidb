@@ -428,6 +428,14 @@ impl QueueWorker {
             body: Some(job.params.clone()),
             params: std::collections::HashMap::new(),
             is_websocket: false,
+            // Queue jobs run as system/admin user
+            user: crate::scripting::ScriptUser {
+                username: "_system".to_string(),
+                roles: vec!["admin".to_string()],
+                authenticated: true,
+                scoped_databases: None,
+                exp: None,
+            },
         };
 
         let res = engine.execute(&script, db_name, &context).await?;

@@ -777,6 +777,100 @@ pub async fn auth_middleware(
     Err(StatusCode::UNAUTHORIZED)
 }
 
+/// Permissive auth middleware for custom scripts
+/// Validates token if present, but allows anonymous access if missing
+pub async fn permissive_auth_middleware(
+    State(state): State<crate::server::handlers::AppState>,
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    
+    // First check for X-API-Key header
+    if let Some(api_key) = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+    {
+        // If API key is present, it MUST be valid
+        match AuthService::validate_api_key(&state.storage, api_key) {
+            Ok(claims) => {
+                req.extensions_mut().insert(claims);
+                return Ok(next.run(req).await);
+            }
+            Err(_) => return Err(StatusCode::UNAUTHORIZED),
+        }
+    }
+
+    // Check for Authorization header
+    let auth_header = req.headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    if let Some(header) = auth_header {
+        // If Authorization header is present, it MUST be valid
+        
+        // Support: Authorization: ApiKey <key>
+        if header.starts_with("ApiKey ") {
+            let api_key = &header[7..];
+            match AuthService::validate_api_key(&state.storage, api_key) {
+                Ok(claims) => {
+                    req.extensions_mut().insert(claims);
+                    return Ok(next.run(req).await);
+                }
+                Err(_) => return Err(StatusCode::UNAUTHORIZED),
+            }
+        }
+
+        // Support: Authorization: Bearer <jwt>
+        if header.starts_with("Bearer ") {
+            let token = &header[7..];
+            match AuthService::validate_token(token) {
+                Ok(claims) => {
+                    req.extensions_mut().insert(claims);
+                    return Ok(next.run(req).await);
+                }
+                Err(_) => return Err(StatusCode::UNAUTHORIZED),
+            }
+        }
+
+        // Support: Authorization: Basic <base64(user:pass)>
+        if header.starts_with("Basic ") {
+            let encoded = &header[6..];
+            if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded) {
+                if let Ok(credentials) = String::from_utf8(decoded) {
+                    if let Some((username, password)) = credentials.split_once(':') {
+                        // Validate against _admins collection
+                        if let Ok(db) = state.storage.get_database("_system") {
+                            if let Ok(collection) = db.get_collection("_admins") {
+                                if let Ok(doc) = collection.get(username) {
+                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value()) {
+                                        if AuthService::verify_password(password, &user.password_hash) {
+                                            // Load user roles from _user_roles
+                                            let roles = AuthService::get_user_roles(&state.storage, username);
+                                            let claims = Claims {
+                                                sub: username.to_string(),
+                                                exp: usize::MAX,
+                                                livequery: None,
+                                                roles,
+                                                scoped_databases: None,
+                                            };
+                                            req.extensions_mut().insert(claims);
+                                            return Ok(next.run(req).await);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    // No auth header present - proceed as anonymous (no claims injected)
+    Ok(next.run(req).await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

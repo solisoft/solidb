@@ -10,7 +10,7 @@
 //! - Error handling and script failures
 
 use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats};
+use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
 use tempfile::TempDir;
 use std::sync::Arc;
@@ -57,6 +57,7 @@ async fn test_request_method_and_path() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -90,6 +91,7 @@ async fn test_request_query_params() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -123,6 +125,7 @@ async fn test_request_url_params() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -156,6 +159,7 @@ async fn test_request_headers() {
         headers,
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -189,6 +193,7 @@ async fn test_request_body() {
             "age": 30
         })),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -220,6 +225,7 @@ async fn test_request_is_websocket() {
         headers: HashMap::new(),
         body: None,
         is_websocket: true,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"return { is_ws = request.is_websocket }"#;
@@ -246,6 +252,7 @@ async fn test_time_now_and_now_ms() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -279,6 +286,7 @@ async fn test_time_iso() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -310,6 +318,7 @@ async fn test_time_add_subtract() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -352,6 +361,7 @@ async fn test_time_format() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     // Use a known timestamp: 2024-01-15 12:30:45 UTC
@@ -379,6 +389,7 @@ async fn test_time_parse() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -411,6 +422,7 @@ async fn test_collection_update() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -448,6 +460,7 @@ async fn test_collection_delete() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -494,6 +507,7 @@ async fn test_crypto_uuid() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -532,6 +546,7 @@ async fn test_crypto_random_bytes() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -564,6 +579,7 @@ async fn test_crypto_hmac() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -599,6 +615,7 @@ async fn test_crypto_base32() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -638,6 +655,7 @@ async fn test_solidb_stats() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -670,6 +688,7 @@ async fn test_solidb_log() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -705,6 +724,7 @@ async fn test_db_enqueue_job() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -740,6 +760,7 @@ async fn test_db_enqueue_with_options() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -779,6 +800,7 @@ async fn test_lua_syntax_error() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -803,6 +825,7 @@ async fn test_lua_runtime_error() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -831,6 +854,7 @@ async fn test_collection_not_found_returns_nil() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -867,6 +891,7 @@ async fn test_script_stats_tracking() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"return { ok = true }"#;
@@ -898,6 +923,7 @@ async fn test_context_alias() {
         headers: HashMap::new(),
         body: Some(json!({"data": "test"})),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     // 'context' should be an alias for 'request'
@@ -932,6 +958,7 @@ async fn test_jwt_invalid_token_format() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -959,6 +986,7 @@ async fn test_jwt_wrong_secret() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -999,8 +1027,9 @@ async fn test_json_nested_objects() {
             }
         })),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
-    
+
     let code = r#"
         return { deep_value = request.body.level1.level2.level3.value }
     "#;
@@ -1026,8 +1055,9 @@ async fn test_json_arrays() {
             "names": ["a", "b", "c"]
         })),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
-    
+
     let code = r#"
         local sum = 0
         for _, v in ipairs(request.body.items) do
@@ -1063,10 +1093,11 @@ async fn test_json_null_handling() {
             "present": "yes"
         })),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
-    
+
     let code = r#"
-        return { 
+        return {
             value_is_nil = (request.body.value == nil),
             present = request.body.present
         }
@@ -1094,10 +1125,11 @@ async fn test_json_boolean_handling() {
             "deleted": false
         })),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
-    
+
     let code = r#"
-        return { 
+        return {
             active = request.body.active,
             deleted = request.body.deleted,
             active_type = type(request.body.active)
@@ -1124,6 +1156,7 @@ async fn test_lua_return_array() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1151,6 +1184,7 @@ async fn test_lua_return_mixed_table() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1190,6 +1224,7 @@ async fn test_response_json_helper() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1226,6 +1261,7 @@ async fn test_db_query_with_complex_binds() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1260,6 +1296,7 @@ async fn test_db_query_no_bind_vars() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1293,6 +1330,7 @@ async fn test_collection_count() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1328,6 +1366,7 @@ async fn test_time_invalid_unit() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1355,6 +1394,7 @@ async fn test_time_milliseconds_unit() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1385,6 +1425,7 @@ async fn test_crypto_empty_string_hash() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1418,6 +1459,7 @@ async fn test_security_load_removed() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1452,6 +1494,7 @@ async fn test_request_no_body() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1483,6 +1526,7 @@ async fn test_multiple_collection_operations() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1535,6 +1579,7 @@ async fn test_large_string_handling() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1569,6 +1614,7 @@ async fn test_solidb_now() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"
@@ -1602,6 +1648,7 @@ async fn test_numeric_precision() {
         headers: HashMap::new(),
         body: None,
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let code = r#"

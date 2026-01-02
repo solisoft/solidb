@@ -8,6 +8,7 @@ pub mod queue_handlers;
 pub mod authorization;
 pub mod permission_cache;
 pub mod role_handlers;
+pub mod env_handlers;
 
 pub use cursor_store::CursorStore;
 pub use routes::create_router;

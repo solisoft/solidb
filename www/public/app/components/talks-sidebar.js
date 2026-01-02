@@ -80,9 +80,9 @@ var talksSidebar = {
       return user._key === this.props.currentUser._key ? ' (you)' : '';
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<aside expr35="expr35"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><div class="flex items-center"><button expr36="expr36" class="mr-3 p-2 text-gray-400 hover:text-white lg:hidden transition-colors"></button><h1 class="text-xl font-bold text-white">SoliDB Talks</h1></div><div class="flex items-center gap-2"><div expr37="expr37"></div><button expr38="expr38" class="p-2 text-gray-400 hover:text-white transition-colors"></button></div></div><div expr39="expr39"><div expr40="expr40" class="mb-6"></div><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><div class="relative group"><button expr51="expr51" class="hover:text-white"><i class="fas fa-plus"></i></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">\n                            Create Channel</div></div></div><nav><a expr52="expr52"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button expr59="expr59" class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr60="expr60"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr64="expr64" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr65="expr65" class="text-sm font-bold text-white truncate"> </p><div class="relative"><button expr66="expr66" class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group"><span expr67="expr67"></span><span expr68="expr68"> </span><i class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i></button><div expr69="expr69" class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up"></div><div expr73="expr73" class="fixed inset-0 z-40"></div></div></div><a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a></div></div></aside>', [{
-    redundantAttribute: 'expr35',
-    selector: '[expr35]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<aside expr236="expr236"><div class="p-4 border-b border-gray-800 flex items-center justify-between"><div class="flex items-center"><button expr237="expr237" class="mr-3 p-2 text-gray-400 hover:text-white lg:hidden transition-colors"></button><h1 class="text-xl font-bold text-white">SoliDB Talks</h1></div><div class="flex items-center gap-2"><div expr238="expr238"></div><button expr239="expr239" class="p-2 text-gray-400 hover:text-white transition-colors"></button></div></div><div expr240="expr240"><div expr241="expr241" class="mb-6"></div><div class="mb-6"><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Channels</span><div class="relative group"><button expr252="expr252" class="hover:text-white"><i class="fas fa-plus"></i></button><div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">\n                            Create Channel</div></div></div><nav><a expr253="expr253"></a></nav></div><div><div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Direct Messages</span><button expr260="expr260" class="hover:text-white"><i class="fas fa-plus"></i></button></div><nav><a expr261="expr261"></a></nav></div></div><div class="p-4 bg-[#121016] border-t border-gray-800"><div class="flex items-center"><div expr265="expr265" class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold mr-3 shadow-lg"> </div><div class="flex-1 min-w-0"><p expr266="expr266" class="text-sm font-bold text-white truncate"> </p><div class="relative"><button expr267="expr267" class="flex items-center text-xs text-gray-400 hover:text-white transition-colors focus:outline-none rounded px-1 -ml-1 group"><span expr268="expr268"></span><span expr269="expr269"> </span><i class="fas fa-chevron-up ml-1 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"></i></button><div expr270="expr270" class="absolute bottom-full left-0 mb-2 w-32 bg-[#222529] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden animate-fade-in-up"></div><div expr274="expr274" class="fixed inset-0 z-40"></div></div></div><a href="/talks/logout" class="ml-2 p-2 text-gray-500 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a></div></div></aside>', [{
+    redundantAttribute: 'expr236',
+    selector: '[expr236]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -92,8 +92,8 @@ var talksSidebar = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.isMobile,
-    redundantAttribute: 'expr36',
-    selector: '[expr36]',
+    redundantAttribute: 'expr237',
+    selector: '[expr237]',
     template: template('<i class="fas fa-bars text-xl"></i>', [{
       expressions: [{
         type: expressionTypes.EVENT,
@@ -102,8 +102,8 @@ var talksSidebar = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr37',
-    selector: '[expr37]',
+    redundantAttribute: 'expr238',
+    selector: '[expr238]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -113,8 +113,8 @@ var talksSidebar = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.isMobile,
-    redundantAttribute: 'expr38',
-    selector: '[expr38]',
+    redundantAttribute: 'expr239',
+    selector: '[expr239]',
     template: template('<i class="fas fa-times text-lg"></i>', [{
       expressions: [{
         type: expressionTypes.EVENT,
@@ -123,8 +123,8 @@ var talksSidebar = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr39',
-    selector: '[expr39]',
+    redundantAttribute: 'expr240',
+    selector: '[expr240]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -134,13 +134,13 @@ var talksSidebar = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.favorites && _scope.props.favorites.length > 0,
-    redundantAttribute: 'expr40',
-    selector: '[expr40]',
-    template: template('<div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Favorites</span></div><nav><a expr41="expr41"></a></nav>', [{
+    redundantAttribute: 'expr241',
+    selector: '[expr241]',
+    template: template('<div class="px-4 flex items-center justify-between text-gray-400 uppercase text-xs font-bold mb-2"><span>Favorites</span></div><nav><a expr242="expr242"></a></nav>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<span class="mr-2 w-4 text-center inline-block flex items-center justify-center"><template expr42="expr42"></template><template expr44="expr44"></template></span><span expr47="expr47" class="truncate"> </span><div expr48="expr48" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr50="expr50" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
+      template: template('<span class="mr-2 w-4 text-center inline-block flex items-center justify-center"><template expr243="expr243"></template><template expr245="expr245"></template></span><span expr248="expr248" class="truncate"> </span><div expr249="expr249" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr251="expr251" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -159,11 +159,11 @@ var talksSidebar = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.item.type === 'dm',
-        redundantAttribute: 'expr42',
-        selector: '[expr42]',
-        template: template('<div expr43="expr43"></div>', [{
-          redundantAttribute: 'expr43',
-          selector: '[expr43]',
+        redundantAttribute: 'expr243',
+        selector: '[expr243]',
+        template: template('<div expr244="expr244"></div>', [{
+          redundantAttribute: 'expr244',
+          selector: '[expr244]',
           expressions: [{
             type: expressionTypes.ATTRIBUTE,
             isBoolean: false,
@@ -174,24 +174,24 @@ var talksSidebar = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.item.type !== 'dm',
-        redundantAttribute: 'expr44',
-        selector: '[expr44]',
-        template: template('<i expr45="expr45" class="fas fa-lock text-xs"></i><span expr46="expr46"></span>', [{
+        redundantAttribute: 'expr245',
+        selector: '[expr245]',
+        template: template('<i expr246="expr246" class="fas fa-lock text-xs"></i><span expr247="expr247"></span>', [{
           type: bindingTypes.IF,
           evaluate: _scope => _scope.item.type === 'private',
-          redundantAttribute: 'expr45',
-          selector: '[expr45]',
+          redundantAttribute: 'expr246',
+          selector: '[expr246]',
           template: template(null, [])
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.item.type === 'standard',
-          redundantAttribute: 'expr46',
-          selector: '[expr46]',
+          redundantAttribute: 'expr247',
+          selector: '[expr247]',
           template: template('#', [])
         }])
       }, {
-        redundantAttribute: 'expr47',
-        selector: '[expr47]',
+        redundantAttribute: 'expr248',
+        selector: '[expr248]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -200,11 +200,11 @@ var talksSidebar = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.hasActiveHuddle(_scope.item),
-        redundantAttribute: 'expr48',
-        selector: '[expr48]',
-        template: template('<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr49="expr49" class="text-[10px]"> </span>', [{
-          redundantAttribute: 'expr49',
-          selector: '[expr49]',
+        redundantAttribute: 'expr249',
+        selector: '[expr249]',
+        template: template('<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr250="expr250" class="text-[10px]"> </span>', [{
+          redundantAttribute: 'expr250',
+          selector: '[expr250]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -214,19 +214,19 @@ var talksSidebar = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.hasActiveHuddle(_scope.item) && _scope.props.unreadChannels[_scope.item._id],
-        redundantAttribute: 'expr50',
-        selector: '[expr50]',
+        redundantAttribute: 'expr251',
+        selector: '[expr251]',
         template: template(null, [])
       }]),
-      redundantAttribute: 'expr41',
-      selector: '[expr41]',
+      redundantAttribute: 'expr242',
+      selector: '[expr242]',
       itemName: 'item',
       indexName: null,
       evaluate: _scope => _scope.props.favorites
     }])
   }, {
-    redundantAttribute: 'expr51',
-    selector: '[expr51]',
+    redundantAttribute: 'expr252',
+    selector: '[expr252]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -236,7 +236,7 @@ var talksSidebar = {
     type: bindingTypes.EACH,
     getKey: _scope => _scope.channel._key,
     condition: null,
-    template: template('<span class="mr-2 w-4 text-center inline-block"><i expr53="expr53" class="fas fa-lock text-xs"></i><i expr54="expr54" class="fas fa-at text-xs text-orange-400"></i><span expr55="expr55"></span></span> <div expr56="expr56" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr58="expr58" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
+    template: template('<span class="mr-2 w-4 text-center inline-block"><i expr254="expr254" class="fas fa-lock text-xs"></i><i expr255="expr255" class="fas fa-at text-xs text-orange-400"></i><span expr256="expr256"></span></span> <div expr257="expr257" class="ml-auto flex items-center gap-1 text-green-400" title="Huddle in progress"></div><div expr259="expr259" class="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
@@ -259,29 +259,29 @@ var talksSidebar = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.channel.type === 'private',
-      redundantAttribute: 'expr53',
-      selector: '[expr53]',
+      redundantAttribute: 'expr254',
+      selector: '[expr254]',
       template: template(null, [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.channel.type === 'system',
-      redundantAttribute: 'expr54',
-      selector: '[expr54]',
+      redundantAttribute: 'expr255',
+      selector: '[expr255]',
       template: template(null, [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.channel.type !== 'private' && _scope.channel.type !== 'system',
-      redundantAttribute: 'expr55',
-      selector: '[expr55]',
+      redundantAttribute: 'expr256',
+      selector: '[expr256]',
       template: template('#', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.hasActiveHuddle(_scope.channel),
-      redundantAttribute: 'expr56',
-      selector: '[expr56]',
-      template: template('<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr57="expr57" class="text-[10px]"> </span>', [{
-        redundantAttribute: 'expr57',
-        selector: '[expr57]',
+      redundantAttribute: 'expr257',
+      selector: '[expr257]',
+      template: template('<i class="fas fa-headphones text-[10px] animate-pulse"></i><span expr258="expr258" class="text-[10px]"> </span>', [{
+        redundantAttribute: 'expr258',
+        selector: '[expr258]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -291,18 +291,18 @@ var talksSidebar = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => !_scope.hasActiveHuddle(_scope.channel) && _scope.props.unreadChannels[_scope.channel._id],
-      redundantAttribute: 'expr58',
-      selector: '[expr58]',
+      redundantAttribute: 'expr259',
+      selector: '[expr259]',
       template: template(null, [])
     }]),
-    redundantAttribute: 'expr52',
-    selector: '[expr52]',
+    redundantAttribute: 'expr253',
+    selector: '[expr253]',
     itemName: 'channel',
     indexName: null,
     evaluate: _scope => _scope.state.sidebarChannels
   }, {
-    redundantAttribute: 'expr59',
-    selector: '[expr59]',
+    redundantAttribute: 'expr260',
+    selector: '[expr260]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -312,7 +312,7 @@ var talksSidebar = {
     type: bindingTypes.EACH,
     getKey: _scope => _scope.user._key,
     condition: _scope => !_scope.isFavorite(_scope.props.usersChannels[_scope.user._key]),
-    template: template('<div expr61="expr61"></div><span expr62="expr62" class="flex-1 truncate"> </span><div expr63="expr63" class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
+    template: template('<div expr262="expr262"></div><span expr263="expr263" class="flex-1 truncate"> </span><div expr264="expr264" class="ml-2 w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse"></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -329,8 +329,8 @@ var talksSidebar = {
         evaluate: _scope => _scope.getDMClass(_scope.user) + ' ' + (_scope.props.isMobile ? 'min-h-[48px] py-3.5 text-base' : 'text-sm')
       }]
     }, {
-      redundantAttribute: 'expr61',
-      selector: '[expr61]',
+      redundantAttribute: 'expr262',
+      selector: '[expr262]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -343,8 +343,8 @@ var talksSidebar = {
         evaluate: _scope => _scope.getStatusLabel(_scope.user.status)
       }]
     }, {
-      redundantAttribute: 'expr62',
-      selector: '[expr62]',
+      redundantAttribute: 'expr263',
+      selector: '[expr263]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -353,42 +353,42 @@ var talksSidebar = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.props.unreadChannels[_scope.props.usersChannels[_scope.user._key]],
-      redundantAttribute: 'expr63',
-      selector: '[expr63]',
+      redundantAttribute: 'expr264',
+      selector: '[expr264]',
       template: template(null, [])
     }]),
-    redundantAttribute: 'expr60',
-    selector: '[expr60]',
+    redundantAttribute: 'expr261',
+    selector: '[expr261]',
     itemName: 'user',
     indexName: null,
     evaluate: _scope => _scope.props.users
   }, {
-    redundantAttribute: 'expr64',
-    selector: '[expr64]',
+    redundantAttribute: 'expr265',
+    selector: '[expr265]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => [_scope.getInitials(_scope.getUsername(_scope.props.currentUser))].join('')
     }]
   }, {
-    redundantAttribute: 'expr65',
-    selector: '[expr65]',
+    redundantAttribute: 'expr266',
+    selector: '[expr266]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
       evaluate: _scope => _scope.props.currentUser.firstname
     }]
   }, {
-    redundantAttribute: 'expr66',
-    selector: '[expr66]',
+    redundantAttribute: 'expr267',
+    selector: '[expr267]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.props.onToggleStatusMenu
     }]
   }, {
-    redundantAttribute: 'expr67',
-    selector: '[expr67]',
+    redundantAttribute: 'expr268',
+    selector: '[expr268]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -396,8 +396,8 @@ var talksSidebar = {
       evaluate: _scope => 'w-2 h-2 rounded-full mr-1.5 ' + _scope.getStatusColor(_scope.props.currentUser.status)
     }]
   }, {
-    redundantAttribute: 'expr68',
-    selector: '[expr68]',
+    redundantAttribute: 'expr269',
+    selector: '[expr269]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -411,27 +411,27 @@ var talksSidebar = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.showStatusMenu,
-    redundantAttribute: 'expr69',
-    selector: '[expr69]',
-    template: template('<div class="p-1 space-y-0.5"><button expr70="expr70" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active</button><button expr71="expr71" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy</button><button expr72="expr72" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off</button></div>', [{
-      redundantAttribute: 'expr70',
-      selector: '[expr70]',
+    redundantAttribute: 'expr270',
+    selector: '[expr270]',
+    template: template('<div class="p-1 space-y-0.5"><button expr271="expr271" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Active</button><button expr272="expr272" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Busy</button><button expr273="expr273" class="w-full text-left px-3\n                                    py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-700 rounded flex\n                                    items-center transition-colors"><span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> Off</button></div>', [{
+      redundantAttribute: 'expr271',
+      selector: '[expr271]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => () => _scope.props.onUpdateStatus('online')
       }]
     }, {
-      redundantAttribute: 'expr71',
-      selector: '[expr71]',
+      redundantAttribute: 'expr272',
+      selector: '[expr272]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => () => _scope.props.onUpdateStatus('busy')
       }]
     }, {
-      redundantAttribute: 'expr72',
-      selector: '[expr72]',
+      redundantAttribute: 'expr273',
+      selector: '[expr273]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -441,8 +441,8 @@ var talksSidebar = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.showStatusMenu,
-    redundantAttribute: 'expr73',
-    selector: '[expr73]',
+    redundantAttribute: 'expr274',
+    selector: '[expr274]',
     template: template(null, [{
       expressions: [{
         type: expressionTypes.EVENT,

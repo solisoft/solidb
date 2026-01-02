@@ -59,6 +59,10 @@ local app = {
 
   users = function()
     Page("dashboard/users", "app")
+  end,
+
+  env = function()
+    Page("dashboard/env", "app")
   end
 }
 

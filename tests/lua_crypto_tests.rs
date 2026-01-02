@@ -9,7 +9,7 @@
 //! - Key Exchange (Curve25519)
 
 use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats};
+use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
 use tempfile::TempDir;
 use std::sync::Arc;
@@ -19,13 +19,13 @@ fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine"));
-    
+
     // Create DB
     engine.create_database("testdb".to_string()).unwrap();
-    
+
     let stats = Arc::new(ScriptStats::default());
     let script_engine = ScriptEngine::new(engine.clone(), stats);
-    
+
     (engine, script_engine, tmp_dir)
 }
 
@@ -38,6 +38,7 @@ fn create_context() -> ScriptContext {
         headers: HashMap::new(),
         body: Some(json!({})),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     }
 }
 

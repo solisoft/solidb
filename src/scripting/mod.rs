@@ -11,9 +11,25 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::DbError;
-use crate::storage::StorageEngine;
+use crate::storage::{StorageEngine, Collection, Document, Database};
 use crate::sdbql::{parse, QueryExecutor};
 use futures::{SinkExt, StreamExt};
+
+// Import modules
+mod validation;
+mod http_helpers;
+mod error_handling;
+mod string_utils;
+mod auth;
+mod file_handling;
+mod dev_tools;
+use validation::*;
+use http_helpers::*;
+use error_handling::*;
+use string_utils::*;
+use file_handling::*;
+use dev_tools::*;
+pub use auth::ScriptUser;
 
 // Crypto imports
 use sha2::Digest;
@@ -169,6 +185,8 @@ pub struct ScriptContext {
     pub body: Option<JsonValue>,
     /// Whether this is a WebSocket connection
     pub is_websocket: bool,
+    /// Current authenticated user (if any)
+    pub user: ScriptUser,
 }
 
 /// Script metadata stored in _system/_scripts
@@ -511,6 +529,99 @@ impl ScriptEngine {
 
             string_table.set("regex_replace", regex_replace_fn)
                 .map_err(|e| DbError::InternalError(format!("Failed to set string.regex_replace: {}", e)))?;
+
+            // string.slugify(text) - URL-friendly strings
+            let slugify_fn = create_slugify_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create slugify function: {}", e)))?;
+            string_table.set("slugify", slugify_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.slugify: {}", e)))?;
+
+            // string.truncate(text, length, suffix) - Text truncation
+            let truncate_fn = create_truncate_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create truncate function: {}", e)))?;
+            string_table.set("truncate", truncate_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.truncate: {}", e)))?;
+
+            // string.template(template, vars) - String interpolation with {{var}} syntax
+            let template_fn = create_template_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create template function: {}", e)))?;
+            string_table.set("template", template_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.template: {}", e)))?;
+
+            // string.split(text, delimiter) - Split string into array
+            let split_fn = create_split_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create split function: {}", e)))?;
+            string_table.set("split", split_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.split: {}", e)))?;
+
+            // string.trim(text) - Trim whitespace
+            let trim_fn = create_trim_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create trim function: {}", e)))?;
+            string_table.set("trim", trim_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.trim: {}", e)))?;
+
+            // string.pad_left(text, length, char) - Left pad string
+            let pad_left_fn = create_pad_left_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create pad_left function: {}", e)))?;
+            string_table.set("pad_left", pad_left_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.pad_left: {}", e)))?;
+
+            // string.pad_right(text, length, char) - Right pad string
+            let pad_right_fn = create_pad_right_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create pad_right function: {}", e)))?;
+            string_table.set("pad_right", pad_right_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.pad_right: {}", e)))?;
+
+            // string.capitalize(text) - Capitalize first letter
+            let capitalize_fn = create_capitalize_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create capitalize function: {}", e)))?;
+            string_table.set("capitalize", capitalize_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.capitalize: {}", e)))?;
+
+            // string.title_case(text) - Title case (capitalize each word)
+            let title_case_fn = create_title_case_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create title_case function: {}", e)))?;
+            string_table.set("title_case", title_case_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set string.title_case: {}", e)))?;
+        }
+
+        // Extend table library with utility functions
+        if let Ok(table_lib) = globals.get::<mlua::Table>("table") {
+            // table.deep_merge(t1, t2) - Recursive table merging
+            let deep_merge_fn = create_deep_merge_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create deep_merge function: {}", e)))?;
+            table_lib.set("deep_merge", deep_merge_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.deep_merge: {}", e)))?;
+
+            // table.keys(t) - Get array of keys
+            let keys_fn = create_keys_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create keys function: {}", e)))?;
+            table_lib.set("keys", keys_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.keys: {}", e)))?;
+
+            // table.values(t) - Get array of values
+            let values_fn = create_values_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create values function: {}", e)))?;
+            table_lib.set("values", values_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.values: {}", e)))?;
+
+            // table.contains(t, value) - Check if table contains value
+            let contains_fn = create_contains_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create contains function: {}", e)))?;
+            table_lib.set("contains", contains_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.contains: {}", e)))?;
+
+            // table.filter(t, predicate) - Filter table by predicate function
+            let filter_fn = create_filter_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create filter function: {}", e)))?;
+            table_lib.set("filter", filter_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.filter: {}", e)))?;
+
+            // table.map(t, transform) - Transform table values
+            let map_fn = create_map_function(lua)
+                .map_err(|e| DbError::InternalError(format!("Failed to create map function: {}", e)))?;
+            table_lib.set("map", map_fn)
+                .map_err(|e| DbError::InternalError(format!("Failed to set table.map: {}", e)))?;
         }
 
         // solidb.fetch(url, options)
@@ -578,7 +689,199 @@ impl ScriptEngine {
         solidb.set("fetch", fetch_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set fetch: {}", e)))?;
 
+        // Add validation functions to solidb namespace
+        let validate_fn = create_validate_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create validate function: {}", e)))?;
+        solidb.set("validate", validate_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set validate: {}", e)))?;
+
+        let validate_detailed_fn = create_validate_detailed_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create validate_detailed function: {}", e)))?;
+        solidb.set("validate_detailed", validate_detailed_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set validate_detailed: {}", e)))?;
+
+        let sanitize_fn = create_sanitize_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create sanitize function: {}", e)))?;
+        solidb.set("sanitize", sanitize_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set sanitize: {}", e)))?;
+
+        let typeof_fn = create_typeof_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create typeof function: {}", e)))?;
+        solidb.set("typeof", typeof_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set typeof: {}", e)))?;
+
+        // HTTP helpers
+        let redirect_fn = create_redirect_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create redirect function: {}", e)))?;
+        solidb.set("redirect", redirect_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set redirect: {}", e)))?;
+
+        let set_cookie_fn = create_set_cookie_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create set_cookie function: {}", e)))?;
+        solidb.set("set_cookie", set_cookie_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set set_cookie: {}", e)))?;
+
+        let cache_fn = create_cache_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create cache function: {}", e)))?;
+        solidb.set("cache", cache_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set cache: {}", e)))?;
+
+        let cache_get_fn = create_cache_get_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create cache_get function: {}", e)))?;
+        solidb.set("cache_get", cache_get_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set cache_get: {}", e)))?;
+
+        // Error handling functions
+        let error_fn = create_error_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create error function: {}", e)))?;
+        solidb.set("error", error_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set error: {}", e)))?;
+
+        let dev_assert_fn = create_dev_assert_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create dev_assert function: {}", e)))?;
+        solidb.set("assert", dev_assert_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set assert: {}", e)))?;
+
+        let try_fn = create_try_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create try function: {}", e)))?;
+        solidb.set("try", try_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set try: {}", e)))?;
+
+        let validate_condition_fn = create_validate_condition_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create validate_condition function: {}", e)))?;
+        solidb.set("validate_condition", validate_condition_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set validate_condition: {}", e)))?;
+
+        let check_permissions_fn = create_check_permissions_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create check_permissions function: {}", e)))?;
+        solidb.set("check_permissions", check_permissions_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set check_permissions: {}", e)))?;
+
+        let validate_input_fn = create_validate_input_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create validate_input function: {}", e)))?;
+        solidb.set("validate_input", validate_input_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set validate_input: {}", e)))?;
+
+        let rate_limit_fn = create_rate_limit_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create rate_limit function: {}", e)))?;
+        solidb.set("rate_limit", rate_limit_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set rate_limit: {}", e)))?;
+
+        let timeout_fn = create_timeout_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create timeout function: {}", e)))?;
+        solidb.set("timeout", timeout_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set timeout: {}", e)))?;
+
+        let retry_fn = create_retry_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create retry function: {}", e)))?;
+        solidb.set("retry", retry_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set retry: {}", e)))?;
+
+        let fallback_fn = create_fallback_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create fallback function: {}", e)))?;
+        solidb.set("fallback", fallback_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set fallback: {}", e)))?;
+
+        // Authentication & Authorization (solidb.auth namespace)
+        let auth_table = auth::create_auth_table(lua, &context.user)
+            .map_err(|e| DbError::InternalError(format!("Failed to create auth table: {}", e)))?;
+        solidb.set("auth", auth_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set auth: {}", e)))?;
+
+        // File & Media Handling (using blob storage)
+        let upload_fn = create_upload_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create upload function: {}", e)))?;
+        solidb.set("upload", upload_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set upload: {}", e)))?;
+
+        let file_info_fn = create_file_info_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create file_info function: {}", e)))?;
+        solidb.set("file_info", file_info_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set file_info: {}", e)))?;
+
+        let file_read_fn = create_file_read_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create file_read function: {}", e)))?;
+        solidb.set("file_read", file_read_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set file_read: {}", e)))?;
+
+        let file_delete_fn = create_file_delete_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create file_delete function: {}", e)))?;
+        solidb.set("file_delete", file_delete_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set file_delete: {}", e)))?;
+
+        let file_list_fn = create_file_list_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create file_list function: {}", e)))?;
+        solidb.set("file_list", file_list_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set file_list: {}", e)))?;
+
+        let image_process_fn = create_image_process_function(lua, self.storage.clone(), db_name.to_string())
+            .map_err(|e| DbError::InternalError(format!("Failed to create image_process function: {}", e)))?;
+        solidb.set("image_process", image_process_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set image_process: {}", e)))?;
+
+        // Development Tools
+        let debug_fn = create_debug_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create debug function: {}", e)))?;
+        solidb.set("debug", debug_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set debug: {}", e)))?;
+
+        let inspect_fn = create_inspect_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create inspect function: {}", e)))?;
+        solidb.set("inspect", inspect_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set inspect: {}", e)))?;
+
+        let profile_fn = create_profile_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create profile function: {}", e)))?;
+        solidb.set("profile", profile_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set profile: {}", e)))?;
+
+        let benchmark_fn = create_benchmark_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create benchmark function: {}", e)))?;
+        solidb.set("benchmark", benchmark_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set benchmark: {}", e)))?;
+
+        let mock_fn = create_mock_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create mock function: {}", e)))?;
+        solidb.set("mock", mock_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set mock: {}", e)))?;
+
+        let dev_assert_fn = create_dev_assert_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create dev_assert function: {}", e)))?;
+        solidb.set("assert", dev_assert_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set assert: {}", e)))?;
+
+        let assert_eq_fn = create_assert_eq_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create assert_eq function: {}", e)))?;
+        solidb.set("assert_eq", assert_eq_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set assert_eq: {}", e)))?;
+
+        let dump_fn = create_dump_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create dump function: {}", e)))?;
+        solidb.set("dump", dump_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set dump: {}", e)))?;
+
         // Set solidb global
+        // Initialize solidb.env table
+        let env_table = lua.create_table().map_err(|e| DbError::InternalError(format!("Failed to create env table: {}", e)))?;
+        
+        // Populate env table from _env collection
+        if let Ok(db) = self.storage.get_database(&db_name) {
+             if let Ok(collection) = db.get_collection("_env") {
+                 let collection: &crate::storage::Collection = &collection;
+                 let all_docs = collection.scan(None);
+                 for doc in all_docs {
+                     if let (Some(key), Some(value)) = (
+                         doc.get("_key").and_then(|v| v.as_str().map(|s| s.to_string())),
+                         doc.get("value").and_then(|v| v.as_str().map(|s| s.to_string()))
+                     ) {
+                         env_table.set(key, value).map_err(|e| DbError::InternalError(format!("Failed to set env var: {}", e)))?;
+                     }
+                 }
+             }
+        }
+        
+        solidb.set("env", env_table).map_err(|e| DbError::InternalError(format!("Failed to set solidb.env: {}", e)))?;
+
         globals.set("solidb", solidb)
             .map_err(|e| DbError::InternalError(format!("Failed to set solidb global: {}", e)))?;
 
@@ -1055,6 +1358,30 @@ impl ScriptEngine {
         }).map_err(|e| DbError::InternalError(format!("Failed to create json function: {}", e)))?;
         response.set("json", json_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set json: {}", e)))?;
+
+        // response.html(content) - HTML response
+        let html_fn = create_response_html_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create html function: {}", e)))?;
+        response.set("html", html_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set html: {}", e)))?;
+
+        // response.file(path) - file download
+        let file_fn = create_response_file_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create file function: {}", e)))?;
+        response.set("file", file_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set file: {}", e)))?;
+
+        // response.stream(data) - streaming response
+        let stream_fn = create_response_stream_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create stream function: {}", e)))?;
+        response.set("stream", stream_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set stream: {}", e)))?;
+
+        // response.cors(options) - CORS headers
+        let cors_fn = create_response_cors_function(lua)
+            .map_err(|e| DbError::InternalError(format!("Failed to create cors function: {}", e)))?;
+        response.set("cors", cors_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set cors: {}", e)))?;
 
         globals.set("response", response)
             .map_err(|e| DbError::InternalError(format!("Failed to set response global: {}", e)))?;

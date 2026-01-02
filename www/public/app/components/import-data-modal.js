@@ -130,20 +130,20 @@ var importDataModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr672="expr672" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr485="expr485" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.visible,
-    redundantAttribute: 'expr672',
-    selector: '[expr672]',
-    template: template('<div expr673="expr673" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Import Data</h3><div expr674="expr674" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div expr676="expr676" class="mb-4 p-3 bg-green-900/20 border border-green-500/50 rounded"></div><form expr679="expr679"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr680="expr680"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400"><label for="file-upload" class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span><input expr681="expr681" id="file-upload" name="file-upload" type="file" class="sr-only" accept=".json,.jsonl,.csv"/></label><p class="pl-1">or drag and drop</p></div><p class="text-xs text-gray-500">\n                                JSONL, JSON Array, or CSV\n                            </p><p expr682="expr682" class="text-sm text-indigo-300 font-medium mt-2"></p></div></div></div><div class="flex justify-end space-x-3"><button expr683="expr683" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n                        Close\n                    </button><button expr684="expr684" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></form></div>', [{
+    redundantAttribute: 'expr485',
+    selector: '[expr485]',
+    template: template('<div expr486="expr486" class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700"><h3 class="text-xl font-bold text-gray-100 mb-4">Import Data</h3><div expr487="expr487" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div expr489="expr489" class="mb-4 p-3 bg-green-900/20 border border-green-500/50 rounded"></div><form expr492="expr492"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr493="expr493"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400"><label for="file-upload" class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span><input expr494="expr494" id="file-upload" name="file-upload" type="file" class="sr-only" accept=".json,.jsonl,.csv"/></label><p class="pl-1">or drag and drop</p></div><p class="text-xs text-gray-500">\n                                JSONL, JSON Array, or CSV\n                            </p><p expr495="expr495" class="text-sm text-indigo-300 font-medium mt-2"></p></div></div></div><div class="flex justify-end space-x-3"><button expr496="expr496" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors">\n                        Close\n                    </button><button expr497="expr497" type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"> </button></div></form></div>', [{
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleBackdropClick
       }]
     }, {
-      redundantAttribute: 'expr673',
-      selector: '[expr673]',
+      redundantAttribute: 'expr486',
+      selector: '[expr486]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -152,11 +152,11 @@ var importDataModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.error,
-      redundantAttribute: 'expr674',
-      selector: '[expr674]',
-      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr675="expr675" class="text-sm text-red-300"> </p></div>', [{
-        redundantAttribute: 'expr675',
-        selector: '[expr675]',
+      redundantAttribute: 'expr487',
+      selector: '[expr487]',
+      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr488="expr488" class="text-sm text-red-300"> </p></div>', [{
+        redundantAttribute: 'expr488',
+        selector: '[expr488]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -166,19 +166,19 @@ var importDataModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.success,
-      redundantAttribute: 'expr676',
-      selector: '[expr676]',
-      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><div><p expr677="expr677" class="text-sm text-green-300"> </p><p expr678="expr678" class="text-xs text-green-400 mt-1"> </p></div></div>', [{
-        redundantAttribute: 'expr677',
-        selector: '[expr677]',
+      redundantAttribute: 'expr489',
+      selector: '[expr489]',
+      template: template('<div class="flex items-start"><svg class="h-5 w-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><div><p expr490="expr490" class="text-sm text-green-300"> </p><p expr491="expr491" class="text-xs text-green-400 mt-1"> </p></div></div>', [{
+        redundantAttribute: 'expr490',
+        selector: '[expr490]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.state.success
         }]
       }, {
-        redundantAttribute: 'expr678',
-        selector: '[expr678]',
+        redundantAttribute: 'expr491',
+        selector: '[expr491]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -186,16 +186,16 @@ var importDataModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr679',
-      selector: '[expr679]',
+      redundantAttribute: 'expr492',
+      selector: '[expr492]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onsubmit',
         evaluate: _scope => _scope.handleSubmit
       }]
     }, {
-      redundantAttribute: 'expr680',
-      selector: '[expr680]',
+      redundantAttribute: 'expr493',
+      selector: '[expr493]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -215,8 +215,8 @@ var importDataModal = {
         evaluate: _scope => _scope.handleDrop
       }]
     }, {
-      redundantAttribute: 'expr681',
-      selector: '[expr681]',
+      redundantAttribute: 'expr494',
+      selector: '[expr494]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -225,8 +225,8 @@ var importDataModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedFile,
-      redundantAttribute: 'expr682',
-      selector: '[expr682]',
+      redundantAttribute: 'expr495',
+      selector: '[expr495]',
       template: template(' ', [{
         expressions: [{
           type: expressionTypes.TEXT,
@@ -235,16 +235,16 @@ var importDataModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr683',
-      selector: '[expr683]',
+      redundantAttribute: 'expr496',
+      selector: '[expr496]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleClose
       }]
     }, {
-      redundantAttribute: 'expr684',
-      selector: '[expr684]',
+      redundantAttribute: 'expr497',
+      selector: '[expr497]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,

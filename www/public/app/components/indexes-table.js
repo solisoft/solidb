@@ -86,28 +86,28 @@ var indexesTable = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr558="expr558" class="flex justify-center items-center py-12"></div><div expr559="expr559" class="text-center py-12"></div><div expr562="expr562" class="text-center py-12"></div><table expr564="expr564" class="min-w-full divide-y divide-gray-700"></table></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div expr275="expr275" class="flex justify-center items-center py-12"></div><div expr276="expr276" class="text-center py-12"></div><div expr279="expr279" class="text-center py-12"></div><table expr281="expr281" class="min-w-full divide-y divide-gray-700"></table></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr558',
-    selector: '[expr558]',
+    redundantAttribute: 'expr275',
+    selector: '[expr275]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading indexes...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr559',
-    selector: '[expr559]',
-    template: template('<p expr560="expr560" class="text-red-400"> </p><button expr561="expr561" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
-      redundantAttribute: 'expr560',
-      selector: '[expr560]',
+    redundantAttribute: 'expr276',
+    selector: '[expr276]',
+    template: template('<p expr277="expr277" class="text-red-400"> </p><button expr278="expr278" class="mt-4 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
+      redundantAttribute: 'expr277',
+      selector: '[expr277]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Error loading indexes: ', _scope.state.error].join('')
       }]
     }, {
-      redundantAttribute: 'expr561',
-      selector: '[expr561]',
+      redundantAttribute: 'expr278',
+      selector: '[expr278]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -117,11 +117,11 @@ var indexesTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.indexes.length === 0,
-    redundantAttribute: 'expr562',
-    selector: '[expr562]',
-    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No indexes</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new index.</p><div class="mt-6"><button expr563="expr563" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Index\n        </button></div>', [{
-      redundantAttribute: 'expr563',
-      selector: '[expr563]',
+    redundantAttribute: 'expr279',
+    selector: '[expr279]',
+    template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No indexes</h3><p class="mt-1 text-sm text-gray-500">Get started by creating a new index.</p><div class="mt-6"><button expr280="expr280" class="inline-flex items-center px-4 py-2 border\n          border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">\n          Create Index\n        </button></div>', [{
+      redundantAttribute: 'expr280',
+      selector: '[expr280]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -131,31 +131,31 @@ var indexesTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.indexes.length > 0,
-    redundantAttribute: 'expr564',
-    selector: '[expr564]',
-    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Field\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Unique\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Stats\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr565="expr565" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
+    redundantAttribute: 'expr281',
+    selector: '[expr281]',
+    template: template('<thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Name\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Field\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Type\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Unique\n          </th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Stats\n          </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">\n            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr282="expr282" class="hover:bg-gray-750 transition-colors"></tr></tbody>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><span expr566="expr566" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr567="expr567" class="text-sm text-gray-400 font-mono"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr568="expr568"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr569="expr569" class="text-gray-500"></span><span expr570="expr570" class="text-green-400"></span><span expr571="expr571" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><div expr572="expr572"> </div><div expr573="expr573" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr574="expr574" class="text-red-400 hover:text-red-300 transition-colors" title="Delete index"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>', [{
-        redundantAttribute: 'expr566',
-        selector: '[expr566]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap"><div class="flex items-center"><svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg><span expr283="expr283" class="text-sm font-medium text-gray-100"> </span></div></td><td class="px-6 py-4 whitespace-nowrap"><span expr284="expr284" class="text-sm text-gray-400 font-mono"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr285="expr285"> </span></td><td class="px-6 py-4 whitespace-nowrap"><span expr286="expr286" class="text-gray-500"></span><span expr287="expr287" class="text-green-400"></span><span expr288="expr288" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400"><div expr289="expr289"> </div><div expr290="expr290" class="text-xs text-gray-500"> </div></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"><button expr291="expr291" class="text-red-400 hover:text-red-300 transition-colors" title="Delete index"><svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>', [{
+        redundantAttribute: 'expr283',
+        selector: '[expr283]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.index.name
         }]
       }, {
-        redundantAttribute: 'expr567',
-        selector: '[expr567]',
+        redundantAttribute: 'expr284',
+        selector: '[expr284]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.index.field
         }]
       }, {
-        redundantAttribute: 'expr568',
-        selector: '[expr568]',
+        redundantAttribute: 'expr285',
+        selector: '[expr285]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -169,48 +169,48 @@ var indexesTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.index.index_type === 'Geo',
-        redundantAttribute: 'expr569',
-        selector: '[expr569]',
+        redundantAttribute: 'expr286',
+        selector: '[expr286]',
         template: template('N/A', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.index.index_type !== 'Geo' && _scope.index.unique,
-        redundantAttribute: 'expr570',
-        selector: '[expr570]',
+        redundantAttribute: 'expr287',
+        selector: '[expr287]',
         template: template('✓ Yes', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.index.index_type !== 'Geo' && !_scope.index.unique,
-        redundantAttribute: 'expr571',
-        selector: '[expr571]',
+        redundantAttribute: 'expr288',
+        selector: '[expr288]',
         template: template('No', [])
       }, {
-        redundantAttribute: 'expr572',
-        selector: '[expr572]',
+        redundantAttribute: 'expr289',
+        selector: '[expr289]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.index.unique_values.toLocaleString(), ' unique'].join('')
         }]
       }, {
-        redundantAttribute: 'expr573',
-        selector: '[expr573]',
+        redundantAttribute: 'expr290',
+        selector: '[expr290]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.index.indexed_documents.toLocaleString(), ' docs'].join('')
         }]
       }, {
-        redundantAttribute: 'expr574',
-        selector: '[expr574]',
+        redundantAttribute: 'expr291',
+        selector: '[expr291]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteIndex(_scope.index)
         }]
       }]),
-      redundantAttribute: 'expr565',
-      selector: '[expr565]',
+      redundantAttribute: 'expr282',
+      selector: '[expr282]',
       itemName: 'index',
       indexName: null,
       evaluate: _scope => _scope.state.indexes

@@ -247,6 +247,10 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/schema",
             delete(super::handlers::delete_collection_schema),
         )
+        // Env var routes
+        .route("/_api/database/{db}/env", get(super::env_handlers::list_env_vars_handler))
+        .route("/_api/database/{db}/env/{key}", put(super::env_handlers::set_env_var_handler))
+        .route("/_api/database/{db}/env/{key}", delete(super::env_handlers::delete_env_var_handler))
         // Transaction routes
         .route("/_api/database/{db}/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/commit", post(super::transaction_handlers::commit_transaction))
@@ -338,6 +342,7 @@ pub fn create_router(
         .route("/api/custom/{*path}", post(super::script_handlers::execute_script_handler))
         .route("/api/custom/{*path}", put(super::script_handlers::execute_script_handler))
         .route("/api/custom/{*path}", delete(super::script_handlers::execute_script_handler))
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::permissive_auth_middleware))
         .merge(api_routes)
         .with_state(state)
         // Global request body limit: 10MB default (import/blob have 500MB override)
