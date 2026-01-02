@@ -486,6 +486,136 @@ fn extract_path_params(pattern: &str, path: &str) -> HashMap<String, String> {
     params
 }
 
+// ==================== REPL Types ====================
+
+#[derive(Debug, Deserialize)]
+pub struct ReplEvalRequest {
+    /// Lua code to execute
+    pub code: String,
+    /// Optional session ID for state persistence
+    pub session_id: Option<String>,
+    /// Execution timeout in milliseconds (default 5000)
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+}
+
+fn default_timeout() -> u64 {
+    5000
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplEvalResponse {
+    /// The returned value from the Lua code
+    pub result: Value,
+    /// Console output captured during execution
+    pub output: Vec<String>,
+    /// Error if execution failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ReplError>,
+    /// Execution time in milliseconds
+    pub execution_time_ms: f64,
+    /// Session ID for subsequent calls
+    pub session_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplError {
+    /// Error message
+    pub message: String,
+    /// Line number where error occurred (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// Column number where error occurred (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+}
+
+// ==================== REPL Handler ====================
+
+/// Evaluate Lua code in an interactive REPL session
+pub async fn repl_eval_handler(
+    State(state): State<AppState>,
+    Path(db_name): Path<String>,
+    axum::Extension(_claims): axum::Extension<crate::server::auth::Claims>,
+    Json(req): Json<ReplEvalRequest>,
+) -> Result<Json<ReplEvalResponse>, DbError> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    // Verify database exists
+    let _ = state.storage.get_database(&db_name)?;
+
+    // Get or create session
+    let mut session = state.repl_sessions.get_or_create(req.session_id.as_deref(), &db_name);
+    session.add_to_history(req.code.clone());
+
+    // Create script engine
+    let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
+
+    // Execute with session variables
+    let mut output_capture: Vec<String> = Vec::new();
+    let result = engine.execute_repl(
+        &req.code,
+        &db_name,
+        &session.variables,
+        &mut output_capture,
+    ).await;
+
+    let duration = start.elapsed();
+
+    match result {
+        Ok((value, updated_vars)) => {
+            // Update session with new variables
+            session.variables = updated_vars;
+            state.repl_sessions.update(session.clone());
+
+            Ok(Json(ReplEvalResponse {
+                result: value,
+                output: output_capture,
+                error: None,
+                execution_time_ms: duration.as_secs_f64() * 1000.0,
+                session_id: session.id,
+            }))
+        }
+        Err(e) => {
+            // Parse error for line/column info
+            let (message, line, column) = parse_lua_error(&e.to_string());
+
+            Ok(Json(ReplEvalResponse {
+                result: Value::Null,
+                output: output_capture,
+                error: Some(ReplError {
+                    message,
+                    line,
+                    column,
+                }),
+                execution_time_ms: duration.as_secs_f64() * 1000.0,
+                session_id: session.id,
+            }))
+        }
+    }
+}
+
+/// Parse a Lua error message to extract line/column information
+fn parse_lua_error(error: &str) -> (String, Option<u32>, Option<u32>) {
+    // Lua errors often look like: "[string \"...\"]:3: error message"
+    // or "runtime error: [string \"...\"]:5:12: message"
+
+    let re_line = regex::Regex::new(r"\[string [^\]]+\]:(\d+):(?:(\d+):)?\s*(.*)").ok();
+
+    if let Some(re) = re_line {
+        if let Some(caps) = re.captures(error) {
+            let line = caps.get(1).and_then(|m| m.as_str().parse().ok());
+            let column = caps.get(2).and_then(|m| m.as_str().parse().ok());
+            let message = caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_else(|| error.to_string());
+            return (message, line, column);
+        }
+    }
+
+    (error.to_string(), None, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

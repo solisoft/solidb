@@ -91,6 +91,8 @@ pub struct AppState {
     pub script_stats: Arc<ScriptStats>,
     // RBAC permission cache
     pub permission_cache: crate::server::permission_cache::PermissionCache,
+    // REPL session store
+    pub repl_sessions: crate::server::repl_session::ReplSessionStore,
 }
 
 // ==================== Auth Types ====================

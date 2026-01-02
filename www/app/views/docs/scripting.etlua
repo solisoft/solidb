@@ -210,6 +210,18 @@
                   <span class="text-purple-400">solidb.fetch(url, options)</span> <span class="text-gray-500">-&gt; Response</span>
                   <div class="text-xs text-gray-500 mt-1">Make an HTTP request. Options: <code>{ method="GET", headers={}, body="" }</code>. Returns <code>{ status, body, headers, ok }</code>.</div>
                 </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.stats()</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Get script execution statistics. Returns <code>{ active_scripts, active_ws, total_scripts_executed, total_ws_connections }</code>.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.now()</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Get current Unix timestamp in seconds.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">print(...)</span>
+                  <div class="text-xs text-gray-500 mt-1">Print values to console output. Multiple arguments are separated by tabs.</div>
+                </li>
               </ul>
             </div>
 
@@ -248,8 +260,15 @@
                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">db:transaction(callback)</span> <span class="text-gray-500">-&gt; any</span>
                   <div class="text-xs text-gray-500 mt-1">
-                    Execute operations atomically within a transaction. The callback receives a <code>tx</code> context. 
+                    Execute operations atomically within a transaction. The callback receives a <code>tx</code> context.
                     <strong class="text-green-400">Auto-commits</strong> on success, <strong class="text-red-400">auto-rollbacks</strong> on error.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:enqueue(queue, script, params, options)</span> <span class="text-gray-500">-&gt; job_id</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Enqueue a background job. Options: <code>{ delay_ms = 0 }</code>.
+                    <br><span class="text-gray-600">Example:</span> <code>db:enqueue("emails", "send_email", { to = "user@example.com" }, { delay_ms = 5000 })</code>
                   </div>
                 </li>
               </ul>
@@ -357,6 +376,14 @@
                   <span class="text-purple-400">crypto.base32_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hex_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Encode binary data as hexadecimal string.</div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hex_decode(hex)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                  <div class="text-xs text-gray-500 mt-1">Decode hexadecimal string to binary data.</div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
@@ -449,6 +476,22 @@
                 </li>
                  <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-red-400">request.headers</span> <span class="text-gray-500">-&gt; table</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.is_websocket</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Whether this is a WebSocket upgrade request.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Response Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">response</h3>
+              <p class="text-gray-400 text-sm mb-4">Response utilities for formatting output.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">response.json(data)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Convert a Lua table to a JSON string.</div>
                 </li>
               </ul>
             </div>
@@ -682,6 +725,105 @@ solidb.log(<span class="text-green-400">"WebSocket connection established!"</spa
               </div>
            </div>
 
+          </div>
+        </div>
+      </section>
+
+      <!-- REPL Section -->
+      <section id="repl" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              Interactive REPL
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB includes an interactive Lua REPL (Read-Eval-Print Loop) for testing and debugging scripts. Access it from the dashboard sidebar under "Lua REPL".
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-yellow-400 font-bold mb-3 flex items-center"><i class="fas fa-terminal mr-2"></i> Features</h3>
+                <ul class="space-y-2 text-sm text-gray-300">
+                  <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Execute Lua code interactively</li>
+                  <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Full access to database APIs</li>
+                  <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Session state persists between calls</li>
+                  <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Console output capture</li>
+                  <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Command history</li>
+                </ul>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-yellow-400 font-bold mb-3 flex items-center"><i class="fas fa-code mr-2"></i> API Endpoint</h3>
+                <p class="text-sm text-gray-400 mb-3">Use the REPL programmatically:</p>
+                <div class="bg-gray-950 rounded-lg p-3 font-mono text-sm">
+                  <div class="text-gray-500">POST /_api/database/{db}/repl</div>
+                  <pre class="text-green-300 mt-2">{
+  "code": "return 1 + 1",
+  "session_id": "optional"
+}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+              <div class="bg-gray-800/50 px-4 py-2 border-b border-white/5">
+                <span class="text-sm text-gray-400">Example REPL Session</span>
+              </div>
+              <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Test database access</span>
+<span class="text-purple-400">local</span> users = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"users"</span>)
+<span class="text-blue-400">print</span>(<span class="text-green-400">"User count: "</span> .. users:<span class="text-blue-400">count</span>())
+
+<span class="text-gray-500">-- Run a query</span>
+<span class="text-purple-400">local</span> results = db:<span class="text-blue-400">query</span>(<span class="text-green-400">"FOR u IN users LIMIT 3 RETURN u.name"</span>)
+<span class="text-purple-400">return</span> results</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VSCode Extension Section -->
+      <section id="vscode" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"></path></svg>
+              VSCode Extension
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A VSCode extension is available for enhanced Lua development with SoliDB. Get autocomplete, snippets, and deploy scripts directly from your editor.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-magic mr-2"></i> Autocomplete</h3>
+                <p class="text-sm text-gray-400">IntelliSense for solidb, db, request, crypto, and time APIs</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-puzzle-piece mr-2"></i> Snippets</h3>
+                <p class="text-sm text-gray-400">30+ code snippets for common patterns</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-upload mr-2"></i> Deploy</h3>
+                <p class="text-sm text-gray-400">Deploy scripts to SoliDB with one command</p>
+              </div>
+            </div>
+
+            <div class="bg-gray-950 rounded-xl border border-white/10 p-4">
+              <h4 class="text-gray-300 font-semibold mb-2">Installation</h4>
+              <div class="font-mono text-sm">
+                <p class="text-gray-400 mb-2">From the vscode-solidb directory:</p>
+                <pre class="text-green-300">npm install
+npm run compile
+# Then install from VSIX or development mode</pre>
+              </div>
+            </div>
           </div>
         </div>
       </section>

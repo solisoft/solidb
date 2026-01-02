@@ -8,9 +8,11 @@ pub mod queue_handlers;
 pub mod authorization;
 pub mod permission_cache;
 pub mod role_handlers;
+pub mod repl_session;
 
 pub use cursor_store::CursorStore;
 pub use routes::create_router;
 pub use authorization::{AuthorizationService, Permission, PermissionAction, PermissionScope, Role, UserRole};
+pub use repl_session::ReplSessionStore;
 pub mod multiplex;
 pub mod response;

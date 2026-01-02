@@ -408,6 +408,230 @@ impl ScriptEngine {
         result
     }
 
+    /// Execute Lua code in REPL mode with variable persistence
+    pub async fn execute_repl(
+        &self,
+        code: &str,
+        db_name: &str,
+        variables: &HashMap<String, JsonValue>,
+        output_capture: &mut Vec<String>,
+    ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
+        self.stats.active_scripts.fetch_add(1, Ordering::SeqCst);
+        self.stats.total_scripts_executed.fetch_add(1, Ordering::SeqCst);
+
+        // Ensure active counter is decremented even on panic or early return
+        struct ActiveScriptGuard(Arc<ScriptStats>);
+        impl Drop for ActiveScriptGuard {
+            fn drop(&mut self) {
+                self.0.active_scripts.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let _guard = ActiveScriptGuard(self.stats.clone());
+
+        let lua = Lua::new();
+
+        // Secure environment: Remove unsafe standard libraries and functions
+        let globals = lua.globals();
+        globals.set("os", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure os: {}", e)))?;
+        globals.set("io", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure io: {}", e)))?;
+        globals.set("debug", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure debug: {}", e)))?;
+        globals.set("package", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure package: {}", e)))?;
+        globals.set("dofile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure dofile: {}", e)))?;
+        globals.set("load", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure load: {}", e)))?;
+        globals.set("loadfile", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure loadfile: {}", e)))?;
+        globals.set("require", LuaValue::Nil).map_err(|e| DbError::InternalError(format!("Failed to secure require: {}", e)))?;
+
+        // Create a minimal ScriptContext for REPL (no HTTP context)
+        let context = ScriptContext {
+            method: "REPL".to_string(),
+            path: "repl".to_string(),
+            query_params: HashMap::new(),
+            params: HashMap::new(),
+            headers: HashMap::new(),
+            body: None,
+            is_websocket: false,
+        };
+
+        // Set up the Lua environment (script info is None for REPL)
+        self.setup_lua_globals(&lua, db_name, &context, None)?;
+
+        // Inject session variables into global scope
+        for (name, value) in variables {
+            let lua_val = json_to_lua(&lua, value)
+                .map_err(|e| DbError::InternalError(format!("Failed to convert variable '{}': {}", name, e)))?;
+            globals.set(name.clone(), lua_val)
+                .map_err(|e| DbError::InternalError(format!("Failed to inject variable '{}': {}", name, e)))?;
+        }
+
+        // Set up output capture by replacing solidb.log
+        let output_clone = Arc::new(std::sync::Mutex::new(output_capture.clone()));
+        let output_ref = output_clone.clone();
+
+        let capture_log_fn = lua.create_function(move |lua, val: mlua::Value| {
+            let msg = match val {
+                mlua::Value::Nil => "nil".to_string(),
+                mlua::Value::Boolean(b) => b.to_string(),
+                mlua::Value::Integer(i) => i.to_string(),
+                mlua::Value::Number(n) => n.to_string(),
+                mlua::Value::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_else(|_| "[invalid string]".to_string()),
+                mlua::Value::Table(t) => {
+                    // Simple JSON-like serialization for tables
+                    if let Ok(json) = Self::table_to_json_static(lua, t) {
+                        serde_json::to_string(&json).unwrap_or_else(|_| "[table]".to_string())
+                    } else {
+                        "[table]".to_string()
+                    }
+                }
+                _ => "[unsupported type]".to_string(),
+            };
+
+            // Add to output capture
+            if let Ok(mut output) = output_ref.lock() {
+                output.push(msg);
+            }
+
+            Ok(())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create capture log fn: {}", e)))?;
+
+        // Update solidb.log with capture version
+        let solidb: mlua::Table = globals.get("solidb")
+            .map_err(|e| DbError::InternalError(format!("Failed to get solidb table: {}", e)))?;
+        solidb.set("log", capture_log_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set capture log: {}", e)))?;
+
+        // Also add print function that captures output
+        let output_print_ref = output_clone.clone();
+        let print_fn = lua.create_function(move |lua, args: mlua::Variadic<mlua::Value>| {
+            let mut parts = Vec::new();
+            for val in args {
+                let part = match val {
+                    mlua::Value::Nil => "nil".to_string(),
+                    mlua::Value::Boolean(b) => b.to_string(),
+                    mlua::Value::Integer(i) => i.to_string(),
+                    mlua::Value::Number(n) => n.to_string(),
+                    mlua::Value::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_else(|_| "[invalid string]".to_string()),
+                    mlua::Value::Table(t) => {
+                        if let Ok(json) = Self::table_to_json_static(lua, t) {
+                            serde_json::to_string(&json).unwrap_or_else(|_| "[table]".to_string())
+                        } else {
+                            "[table]".to_string()
+                        }
+                    }
+                    _ => "[unsupported type]".to_string(),
+                };
+                parts.push(part);
+            }
+
+            if let Ok(mut output) = output_print_ref.lock() {
+                output.push(parts.join("\t"));
+            }
+
+            Ok(())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create print fn: {}", e)))?;
+
+        globals.set("print", print_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set print: {}", e)))?;
+
+        // Execute the code
+        let chunk = lua.load(code);
+
+        let result = match chunk.eval_async::<LuaValue>().await {
+            Ok(result) => {
+                // Convert Lua result to JSON
+                let json_result = self.lua_to_json(&lua, result)?;
+                Ok(json_result)
+            }
+            Err(e) => Err(DbError::InternalError(format!("Lua error: {}", e))),
+        };
+
+        // Copy captured output back
+        if let Ok(captured) = output_clone.lock() {
+            output_capture.clear();
+            output_capture.extend(captured.iter().cloned());
+        }
+
+        // Extract updated variables from global scope
+        // We only extract variables that were originally injected or newly created
+        let mut updated_vars = HashMap::new();
+
+        // Get variables that were originally in the session
+        for name in variables.keys() {
+            if let Ok(val) = globals.get::<LuaValue>(name.clone()) {
+                if !matches!(val, LuaValue::Nil) {
+                    if let Ok(json_val) = self.lua_to_json(&lua, val) {
+                        updated_vars.insert(name.clone(), json_val);
+                    }
+                }
+            }
+        }
+
+        // Also look for new top-level variables defined by the user
+        // This is a bit limited since we can't easily iterate all globals
+        // without including built-in functions. For now, we only persist
+        // variables that were explicitly in the session.
+
+        match result {
+            Ok(json_result) => Ok((json_result, updated_vars)),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Static helper for table_to_json used in closures
+    fn table_to_json_static(lua: &Lua, table: mlua::Table) -> Result<JsonValue, mlua::Error> {
+        let mut is_array = true;
+        let mut expected_index = 1i64;
+
+        for pair in table.clone().pairs::<LuaValue, LuaValue>() {
+            let (k, _) = pair?;
+            match k {
+                LuaValue::Integer(i) if i == expected_index => {
+                    expected_index += 1;
+                }
+                _ => {
+                    is_array = false;
+                    break;
+                }
+            }
+        }
+
+        if is_array && expected_index > 1 {
+            let mut arr = Vec::new();
+            for i in 1..expected_index {
+                let val: LuaValue = table.get(i)?;
+                arr.push(Self::lua_value_to_json_static(lua, val)?);
+            }
+            Ok(JsonValue::Array(arr))
+        } else {
+            let mut map = serde_json::Map::new();
+            for pair in table.pairs::<LuaValue, LuaValue>() {
+                let (k, v) = pair?;
+                let key_str = match k {
+                    LuaValue::String(s) => s.to_str()?.to_string(),
+                    LuaValue::Integer(i) => i.to_string(),
+                    LuaValue::Number(n) => n.to_string(),
+                    _ => continue,
+                };
+                map.insert(key_str, Self::lua_value_to_json_static(lua, v)?);
+            }
+            Ok(JsonValue::Object(map))
+        }
+    }
+
+    /// Static helper for lua_value to json conversion
+    fn lua_value_to_json_static(lua: &Lua, value: LuaValue) -> Result<JsonValue, mlua::Error> {
+        match value {
+            LuaValue::Nil => Ok(JsonValue::Null),
+            LuaValue::Boolean(b) => Ok(JsonValue::Bool(b)),
+            LuaValue::Integer(i) => Ok(JsonValue::Number(i.into())),
+            LuaValue::Number(n) => Ok(serde_json::Number::from_f64(n)
+                .map(JsonValue::Number)
+                .unwrap_or(JsonValue::Null)),
+            LuaValue::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
+            LuaValue::Table(t) => Self::table_to_json_static(lua, t),
+            _ => Ok(JsonValue::Null),
+        }
+    }
+
     fn setup_lua_globals(&self, lua: &Lua, db_name: &str, context: &ScriptContext, script_info: Option<(&str, &str)>) -> Result<(), DbError> {
         let globals = lua.globals();
 

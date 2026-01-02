@@ -34,6 +34,18 @@
           <span class="w-1.5 h-1.5 rounded-full bg-teal-500 mr-3 group-hover:scale-125 transition-transform"></span>
           Examples
         </a>
+
+        <!-- REPL -->
+        <a href="#repl" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Interactive REPL
+        </a>
+
+        <!-- VSCode Extension -->
+        <a href="#vscode" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 mr-3 group-hover:scale-125 transition-transform"></span>
+          VSCode Extension
+        </a>
       </nav>
     </div>
 

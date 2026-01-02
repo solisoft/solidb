@@ -40,7 +40,11 @@ local app = {
   scripts = function()
     Page("dashboard/scripts", "app")
   end,
-  
+
+  repl = function()
+    Page("dashboard/repl", "app")
+  end,
+
   queues = function()
     Page("dashboard/queues", "app")
   end,

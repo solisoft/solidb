@@ -1,0 +1,251 @@
+{
+  "SoliDB Script Template": {
+    "prefix": "solidb-script",
+    "body": [
+      "-- ${1:Script Name}",
+      "-- ${2:Description}",
+      "",
+      "local collection = db:collection('${3:collection_name}')",
+      "",
+      "if request.method == 'GET' then",
+      "  local doc = collection:get(request.params.id)",
+      "  return doc",
+      "elseif request.method == 'POST' then",
+      "  local result = collection:insert(request.body)",
+      "  return result",
+      "end"
+    ],
+    "description": "Create a new SoliDB script with GET/POST handlers"
+  },
+  "SoliDB REST API": {
+    "prefix": "solidb-rest",
+    "body": [
+      "-- ${1:Resource} REST API",
+      "local collection = db:collection('${2:${1/(.*)/${1:/downcase}/}s}')",
+      "",
+      "if request.method == 'GET' then",
+      "  if request.params.id then",
+      "    return collection:get(request.params.id)",
+      "  else",
+      "    return db:query('FOR doc IN ${2} LIMIT 100 RETURN doc')",
+      "  end",
+      "elseif request.method == 'POST' then",
+      "  return collection:insert(request.body)",
+      "elseif request.method == 'PUT' then",
+      "  return collection:update(request.params.id, request.body)",
+      "elseif request.method == 'DELETE' then",
+      "  return collection:delete(request.params.id)",
+      "end"
+    ],
+    "description": "Create a full REST API for a resource"
+  },
+  "Collection Get": {
+    "prefix": "db-get",
+    "body": "local ${1:doc} = db:collection('${2:collection}'):get('${3:key}')",
+    "description": "Get a document by key from a collection"
+  },
+  "Collection Insert": {
+    "prefix": "db-insert",
+    "body": "local ${1:result} = db:collection('${2:collection}'):insert(${3:document})",
+    "description": "Insert a document into a collection"
+  },
+  "Collection Update": {
+    "prefix": "db-update",
+    "body": "local ${1:result} = db:collection('${2:collection}'):update('${3:key}', ${4:document})",
+    "description": "Update a document in a collection"
+  },
+  "Collection Delete": {
+    "prefix": "db-delete",
+    "body": "local ${1:result} = db:collection('${2:collection}'):delete('${3:key}')",
+    "description": "Delete a document from a collection"
+  },
+  "Collection Count": {
+    "prefix": "db-count",
+    "body": "local ${1:count} = db:collection('${2:collection}'):count()",
+    "description": "Count documents in a collection"
+  },
+  "Database Query": {
+    "prefix": "db-query",
+    "body": "local ${1:results} = db:query('${2:FOR doc IN collection RETURN doc}', { ${3:bindVars} })",
+    "description": "Execute a SDBQL query"
+  },
+  "Database Transaction": {
+    "prefix": "db-transaction",
+    "body": [
+      "db:transaction(function()",
+      "  ${1:-- transaction code}",
+      "  $0",
+      "end)"
+    ],
+    "description": "Execute code in a transaction"
+  },
+  "Crypto SHA256": {
+    "prefix": "crypto-sha256",
+    "body": "local ${1:hash} = crypto.sha256('${2:data}')",
+    "description": "Generate SHA256 hash"
+  },
+  "Crypto HMAC": {
+    "prefix": "crypto-hmac",
+    "body": "local ${1:signature} = crypto.hmac_sha256('${2:data}', '${3:secret}')",
+    "description": "Generate HMAC-SHA256 signature"
+  },
+  "Crypto UUID": {
+    "prefix": "crypto-uuid",
+    "body": "local ${1:id} = crypto.uuid()",
+    "description": "Generate a UUID"
+  },
+  "Crypto UUID v7": {
+    "prefix": "crypto-uuid7",
+    "body": "local ${1:id} = crypto.uuid_v7()",
+    "description": "Generate a time-ordered UUID v7"
+  },
+  "Crypto Hex Encode": {
+    "prefix": "crypto-hex-encode",
+    "body": "local ${1:hex} = crypto.hex_encode(${2:data})",
+    "description": "Encode binary data as hex string"
+  },
+  "Crypto Hex Decode": {
+    "prefix": "crypto-hex-decode",
+    "body": "local ${1:data} = crypto.hex_decode(${2:hex})",
+    "description": "Decode hex string to binary data"
+  },
+  "Crypto Base32 Encode": {
+    "prefix": "crypto-base32-encode",
+    "body": "local ${1:encoded} = crypto.base32_encode(${2:data})",
+    "description": "Encode data as Base32 string"
+  },
+  "Crypto Base32 Decode": {
+    "prefix": "crypto-base32-decode",
+    "body": "local ${1:data} = crypto.base32_decode(${2:encoded})",
+    "description": "Decode Base32 string to data"
+  },
+  "Crypto Curve25519": {
+    "prefix": "crypto-curve25519",
+    "body": "local ${1:shared_secret} = crypto.curve25519(${2:secret}, ${3:public})",
+    "description": "X25519 key exchange"
+  },
+  "Crypto Password Hash": {
+    "prefix": "crypto-hash-password",
+    "body": "local ${1:hash} = crypto.hash_password('${2:password}')",
+    "description": "Hash a password with Argon2"
+  },
+  "Crypto Password Verify": {
+    "prefix": "crypto-verify-password",
+    "body": "local ${1:valid} = crypto.verify_password('${2:password}', ${3:hash})",
+    "description": "Verify a password against an Argon2 hash"
+  },
+  "JWT Encode": {
+    "prefix": "jwt-encode",
+    "body": "local ${1:token} = crypto.jwt_encode({ ${2:claims} }, '${3:secret}')",
+    "description": "Encode a JWT token"
+  },
+  "JWT Decode": {
+    "prefix": "jwt-decode",
+    "body": "local ${1:claims} = crypto.jwt_decode('${2:token}', '${3:secret}')",
+    "description": "Decode and verify a JWT token"
+  },
+  "Time Now": {
+    "prefix": "time-now",
+    "body": "local ${1:timestamp} = time.now()",
+    "description": "Get current timestamp in seconds"
+  },
+  "Time Now MS": {
+    "prefix": "time-now-ms",
+    "body": "local ${1:timestamp} = time.now_ms()",
+    "description": "Get current timestamp in milliseconds"
+  },
+  "Time ISO": {
+    "prefix": "time-iso",
+    "body": "local ${1:isoString} = time.iso()",
+    "description": "Get current time as ISO string"
+  },
+  "HTTP Fetch": {
+    "prefix": "solidb-fetch",
+    "body": [
+      "local ${1:response} = solidb.fetch('${2:url}', {",
+      "  method = '${3:GET}',",
+      "  headers = { ['Content-Type'] = 'application/json' },",
+      "  body = ${4:nil}",
+      "})"
+    ],
+    "description": "Make an HTTP request"
+  },
+  "SoliDB Log": {
+    "prefix": "solidb-log",
+    "body": "solidb.log(${1:message})",
+    "description": "Log a message to the _logs collection"
+  },
+  "SoliDB Stats": {
+    "prefix": "solidb-stats",
+    "body": "local ${1:stats} = solidb.stats()",
+    "description": "Get script execution statistics"
+  },
+  "SoliDB Now": {
+    "prefix": "solidb-now",
+    "body": "local ${1:timestamp} = solidb.now()",
+    "description": "Get current Unix timestamp in seconds"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": "print(${1:value})",
+    "description": "Print value to console output"
+  },
+  "Response JSON": {
+    "prefix": "response-json",
+    "body": "local ${1:json} = response.json(${2:data})",
+    "description": "Convert Lua table to JSON string"
+  },
+  "Request Body": {
+    "prefix": "req-body",
+    "body": "local ${1:data} = request.body",
+    "description": "Get the request body"
+  },
+  "Request Param": {
+    "prefix": "req-param",
+    "body": "local ${1:value} = request.params.${2:id}",
+    "description": "Get a URL path parameter"
+  },
+  "Request Query": {
+    "prefix": "req-query",
+    "body": "local ${1:value} = request.query.${2:param}",
+    "description": "Get a query string parameter"
+  },
+  "Request Header": {
+    "prefix": "req-header",
+    "body": "local ${1:value} = request.headers['${2:Authorization}']",
+    "description": "Get a request header"
+  },
+  "Async Job": {
+    "prefix": "job-async",
+    "body": [
+      "db:enqueue('${1:queue_name}', '${2:script_id}', {",
+      "  ${3:-- job parameters}",
+      "}, {",
+      "  delay_ms = ${4:0}",
+      "})"
+    ],
+    "description": "Enqueue an async background job"
+  },
+  "WebSocket Send": {
+    "prefix": "ws-send",
+    "body": "ws.send(${1:message})",
+    "description": "Send a message over WebSocket"
+  },
+  "WebSocket Receive": {
+    "prefix": "ws-recv",
+    "body": "local ${1:message} = ws.recv()",
+    "description": "Receive a message from WebSocket"
+  },
+  "WebSocket Loop": {
+    "prefix": "ws-loop",
+    "body": [
+      "while true do",
+      "  local msg = ws.recv()",
+      "  if msg == nil then break end",
+      "  ${1:-- handle message}",
+      "  $0",
+      "end"
+    ],
+    "description": "WebSocket message loop"
+  }
+}

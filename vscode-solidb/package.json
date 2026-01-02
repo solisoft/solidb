@@ -1,0 +1,105 @@
+{
+  "name": "solidb",
+  "displayName": "SoliDB",
+  "description": "SoliDB Lua scripting support with autocomplete, snippets, and deployment tools",
+  "version": "0.1.0",
+  "publisher": "solisoft",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solisoft/solidb"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:lua"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "solidb.deploy",
+        "title": "SoliDB: Deploy Script"
+      },
+      {
+        "command": "solidb.runInRepl",
+        "title": "SoliDB: Run Selection in REPL"
+      },
+      {
+        "command": "solidb.streamLogs",
+        "title": "SoliDB: Stream Logs"
+      },
+      {
+        "command": "solidb.configure",
+        "title": "SoliDB: Configure Server"
+      }
+    ],
+    "configuration": {
+      "title": "SoliDB",
+      "properties": {
+        "solidb.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "URL of the SoliDB server"
+        },
+        "solidb.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for authentication"
+        },
+        "solidb.defaultDatabase": {
+          "type": "string",
+          "default": "_system",
+          "description": "Default database for script deployment"
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "lua",
+        "extensions": [
+          ".lua"
+        ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "lua",
+        "path": "./snippets/solidb.json"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "solidb.runInRepl",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == lua"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.0"
+  }
+}

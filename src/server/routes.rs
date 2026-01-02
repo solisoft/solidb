@@ -99,6 +99,7 @@ pub fn create_router(
         system_monitor: Arc::new(std::sync::Mutex::new(sysinfo::System::new())),
         script_stats,
         permission_cache,
+        repl_sessions: crate::server::repl_session::ReplSessionStore::new(),
     };
 
 
@@ -302,6 +303,8 @@ pub fn create_router(
         .route("/_api/database/{db}/scripts/{script_id}", put(super::script_handlers::update_script_handler))
         .route("/_api/database/{db}/scripts/{script_id}", delete(super::script_handlers::delete_script_handler))
         .route("/_api/scripts/stats", get(super::script_handlers::get_script_stats_handler))
+        // REPL endpoint for interactive Lua execution
+        .route("/_api/database/{db}/repl", post(super::script_handlers::repl_eval_handler))
         .route("/_api/monitoring/ws", get(super::handlers::monitor_ws_handler))
         // Live Query Token (short-lived token for WebSocket connections)
         .route("/_api/livequery/token", get(livequery_token_handler))
