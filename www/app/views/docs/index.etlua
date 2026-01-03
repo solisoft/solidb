@@ -804,6 +804,54 @@
       </div>
     </a>
 
+    <!-- Columnar Storage -->
+    <a
+      href="/docs/columnar"
+      class="group relative bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 overflow-hidden hover:border-teal-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(20,184,166,0.15)] hover:-translate-y-1"
+    >
+      <div
+        class="absolute inset-0 bg-gradient-to-br from-teal-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+      ></div>
+
+      <div class="relative z-10 flex flex-col h-full">
+        <div class="flex items-center justify-between mb-6">
+          <div
+            class="p-4 bg-teal-500/10 rounded-2xl border border-teal-500/20 group-hover:bg-teal-500/20 transition-colors"
+          >
+            <i class="fas fa-chart-bar text-2xl text-teal-400"></i>
+          </div>
+        </div>
+
+        <h3
+          class="text-2xl font-bold text-white mb-3 group-hover:text-teal-300 transition-colors"
+        >
+          Columnar Storage
+        </h3>
+        <p class="text-gray-400 leading-relaxed mb-6 flex-grow">
+          High-performance analytical storage. Column-oriented data layout with compression and fast aggregations.
+        </p>
+
+        <div
+          class="flex items-center text-sm font-bold text-teal-400 uppercase tracking-wider group-hover:text-teal-300"
+        >
+          Optimize Analytics
+          <svg
+            class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M17 8l4 4m0 0l-4 4m4-4H3"
+            />
+          </svg>
+        </div>
+      </div>
+    </a>
+
     <!-- Blob Storage -->
     <a
       href="/docs/blobs"

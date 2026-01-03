@@ -1,0 +1,62 @@
+<div class="hidden lg:block col-span-3">
+  <div class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto space-y-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+    <!-- Navigation Container -->
+    <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Columnar Storage</h3>
+      
+      <nav class="space-y-1">
+        <!-- Overview -->
+        <a href="#overview" class="group flex items-center px-2 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+          Overview
+        </a>
+
+        <!-- Creating Collections -->
+        <a href="#creating" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Creating Collections
+        </a>
+
+        <!-- Inserting Data -->
+        <a href="#inserting" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Inserting Data
+        </a>
+
+        <!-- Aggregations -->
+        <a href="#aggregations" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Aggregations
+        </a>
+
+        <!-- Filtering -->
+        <a href="#filtering" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Filtering & Querying
+        </a>
+
+        <!-- Use Cases -->
+        <a href="#use-cases" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Use Cases
+        </a>
+      </nav>
+    </div>
+
+    <!-- Help Card -->
+    <div class="bg-gradient-to-br from-emerald-900/40 to-teal-900/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 transition-opacity opacity-50 group-hover:opacity-75"></div>
+      
+      <h4 class="text-white font-semibold mb-2 relative z-10">Need Help?</h4>
+      <p class="text-sm text-gray-400 mb-4 relative z-10">
+        Check out our getting started guide for a quick introduction.
+      </p>
+      <a href="/docs/getting-started" class="inline-flex items-center text-xs font-bold uppercase tracking-wider text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg transition-all relative z-10">
+        Get Started
+        <svg class="w-3 h-3 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>

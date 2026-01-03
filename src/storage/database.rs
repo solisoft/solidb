@@ -135,6 +135,38 @@ impl Database {
     fn collection_cf_name(&self, collection_name: &str) -> String {
         format!("{}:{}", self.name, collection_name)
     }
+
+    /// Get the underlying RocksDB Arc for advanced operations
+    pub fn db_arc(&self) -> Arc<RwLock<DB>> {
+        self.db.clone()
+    }
+
+    /// Generate column family name for a columnar collection
+    fn columnar_cf_name(&self, collection_name: &str) -> String {
+        format!("{}:_columnar_{}", self.name, collection_name)
+    }
+
+    /// Check if a collection is a columnar collection
+    pub fn is_columnar_collection(&self, collection_name: &str) -> bool {
+        let cf_name = self.columnar_cf_name(collection_name);
+        let db = self.db.read().unwrap();
+        db.cf_handle(&cf_name).is_some()
+    }
+
+    /// List all columnar collections in this database
+    /// Note: This scans metadata keys to find columnar collections
+    pub fn list_columnar_collections(&self) -> Vec<String> {
+        // Columnar collections store their metadata in a special format
+        // We scan for the metadata key pattern: {db}:_columnar_{name}/meta
+        // For now, return empty - columnar collections are tracked separately
+        // through the columnar handlers which maintain their own list
+        vec![]
+    }
+
+    /// Get the database name
+    pub fn db_name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[cfg(test)]

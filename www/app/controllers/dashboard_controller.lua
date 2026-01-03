@@ -67,6 +67,10 @@ local app = {
 
   env = function()
     Page("dashboard/env", "app")
+  end,
+
+  columnar = function()
+    Page("dashboard/columnar", "app")
   end
 }
 

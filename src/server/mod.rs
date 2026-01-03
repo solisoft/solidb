@@ -10,6 +10,7 @@ pub mod permission_cache;
 pub mod role_handlers;
 pub mod repl_session;
 pub mod env_handlers;
+pub mod columnar_handlers;
 
 pub use cursor_store::CursorStore;
 pub use routes::create_router;

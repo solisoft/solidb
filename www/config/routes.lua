@@ -51,6 +51,7 @@ CustomRoute("GET", "/database/:db/collection/:collection/indexes", "dashboard#in
 CustomRoute("GET", "/database/:db/collection/:collection/documents", "dashboard#documents")
 CustomRoute("GET", "/database/:db/collection/:collection/live", "dashboard#live")
 CustomRoute("GET", "/database/:db/live_query", "dashboard#live_query")
+CustomRoute("GET", "/database/:db/columnar/:collection", "dashboard#columnar")
 
 CustomRoute("GET", "/database/:db/databases", "dashboard#databases")
 CustomRoute("GET", "/database/:db/cluster", "dashboard#cluster")

@@ -44,7 +44,7 @@
       <tbody class="bg-gray-800 divide-y divide-gray-700">
         <tr each={ collection in state.collections } class="hover:bg-gray-750 transition-colors">
           <td class="px-6 py-4 whitespace-nowrap">
-            <a href="/database/{ props.db }/collection/{ collection.name }/documents" class="flex items-center group">
+            <a href={ collection.type === 'columnar' ? '/database/' + props.db + '/columnar/' + collection.name : '/database/' + props.db + '/collection/' + collection.name + '/documents' } class="flex items-center group">
               <!-- Edge collection icon (link) -->
               <svg if={ collection.type==='edge' }
                 class="h-5 w-5 text-fuchsia-400 mr-2 group-hover:text-fuchsia-300 transition-colors" fill="none"
@@ -66,8 +66,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
+              <!-- Columnar collection icon (analytics bars) -->
+              <svg if={ collection.type==='columnar' }
+                class="h-5 w-5 text-emerald-400 mr-2 group-hover:text-emerald-300 transition-colors" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
               <!-- Document collection icon (folder) -->
-              <svg if={ collection.type !=='edge' && collection.type !=='blob' && collection.type !=='timeseries' }
+              <svg if={ collection.type !=='edge' && collection.type !=='blob' && collection.type !=='timeseries' && collection.type !=='columnar' }
                 class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -81,6 +88,8 @@
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Blob</span>
               <span if={ collection.type==='timeseries' }
                 class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">TS</span>
+              <span if={ collection.type==='columnar' }
+                class="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Col</span>
             </a>
           </td>
           <td class="px-6 py-4 whitespace-nowrap">
@@ -106,21 +115,31 @@
             </span>
           </td>
           <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-            <a href="/database/{ props.db }/collection/{ collection.name }/documents"
+            <!-- View data link -->
+            <a if={ collection.type !== 'columnar' } href="/database/{ props.db }/collection/{ collection.name }/documents"
               class="text-green-400 hover:text-green-300 transition-colors" title="View documents">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </a>
-            <a href="/database/{ props.db }/collection/{ collection.name }/indexes"
+            <a if={ collection.type === 'columnar' } href="/database/{ props.db }/columnar/{ collection.name }"
+              class="text-emerald-400 hover:text-emerald-300 transition-colors" title="View columnar data">
+              <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </a>
+            <!-- Indexes link (not for columnar) -->
+            <a if={ collection.type !== 'columnar' } href="/database/{ props.db }/collection/{ collection.name }/indexes"
               class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Manage indexes">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </a>
-            <button onclick={ ()=> props.onSettingsClick(collection) } class="text-blue-400 hover:text-blue-300
+            <!-- Settings button (not for columnar) -->
+            <button if={ collection.type !== 'columnar' } onclick={ ()=> props.onSettingsClick(collection) } class="text-blue-400 hover:text-blue-300
               transition-colors" title="Settings">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -130,7 +149,8 @@
                   d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
               </svg>
             </button>
-            <button onclick={ ()=> truncateCollection(collection.name) } class="text-yellow-400 hover:text-yellow-300
+            <!-- Truncate button (not for columnar) -->
+            <button if={ collection.type !== 'columnar' } onclick={ ()=> truncateCollection(collection.name) } class="text-yellow-400 hover:text-yellow-300
               transition-colors" title="Truncate collection" disabled={ state.truncatingCollection === collection.name
               }>
               <svg if={ state.truncatingCollection !==collection.name } class="h-5 w-5 inline" fill="none"
@@ -146,6 +166,7 @@
                 </path>
               </svg>
             </button>
+            <!-- Delete button (works for all types) -->
             <button onclick={ ()=> deleteCollection(collection.name) } class="text-red-400 hover:text-red-300
               transition-colors" title="Delete collection">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,22 +199,47 @@
 
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
-          const response = await authenticatedFetch(`${url}/collection`)
-          const data = await response.json()
+
+          // Fetch regular collections and columnar collections in parallel
+          const [collectionsResponse, columnarResponse] = await Promise.all([
+            authenticatedFetch(`${url}/collection`),
+            authenticatedFetch(`${url}/columnar`).catch(() => ({ ok: false }))
+          ])
+
+          const data = await collectionsResponse.json()
 
           // Filter out protected system collections in _system database
           let collections = data.collections || [];
 
-          // Always hide internal collections (managed via other tabs)
-          const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs', '_env', '_migrations'];
-          collections = collections.filter(c => !hiddenCollections.includes(c.name));
+          // Initial filter for regular collections
+          collections = collections.filter(c => !c.name.startsWith('_'));
 
-          if (this.props.db === '_system') {
-            collections = collections.filter(c => !c.name.startsWith('_'));
+          // Add columnar collections if available
+          if (columnarResponse.ok) {
+            try {
+              const columnarData = await columnarResponse.json()
+              const columnarCollections = (columnarData.collections || [])
+                .filter(c => c && c.name) // Filter out invalid entries
+                .map(c => ({
+                  name: c.name,
+                  type: 'columnar',
+                  count: c.row_count || 0,
+                  columns: c.columns,
+                  compression: c.compression,
+                  stats: null,
+                  shardConfig: null
+                }))
+              collections = collections.concat(columnarCollections)
+            } catch (e) {
+              console.warn('Failed to parse columnar collections:', e)
+            }
           }
 
-          // Sort collections by name
-          collections.sort((a, b) => a.name.localeCompare(b.name));
+          // Filter out any columnar collections that might start with _
+          collections = collections.filter(c => !c.name.startsWith('_'));
+          
+          // Sort collections by name (with null safety)
+          collections.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
           this.update({ collections, loading: false })
         } catch (error) {
@@ -202,6 +248,13 @@
       },
 
       async truncateCollection(name) {
+        // Find the collection to check its type
+        const collection = this.state.collections.find(c => c.name === name)
+        if (collection && collection.type === 'columnar') {
+          alert('Truncate is not supported for columnar collections. Please delete and recreate the collection.')
+          return
+        }
+
         if (!confirm(`Are you sure you want to truncate collection "${name}"? This will remove all documents but keep the collection and indexes.`)) {
           return
         }
@@ -230,13 +283,18 @@
       },
 
       async deleteCollection(name) {
-        if (!confirm(`Are you sure you want to DELETE collection "${name}"? This will permanently remove the collection and all its data. This action cannot be undone.`)) {
+        // Find the collection to check its type
+        const collection = this.state.collections.find(c => c.name === name)
+        const isColumnar = collection && collection.type === 'columnar'
+
+        if (!confirm(`Are you sure you want to DELETE ${isColumnar ? 'columnar ' : ''}collection "${name}"? This will permanently remove the collection and all its data. This action cannot be undone.`)) {
           return
         }
 
         try {
           const url = `${getApiUrl()}/database/${this.props.db}`
-          const response = await authenticatedFetch(`${url}/collection/${name}`, {
+          const endpoint = isColumnar ? `${url}/columnar/${name}` : `${url}/collection/${name}`
+          const response = await authenticatedFetch(endpoint, {
             method: 'DELETE'
           })
 

@@ -22,6 +22,9 @@ pub use server::create_router;
 pub use storage::{
     distance_meters, Collection, Document, GeoIndex, GeoIndexStats, GeoPoint, Index, IndexStats,
     IndexType, StorageEngine, TtlIndex, TtlIndexStats,
+    // Columnar storage types
+    AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection, ColumnarCollectionMeta,
+    ColumnarStats, CompressionType,
 };
 pub use transaction::{
     manager::TransactionManager, IsolationLevel, Operation, Transaction, TransactionId,

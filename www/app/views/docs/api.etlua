@@ -695,6 +695,115 @@
         </div>
       </section>
 
+      <!-- Columnar Collections Section -->
+      <section id="columnar" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+             <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+               Columnar Collections
+             </h2>
+           </div>
+           <div class="divide-y divide-white/5">
+             
+             <!-- POST /_api/database/:db/columnar -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Create a new columnar collection.</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "name": "metrics",
+                     "columns": [
+                       {"name": "timestamp", "type": "TIMESTAMP"},
+                       {"name": "value", "type": "FLOAT64"},
+                       {"name": "host", "type": "STRING"}
+                     ],
+                     "compression": "lz4"
+                   }
+                 </div>
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "name": "metrics", "status": "created" }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/insert -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/insert</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Insert rows into a columnar collection.</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "rows": [
+                       {"timestamp": "2024-01-15T10:00:00Z", "value": 42.5, "host": "server1"},
+                       {"timestamp": "2024-01-15T10:01:00Z", "value": 43.2, "host": "server1"}
+                     ]
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/query -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/query</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Query rows with filters (optimized scan).</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "columns": ["timestamp", "value"],
+                     "filter": {"column": "host", "op": "EQ", "value": "server1"},
+                     "limit": 100
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- POST /_api/database/:db/columnar/:name/aggregate -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/aggregate</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Run aggregation functionality.</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "column": "value",
+                     "operation": "AVG",
+                     "group_by": ["host"]
+                   }
+                 </div>
+               </div>
+             </div>
+
+           </div>
+        </div>
+
       <!-- Documents Section -->
       <section id="documents" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

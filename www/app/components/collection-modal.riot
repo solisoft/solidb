@@ -85,6 +85,17 @@
                 </svg>
                 Blob
               </button>
+              <button type="button" data-type="columnar" onclick={ setType }
+                class={ 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 '
+                + (state.collectionType==='columnar'
+                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
+                : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800' ) }>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 6h4v14H4V6zm6 0h4v14h-4V6zm6 0h4v14h-4V6z" />
+                </svg>
+                Columnar
+              </button>
             </div>
             <p if={ state.collectionType==='edge' } class="mt-2 text-xs text-fuchsia-400">
               Edge collections require _from and _to fields for graph relationships
@@ -95,10 +106,66 @@
             <p if={ state.collectionType==='timeseries' } class="mt-2 text-xs text-cyan-400">
               Time series collections are append-only and optimized for high-speed writes and range pruning
             </p>
+            <p if={ state.collectionType==='columnar' } class="mt-2 text-xs text-emerald-400">
+              Columnar collections are optimized for analytics and aggregation queries with LZ4 compression
+            </p>
           </div>
 
-          <!-- Sharding Options -->
-          <div class="mb-6 border-t border-gray-700/50 pt-4">
+          <!-- Columnar Column Definitions -->
+          <div if={ state.collectionType==='columnar' } class="mb-6 border-t border-gray-700/50 pt-4">
+            <div class="flex items-center justify-between mb-3">
+              <label class="block text-sm font-medium text-gray-300">Column Definitions</label>
+              <button type="button" onclick={ addColumn }
+                class="text-xs px-2 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">
+                + Add Column
+              </button>
+            </div>
+
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+              <div each={ (col, i) in state.columns } key={ i }
+                class="flex items-center gap-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                <input type="text" value={ col.name } oninput={ (e) => updateColumnName(i, e) }
+                  placeholder="Column name"
+                  class="flex-1 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500" />
+                <select value={ col.data_type } onchange={ (e) => updateColumnType(i, e) }
+                  class="px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500">
+                  <option value="String">String</option>
+                  <option value="Int64">Int64</option>
+                  <option value="Float64">Float64</option>
+                  <option value="Bool">Bool</option>
+                  <option value="Timestamp">Timestamp</option>
+                </select>
+                <label class="flex items-center gap-1 text-xs text-gray-400">
+                  <input type="checkbox" checked={ col.nullable } onchange={ (e) => updateColumnNullable(i, e) }
+                    class="h-3 w-3 text-emerald-500 border-gray-600 rounded bg-gray-800" />
+                  Null
+                </label>
+                <button type="button" onclick={ () => removeColumn(i) }
+                  class="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <p if={ state.columns.length === 0 } class="text-xs text-gray-500 mt-2">
+              Add at least one column to create a columnar collection
+            </p>
+
+            <!-- Compression Option -->
+            <div class="mt-4">
+              <label class="block text-xs font-medium text-gray-400 mb-1">Compression</label>
+              <select value={ state.compression } onchange={ handleCompressionChange }
+                class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500">
+                <option value="lz4">LZ4 (Recommended)</option>
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Sharding Options (not applicable to columnar) -->
+          <div if={ state.collectionType !== 'columnar' } class="mb-6 border-t border-gray-700/50 pt-4">
             <div class="flex items-center mb-4">
               <input id="enableSharding" type="checkbox" checked={ state.isSharded } onchange={ toggleSharding }
                 class="h-4 w-4 text-indigo-500 focus:ring-indigo-500 border-gray-600 rounded bg-gray-800 transition-colors">
@@ -158,7 +225,10 @@
         numShards: 3,
         replicationFactor: 2,
         shardKey: '_key',
-        collectionType: 'document'
+        collectionType: 'document',
+        // Columnar-specific state
+        columns: [],
+        compression: 'lz4'
       },
 
       onMounted() {
@@ -185,7 +255,9 @@
           numShards: 3,
           replicationFactor: 2,
           shardKey: '_key',
-          collectionType: 'document'
+          collectionType: 'document',
+          columns: [],
+          compression: 'lz4'
         })
 
         const backdrop = this.$('#modalBackdrop')
@@ -256,6 +328,39 @@
         this.update({ collectionType: type })
       },
 
+      // Columnar column management functions
+      addColumn() {
+        const columns = [...this.state.columns, { name: '', data_type: 'String', nullable: false, indexed: false }]
+        this.update({ columns })
+      },
+
+      removeColumn(index) {
+        const columns = this.state.columns.filter((_, i) => i !== index)
+        this.update({ columns })
+      },
+
+      updateColumnName(index, e) {
+        const columns = [...this.state.columns]
+        columns[index] = { ...columns[index], name: e.target.value }
+        this.update({ columns })
+      },
+
+      updateColumnType(index, e) {
+        const columns = [...this.state.columns]
+        columns[index] = { ...columns[index], data_type: e.target.value }
+        this.update({ columns })
+      },
+
+      updateColumnNullable(index, e) {
+        const columns = [...this.state.columns]
+        columns[index] = { ...columns[index], nullable: e.target.checked }
+        this.update({ columns })
+      },
+
+      handleCompressionChange(e) {
+        this.update({ compression: e.target.value })
+      },
+
       handleClose(e) {
         if (e) e.preventDefault()
         this.hide()
@@ -274,6 +379,49 @@
 
         this.update({ error: null, loading: true })
 
+        // Handle columnar collections separately
+        if (this.state.collectionType === 'columnar') {
+          // Validate columns
+          const validColumns = this.state.columns.filter(c => c.name.trim())
+          if (validColumns.length === 0) {
+            this.update({ error: 'At least one column is required for columnar collections', loading: false })
+            return
+          }
+
+          const columnarPayload = {
+            name,
+            columns: validColumns.map(c => ({
+              name: c.name.trim(),
+              type: c.data_type,
+              nullable: c.nullable,
+              indexed: c.indexed || false
+            })),
+            compression: this.state.compression
+          }
+
+          try {
+            const response = await authenticatedFetch(`${getApiUrl()}/database/${this.props.db}/columnar`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(columnarPayload)
+            })
+
+            if (response.ok) {
+              this.hide()
+              if (this.props.onCreated) {
+                setTimeout(() => this.props.onCreated(), 300)
+              }
+            } else {
+              const error = await response.json()
+              this.update({ error: error.error || 'Failed to create columnar collection', loading: false })
+            }
+          } catch (error) {
+            this.update({ error: error.message, loading: false })
+          }
+          return
+        }
+
+        // Regular collection creation
         const payload = { name }
 
         if (this.state.isSharded) {

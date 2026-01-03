@@ -69,17 +69,17 @@ var replicationStatsTable = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6 mt-8"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold text-gray-100">Detailed Replication Stats (From _cluster_informations)\n                </h3><button expr687="expr687" class="text-sm text-indigo-400 hover:text-indigo-300 flex items-center"><svg expr688="expr688" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>\n                    Refresh\n                </button></div><div expr689="expr689" class="p-6 text-center"></div><div expr690="expr690" class="p-6 text-center"></div><div expr692="expr692" class="p-6 text-center"></div><div expr693="expr693" class="overflow-x-auto"></div></div></div>', [{
-    redundantAttribute: 'expr687',
-    selector: '[expr687]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6 mt-8"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold text-gray-100">Detailed Replication Stats (From _cluster_informations)\n                </h3><button expr363="expr363" class="text-sm text-indigo-400 hover:text-indigo-300 flex items-center"><svg expr364="expr364" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>\n                    Refresh\n                </button></div><div expr365="expr365" class="p-6 text-center"></div><div expr366="expr366" class="p-6 text-center"></div><div expr368="expr368" class="p-6 text-center"></div><div expr369="expr369" class="overflow-x-auto"></div></div></div>', [{
+    redundantAttribute: 'expr363',
+    selector: '[expr363]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.refreshStats
     }]
   }, {
-    redundantAttribute: 'expr688',
-    selector: '[expr688]',
+    redundantAttribute: 'expr364',
+    selector: '[expr364]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -89,17 +89,17 @@ var replicationStatsTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading && !_scope.state.stats.length,
-    redundantAttribute: 'expr689',
-    selector: '[expr689]',
+    redundantAttribute: 'expr365',
+    selector: '[expr365]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto"></div><p class="mt-2 text-gray-400">Loading replication details...</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr690',
-    selector: '[expr690]',
-    template: template('<p expr691="expr691" class="text-red-400"> </p>', [{
-      redundantAttribute: 'expr691',
-      selector: '[expr691]',
+    redundantAttribute: 'expr366',
+    selector: '[expr366]',
+    template: template('<p expr367="expr367" class="text-red-400"> </p>', [{
+      redundantAttribute: 'expr367',
+      selector: '[expr367]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -109,45 +109,45 @@ var replicationStatsTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.stats.length === 0,
-    redundantAttribute: 'expr692',
-    selector: '[expr692]',
+    redundantAttribute: 'expr368',
+    selector: '[expr368]',
     template: template('<p class="text-gray-400">No replication stats available yet.</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.stats.length > 0,
-    redundantAttribute: 'expr693',
-    selector: '[expr693]',
-    template: template('<table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Database/Collection</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Shards</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Replication Factor</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Details</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr694="expr694" class="hover:bg-gray-700 transition-colors"></tr></tbody></table>', [{
+    redundantAttribute: 'expr369',
+    selector: '[expr369]',
+    template: template('<table class="min-w-full divide-y divide-gray-600"><thead class="bg-gray-700"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Database/Collection</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Shards</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Replication Factor</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Status</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">\n                                Details</th></tr></thead><tbody class="divide-y divide-gray-600"><tr expr370="expr370" class="hover:bg-gray-700 transition-colors"></tr></tbody></table>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td class="px-6 py-4 whitespace-nowrap"><div expr695="expr695" class="text-sm font-medium text-gray-100"> </div></td><td expr696="expr696" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr697="expr697" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr698="expr698"> </span><div expr699="expr699" class="mt-1"></div></td><td class="px-6 py-4 text-sm text-gray-400"><div expr701="expr701" class="mb-1"></div></td>', [{
-        redundantAttribute: 'expr695',
-        selector: '[expr695]',
+      template: template('<td class="px-6 py-4 whitespace-nowrap"><div expr371="expr371" class="text-sm font-medium text-gray-100"> </div></td><td expr372="expr372" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td expr373="expr373" class="px-6 py-4 whitespace-nowrap text-sm text-gray-300"> </td><td class="px-6 py-4 whitespace-nowrap"><span expr374="expr374"> </span><div expr375="expr375" class="mt-1"></div></td><td class="px-6 py-4 text-sm text-gray-400"><div expr377="expr377" class="mb-1"></div></td>', [{
+        redundantAttribute: 'expr371',
+        selector: '[expr371]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.stat.database, ' / ', _scope.stat.name].join('')
         }]
       }, {
-        redundantAttribute: 'expr696',
-        selector: '[expr696]',
+        redundantAttribute: 'expr372',
+        selector: '[expr372]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.stat.shard_count].join('')
         }]
       }, {
-        redundantAttribute: 'expr697',
-        selector: '[expr697]',
+        redundantAttribute: 'expr373',
+        selector: '[expr373]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.stat.replication_factor].join('')
         }]
       }, {
-        redundantAttribute: 'expr698',
-        selector: '[expr698]',
+        redundantAttribute: 'expr374',
+        selector: '[expr374]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -161,9 +161,9 @@ var replicationStatsTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.stat.actions && _scope.stat.actions.length > 0,
-        redundantAttribute: 'expr699',
-        selector: '[expr699]',
-        template: template('<span expr700="expr700" class="text-xs text-amber-400 block"></span>', [{
+        redundantAttribute: 'expr375',
+        selector: '[expr375]',
+        template: template('<span expr376="expr376" class="text-xs text-amber-400 block"></span>', [{
           type: bindingTypes.EACH,
           getKey: null,
           condition: null,
@@ -174,8 +174,8 @@ var replicationStatsTable = {
               evaluate: _scope => _scope.action
             }]
           }]),
-          redundantAttribute: 'expr700',
-          selector: '[expr700]',
+          redundantAttribute: 'expr376',
+          selector: '[expr376]',
           itemName: 'action',
           indexName: null,
           evaluate: _scope => _scope.stat.actions
@@ -184,17 +184,17 @@ var replicationStatsTable = {
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<span expr702="expr702" class="text-indigo-300 font-mono"> </span><span expr703="expr703" class="text-gray-300"> </span><span expr704="expr704" class="text-gray-400"></span>', [{
-          redundantAttribute: 'expr702',
-          selector: '[expr702]',
+        template: template('<span expr378="expr378" class="text-indigo-300 font-mono"> </span><span expr379="expr379" class="text-gray-300"> </span><span expr380="expr380" class="text-gray-400"></span>', [{
+          redundantAttribute: 'expr378',
+          selector: '[expr378]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => ['Shard ', _scope.shard.id, ':'].join('')
           }]
         }, {
-          redundantAttribute: 'expr703',
-          selector: '[expr703]',
+          redundantAttribute: 'expr379',
+          selector: '[expr379]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -203,8 +203,8 @@ var replicationStatsTable = {
         }, {
           type: bindingTypes.IF,
           evaluate: _scope => _scope.shard.replicas.length,
-          redundantAttribute: 'expr704',
-          selector: '[expr704]',
+          redundantAttribute: 'expr380',
+          selector: '[expr380]',
           template: template(' ', [{
             expressions: [{
               type: expressionTypes.TEXT,
@@ -213,14 +213,14 @@ var replicationStatsTable = {
             }]
           }])
         }]),
-        redundantAttribute: 'expr701',
-        selector: '[expr701]',
+        redundantAttribute: 'expr377',
+        selector: '[expr377]',
         itemName: 'shard',
         indexName: null,
         evaluate: _scope => _scope.stat.shards
       }]),
-      redundantAttribute: 'expr694',
-      selector: '[expr694]',
+      redundantAttribute: 'expr370',
+      selector: '[expr370]',
       itemName: 'stat',
       indexName: null,
       evaluate: _scope => _scope.state.stats

@@ -252,6 +252,14 @@ pub fn create_router(
         .route("/_api/database/{db}/env", get(super::env_handlers::list_env_vars_handler))
         .route("/_api/database/{db}/env/{key}", put(super::env_handlers::set_env_var_handler))
         .route("/_api/database/{db}/env/{key}", delete(super::env_handlers::delete_env_var_handler))
+        // Columnar collection routes
+        .route("/_api/database/{db}/columnar", post(super::columnar_handlers::create_columnar_handler))
+        .route("/_api/database/{db}/columnar", get(super::columnar_handlers::list_columnar_handler))
+        .route("/_api/database/{db}/columnar/{collection}", get(super::columnar_handlers::get_columnar_handler))
+        .route("/_api/database/{db}/columnar/{collection}", delete(super::columnar_handlers::delete_columnar_handler))
+        .route("/_api/database/{db}/columnar/{collection}/insert", post(super::columnar_handlers::insert_columnar_handler))
+        .route("/_api/database/{db}/columnar/{collection}/aggregate", post(super::columnar_handlers::aggregate_columnar_handler))
+        .route("/_api/database/{db}/columnar/{collection}/query", post(super::columnar_handlers::query_columnar_handler))
         // Transaction routes
         .route("/_api/database/{db}/transaction/begin", post(super::transaction_handlers::begin_transaction))
         .route("/_api/database/{db}/transaction/{tx_id}/commit", post(super::transaction_handlers::commit_transaction))

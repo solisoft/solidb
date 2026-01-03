@@ -169,6 +169,14 @@
               </div>
               <p class="text-sm text-gray-400">Server-side Lua scripts for custom logic, triggers, and stored procedures.</p>
             </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-chart-bar text-teal-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Columnar Storage</h4>
+              </div>
+              <p class="text-sm text-gray-400">Column-oriented storage engine with LZ4 compression. Optimized for analytics, aggregations, and report generation.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -302,6 +310,7 @@
                 <div><span class="text-teal-400">geo:</span> <span class="text-gray-500">Geo index entries</span></div>
                 <div><span class="text-orange-400">ft:</span> <span class="text-gray-500">Fulltext n-grams</span></div>
                 <div><span class="text-rose-400">ttl:</span> <span class="text-gray-500">TTL index metadata</span></div>
+                <div><span class="text-emerald-400">col:</span> <span class="text-gray-500">Columnar data & metadata</span></div>
               </div>
             </div>
           </div>

@@ -1,4 +1,5 @@
 pub mod collection;
+pub mod columnar;
 pub mod database;
 pub mod document;
 pub mod engine;
@@ -8,6 +9,10 @@ pub mod schema;
 pub mod codec;
 
 pub use collection::{Collection, CollectionStats, DiskUsage};
+pub use columnar::{
+    AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection, ColumnarCollectionMeta,
+    ColumnarStats, CompressionType,
+};
 pub use database::Database;
 pub use document::Document;
 pub use engine::StorageEngine;
