@@ -590,9 +590,10 @@ pub async fn create_columnar_index_handler(
         Some("sorted") | None => crate::storage::columnar::ColumnarIndexType::Sorted,
         Some("bitmap") => crate::storage::columnar::ColumnarIndexType::Bitmap,
         Some("minmax") => crate::storage::columnar::ColumnarIndexType::MinMax,
+        Some("bloom") => crate::storage::columnar::ColumnarIndexType::Bloom,
         Some(other) => {
             return Err(DbError::BadRequest(format!(
-                "Unknown index type: {}. Supported: sorted, hash, bitmap, minmax",
+                "Unknown index type: {}. Supported: sorted, hash, bitmap, minmax, bloom",
                 other
             )))
         }

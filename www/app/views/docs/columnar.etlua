@@ -386,6 +386,20 @@
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
                <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-filter mr-2"></i> Bloom Filter Index
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Best for <strong>probabilistic membership</strong> testing. Checks if a value <em>might</em> exist in a chunk before scanning it. Useful for skipping chunks for equality checks on unique or semi-unique columns.
+               </p>
+               <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
+                 <span>Type: <code>"bloom"</code></span>
+                 <span class="w-1 h-1 bg-gray-600 rounded-full"></span>
+                 <span>No False Negatives</span>
+               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
                  <i class="fas fa-list mr-2"></i> Sorted Index (Default)
                </h4>
                <p class="text-sm text-gray-400 mb-3">

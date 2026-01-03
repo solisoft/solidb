@@ -8,6 +8,7 @@
 
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use rocksdb::DB;
+use fastbloom::BloomFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ const COL_IDX_PREFIX: &str = "col_idx:";   // col_idx:{column}:{encoded_value} -
 const COL_IDX_META_PREFIX: &str = "col_idx_meta:"; // col_idx_meta:{column} -> ColumnarIndexMeta
 const COL_IDX_BITMAP_PREFIX: &str = "col_idx_bmp:"; // col_idx_bmp:{column}:{encoded_value} -> [compressed_bitset]
 const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:";  // col_idx_mm:{column}:{chunk_id} -> {min, max}
+const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:";  // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
 const MINMAX_CHUNK_SIZE: u64 = 1000;
 
@@ -157,6 +159,7 @@ pub enum ColumnarIndexType {
     Hash,    // Equality-only (faster for high-cardinality)
     Bitmap,  // Low cardinality, fast boolean ops, compressed
     MinMax,  // Range pruning for high cardinality/time-series
+    Bloom,   // Probabilistic existence check per chunk
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -496,7 +499,7 @@ impl ColumnarCollection {
     pub fn read_column(&self, column: &str, row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
         let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
         let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
+        let _cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -546,7 +549,7 @@ impl ColumnarCollection {
     pub fn read_columns(&self, columns: &[&str], row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
         let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
         let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
+        let _cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -1051,6 +1054,9 @@ impl ColumnarCollection {
                             ColumnarIndexType::MinMax => {
                                 self.update_minmax_index(&db_guard, cf, column, &value, row_id)?;
                             }
+                            ColumnarIndexType::Bloom => {
+                                self.update_bloom_index(&db_guard, cf, column, &value, row_id)?;
+                            }
                             _ => {
                                 let idx_key = self.encode_index_key(column, &value);
                                 self.append_row_to_index(&db_guard, cf, &idx_key, row_id)?;
@@ -1265,6 +1271,41 @@ impl ColumnarCollection {
         Ok(candidate_ids)
     }
 
+    /// Get candidate chunks/rows from Bloom index
+    fn get_candidate_rows_from_bloom(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
+        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
+        })?;
+
+        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let row_count = meta.row_count;
+        let chunk_count = (row_count + MINMAX_CHUNK_SIZE - 1) / MINMAX_CHUNK_SIZE;
+
+        let mut candidate_ids = Vec::new();
+        let val_str = value.to_string(); // Use consistent stringification
+
+        for chunk_id in 0..chunk_count {
+            let idx_key = self.encode_bloom_key(column, chunk_id);
+            // If bloom filter missing, assume match (safe default)
+            let mut matches = true;
+            
+            if let Ok(Some(bytes)) = db_guard.get_cf(cf, idx_key.as_bytes()) {
+                 if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
+                     matches = filter.contains(&val_str);
+                 }
+            }
+            
+            if matches {
+                let start = chunk_id * MINMAX_CHUNK_SIZE;
+                let end = (start + MINMAX_CHUNK_SIZE).min(row_count);
+                candidate_ids.extend(start..end);
+            }
+        }
+        
+        Ok(candidate_ids)
+    }
+
     /// Lookup rows matching a value using index (O(1) for equality)
     fn index_lookup_eq(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
         let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
@@ -1354,6 +1395,11 @@ impl ColumnarCollection {
     /// Encode key for MinMax index chunk
     fn encode_minmax_key(&self, column: &str, chunk_id: u64) -> String {
         format!("{}{}:{}", COL_IDX_MINMAX_PREFIX, column, chunk_id)
+    }
+
+    /// Encode key for Bloom index chunk
+    fn encode_bloom_key(&self, column: &str, chunk_id: u64) -> String {
+        format!("{}{}:{}", COL_IDX_BLOOM_PREFIX, column, chunk_id)
     }
 
     /// Encode value for key generation (shared logic)
@@ -1461,7 +1507,7 @@ impl ColumnarCollection {
         cf: &rocksdb::ColumnFamily,
         idx_key: &str,
         row_id: u64,
-        compression: &CompressionType,
+        _compression: &CompressionType,
     ) -> DbResult<()> {
         let bmp_compression = CompressionType::Lz4;
         let mut bitmap = match db_guard.get_cf(cf, idx_key.as_bytes()) {
@@ -1484,6 +1530,34 @@ impl ColumnarCollection {
         let compressed = self.compress_data(&bitmap, &bmp_compression);
         db_guard
             .put_cf(cf, idx_key.as_bytes(), &compressed)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Update Bloom index with a new row
+    fn update_bloom_index(
+        &self,
+        db_guard: &DB,
+        cf: &rocksdb::ColumnFamily,
+        column: &str,
+        value: &Value,
+        row_id: u64,
+    ) -> DbResult<()> {
+        let chunk_id = row_id / MINMAX_CHUNK_SIZE;
+        let idx_key = self.encode_bloom_key(column, chunk_id);
+
+        let mut filter: BloomFilter = match db_guard.get_cf(cf, idx_key.as_bytes()) {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
+            Ok(None) => BloomFilter::with_num_bits(10_000).expected_items(1000),
+            Err(e) => return Err(DbError::InternalError(e.to_string())),
+        };
+
+        filter.insert(&value.to_string());
+
+        let filter_bytes = serde_json::to_vec(&filter)?;
+        db_guard
+            .put_cf(cf, idx_key.as_bytes(), &filter_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1528,50 +1602,7 @@ impl ColumnarCollection {
         Ok(())
     }
 
-    /// Update indexes when inserting a row (called from insert_rows)
-    fn update_indexes_for_row(
-        &self,
-        db_guard: &DB,
-        cf: &rocksdb::ColumnFamily,
-        columns: &[ColumnDef],
-        row: &serde_json::Map<String, Value>,
-        row_id: u64,
-    ) -> DbResult<()> {
-        for col_def in columns {
-            if col_def.indexed {
-                let value = row.get(&col_def.name).unwrap_or(&Value::Null);
-                
-                match col_def.index_type {
-                    Some(ColumnarIndexType::Bitmap) => {
-                        let idx_key = self.encode_bitmap_key(&col_def.name, value);
-                        // Using explicit compression for bitmap even if collection uncompressed, 
-                        // but here using collection's setting is consistent.
-                        // Actually, bitmap MUST be compressed to be efficient. using LZ4 always for bitmap?
-                        // The `append_row_to_bitmap_index` takes compression param.
-                        // Let's use LZ4 by default for bitmaps if collection has None? 
-                        // Or just use collection's. Plan says "LZ4 Compressed Bitset". 
-                        // We'll use Lz4 explicitly for Bitmaps if we want to force it, 
-                        // but passing current config is cleaner.
-                        // Let's assume we use collection compression.
-                        // Fetch compression from somewhere? We don't have it passed here.
-                        // We need to pass it or read it.
-                        // update_indexes_for_row doesn't take compression. See fix below.
-                        // For now, let's assume Lz4.
-                        self.append_row_to_bitmap_index(db_guard, cf, &idx_key, row_id, &CompressionType::Lz4)?;
-                    }
-                    Some(ColumnarIndexType::MinMax) => {
-                        self.update_minmax_index(db_guard, cf, &col_def.name, value, row_id)?;
-                    }
-                    _ => {
-                        // Default to Sorted/Hash (Storage is same: Inverted Index)
-                        let idx_key = self.encode_index_key(&col_def.name, value);
-                        self.append_row_to_index(db_guard, cf, &idx_key, row_id)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
+
 
     /// Update indexes when inserting a row with UUID (for UUID-based storage)
     /// Note: Bitmap indexes are not supported with UUIDs (they require positional IDs)
@@ -1715,6 +1746,16 @@ impl ColumnarCollection {
                     match idx_type {
                         ColumnarIndexType::Bitmap => return self.index_lookup_bitmap(col, val),
                         ColumnarIndexType::Sorted | ColumnarIndexType::Hash => return self.index_lookup_eq(col, val),
+                        ColumnarIndexType::Bloom => {
+                            // Bloom filter can give false positives, so it provides candidates.
+                            // We still need to verify with actual data.
+                            let candidate_ids = self.get_candidate_rows_from_bloom(col, val)?;
+                            let values = self.read_column_by_positions(col, &candidate_ids)?;
+                            return Ok(candidate_ids.into_iter().zip(values.into_iter())
+                                .filter(|(_, v)| v == val)
+                                .map(|(id, _)| id)
+                                .collect());
+                        }
                         _ => {} // MinMax bad for equality usually, fall back to scan
                     }
                 }
@@ -1915,6 +1956,21 @@ impl ColumnarCollection {
                             result.sort();
                             result.dedup();
                             return Ok(result);
+                        }
+                        ColumnarIndexType::Bloom => {
+                            let mut candidates = Vec::new();
+                            for val in vals {
+                                candidates.extend(self.get_candidate_rows_from_bloom(col, val)?);
+                            }
+                            candidates.sort();
+                            candidates.dedup();
+                            
+                            // Verify candidates
+                            let values = self.read_column_by_positions(col, &candidates)?;
+                            return Ok(candidates.into_iter().zip(values.into_iter())
+                                .filter(|(_, v)| vals.contains(v)) // O(N*M) where M is vals len. vals usually small.
+                                .map(|(id, _)| id)
+                                .collect());
                         }
                         _ => {}
                    }

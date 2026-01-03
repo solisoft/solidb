@@ -118,5 +118,10 @@
     document.getElementById('indexesBtn').addEventListener('click', () => {
       indexesModalComponent[0].show()
     })
+
+    // Check for hash to auto-open modals
+    if (window.location.hash === '#indexes') {
+      indexesModalComponent[0].show()
+    }
   })
 </script>

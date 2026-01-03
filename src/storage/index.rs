@@ -13,6 +13,8 @@ pub enum IndexType {
     Fulltext,
     /// TTL index - automatic document expiration based on timestamp field
     TTL,
+    /// Bloom Filter index - probabilistic existence check
+    Bloom,
 }
 
 // ==================== N-gram Utilities ====================

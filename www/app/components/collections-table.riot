@@ -44,7 +44,9 @@
       <tbody class="bg-gray-800 divide-y divide-gray-700">
         <tr each={ collection in state.collections } class="hover:bg-gray-750 transition-colors">
           <td class="px-6 py-4 whitespace-nowrap">
-            <a href={ collection.type === 'columnar' ? '/database/' + props.db + '/columnar/' + collection.name : '/database/' + props.db + '/collection/' + collection.name + '/documents' } class="flex items-center group">
+            <a href={ collection.type==='columnar' ? '/database/' + props.db + '/columnar/' + collection.name
+              : '/database/' + props.db + '/collection/' + collection.name + '/documents' }
+              class="flex items-center group">
               <!-- Edge collection icon (link) -->
               <svg if={ collection.type==='edge' }
                 class="h-5 w-5 text-fuchsia-400 mr-2 group-hover:text-fuchsia-300 transition-colors" fill="none"
@@ -74,7 +76,8 @@
                   d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               <!-- Document collection icon (folder) -->
-              <svg if={ collection.type !=='edge' && collection.type !=='blob' && collection.type !=='timeseries' && collection.type !=='columnar' }
+              <svg if={ collection.type !=='edge' && collection.type !=='blob' && collection.type !=='timeseries' &&
+                collection.type !=='columnar' }
                 class="h-5 w-5 text-indigo-400 mr-2 group-hover:text-indigo-300 transition-colors" fill="none"
                 stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -116,14 +119,15 @@
           </td>
           <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
             <!-- View data link -->
-            <a if={ collection.type !== 'columnar' } href="/database/{ props.db }/collection/{ collection.name }/documents"
+            <a if={ collection.type !=='columnar' }
+              href="/database/{ props.db }/collection/{ collection.name }/documents"
               class="text-green-400 hover:text-green-300 transition-colors" title="View documents">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </a>
-            <a if={ collection.type === 'columnar' } href="/database/{ props.db }/columnar/{ collection.name }"
+            <a if={ collection.type==='columnar' } href="/database/{ props.db }/columnar/{ collection.name }"
               class="text-emerald-400 hover:text-emerald-300 transition-colors" title="View columnar data">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -131,15 +135,23 @@
               </svg>
             </a>
             <!-- Indexes link (not for columnar) -->
-            <a if={ collection.type !== 'columnar' } href="/database/{ props.db }/collection/{ collection.name }/indexes"
+            <a if={ collection.type !=='columnar' } href="/database/{ props.db }/collection/{ collection.name }/indexes"
               class="text-indigo-400 hover:text-indigo-300 transition-colors" title="Manage indexes">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </a>
+            <!-- Indexes link for columnar -->
+            <a if={ collection.type==='columnar' } href="/database/{ props.db }/columnar/{ collection.name }#indexes"
+              class="text-purple-400 hover:text-purple-300 transition-colors" title="Manage indexes">
+              <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </a>
             <!-- Settings button (not for columnar) -->
-            <button if={ collection.type !== 'columnar' } onclick={ ()=> props.onSettingsClick(collection) } class="text-blue-400 hover:text-blue-300
+            <button if={ collection.type !=='columnar' } onclick={ ()=> props.onSettingsClick(collection) }
+              class="text-blue-400 hover:text-blue-300
               transition-colors" title="Settings">
               <svg class="h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -150,7 +162,8 @@
               </svg>
             </button>
             <!-- Truncate button (not for columnar) -->
-            <button if={ collection.type !== 'columnar' } onclick={ ()=> truncateCollection(collection.name) } class="text-yellow-400 hover:text-yellow-300
+            <button if={ collection.type !=='columnar' } onclick={ ()=> truncateCollection(collection.name) }
+              class="text-yellow-400 hover:text-yellow-300
               transition-colors" title="Truncate collection" disabled={ state.truncatingCollection === collection.name
               }>
               <svg if={ state.truncatingCollection !==collection.name } class="h-5 w-5 inline" fill="none"
@@ -237,7 +250,7 @@
 
           // Filter out any columnar collections that might start with _
           collections = collections.filter(c => !c.name.startsWith('_'));
-          
+
           // Sort collections by name (with null safety)
           collections.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 

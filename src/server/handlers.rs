@@ -4086,6 +4086,7 @@ pub async fn create_index(
         "hash" => IndexType::Hash,
         "persistent" | "skiplist" | "btree" => IndexType::Persistent,
         "fulltext" => IndexType::Fulltext,
+        "bloom" => IndexType::Bloom,
         _ => {
             return Err(DbError::InvalidDocument(format!(
                 "Unknown index type: {}",

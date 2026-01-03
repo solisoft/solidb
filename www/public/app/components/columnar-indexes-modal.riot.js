@@ -146,11 +146,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr126="expr126" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr127="expr127" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Manage Indexes</h3><p class="text-sm text-gray-400 mt-1">Create and remove indexes on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr128="expr128" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="bg-gray-800/50 rounded-lg p-4 border border-white/5 mb-6"><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Create New Index</h4><div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"><div><label class="block text-xs font-medium text-gray-400 mb-1">Column</label><select ref="newIndexColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr130="expr130"></option></select></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Type</label><select ref="newIndexType" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="sorted">Sorted (Default)</option><option value="hash">Hash (Equality Only)</option><option value="bitmap">Bitmap (Low Cardinality)</option><option value="minmax">Min/Max (Ranges/Pruning)</option></select></div><button expr131="expr131" type="button" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50 h-[38px]"> </button></div></div><div><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Existing Indexes</h4><div expr132="expr132" class="flex justify-center py-8"></div><div expr133="expr133" class="text-center py-8 text-gray-500"></div><div expr134="expr134" class="overflow-hidden border border-gray-700\n                        rounded-lg"></div></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr140="expr140" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                    Close\n                </button></div></div></div>',
+    '<div expr157="expr157" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr158="expr158" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Manage Indexes</h3><p class="text-sm text-gray-400 mt-1">Create and remove indexes on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr159="expr159" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="bg-gray-800/50 rounded-lg p-4 border border-white/5 mb-6"><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Create New Index</h4><div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"><div><label class="block text-xs font-medium text-gray-400 mb-1">Column</label><select ref="newIndexColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr161="expr161"></option></select></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Type</label><select ref="newIndexType" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="sorted">Sorted (Default)</option><option value="hash">Hash (Equality Only)</option><option value="bitmap">Bitmap (Low Cardinality)</option><option value="minmax">Min/Max (Ranges/Pruning)</option><option value="bloom">Bloom Filter (Probabilistic)</option></select></div><button expr162="expr162" type="button" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50 h-[38px]"> </button></div></div><div><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Existing Indexes</h4><div expr163="expr163" class="flex justify-center py-8"></div><div expr164="expr164" class="text-center py-8 text-gray-500"></div><div expr165="expr165" class="overflow-hidden border border-gray-700\n                        rounded-lg"></div></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr171="expr171" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                    Close\n                </button></div></div></div>',
     [
       {
-        redundantAttribute: 'expr126',
-        selector: '[expr126]',
+        redundantAttribute: 'expr157',
+        selector: '[expr157]',
 
         expressions: [
           {
@@ -161,8 +161,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr127',
-        selector: '[expr127]',
+        redundantAttribute: 'expr158',
+        selector: '[expr158]',
 
         expressions: [
           {
@@ -175,15 +175,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr128',
-        selector: '[expr128]',
+        redundantAttribute: 'expr159',
+        selector: '[expr159]',
 
         template: template(
-          '<p expr129="expr129" class="text-sm text-red-300"> </p>',
+          '<p expr160="expr160" class="text-sm text-red-300"> </p>',
           [
             {
-              redundantAttribute: 'expr129',
-              selector: '[expr129]',
+              redundantAttribute: 'expr160',
+              selector: '[expr160]',
 
               expressions: [
                 {
@@ -229,15 +229,15 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr130',
-        selector: '[expr130]',
+        redundantAttribute: 'expr161',
+        selector: '[expr161]',
         itemName: 'col',
         indexName: null,
         evaluate: _scope => _scope.props.meta ? _scope.props.meta.columns : []
       },
       {
-        redundantAttribute: 'expr131',
-        selector: '[expr131]',
+        redundantAttribute: 'expr162',
+        selector: '[expr162]',
 
         expressions: [
           {
@@ -266,8 +266,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.loading,
-        redundantAttribute: 'expr132',
-        selector: '[expr132]',
+        redundantAttribute: 'expr163',
+        selector: '[expr163]',
 
         template: template(
           '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500"></div>',
@@ -277,8 +277,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && _scope.state.indexes.length===0,
-        redundantAttribute: 'expr133',
-        selector: '[expr133]',
+        redundantAttribute: 'expr164',
+        selector: '[expr164]',
 
         template: template(
           '\n                        No indexes found.\n                    ',
@@ -288,11 +288,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.state.loading && _scope.state.indexes.length> 0,
-        redundantAttribute: 'expr134',
-        selector: '[expr134]',
+        redundantAttribute: 'expr165',
+        selector: '[expr165]',
 
         template: template(
-          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-800"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Column</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Type</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Created At</th><th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Actions</th></tr></thead><tbody class="bg-gray-800/50 divide-y divide-gray-700"><tr expr135="expr135" class="hover:bg-gray-750"></tr></tbody></table>',
+          '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-800"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Column</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Type</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Created At</th><th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Actions</th></tr></thead><tbody class="bg-gray-800/50 divide-y divide-gray-700"><tr expr166="expr166" class="hover:bg-gray-750"></tr></tbody></table>',
           [
             {
               type: bindingTypes.EACH,
@@ -300,11 +300,11 @@ export default {
               condition: null,
 
               template: template(
-                '<td expr136="expr136" class="px-4 py-3 whitespace-nowrap text-sm text-gray-200 font-medium"> </td><td expr137="expr137" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400 font-mono text-xs uppercase"> </td><td expr138="expr138" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-4 py-3 whitespace-nowrap text-right text-sm"><button expr139="expr139" class="text-red-400\n                                            hover:text-red-300 font-medium transition-colors">\n                                            Delete\n                                        </button></td>',
+                '<td expr167="expr167" class="px-4 py-3 whitespace-nowrap text-sm text-gray-200 font-medium"> </td><td expr168="expr168" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400 font-mono text-xs uppercase"> </td><td expr169="expr169" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-4 py-3 whitespace-nowrap text-right text-sm"><button expr170="expr170" class="text-red-400\n                                            hover:text-red-300 font-medium transition-colors">\n                                            Delete\n                                        </button></td>',
                 [
                   {
-                    redundantAttribute: 'expr136',
-                    selector: '[expr136]',
+                    redundantAttribute: 'expr167',
+                    selector: '[expr167]',
 
                     expressions: [
                       {
@@ -315,8 +315,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr137',
-                    selector: '[expr137]',
+                    redundantAttribute: 'expr168',
+                    selector: '[expr168]',
 
                     expressions: [
                       {
@@ -332,8 +332,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr138',
-                    selector: '[expr138]',
+                    redundantAttribute: 'expr169',
+                    selector: '[expr169]',
 
                     expressions: [
                       {
@@ -349,8 +349,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr139',
-                    selector: '[expr139]',
+                    redundantAttribute: 'expr170',
+                    selector: '[expr170]',
 
                     expressions: [
                       {
@@ -363,8 +363,8 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr135',
-              selector: '[expr135]',
+              redundantAttribute: 'expr166',
+              selector: '[expr166]',
               itemName: 'idx',
               indexName: null,
               evaluate: _scope => _scope.state.indexes
@@ -373,8 +373,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr140',
-        selector: '[expr140]',
+        redundantAttribute: 'expr171',
+        selector: '[expr171]',
 
         expressions: [
           {

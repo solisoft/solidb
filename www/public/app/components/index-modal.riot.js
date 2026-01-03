@@ -99,8 +99,8 @@ export default {
 
     handleTypeChange(e) {
       const type = e.target.value
-      // Geo and fulltext indexes don't support unique constraint
-      const showUnique = type !== 'geo' && type !== 'fulltext'
+      // Geo, fulltext and bloom indexes don't support unique constraint
+      const showUnique = type !== 'geo' && type !== 'fulltext' && type !== 'bloom'
       this.update({ type, showUniqueOption: showUnique, unique: showUnique ? this.state.unique : false })
     },
 
@@ -169,11 +169,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr55="expr55" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr56="expr56" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Index</h3></div><div class="p-6"><div expr57="expr57" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr59="expr59"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr60="expr60" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr61="expr61" type="text" required class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-500">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><div class="relative"><select expr62="expr62" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors appearance-none"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div><div expr63="expr63" class="mb-6"></div><div class="flex justify-end space-x-3 pt-2"><button expr65="expr65" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr66="expr66" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
+    '<div expr184="expr184" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr185="expr185" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Index</h3></div><div class="p-6"><div expr186="expr186" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr188="expr188"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr189="expr189" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr190="expr190" type="text" required class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-500">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><div class="relative"><select expr191="expr191" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors appearance-none"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option><option value="bloom">Bloom - Probabilistic existence check</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div><div expr192="expr192" class="mb-6"></div><div class="flex justify-end space-x-3 pt-2"><button expr194="expr194" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr195="expr195" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>',
     [
       {
-        redundantAttribute: 'expr55',
-        selector: '[expr55]',
+        redundantAttribute: 'expr184',
+        selector: '[expr184]',
 
         expressions: [
           {
@@ -184,8 +184,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr56',
-        selector: '[expr56]',
+        redundantAttribute: 'expr185',
+        selector: '[expr185]',
 
         expressions: [
           {
@@ -198,15 +198,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr57',
-        selector: '[expr57]',
+        redundantAttribute: 'expr186',
+        selector: '[expr186]',
 
         template: template(
-          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr58="expr58" class="text-sm text-red-300"> </p></div>',
+          '<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr187="expr187" class="text-sm text-red-300"> </p></div>',
           [
             {
-              redundantAttribute: 'expr58',
-              selector: '[expr58]',
+              redundantAttribute: 'expr187',
+              selector: '[expr187]',
 
               expressions: [
                 {
@@ -220,8 +220,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr59',
-        selector: '[expr59]',
+        redundantAttribute: 'expr188',
+        selector: '[expr188]',
 
         expressions: [
           {
@@ -232,8 +232,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr60',
-        selector: '[expr60]',
+        redundantAttribute: 'expr189',
+        selector: '[expr189]',
 
         expressions: [
           {
@@ -248,8 +248,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr61',
-        selector: '[expr61]',
+        redundantAttribute: 'expr190',
+        selector: '[expr190]',
 
         expressions: [
           {
@@ -264,8 +264,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr62',
-        selector: '[expr62]',
+        redundantAttribute: 'expr191',
+        selector: '[expr191]',
 
         expressions: [
           {
@@ -282,15 +282,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.showUniqueOption,
-        redundantAttribute: 'expr63',
-        selector: '[expr63]',
+        redundantAttribute: 'expr192',
+        selector: '[expr192]',
 
         template: template(
-          '<label class="flex items-center cursor-pointer group"><input expr64="expr64" type="checkbox" class="rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500\n              focus:ring-offset-gray-900 group-hover:border-gray-500 transition-colors"/><span class="ml-2 text-sm text-gray-300 group-hover:text-white transition-colors">Unique index (enforce\n                uniqueness)</span></label>',
+          '<label class="flex items-center cursor-pointer group"><input expr193="expr193" type="checkbox" class="rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500\n              focus:ring-offset-gray-900 group-hover:border-gray-500 transition-colors"/><span class="ml-2 text-sm text-gray-300 group-hover:text-white transition-colors">Unique index (enforce\n                uniqueness)</span></label>',
           [
             {
-              redundantAttribute: 'expr64',
-              selector: '[expr64]',
+              redundantAttribute: 'expr193',
+              selector: '[expr193]',
 
               expressions: [
                 {
@@ -310,8 +310,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr65',
-        selector: '[expr65]',
+        redundantAttribute: 'expr194',
+        selector: '[expr194]',
 
         expressions: [
           {
@@ -322,8 +322,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr66',
-        selector: '[expr66]',
+        redundantAttribute: 'expr195',
+        selector: '[expr195]',
 
         expressions: [
           {

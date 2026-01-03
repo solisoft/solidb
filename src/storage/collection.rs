@@ -13,6 +13,8 @@ use super::index::{
 };
 use crate::error::{DbError, DbResult};
 use crate::storage::schema::CollectionSchema;
+use fastbloom::BloomFilter;
+
 
 /// Key prefixes for different data types
 const DOC_PREFIX: &str = "doc:";
@@ -29,6 +31,8 @@ const SHARD_TABLE_KEY: &str = "_stats:shard_table";   // Sharding assignment tab
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
+
+const BLO_IDX_PREFIX: &str = "blo_idx:"; // Bloom filter index prefix
 const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
 
 /// Type of change event
@@ -107,6 +111,8 @@ pub struct Collection {
     pub change_sender: Arc<tokio::sync::broadcast::Sender<ChangeEvent>>,
     /// Collection type (document, edge, blob)
     pub collection_type: Arc<RwLock<String>>,
+    /// In-memory Bloom filters for indexes
+    pub bloom_filters: Arc<RwLock<HashMap<String, BloomFilter>>>,
 }
 
 impl Clone for Collection {
@@ -120,6 +126,7 @@ impl Clone for Collection {
             last_flush_time: self.last_flush_time.clone(),
             change_sender: self.change_sender.clone(),
             collection_type: self.collection_type.clone(),
+            bloom_filters: self.bloom_filters.clone(),
         }
     }
 }
@@ -200,6 +207,7 @@ impl Collection {
             last_flush_time: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             change_sender: Arc::new(change_sender),
             collection_type: Arc::new(RwLock::new(collection_type)),
+            bloom_filters: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -323,6 +331,11 @@ impl Collection {
     /// Build a fulltext term entry key (term → doc_key with position)
     fn ft_term_key(index_name: &str, term: &str, doc_key: &str) -> Vec<u8> {
         format!("{}{}:{}:{}", FT_TERM_PREFIX, index_name, term, doc_key).into_bytes()
+    }
+
+    /// Build a bloom filter key
+    fn blo_idx_key(&self, index_name: &str) -> Vec<u8> {
+        format!("{}{}", BLO_IDX_PREFIX, index_name).into_bytes()
     }
 
     // ==================== Blob Operations ====================
@@ -454,6 +467,79 @@ impl Collection {
         }
         
         Ok(count)
+    }
+
+    // ==================== Bloom Filter Operations ====================
+
+    /// Load Bloom filter for an index
+    fn load_bloom_filter(&self, index_name: &str) -> Option<BloomFilter> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let idx_key = self.blo_idx_key(index_name);
+
+        match db.get_cf(cf, &idx_key) {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes).ok(),
+            _ => None,
+        }
+    }
+
+    /// Save Bloom filter for an index
+    fn save_bloom_filter(&self, index_name: &str, filter: &BloomFilter) -> DbResult<()> {
+        let db = self.db.write().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let idx_key = self.blo_idx_key(index_name);
+
+        let json = serde_json::to_vec(filter).map_err(|e| DbError::InternalError(e.to_string()))?;
+        db.put_cf(cf, &idx_key, &json)
+            .map_err(|e| DbError::InternalError(e.to_string()))
+    }
+
+    /// Get in-memory bloom filter or load from disk, or create new
+    fn get_or_create_bloom_filter(&self, index_name: &str) -> BloomFilter {
+        // Try read lock first
+        {
+            let filters = self.bloom_filters.read().unwrap();
+            if let Some(filter) = filters.get(index_name) {
+                return filter.clone();
+            }
+        }
+        
+        // Try load from disk
+        if let Some(filter) = self.load_bloom_filter(index_name) {
+            let mut filters = self.bloom_filters.write().unwrap();
+            filters.insert(index_name.to_string(), filter.clone());
+            return filter;
+        }
+
+        // Create new
+        let mut filters = self.bloom_filters.write().unwrap();
+        // Default params: 100k items, 1% false positive rate
+        let filter = BloomFilter::with_num_bits(1_000_000).expected_items(100_000);
+        filters.insert(index_name.to_string(), filter.clone());
+        filter
+    }
+
+    /// Check if item might exist in the index using Bloom Filter
+    pub fn bloom_check(&self, index_name: &str, value: &str) -> bool {
+        let filter = self.get_or_create_bloom_filter(index_name);
+        filter.contains(value)
+    }
+
+    /// Insert item into Bloom Filter
+    pub fn bloom_insert(&self, index_name: &str, value: &str) {
+        let mut filters = self.bloom_filters.write().unwrap();
+        filters
+            .entry(index_name.to_string())
+            .and_modify(|f| { f.insert(value); })
+            .or_insert_with(|| {
+                 let mut f = BloomFilter::with_num_bits(1_000_000).expected_items(100_000);
+                 f.insert(value);
+                 f
+            });
     }
 
     // ==================== Document Operations ====================
@@ -627,6 +713,13 @@ impl Collection {
             return Ok(0);
         }
 
+        // Preload bloom filters to avoid deadlock
+        for index in &indexes {
+            if index.index_type == IndexType::Bloom {
+                let _ = self.get_or_create_bloom_filter(&index.name);
+            }
+        }
+
         let db = self.db.read().unwrap();
         let cf = db
             .cf_handle(&self.name)
@@ -659,6 +752,12 @@ impl Collection {
                     if !field_values.iter().all(|v| v.is_null()) {
                         let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
                         batch.put_cf(cf, entry_key, doc.key.as_bytes());
+                        
+                        if index.index_type == IndexType::Bloom {
+                            for value in &field_values {
+                                self.bloom_insert(&index.name, &value.to_string());
+                            }
+                        }
                     }
                 }
             }
@@ -1838,6 +1937,14 @@ impl Collection {
     /// Update indexes on document insert
     fn update_indexes_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
+        
+        // Preload bloom filters to avoid deadlock during db read lock
+        for index in &indexes {
+            if index.index_type == IndexType::Bloom {
+                let _ = self.get_or_create_bloom_filter(&index.name);
+            }
+        }
+
         let db = self.db.read().unwrap();
         let cf = db
             .cf_handle(&self.name)
@@ -1855,6 +1962,12 @@ impl Collection {
                 db.put_cf(cf, entry_key, doc_key.as_bytes()).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
+                
+                if index.index_type == IndexType::Bloom {
+                    for value in field_values {
+                        self.bloom_insert(&index.name, &value.to_string());
+                    }
+                }
             }
         }
         drop(db);
@@ -2039,7 +2152,22 @@ impl Collection {
                 let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
                 db.put_cf(cf, entry_key, doc.key.as_bytes())
                     .map_err(|e| DbError::InternalError(format!("Failed to build index: {}", e)))?;
+                
+                // If bloom filter, also update in-memory filter
+                if index_type == IndexType::Bloom {
+                    for value in &field_values {
+                        // Use consistent string representation
+                        self.bloom_insert(&name, &value.to_string());
+                    }
+                }
             }
+        }
+        
+        // Save bloom filter if applicable
+        if index_type == IndexType::Bloom {
+             if let Some(filter) = self.bloom_filters.read().unwrap().get(&name) {
+                 self.save_bloom_filter(&name, filter)?;
+             }
         }
 
         Ok(IndexStats {
@@ -2387,6 +2515,15 @@ impl Collection {
     /// Lookup documents using index (equality) - optimized version
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
+        
+        // Fast-path: Check Bloom Filter if available
+        if index.index_type == IndexType::Bloom {
+            if !self.bloom_check(&index.name, &value.to_string()) {
+                tracing::debug!("Bloom filter pruning: {} not found in {}", value, index.name);
+                return Some(Vec::new());
+            }
+        }
+
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
         let db = self.db.read().unwrap();

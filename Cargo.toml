@@ -116,6 +116,7 @@ time = "0.3"
 
 # Caching
 lru = "0.12"
+fastbloom = { version = "0.14.0", features = ["serde"] }
 
 # Default binary
 [[bin]]

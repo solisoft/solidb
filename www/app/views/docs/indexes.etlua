@@ -98,6 +98,62 @@
         </div>
       </section>
 
+      <!-- Bloom Filter Index -->
+      <section id="bloom" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+              Bloom Filter
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Bloom Filter</strong> is a space-efficient probabilistic data structure that is used to test whether an element is a member of a set. It may return false positives, but never false negatives.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Best For</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span>Determining if a document <em>might</em> exist before performing expensive lookups.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span>Large datasets where memory efficient membership testing is needed.</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                     <h4 class="text-white font-bold mb-3">Characteristics</h4>
+                     <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span><strong>No False Negatives:</strong> If it says "no", the element is definitely not in the set.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-yellow-500 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+                            <span><strong>False Positives:</strong> Might say "yes" when the element is not there.</span>
+                        </li>
+                     </ul>
+                </div>
+            </div>
+            
+            <div class="mt-6 bg-pink-900/10 border border-pink-500/20 rounded-xl p-4">
+                 <h4 class="text-pink-400 font-bold mb-2">Usage</h4>
+                 <pre><code class="language-json text-sm text-gray-300">{
+   "type": "bloom",
+   "field": "username",
+   "unique": true
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Persistent Index -->
       <section id="persistent" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

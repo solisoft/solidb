@@ -17,6 +17,12 @@
           Hash Index
         </a>
 
+        <!-- Bloom Filter Index -->
+        <a href="#bloom" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-pink-500 mr-3 group-hover:scale-125 transition-transform"></span>
+          Bloom Filter
+        </a>
+
         <!-- Persistent Index -->
         <a href="#persistent" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-3 group-hover:scale-125 transition-transform"></span>
