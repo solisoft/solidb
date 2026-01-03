@@ -506,7 +506,16 @@ impl SqlParser {
         let mut list = Vec::new();
         
         loop {
-            list.push(self.expect_identifier()?);
+            let mut name = self.expect_identifier()?;
+            
+            // Handle qualified names (table.column)
+            if *self.current_token() == Token::Dot {
+                self.advance();
+                let col = self.expect_identifier()?;
+                name = format!("{}.{}", name, col);
+            }
+            
+            list.push(name);
             
             if *self.current_token() == Token::Comma {
                 self.advance();

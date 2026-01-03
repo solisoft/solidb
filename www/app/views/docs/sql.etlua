@@ -283,9 +283,9 @@ INNER JOIN orders ON orders.user_id = users._key</code></pre>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
                   <pre><code class="language-sql text-sm">FOR doc IN users
-  FOR orders IN orders
+  FOR j0 IN orders
     FILTER orders.user_id == doc._key
-    RETURN MERGE(doc, orders)</code></pre>
+    RETURN MERGE(doc, j0)</code></pre>
                 </div>
               </div>
             </div>

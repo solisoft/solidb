@@ -62,21 +62,52 @@ fn translate_select(stmt: &SelectStatement) -> String {
     if !stmt.group_by.is_empty() {
         let collect_vars: Vec<String> = stmt.group_by
             .iter()
-            .map(|col| format!("{} = {}.{}", col, doc_var, col))
+            .map(|col| {
+                if col.contains('.') {
+                    // Qualified column: u.id -> id = u.id
+                    let col_name = col.split('.').last().unwrap_or(col);
+                    format!("{} = {}", col_name, col)
+                } else {
+                    format!("{} = {}.{}", col, doc_var, col)
+                }
+            })
             .collect();
         parts.push(format!("{}COLLECT {} INTO group", indent, collect_vars.join(", ")));
+    }
+    
+    // Build alias map for ORDER BY/RETURN resolution
+    let is_grouped = !stmt.group_by.is_empty();
+    let alias_map = build_alias_map(&stmt.columns, doc_var, is_grouped);
+    
+    // Generate LET statements for aggregate aliases BEFORE HAVING (to avoid recalculating)
+    if is_grouped {
+        for col in &stmt.columns {
+            if let SelectColumn::Function { name: _, args: _, alias: Some(alias_name) } = col {
+                if let Some(expr) = alias_map.get(alias_name) {
+                    parts.push(format!("{}LET {} = {}", indent, alias_name, expr));
+                }
+            }
+        }
         
-        // HAVING -> FILTER (after COLLECT)
+        // HAVING -> FILTER (after COLLECT and LET, uses LET variables)
         if let Some(ref having) = stmt.having {
-            parts.push(format!("{}FILTER {}", indent, translate_expr(having, doc_var)));
+            parts.push(format!("{}FILTER {}", indent, translate_having_with_let(having, &alias_map)));
         }
     }
     
-    // ORDER BY -> SORT
+    // ORDER BY -> SORT (now uses LET variables for aliases)
     if !stmt.order_by.is_empty() {
         let sort_items: Vec<String> = stmt.order_by
             .iter()
-            .map(|item| translate_order_by(item, doc_var))
+            .map(|item| {
+                let direction = if item.descending { "DESC" } else { "ASC" };
+                // If this is an alias that we defined with LET, use it directly
+                if is_grouped && alias_map.contains_key(&item.column) {
+                    format!("{} {}", item.column, direction)
+                } else {
+                    translate_order_by_with_aliases(item, doc_var, &alias_map)
+                }
+            })
             .collect();
         parts.push(format!("{}SORT {}", indent, sort_items.join(", ")));
     }
@@ -90,8 +121,8 @@ fn translate_select(stmt: &SelectStatement) -> String {
         }
     }
     
-    // RETURN
-    let return_expr = translate_columns(&stmt.columns, doc_var, !stmt.group_by.is_empty(), &stmt.joins);
+    // RETURN (uses LET variables for aliases)
+    let return_expr = translate_columns_with_let(&stmt.columns, doc_var, is_grouped, &stmt.joins);
     parts.push(format!("{}RETURN {}", indent, return_expr));
     
     parts.join("\n")
@@ -129,6 +160,114 @@ fn translate_join_expr(expr: &SqlExpr, _doc_var: &str) -> String {
         other => translate_expr(other, _doc_var),
     }
 }
+
+/// Translate HAVING clause expressions - aggregates work on "group" variable
+fn translate_having_expr(expr: &SqlExpr) -> String {
+    match expr {
+        SqlExpr::Function { name, args } => {
+            // Aggregate functions in HAVING work on the group
+            match name.to_uppercase().as_str() {
+                "COUNT" => "LENGTH(group)".to_string(),
+                "SUM" | "AVG" | "MIN" | "MAX" => {
+                    if let Some(arg) = args.first() {
+                        let arg_str = match arg {
+                            SqlExpr::QualifiedColumn { table: _, column } => {
+                                format!("group[*].{}", column)
+                            }
+                            SqlExpr::Column(col) => format!("group[*].{}", col),
+                            _ => translate_having_expr(arg),
+                        };
+                        format!("{}({})", name.to_uppercase(), arg_str)
+                    } else {
+                        format!("{}(group)", name.to_uppercase())
+                    }
+                }
+                _ => format!("{}(group)", name.to_uppercase()),
+            }
+        }
+        SqlExpr::BinaryOp { left, op, right } => {
+            let left_str = translate_having_expr(left);
+            let right_str = translate_having_expr(right);
+            let op_str = match op {
+                BinaryOp::Eq => "==",
+                BinaryOp::NotEq => "!=",
+                BinaryOp::Lt => "<",
+                BinaryOp::LtEq => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::GtEq => ">=",
+                BinaryOp::And => "AND",
+                BinaryOp::Or => "OR",
+                _ => ">",
+            };
+            format!("{} {} {}", left_str, op_str, right_str)
+        }
+        SqlExpr::Integer(n) => n.to_string(),
+        SqlExpr::Float(n) => n.to_string(),
+        _ => "true".to_string(),
+    }
+}
+
+/// Translate HAVING using LET variables when available
+fn translate_having_with_let(expr: &SqlExpr, alias_map: &HashMap<String, String>) -> String {
+    match expr {
+        SqlExpr::Function { name, args } => {
+            // Check if this exact aggregate expression has a LET variable
+            let agg_expr = translate_having_expr_to_string(name, args);
+            
+            // Look for matching alias
+            for (alias_name, alias_expr) in alias_map {
+                if *alias_expr == agg_expr {
+                    return alias_name.clone();
+                }
+            }
+            
+            // No matching LET variable, use the expression directly
+            agg_expr
+        }
+        SqlExpr::BinaryOp { left, op, right } => {
+            let left_str = translate_having_with_let(left, alias_map);
+            let right_str = translate_having_with_let(right, alias_map);
+            let op_str = match op {
+                BinaryOp::Eq => "==",
+                BinaryOp::NotEq => "!=",
+                BinaryOp::Lt => "<",
+                BinaryOp::LtEq => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::GtEq => ">=",
+                BinaryOp::And => "AND",
+                BinaryOp::Or => "OR",
+                _ => ">",
+            };
+            format!("{} {} {}", left_str, op_str, right_str)
+        }
+        SqlExpr::Integer(n) => n.to_string(),
+        SqlExpr::Float(n) => n.to_string(),
+        _ => "true".to_string(),
+    }
+}
+
+/// Helper to generate the SDBQL expression for an aggregate (for matching against LET)
+fn translate_having_expr_to_string(name: &str, args: &[SqlExpr]) -> String {
+    match name.to_uppercase().as_str() {
+        "COUNT" => "LENGTH(group)".to_string(),
+        "SUM" | "AVG" | "MIN" | "MAX" => {
+            if let Some(arg) = args.first() {
+                let arg_str = match arg {
+                    SqlExpr::QualifiedColumn { table: _, column } => {
+                        format!("group[*].{}", column)
+                    }
+                    SqlExpr::Column(col) => format!("group[*].{}", col),
+                    _ => "group".to_string(),
+                };
+                format!("{}({})", name.to_uppercase(), arg_str)
+            } else {
+                format!("{}(group)", name.to_uppercase())
+            }
+        }
+        _ => format!("{}(group)", name.to_uppercase()),
+    }
+}
+
 
 fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, joins: &[JoinClause]) -> String {
     // Single star - if there are joins, return merged object
@@ -194,17 +333,67 @@ fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, 
     }
 }
 
+/// Version that uses LET variable names for aggregate aliases (when is_grouped)
+fn translate_columns_with_let(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, joins: &[JoinClause]) -> String {
+    // Single star - delegate to regular function
+    if columns.len() == 1 {
+        if let SelectColumn::Star = &columns[0] {
+            return translate_columns(columns, doc_var, is_grouped, joins);
+        }
+    }
+    
+    // Check if all columns are simple (no aliases, no functions)
+    let simple_columns: Vec<&str> = columns
+        .iter()
+        .filter_map(|c| {
+            if let SelectColumn::Column { name, alias: None } = c {
+                Some(name.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    if simple_columns.len() == columns.len() && !simple_columns.is_empty() {
+        return translate_columns(columns, doc_var, is_grouped, joins);
+    }
+    
+    // Complex columns - use LET variables for aggregate aliases
+    let fields: Vec<String> = columns
+        .iter()
+        .map(|c| translate_select_column_with_let(c, doc_var, is_grouped))
+        .collect();
+    
+    if fields.len() == 1 {
+        fields[0].clone()
+    } else {
+        format!("{{ {} }}", fields.join(", "))
+    }
+}
+
+fn translate_select_column_with_let(col: &SelectColumn, doc_var: &str, is_grouped: bool) -> String {
+    match col {
+        SelectColumn::Function { name: _, args: _, alias: Some(alias_name) } if is_grouped => {
+            // Use the LET variable directly
+            format!("{}: {}", alias_name, alias_name)
+        }
+        // Delegate to regular function for other cases
+        _ => translate_select_column(col, doc_var, is_grouped),
+    }
+}
+
 fn translate_select_column(col: &SelectColumn, doc_var: &str, is_grouped: bool) -> String {
     match col {
         SelectColumn::Star => doc_var.to_string(),
         SelectColumn::Column { name, alias } => {
-            let field_name = alias.as_ref().unwrap_or(name);
-            let value = if name.contains('.') {
-                name.clone()
+            // For qualified columns (table.column), extract just the column name for the key
+            let (key_name, value) = if name.contains('.') {
+                let col_name = name.split('.').last().unwrap_or(name);
+                (alias.as_ref().map(|s| s.as_str()).unwrap_or(col_name), name.clone())
             } else {
-                format!("{}.{}", doc_var, name)
+                (alias.as_ref().map(|s| s.as_str()).unwrap_or(name), format!("{}.{}", doc_var, name))
             };
-            format!("{}: {}", field_name, value)
+            format!("{}: {}", key_name, value)
         }
         SelectColumn::Function { name, args, alias } => {
             let sdbql_func = translate_aggregate_function(name, args, doc_var, is_grouped);
@@ -264,9 +453,73 @@ fn translate_aggregate_function(name: &str, args: &[SqlExpr], doc_var: &str, is_
     }
 }
 
+use std::collections::HashMap;
+
+/// Build a map from SELECT aliases to their SDBQL expressions
+fn build_alias_map(columns: &[SelectColumn], doc_var: &str, is_grouped: bool) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    
+    for col in columns {
+        match col {
+            SelectColumn::Function { name, args, alias } => {
+                if let Some(alias_name) = alias {
+                    // Map alias to the SDBQL expression
+                    let expr = translate_aggregate_function(name, args, doc_var, is_grouped);
+                    map.insert(alias_name.clone(), expr);
+                }
+            }
+            SelectColumn::Column { name, alias } => {
+                if let Some(alias_name) = alias {
+                    let value = if name.contains('.') {
+                        name.clone()
+                    } else {
+                        format!("{}.{}", doc_var, name)
+                    };
+                    map.insert(alias_name.clone(), value);
+                }
+            }
+            SelectColumn::Expression { expr, alias } => {
+                if let Some(alias_name) = alias {
+                    let value = translate_expr(expr, doc_var);
+                    map.insert(alias_name.clone(), value);
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    map
+}
+
+fn translate_order_by_with_aliases(item: &OrderByItem, doc_var: &str, alias_map: &HashMap<String, String>) -> String {
+    let direction = if item.descending { "DESC" } else { "ASC" };
+    
+    // Check if this is an alias
+    if let Some(expr) = alias_map.get(&item.column) {
+        return format!("{} {}", expr, direction);
+    }
+    
+    // Qualified columns (table.column) are kept as-is
+    if item.column.contains('.') {
+        format!("{} {}", item.column, direction)
+    } else {
+        // Simple column - prefix with doc_var
+        format!("{}.{} {}", doc_var, item.column, direction)
+    }
+}
+
+#[allow(dead_code)]
 fn translate_order_by(item: &OrderByItem, doc_var: &str) -> String {
     let direction = if item.descending { "DESC" } else { "ASC" };
-    format!("{}.{} {}", doc_var, item.column, direction)
+    // Qualified columns (table.column) are kept as-is
+    // Simple identifiers might be aliases, use as-is
+    if item.column.contains('.') {
+        format!("{} {}", item.column, direction)
+    } else {
+        // Could be a column or an alias - prefix with doc_var for safety
+        // If it's an alias, SDBQL should still work
+        format!("{} {}", item.column, direction)
+    }
 }
 
 fn translate_expr(expr: &SqlExpr, doc_var: &str) -> String {
@@ -584,5 +837,16 @@ mod tests {
         assert!(sdbql.contains("FOR u IN users"));
         assert!(sdbql.contains("FOR o IN orders"));
         assert!(sdbql.contains("FOR p IN products"));
+    }
+    
+    #[test]
+    fn test_complex_join_with_group_by() {
+        let sql = "SELECT u.name, u.email, COUNT(o.id) as order_count FROM users u JOIN orders o ON u.id = o.user_id WHERE u.created_at > '2024-01-01' GROUP BY u.id HAVING COUNT(o.id) > 5 ORDER BY order_count DESC LIMIT 10";
+        let sdbql = translate_sql_to_sdbql(sql).unwrap();
+        println!("Complex query translation:\n{}", sdbql);
+        
+        assert!(sdbql.contains("FOR u IN users"));
+        assert!(sdbql.contains("FOR o IN orders"));
+        assert!(sdbql.contains("COLLECT"));
     }
 }
