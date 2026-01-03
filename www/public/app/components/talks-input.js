@@ -102,9 +102,9 @@ var talksInput = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<footer class="p-0 flex-shrink-0"><div expr134="expr134"><div expr135="expr135"></div><div expr139="expr139"></div><div expr145="expr145"><textarea expr146="expr146" ref="messageInput" placeholder="Message"></textarea></div><div expr147="expr147"><div class="flex items-center space-x-1"><button expr148="expr148" class="text-gray-500 hover:text-white transition-colors p-2" title="Attach file"><i class="fas fa-paperclip"></i></button><button expr149="expr149"><i class="far fa-smile"></i></button></div><button expr150="expr150"><i expr151="expr151"></i> </button></div><input expr152="expr152" type="file" ref="fileInput" class="hidden" multiple/></div></footer>', [{
-    redundantAttribute: 'expr134',
-    selector: '[expr134]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<footer class="p-0 flex-shrink-0"><div expr454="expr454"><div expr455="expr455"></div><div expr459="expr459"></div><div expr465="expr465"><textarea expr466="expr466" ref="messageInput" placeholder="Message"></textarea></div><div expr467="expr467"><div class="flex items-center space-x-1"><button expr468="expr468" class="text-gray-500 hover:text-white transition-colors p-2" title="Attach file"><i class="fas fa-paperclip"></i></button><button expr469="expr469"><i class="far fa-smile"></i></button></div><button expr470="expr470"><i expr471="expr471"></i> </button></div><input expr472="expr472" type="file" ref="fileInput" class="hidden" multiple/></div></footer>', [{
+    redundantAttribute: 'expr454',
+    selector: '[expr454]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'ondragenter',
@@ -130,9 +130,9 @@ var talksInput = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.quotedMessage,
-    redundantAttribute: 'expr135',
-    selector: '[expr135]',
-    template: template('<div class="flex items-center justify-between mb-1.5"><span expr136="expr136" class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5"><i class="fas fa-reply"></i> </span><button expr137="expr137" class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors"><i class="fas fa-times"></i></button></div><div expr138="expr138" class="text-gray-300/80 line-clamp-2 italic text-sm"> </div><i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>', [{
+    redundantAttribute: 'expr455',
+    selector: '[expr455]',
+    template: template('<div class="flex items-center justify-between mb-1.5"><span expr456="expr456" class="font-bold text-indigo-400 text-xs tracking-wide uppercase flex items-center gap-1.5"><i class="fas fa-reply"></i> </span><button expr457="expr457" class="text-gray-500 hover:text-white p-1 rounded-full hover:bg-gray-700/50 transition-colors"><i class="fas fa-times"></i></button></div><div expr458="expr458" class="text-gray-300/80 line-clamp-2 italic text-sm"> </div><i class="fas fa-quote-right absolute bottom-2 right-3 text-white/5 text-xl pointer-events-none"></i>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -140,24 +140,24 @@ var talksInput = {
         evaluate: _scope => _scope.getPreviewClass()
       }]
     }, {
-      redundantAttribute: 'expr136',
-      selector: '[expr136]',
+      redundantAttribute: 'expr456',
+      selector: '[expr456]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
         evaluate: _scope => ['Replying to ', _scope.props.quotedMessage.sender].join('')
       }]
     }, {
-      redundantAttribute: 'expr137',
-      selector: '[expr137]',
+      redundantAttribute: 'expr457',
+      selector: '[expr457]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.props.onCancelQuote
       }]
     }, {
-      redundantAttribute: 'expr138',
-      selector: '[expr138]',
+      redundantAttribute: 'expr458',
+      selector: '[expr458]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -167,9 +167,9 @@ var talksInput = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.files.length > 0,
-    redundantAttribute: 'expr139',
-    selector: '[expr139]',
-    template: template('<div expr140="expr140"></div>', [{
+    redundantAttribute: 'expr459',
+    selector: '[expr459]',
+    template: template('<div expr460="expr460"></div>', [{
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
@@ -180,7 +180,7 @@ var talksInput = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<div expr141="expr141"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr142="expr142"> </span><span expr143="expr143" class="text-[10px] text-gray-500"> </span></div><button expr144="expr144"><i class="fas fa-times"></i></button>', [{
+      template: template('<div expr461="expr461"><i class="fas fa-file-code"></i></div><div class="flex flex-col max-w-[150px]"><span expr462="expr462"> </span><span expr463="expr463" class="text-[10px] text-gray-500"> </span></div><button expr464="expr464"><i class="fas fa-times"></i></button>', [{
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -188,8 +188,8 @@ var talksInput = {
           evaluate: _scope => _scope.getFileItemClass()
         }]
       }, {
-        redundantAttribute: 'expr141',
-        selector: '[expr141]',
+        redundantAttribute: 'expr461',
+        selector: '[expr461]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -197,8 +197,8 @@ var talksInput = {
           evaluate: _scope => _scope.getFileIconClass()
         }]
       }, {
-        redundantAttribute: 'expr142',
-        selector: '[expr142]',
+        redundantAttribute: 'expr462',
+        selector: '[expr462]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -210,16 +210,16 @@ var talksInput = {
           evaluate: _scope => _scope.getFileNameClass()
         }]
       }, {
-        redundantAttribute: 'expr143',
-        selector: '[expr143]',
+        redundantAttribute: 'expr463',
+        selector: '[expr463]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.getFileSize(_scope.file)
         }]
       }, {
-        redundantAttribute: 'expr144',
-        selector: '[expr144]',
+        redundantAttribute: 'expr464',
+        selector: '[expr464]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -231,15 +231,15 @@ var talksInput = {
           evaluate: _scope => _scope.getRemoveFileButtonClass()
         }]
       }]),
-      redundantAttribute: 'expr140',
-      selector: '[expr140]',
+      redundantAttribute: 'expr460',
+      selector: '[expr460]',
       itemName: 'file',
       indexName: 'index',
       evaluate: _scope => _scope.props.files
     }])
   }, {
-    redundantAttribute: 'expr145',
-    selector: '[expr145]',
+    redundantAttribute: 'expr465',
+    selector: '[expr465]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -247,8 +247,8 @@ var talksInput = {
       evaluate: _scope => _scope.getContainerPaddingClass()
     }]
   }, {
-    redundantAttribute: 'expr146',
-    selector: '[expr146]',
+    redundantAttribute: 'expr466',
+    selector: '[expr466]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onkeydown',
@@ -264,8 +264,8 @@ var talksInput = {
       evaluate: _scope => _scope.getInputClass()
     }]
   }, {
-    redundantAttribute: 'expr147',
-    selector: '[expr147]',
+    redundantAttribute: 'expr467',
+    selector: '[expr467]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -273,16 +273,16 @@ var talksInput = {
       evaluate: _scope => 'flex items-center justify-between bg-[#1A1D21] border-t border-gray-700 ' + _scope.getControlsPaddingClass()
     }]
   }, {
-    redundantAttribute: 'expr148',
-    selector: '[expr148]',
+    redundantAttribute: 'expr468',
+    selector: '[expr468]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.triggerFileUpload
     }]
   }, {
-    redundantAttribute: 'expr149',
-    selector: '[expr149]',
+    redundantAttribute: 'expr469',
+    selector: '[expr469]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -294,8 +294,8 @@ var talksInput = {
       evaluate: _scope => _scope.getEmojiPickerBtnClass()
     }]
   }, {
-    redundantAttribute: 'expr150',
-    selector: '[expr150]',
+    redundantAttribute: 'expr470',
+    selector: '[expr470]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 1,
@@ -316,8 +316,8 @@ var talksInput = {
       evaluate: _scope => _scope.getButtonClass()
     }]
   }, {
-    redundantAttribute: 'expr151',
-    selector: '[expr151]',
+    redundantAttribute: 'expr471',
+    selector: '[expr471]',
     expressions: [{
       type: expressionTypes.ATTRIBUTE,
       isBoolean: false,
@@ -325,8 +325,8 @@ var talksInput = {
       evaluate: _scope => _scope.getSendIconClass()
     }]
   }, {
-    redundantAttribute: 'expr152',
-    selector: '[expr152]',
+    redundantAttribute: 'expr472',
+    selector: '[expr472]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onchange',

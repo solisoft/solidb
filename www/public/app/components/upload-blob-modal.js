@@ -1,7 +1,7 @@
 import { getAuthToken, getApiUrl } from '../../../../../../../../api-config.js';
 
 var uploadBlobModal = {
-  css: null,
+  css: `@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } @keyframes slideUp { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }upload-blob-modal .animate-fadeIn,[is="upload-blob-modal"] .animate-fadeIn{ animation: fadeIn 0.3s ease-out; }`,
   exports: {
     state: {
       visible: false,
@@ -118,20 +118,15 @@ var uploadBlobModal = {
         progress: 0
       });
 
-      // Simulate progress (since Fetch API doesn't support upload progress easily without XHR)
-      // For a real app with large files, we'd use XMLHttpRequest for progress events
+      // Simulate progress visualization for XHR
       const progressInterval = setInterval(() => {
-        if (this.state.progress < 90) {
+        if (this.state.progress < 5) {
+          // Just a little jumpstart
           this.update({
-            progress: this.state.progress + 10
+            progress: this.state.progress + 1
           });
         }
-      }, 500);
-
-      // Using standard Fetch API (no progress events)
-      // But for better UX with large files, consider using XHR wrappper or chunked upload manually
-      // For now, we'll use simple fetch
-
+      }, 100);
       const formData = new FormData();
       formData.append('file', this.state.selectedFile);
       try {
@@ -143,36 +138,7 @@ var uploadBlobModal = {
           });
           return;
         }
-        // getApiUrl likely returns base path without _api if improperly configured, or with it.
-        // Checking api-config.js first is safer, but assuming the standard pattern:
-        // Server route: /_api/blob/:db/:collection
-        // If getApiUrl() -> http://localhost:8080/_api, then /blob/... is correct?
-        // Wait, previous logs showed 404 for http://localhost:6745/_api/blob/delupay/files
-        // This means the URL IS correct effectively if getApiUrl includes _api.
-        // But maybe getApiUrl() does NOT include _api?
-        // Let's check api-config.js result first.
-        // If getApiUrl() returns "http://localhost:6745", then we need "/_api/blob..."
-        // If it returns "http://localhost:6745/_api", then "/blob..." is correct.
-        // Most likely it returns the base URL without _api or with it.
-
-        // Actually, let's look at the error: POST http://localhost:6745/_api/blob/delupay/files 404
-        // The path scems correct: /_api/blob/db/collection
-        // Wait, maybe the route definition is wrong?
-        // .route("/_api/blob/:db/:collection", post(upload_blob))
-        // This matches.
-
-        // Is it possible the method is wrong? No, code uses POST.
-        // Is the collection name specific? "delupay/files".
-        // maybe "files" is the collection?
-
-        // Ah, looking at the code again.
-        // The user error says: POST http://localhost:6745/_api/blob/delupay/files 404
-        // My previous verification code used: /_api/blob/blob_db/my_blobs
-
-        // Wait, look at api-config.js.
         const url = `${getApiUrl()}/blob/${this.props.db}/${this.props.collection}`;
-
-        // Note: We use XMLHttpRequest here to track upload progress
         await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', url, true);
@@ -225,28 +191,38 @@ var uploadBlobModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr34="expr34" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto"></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr345="expr345" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="animation: fadeIn 0.2s ease-out;"></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.visible,
-    redundantAttribute: 'expr34',
-    selector: '[expr34]',
-    template: template('<div expr35="expr35" class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700 my-8"><div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-gray-100">Upload Blob</h3><button expr36="expr36" class="text-gray-400 hover:text-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr37="expr37" class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg flex items-start"></div><form expr39="expr39"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr40="expr40"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400 justify-center"><span class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span></span><p class="pl-1">or drag and drop</p></div><p expr41="expr41" class="text-xs text-gray-500"></p><p expr42="expr42" class="text-sm text-indigo-400 font-semibold"></p></div></div><input expr43="expr43" type="file" ref="fileInput" class="hidden"/></div><div expr44="expr44" class="mb-6"></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr47="expr47" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors bg-gray-700 hover:bg-gray-600 rounded-md">\n                        Cancel\n                    </button><button expr48="expr48" type="submit" class="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"><svg expr49="expr49" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>', [{
+    redundantAttribute: 'expr345',
+    selector: '[expr345]',
+    template: template('<div expr346="expr346" class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"></div><div expr347="expr347" class="relative w-full max-w-xl bg-gray-900/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl transform transition-all" style="animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);"><div class="flex items-center justify-between p-6 border-b border-white/5"><div><h3 class="text-xl font-bold text-white tracking-tight">Upload Blob</h3><p expr348="expr348" class="text-sm text-gray-400 mt-1"> </p></div><button expr349="expr349" class="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr350="expr350" class="px-6 pt-6"></div><form expr352="expr352" class="p-6"><div class="mb-6"><label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">File\n                        Selection</label><div expr353="expr353"><div class="px-6 py-10 flex flex-col items-center justify-center text-center"><div expr354="expr354"><svg expr355="expr355" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr356="expr356" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg></div><div expr357="expr357" class="space-y-1"></div><div expr358="expr358" class="space-y-1 animate-fadeIn"></div></div></div><input expr361="expr361" type="file" ref="fileInput" class="hidden"/></div><div expr362="expr362" class="mb-6 space-y-2"></div><div class="flex justify-end space-x-3 pt-2"><button expr365="expr365" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-lg">\n                        Cancel\n                    </button><button expr366="expr366" type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center"><svg expr367="expr367" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>', [{
+      redundantAttribute: 'expr346',
+      selector: '[expr346]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleBackdropClick
       }]
     }, {
-      redundantAttribute: 'expr35',
-      selector: '[expr35]',
+      redundantAttribute: 'expr347',
+      selector: '[expr347]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => e => e.stopPropagation()
       }]
     }, {
-      redundantAttribute: 'expr36',
-      selector: '[expr36]',
+      redundantAttribute: 'expr348',
+      selector: '[expr348]',
+      expressions: [{
+        type: expressionTypes.TEXT,
+        childNodeIndex: 0,
+        evaluate: _scope => ['Add a new file to the ', _scope.props.collection, ' collection'].join('')
+      }]
+    }, {
+      redundantAttribute: 'expr349',
+      selector: '[expr349]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -255,11 +231,11 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.error,
-      redundantAttribute: 'expr37',
-      selector: '[expr37]',
-      template: template('<svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span expr38="expr38" class="text-red-300 text-sm whitespace-pre-wrap"> </span>', [{
-        redundantAttribute: 'expr38',
-        selector: '[expr38]',
+      redundantAttribute: 'expr350',
+      selector: '[expr350]',
+      template: template('<div class="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3"><svg class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><div expr351="expr351" class="text-sm text-red-200"> </div></div>', [{
+        redundantAttribute: 'expr351',
+        selector: '[expr351]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -267,21 +243,21 @@ var uploadBlobModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr39',
-      selector: '[expr39]',
+      redundantAttribute: 'expr352',
+      selector: '[expr352]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onsubmit',
         evaluate: _scope => _scope.handleSubmit
       }]
     }, {
-      redundantAttribute: 'expr40',
-      selector: '[expr40]',
+      redundantAttribute: 'expr353',
+      selector: '[expr353]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: false,
         name: 'class',
-        evaluate: _scope => 'mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors cursor-pointer ' + (_scope.state.isDragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-gray-600 hover:border-gray-500')
+        evaluate: _scope => 'relative group border-2 border-dashed rounded-xl transition-all duration-200 ease-out cursor-pointer overflow-hidden ' + (_scope.state.isDragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/10 hover:border-indigo-500/50 hover:bg-white/5')
       }, {
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -304,26 +280,57 @@ var uploadBlobModal = {
         evaluate: _scope => _scope.handleDrop
       }]
     }, {
+      redundantAttribute: 'expr354',
+      selector: '[expr354]',
+      expressions: [{
+        type: expressionTypes.ATTRIBUTE,
+        isBoolean: false,
+        name: 'class',
+        evaluate: _scope => 'mb-4 p-4 rounded-full transition-colors ' + (_scope.state.selectedFile ? 'bg-indigo-500/20 text-indigo-400' : 'bg-gray-800 text-gray-500 group-hover:text-gray-400')
+      }]
+    }, {
       type: bindingTypes.IF,
       evaluate: _scope => !_scope.state.selectedFile,
-      redundantAttribute: 'expr41',
-      selector: '[expr41]',
-      template: template('\n                                Any file up to 1GB\n                            ', [])
+      redundantAttribute: 'expr355',
+      selector: '[expr355]',
+      template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>', [])
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.selectedFile,
-      redundantAttribute: 'expr42',
-      selector: '[expr42]',
-      template: template(' ', [{
+      redundantAttribute: 'expr356',
+      selector: '[expr356]',
+      template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>', [])
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => !_scope.state.selectedFile,
+      redundantAttribute: 'expr357',
+      selector: '[expr357]',
+      template: template('<p class="text-sm font-medium text-gray-300"><span class="text-indigo-400 hover:text-indigo-300">Click to upload</span> or drag\n                                    and drop\n                                </p><p class="text-xs text-gray-500">Blob files up to 1GB</p>', [])
+    }, {
+      type: bindingTypes.IF,
+      evaluate: _scope => _scope.state.selectedFile,
+      redundantAttribute: 'expr358',
+      selector: '[expr358]',
+      template: template('<p expr359="expr359" class="text-sm font-medium text-white break-all px-4"> </p><p expr360="expr360" class="text-xs text-indigo-400 font-mono"> </p>', [{
+        redundantAttribute: 'expr359',
+        selector: '[expr359]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
-          evaluate: _scope => [_scope.state.selectedFile.name, ' (', _scope.formatFileSize(_scope.state.selectedFile.size), ')'].join('')
+          evaluate: _scope => _scope.state.selectedFile.name
+        }]
+      }, {
+        redundantAttribute: 'expr360',
+        selector: '[expr360]',
+        expressions: [{
+          type: expressionTypes.TEXT,
+          childNodeIndex: 0,
+          evaluate: _scope => [_scope.formatFileSize(_scope.state.selectedFile.size)].join('')
         }]
       }])
     }, {
-      redundantAttribute: 'expr43',
-      selector: '[expr43]',
+      redundantAttribute: 'expr361',
+      selector: '[expr361]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onchange',
@@ -332,19 +339,19 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.uploading,
-      redundantAttribute: 'expr44',
-      selector: '[expr44]',
-      template: template('<div class="flex justify-between mb-1"><span class="text-sm font-medium text-indigo-400">Uploading...</span><span expr45="expr45" class="text-sm font-medium text-indigo-400"> </span></div><div class="w-full bg-gray-700 rounded-full h-2.5"><div expr46="expr46" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"></div></div>', [{
-        redundantAttribute: 'expr45',
-        selector: '[expr45]',
+      redundantAttribute: 'expr362',
+      selector: '[expr362]',
+      template: template('<div class="flex justify-between text-xs font-medium"><span class="text-indigo-400">Uploading...</span><span expr363="expr363" class="text-gray-400"> </span></div><div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden"><div expr364="expr364" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300 ease-out relative"><div class="absolute inset-0 bg-white/20 animate-pulse"></div></div></div>', [{
+        redundantAttribute: 'expr363',
+        selector: '[expr363]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.state.progress, '%'].join('')
         }]
       }, {
-        redundantAttribute: 'expr46',
-        selector: '[expr46]',
+        redundantAttribute: 'expr364',
+        selector: '[expr364]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -353,20 +360,20 @@ var uploadBlobModal = {
         }]
       }])
     }, {
-      redundantAttribute: 'expr47',
-      selector: '[expr47]',
+      redundantAttribute: 'expr365',
+      selector: '[expr365]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
         evaluate: _scope => _scope.handleClose
       }]
     }, {
-      redundantAttribute: 'expr48',
-      selector: '[expr48]',
+      redundantAttribute: 'expr366',
+      selector: '[expr366]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 1,
-        evaluate: _scope => [_scope.state.uploading ? 'Uploading...' : 'Upload Blob'].join('')
+        evaluate: _scope => [_scope.state.uploading ? 'Uploading...' : 'Upload File'].join('')
       }, {
         type: expressionTypes.ATTRIBUTE,
         isBoolean: true,
@@ -376,8 +383,8 @@ var uploadBlobModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.uploading,
-      redundantAttribute: 'expr49',
-      selector: '[expr49]',
+      redundantAttribute: 'expr367',
+      selector: '[expr367]',
       template: template('<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>', [])
     }])
   }]),

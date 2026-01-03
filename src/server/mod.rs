@@ -11,6 +11,8 @@ pub mod role_handlers;
 pub mod repl_session;
 pub mod env_handlers;
 pub mod columnar_handlers;
+pub mod ai_handlers;
+pub mod sql_handlers;
 
 pub use cursor_store::CursorStore;
 pub use routes::create_router;

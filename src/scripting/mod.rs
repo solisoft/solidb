@@ -23,6 +23,7 @@ mod string_utils;
 mod auth;
 mod file_handling;
 mod dev_tools;
+mod ai_bindings;
 use validation::*;
 use http_helpers::*;
 use error_handling::*;
@@ -1106,6 +1107,11 @@ impl ScriptEngine {
         }
         
         solidb.set("env", env_table).map_err(|e| DbError::InternalError(format!("Failed to set solidb.env: {}", e)))?;
+
+        // Add AI bindings (solidb.ai.*)
+        let ai_table = ai_bindings::create_ai_table(&lua, self.storage.clone(), db_name)
+            .map_err(|e| DbError::InternalError(format!("Failed to create AI table: {}", e)))?;
+        solidb.set("ai", ai_table).map_err(|e| DbError::InternalError(format!("Failed to set solidb.ai: {}", e)))?;
 
         globals.set("solidb", solidb)
             .map_err(|e| DbError::InternalError(format!("Failed to set solidb global: {}", e)))?;

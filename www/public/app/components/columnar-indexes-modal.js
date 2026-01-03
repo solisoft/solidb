@@ -146,17 +146,17 @@ var columnarIndexesModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr515="expr515" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr516="expr516" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Manage Indexes</h3><p class="text-sm text-gray-400 mt-1">Create and remove indexes on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr517="expr517" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="bg-gray-800/50 rounded-lg p-4 border border-white/5 mb-6"><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Create New Index</h4><div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"><div><label class="block text-xs font-medium text-gray-400 mb-1">Column</label><select ref="newIndexColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr519="expr519"></option></select></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Type</label><select ref="newIndexType" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="sorted">Sorted (Default)</option><option value="hash">Hash (Equality Only)</option><option value="bitmap">Bitmap (Low Cardinality)</option><option value="minmax">Min/Max (Ranges/Pruning)</option></select></div><button expr520="expr520" type="button" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50 h-[38px]"> </button></div></div><div><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Existing Indexes</h4><div expr521="expr521" class="flex justify-center py-8"></div><div expr522="expr522" class="text-center py-8 text-gray-500"></div><div expr523="expr523" class="overflow-hidden border border-gray-700\n                        rounded-lg"></div></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr529="expr529" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                    Close\n                </button></div></div></div>', [{
-    redundantAttribute: 'expr515',
-    selector: '[expr515]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr941="expr941" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr942="expr942" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Manage Indexes</h3><p class="text-sm text-gray-400 mt-1">Create and remove indexes on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr943="expr943" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="bg-gray-800/50 rounded-lg p-4 border border-white/5 mb-6"><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Create New Index</h4><div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"><div><label class="block text-xs font-medium text-gray-400 mb-1">Column</label><select ref="newIndexColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr945="expr945"></option></select></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Type</label><select ref="newIndexType" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="sorted">Sorted (Default)</option><option value="hash">Hash (Equality Only)</option><option value="bitmap">Bitmap (Low Cardinality)</option><option value="minmax">Min/Max (Ranges/Pruning)</option><option value="bloom">Bloom Filter (Probabilistic)</option></select></div><button expr946="expr946" type="button" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50 h-[38px]"> </button></div></div><div><h4 class="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wider">Existing Indexes</h4><div expr947="expr947" class="flex justify-center py-8"></div><div expr948="expr948" class="text-center py-8 text-gray-500"></div><div expr949="expr949" class="overflow-hidden border border-gray-700\n                        rounded-lg"></div></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr955="expr955" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n                    Close\n                </button></div></div></div>', [{
+    redundantAttribute: 'expr941',
+    selector: '[expr941]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr516',
-    selector: '[expr516]',
+    redundantAttribute: 'expr942',
+    selector: '[expr942]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -165,11 +165,11 @@ var columnarIndexesModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr517',
-    selector: '[expr517]',
-    template: template('<p expr518="expr518" class="text-sm text-red-300"> </p>', [{
-      redundantAttribute: 'expr518',
-      selector: '[expr518]',
+    redundantAttribute: 'expr943',
+    selector: '[expr943]',
+    template: template('<p expr944="expr944" class="text-sm text-red-300"> </p>', [{
+      redundantAttribute: 'expr944',
+      selector: '[expr944]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -192,14 +192,14 @@ var columnarIndexesModal = {
         evaluate: _scope => _scope.col.name
       }]
     }]),
-    redundantAttribute: 'expr519',
-    selector: '[expr519]',
+    redundantAttribute: 'expr945',
+    selector: '[expr945]',
     itemName: 'col',
     indexName: null,
     evaluate: _scope => _scope.props.meta ? _scope.props.meta.columns : []
   }, {
-    redundantAttribute: 'expr520',
-    selector: '[expr520]',
+    redundantAttribute: 'expr946',
+    selector: '[expr946]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -217,66 +217,66 @@ var columnarIndexesModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr521',
-    selector: '[expr521]',
+    redundantAttribute: 'expr947',
+    selector: '[expr947]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500"></div>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.indexes.length === 0,
-    redundantAttribute: 'expr522',
-    selector: '[expr522]',
+    redundantAttribute: 'expr948',
+    selector: '[expr948]',
     template: template('\n                        No indexes found.\n                    ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.indexes.length > 0,
-    redundantAttribute: 'expr523',
-    selector: '[expr523]',
-    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-800"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Column</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Type</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Created At</th><th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Actions</th></tr></thead><tbody class="bg-gray-800/50 divide-y divide-gray-700"><tr expr524="expr524" class="hover:bg-gray-750"></tr></tbody></table>', [{
+    redundantAttribute: 'expr949',
+    selector: '[expr949]',
+    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-800"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Column</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Type</th><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Created At</th><th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">\n                                        Actions</th></tr></thead><tbody class="bg-gray-800/50 divide-y divide-gray-700"><tr expr950="expr950" class="hover:bg-gray-750"></tr></tbody></table>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td expr525="expr525" class="px-4 py-3 whitespace-nowrap text-sm text-gray-200 font-medium"> </td><td expr526="expr526" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400 font-mono text-xs uppercase"> </td><td expr527="expr527" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-4 py-3 whitespace-nowrap text-right text-sm"><button expr528="expr528" class="text-red-400\n                                            hover:text-red-300 font-medium transition-colors">\n                                            Delete\n                                        </button></td>', [{
-        redundantAttribute: 'expr525',
-        selector: '[expr525]',
+      template: template('<td expr951="expr951" class="px-4 py-3 whitespace-nowrap text-sm text-gray-200 font-medium"> </td><td expr952="expr952" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400 font-mono text-xs uppercase"> </td><td expr953="expr953" class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"> </td><td class="px-4 py-3 whitespace-nowrap text-right text-sm"><button expr954="expr954" class="text-red-400\n                                            hover:text-red-300 font-medium transition-colors">\n                                            Delete\n                                        </button></td>', [{
+        redundantAttribute: 'expr951',
+        selector: '[expr951]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.idx.column
         }]
       }, {
-        redundantAttribute: 'expr526',
-        selector: '[expr526]',
+        redundantAttribute: 'expr952',
+        selector: '[expr952]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.idx.index_type].join('')
         }]
       }, {
-        redundantAttribute: 'expr527',
-        selector: '[expr527]',
+        redundantAttribute: 'expr953',
+        selector: '[expr953]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.idx.created_at].join('')
         }]
       }, {
-        redundantAttribute: 'expr528',
-        selector: '[expr528]',
+        redundantAttribute: 'expr954',
+        selector: '[expr954]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteIndex(_scope.idx.column)
         }]
       }]),
-      redundantAttribute: 'expr524',
-      selector: '[expr524]',
+      redundantAttribute: 'expr950',
+      selector: '[expr950]',
       itemName: 'idx',
       indexName: null,
       evaluate: _scope => _scope.state.indexes
     }])
   }, {
-    redundantAttribute: 'expr529',
-    selector: '[expr529]',
+    redundantAttribute: 'expr955',
+    selector: '[expr955]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',

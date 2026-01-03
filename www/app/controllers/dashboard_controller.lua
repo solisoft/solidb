@@ -71,6 +71,103 @@ local app = {
 
   columnar = function()
     Page("dashboard/columnar", "app")
+  end,
+
+  ai_contributions = function()
+    Page("dashboard/ai/contributions", "app")
+  end,
+
+  ai_tasks = function()
+    Page("dashboard/ai/tasks", "app")
+  end,
+
+  ai_agents = function()
+    Page("dashboard/ai/agents", "app")
+  end,
+
+  create_ai_task = function()
+    local payload = GetBodyParams()
+    local db_name = Params['db']
+
+    -- Validation
+    if not payload.task_type or payload.task_type == "" then
+      SetStatus(400)
+      return WriteJSON({ error = "task_type is required" })
+    end
+
+    local db = SoliDB[db_name]
+    if not db then
+       SetStatus(404)
+       return WriteJSON({ error = "Database not found" })
+    end
+    
+    -- Ensure collection exists
+    if not db:HasCollection("_ai_tasks") then
+        db:Run("CREATE COLLECTION _ai_tasks")
+    end
+
+    local task = {
+       task_type = payload.task_type,
+       status = "pending",
+       priority = tonumber(payload.priority) or 0,
+       payload = payload.payload or {},
+       created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+       updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    local doc_key = db:ValidateAndInsert("_ai_tasks", task)
+    
+    if doc_key then
+       task._key = doc_key
+       WriteJSON(task)
+    else
+       SetStatus(500)
+       WriteJSON({ error = "Failed to create task" })
+    end
+  end,
+
+  create_ai_agent = function()
+    local payload = GetBodyParams()
+    local db_name = Params['db']
+
+    -- Validation
+    if not payload.name or payload.name == "" then
+      SetStatus(400)
+      return WriteJSON({ error = "name is required" })
+    end
+
+    local db = SoliDB[db_name]
+    if not db then
+       SetStatus(404)
+       return WriteJSON({ error = "Database not found" })
+    end
+    
+    -- Ensure collection exists
+    if not db:HasCollection("_ai_agents") then
+        db:Run("CREATE COLLECTION _ai_agents")
+    end
+
+    local agent = {
+       name = payload.name,
+       agent_type = payload.agent_type or "generic",
+       status = payload.status or "idle",
+       capabilities = payload.capabilities or {},
+       last_heartbeat = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+       tasks_completed = 0,
+       tasks_failed = 0,
+       created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+       updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    local doc_key = db:ValidateAndInsert("_ai_agents", agent)
+    
+    if doc_key then
+       agent._key = doc_key
+       WriteJSON(agent)
+    else
+       SetStatus(500)
+       WriteJSON({ error = "Failed to create agent" })
+    end
   end
 }
 

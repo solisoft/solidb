@@ -422,6 +422,19 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         ttl_worker_start.start().await;
     });
 
+    // Initialize AI Recovery Worker (autonomous recovery for stalled tasks and agent health)
+    let recovery_config = solidb::ai::RecoveryConfig::default();
+    let recovery_worker = Arc::new(solidb::ai::RecoveryWorker::new(
+        Arc::new(storage.clone()),
+        "_system".to_string(), // Default database for AI operations
+        recovery_config,
+    ));
+    let recovery_worker_start = recovery_worker.clone();
+    tokio::spawn(async move {
+        recovery_worker_start.start().await;
+    });
+    tracing::info!("AI Recovery Worker started");
+
     // Create Router - use the shared coordinator so all parts share the same shard table cache
     let app = create_router(
         storage,

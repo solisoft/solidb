@@ -91,44 +91,44 @@ var columnarTable = {
       return String(value);
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50"><h3 class="text-lg font-semibold text-white">Collection Info</h3></div><div class="p-6"><div expr745="expr745" class="flex justify-center items-center py-4"></div><div expr746="expr746" class="grid grid-cols-1 md:grid-cols-4 gap-4"></div><div expr751="expr751" class="mt-6"></div></div></div><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 flex justify-between items-center"><h3 class="text-lg font-semibold text-white">Data Preview</h3><div class="flex items-center space-x-2 text-sm text-gray-400"><span expr756="expr756"> </span></div></div><div expr757="expr757" class="flex justify-center items-center py-12"></div><div expr758="expr758" class="text-center py-12"></div><div expr759="expr759" class="overflow-x-auto"></div></div></div>', [{
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="space-y-6"><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50"><h3 class="text-lg font-semibold text-white">Collection Info</h3></div><div class="p-6"><div expr835="expr835" class="flex justify-center items-center py-4"></div><div expr836="expr836" class="grid grid-cols-1 md:grid-cols-4 gap-4"></div><div expr841="expr841" class="mt-6"></div></div></div><div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 flex justify-between items-center"><h3 class="text-lg font-semibold text-white">Data Preview</h3><div class="flex items-center space-x-2 text-sm text-gray-400"><span expr846="expr846"> </span></div></div><div expr847="expr847" class="flex justify-center items-center py-12"></div><div expr848="expr848" class="text-center py-12"></div><div expr849="expr849" class="overflow-x-auto"></div></div></div>', [{
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr745',
-    selector: '[expr745]',
+    redundantAttribute: 'expr835',
+    selector: '[expr835]',
     template: template('<div class="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div><span class="ml-3 text-gray-400">Loading...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.meta,
-    redundantAttribute: 'expr746',
-    selector: '[expr746]',
-    template: template('<div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Rows</div><div expr747="expr747" class="text-2xl font-bold text-emerald-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Columns</div><div expr748="expr748" class="text-2xl font-bold text-teal-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Compression</div><div expr749="expr749" class="text-2xl font-bold text-cyan-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Created</div><div expr750="expr750" class="text-sm font-medium text-gray-300"> </div></div>', [{
-      redundantAttribute: 'expr747',
-      selector: '[expr747]',
+    redundantAttribute: 'expr836',
+    selector: '[expr836]',
+    template: template('<div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Rows</div><div expr837="expr837" class="text-2xl font-bold text-emerald-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Columns</div><div expr838="expr838" class="text-2xl font-bold text-teal-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Compression</div><div expr839="expr839" class="text-2xl font-bold text-cyan-400"> </div></div><div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50"><div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Created</div><div expr840="expr840" class="text-sm font-medium text-gray-300"> </div></div>', [{
+      redundantAttribute: 'expr837',
+      selector: '[expr837]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.meta.row_count?.toLocaleString() || 0
       }]
     }, {
-      redundantAttribute: 'expr748',
-      selector: '[expr748]',
+      redundantAttribute: 'expr838',
+      selector: '[expr838]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.meta.columns?.length || 0
       }]
     }, {
-      redundantAttribute: 'expr749',
-      selector: '[expr749]',
+      redundantAttribute: 'expr839',
+      selector: '[expr839]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => _scope.state.meta.compression || 'None'
       }]
     }, {
-      redundantAttribute: 'expr750',
-      selector: '[expr750]',
+      redundantAttribute: 'expr840',
+      selector: '[expr840]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -138,23 +138,23 @@ var columnarTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && _scope.state.meta?.columns,
-    redundantAttribute: 'expr751',
-    selector: '[expr751]',
-    template: template('<h4 class="text-sm font-medium text-gray-400 mb-3">Schema</h4><div class="flex flex-wrap gap-2"><span expr752="expr752" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-900 border border-gray-700"></span></div>', [{
+    redundantAttribute: 'expr841',
+    selector: '[expr841]',
+    template: template('<h4 class="text-sm font-medium text-gray-400 mb-3">Schema</h4><div class="flex flex-wrap gap-2"><span expr842="expr842" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-900 border border-gray-700"></span></div>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<span expr753="expr753" class="text-emerald-400 mr-2"> </span><span expr754="expr754" class="text-gray-500"> </span><span expr755="expr755" class="ml-1 text-yellow-500" title="Nullable"></span>', [{
-        redundantAttribute: 'expr753',
-        selector: '[expr753]',
+      template: template('<span expr843="expr843" class="text-emerald-400 mr-2"> </span><span expr844="expr844" class="text-gray-500"> </span><span expr845="expr845" class="ml-1 text-yellow-500" title="Nullable"></span>', [{
+        redundantAttribute: 'expr843',
+        selector: '[expr843]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => _scope.col.name
         }]
       }, {
-        redundantAttribute: 'expr754',
-        selector: '[expr754]',
+        redundantAttribute: 'expr844',
+        selector: '[expr844]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -163,19 +163,19 @@ var columnarTable = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.col.nullable,
-        redundantAttribute: 'expr755',
-        selector: '[expr755]',
+        redundantAttribute: 'expr845',
+        selector: '[expr845]',
         template: template('?', [])
       }]),
-      redundantAttribute: 'expr752',
-      selector: '[expr752]',
+      redundantAttribute: 'expr842',
+      selector: '[expr842]',
       itemName: 'col',
       indexName: null,
       evaluate: _scope => _scope.state.meta.columns
     }])
   }, {
-    redundantAttribute: 'expr756',
-    selector: '[expr756]',
+    redundantAttribute: 'expr846',
+    selector: '[expr846]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -184,41 +184,41 @@ var columnarTable = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.dataLoading,
-    redundantAttribute: 'expr757',
-    selector: '[expr757]',
+    redundantAttribute: 'expr847',
+    selector: '[expr847]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div><span class="ml-3 text-gray-400">Loading data...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.dataLoading && _scope.state.data.length === 0,
-    redundantAttribute: 'expr758',
-    selector: '[expr758]',
+    redundantAttribute: 'expr848',
+    selector: '[expr848]',
     template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h4v14H4V6zm6 0h4v14h-4V6zm6 0h4v14h-4V6z"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No data</h3><p class="mt-1 text-sm text-gray-500">Insert data to get started.</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.dataLoading && _scope.state.data.length > 0,
-    redundantAttribute: 'expr759',
-    selector: '[expr759]',
-    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">#</th><th expr760="expr760" scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider"></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr762="expr762" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>', [{
+    redundantAttribute: 'expr849',
+    selector: '[expr849]',
+    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700"><tr><th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">#</th><th expr850="expr850" scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider"></th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr852="expr852" class="hover:bg-gray-750 transition-colors"></tr></tbody></table>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template(' <span expr761="expr761" class="text-gray-500 normal-case font-normal ml-1"> </span>', [{
+      template: template(' <span expr851="expr851" class="text-gray-500 normal-case font-normal ml-1"> </span>', [{
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.col.name].join('')
         }]
       }, {
-        redundantAttribute: 'expr761',
-        selector: '[expr761]',
+        redundantAttribute: 'expr851',
+        selector: '[expr851]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => ['(', _scope.col.data_type, ')'].join('')
         }]
       }]),
-      redundantAttribute: 'expr760',
-      selector: '[expr760]',
+      redundantAttribute: 'expr850',
+      selector: '[expr850]',
       itemName: 'col',
       indexName: null,
       evaluate: _scope => _scope.state.meta?.columns
@@ -226,9 +226,9 @@ var columnarTable = {
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td expr763="expr763" class="px-4 py-3 whitespace-nowrap text-sm text-gray-500"> </td><td expr764="expr764" class="px-4 py-3 whitespace-nowrap text-sm text-gray-300"></td>', [{
-        redundantAttribute: 'expr763',
-        selector: '[expr763]',
+      template: template('<td expr853="expr853" class="px-4 py-3 whitespace-nowrap text-sm text-gray-500"> </td><td expr854="expr854" class="px-4 py-3 whitespace-nowrap text-sm text-gray-300"></td>', [{
+        redundantAttribute: 'expr853',
+        selector: '[expr853]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -245,14 +245,14 @@ var columnarTable = {
             evaluate: _scope => [_scope.formatValue(_scope.row[_scope.col.name], _scope.col.data_type)].join('')
           }]
         }]),
-        redundantAttribute: 'expr764',
-        selector: '[expr764]',
+        redundantAttribute: 'expr854',
+        selector: '[expr854]',
         itemName: 'col',
         indexName: null,
         evaluate: _scope => _scope.state.meta?.columns
       }]),
-      redundantAttribute: 'expr762',
-      selector: '[expr762]',
+      redundantAttribute: 'expr852',
+      selector: '[expr852]',
       itemName: 'row',
       indexName: 'i',
       evaluate: _scope => _scope.state.data

@@ -1,0 +1,45 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="md:flex md:items-center md:justify-between mb-8">
+    <div class="flex-1 min-w-0">
+      <h2 class="text-3xl font-bold leading-7 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400 sm:text-4xl sm:truncate">
+        AI Tasks
+      </h2>
+      <p class="mt-2 text-sm text-gray-400">Monitor processing queue and status of AI operations.</p>
+    </div>
+    <div class="mt-4 flex md:mt-0 md:ml-4">
+      <button type="button" onclick="openTaskModal()" class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+        New Task
+      </button>
+    </div>
+  </div>
+
+  <ai-tasks-table db="<%= Params['db'] %>"></ai-tasks-table>
+  <ai-task-modal db="<%= Params['db'] %>"></ai-task-modal>
+</div>
+
+<script type="module">
+  import AiTasksTable from '<%= PublicPath("/app/components/ai-tasks-table.riot.js") %>'
+  import AiTaskModal from '<%= PublicPath("/app/components/ai-task-modal.riot.js") %>'
+  
+  riot.register('ai-tasks-table', AiTasksTable)
+  riot.register('ai-task-modal', AiTaskModal)
+  
+  const tasksTable = riot.mount('ai-tasks-table', {
+    db: "<%= Params['db'] %>"
+  })[0]
+
+  const taskModal = riot.mount('ai-task-modal', {
+    db: "<%= Params['db'] %>",
+    show: false,
+    onClose: () => {
+        taskModal.update({ show: false })
+    },
+    onSuccess: () => {
+        tasksTable.loadTasks()
+    }
+  })[0]
+
+  window.openTaskModal = () => {
+    taskModal.open()
+  }
+</script>

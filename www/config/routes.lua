@@ -1,5 +1,5 @@
 Routes = { ["GET"] = {
-    [""] = "welcome#index",
+    [""] = "landing#index",
     ["pdf"] = { ["@"] = "welcome#pdf" },
     ["chart"] = { ["@"] = "welcome#chart" },
     ["redis-incr"] = { ["@"] = "welcome#redis_incr" },
@@ -7,7 +7,7 @@ Routes = { ["GET"] = {
       ["@"] = "docs#index"
     },
     ["dashboard"] = {
-      ["@"] = "dashboard#index"
+      ["@"] = "welcome#index"
     },
     ["talks"] = {
       ["@"] = "talks#index"
@@ -63,6 +63,13 @@ CustomRoute("GET", "/database/:db/sharding", "dashboard#sharding")
 CustomRoute("GET", "/database/:db/monitoring", "dashboard#monitoring")
 CustomRoute("GET", "/database/:db/users", "dashboard#users")
 CustomRoute("GET", "/database/:db/env", "dashboard#env")
+
+-- AI Dashboard
+CustomRoute("GET", "/database/:db/ai-contributions", "dashboard#ai_contributions")
+CustomRoute("GET", "/database/:db/ai-tasks", "dashboard#ai_tasks")
+CustomRoute("POST", "/database/:db/ai/tasks", "dashboard#create_ai_task")
+CustomRoute("GET", "/database/:db/ai-agents", "dashboard#ai_agents")
+CustomRoute("POST", "/database/:db/ai/agents", "dashboard#create_ai_agent")
 
 -- docs pages
 CustomRoute("GET", "/slides", "docs#slides")

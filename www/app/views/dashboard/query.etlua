@@ -4,12 +4,30 @@
     <div class="flex-1 min-w-0">
       <h2
         class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400"
+        id="queryModeTitle"
       >
         SDBQL Query
       </h2>
-      <p class="mt-2 text-sm text-gray-400">
+      <p class="mt-2 text-sm text-gray-400" id="queryModeDescription">
         Execute SDBQL queries against your database
       </p>
+    </div>
+    <!-- SQL/SDBQL Toggle -->
+    <div class="mt-4 md:mt-0 flex items-center space-x-3 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+      <span class="text-sm text-gray-400" id="sdbqlLabel">SDBQL</span>
+      <button
+        id="queryModeToggle"
+        onclick="toggleQueryMode()"
+        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+        role="switch"
+        aria-checked="false"
+      >
+        <span
+          id="toggleKnob"
+          class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"
+        ></span>
+      </button>
+      <span class="text-sm text-gray-400" id="sqlLabel">SQL</span>
     </div>
   </div>
 
@@ -104,6 +122,21 @@
     </div>
     <div class="p-0">
       <div id="queryEditor" style="height: 300px; width: 100%; resize: vertical; overflow: hidden; min-height: 100px;"></div>
+    </div>
+    <!-- SDBQL Transcription Panel (visible in SQL mode) -->
+    <div id="sdbqlTranscriptionPanel" class="hidden border-t border-gray-600">
+      <div class="bg-gray-700/50 px-4 py-2 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <svg class="h-4 w-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <span class="text-xs font-medium text-gray-300">SDBQL Translation</span>
+        </div>
+        <div id="translationStatus" class="text-xs text-gray-500">Ready</div>
+      </div>
+      <div class="bg-gray-900/50 p-3 max-h-48 overflow-auto">
+        <pre id="sdbqlTranscription" class="text-sm font-mono text-green-400 whitespace-pre-wrap">-- SQL will be translated to SDBQL here</pre>
+      </div>
     </div>
   </div>
 
@@ -361,6 +394,9 @@
   import { registerSDBQLCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
 
   let db = "<%= Params['db'] %>";
+  let queryMode = 'sdbql'; // 'sdbql' or 'sql'
+  let translationTimeout = null;
+  
   function getUrl() {
     return `${getApiUrl()}/database/${db}`;
   }
@@ -428,6 +464,13 @@
           monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
           executeQuery
         );
+        
+        // Listen for content changes to trigger SQL translation
+        editor.onDidChangeModelContent(() => {
+          if (queryMode === 'sql') {
+            debounceTranslation();
+          }
+        });
       }, function (err) {
         console.error("Monaco Editor failed to load:", err);
         useFallbackEditor();
@@ -474,7 +517,7 @@
   }
 
   async function executeQuery() {
-    const query = editor.getValue().trim();
+    let query = editor.getValue().trim();
 
     if (!query) {
       showError("Please enter a query");
@@ -490,11 +533,35 @@
     try {
       // Save to history immediately
       saveQueryToHistory(query);
+      
+      let sdbqlQuery = query;
+      
+      // If in SQL mode, translate to SDBQL first
+      if (queryMode === 'sql') {
+        const translateResponse = await authenticatedFetch(`${getApiUrl()}/sql/translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: query }),
+        });
+        
+        if (!translateResponse.ok) {
+          const err = await translateResponse.json();
+          document.getElementById("loadingIndicator").classList.add("hidden");
+          showError("SQL Translation Error: " + (err.error || "Failed to translate SQL"));
+          return;
+        }
+        
+        const translated = await translateResponse.json();
+        sdbqlQuery = translated.sdbql;
+        
+        // Update transcription panel
+        document.getElementById("sdbqlTranscription").textContent = sdbqlQuery;
+      }
 
       const response = await authenticatedFetch(getUrl() + "/cursor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: sdbqlQuery }),
       });
 
       const endTime = performance.now();
@@ -1250,6 +1317,110 @@
   window.clearLastResult = clearLastResult;
   window.clearAllResults = clearAllResults;
   window.copyResults = copyResults;
+  
+  // SQL/SDBQL Mode Toggle Functions
+  function toggleQueryMode() {
+    queryMode = queryMode === 'sdbql' ? 'sql' : 'sdbql';
+    updateQueryModeUI();
+    
+    if (queryMode === 'sql') {
+      // Trigger initial translation
+      debounceTranslation();
+    }
+  }
+  
+  function updateQueryModeUI() {
+    const toggle = document.getElementById('queryModeToggle');
+    const knob = document.getElementById('toggleKnob');
+    const sdbqlLabel = document.getElementById('sdbqlLabel');
+    const sqlLabel = document.getElementById('sqlLabel');
+    const transcriptionPanel = document.getElementById('sdbqlTranscriptionPanel');
+    const title = document.getElementById('queryModeTitle');
+    const description = document.getElementById('queryModeDescription');
+    
+    if (queryMode === 'sql') {
+      toggle.classList.remove('bg-gray-600');
+      toggle.classList.add('bg-indigo-600');
+      knob.classList.remove('translate-x-0');
+      knob.classList.add('translate-x-5');
+      sdbqlLabel.classList.remove('text-white', 'font-medium');
+      sdbqlLabel.classList.add('text-gray-400');
+      sqlLabel.classList.remove('text-gray-400');
+      sqlLabel.classList.add('text-white', 'font-medium');
+      transcriptionPanel.classList.remove('hidden');
+      title.textContent = 'SQL Query';
+      description.textContent = 'Write SQL queries - automatically translated to SDBQL';
+    } else {
+      toggle.classList.remove('bg-indigo-600');
+      toggle.classList.add('bg-gray-600');
+      knob.classList.remove('translate-x-5');
+      knob.classList.add('translate-x-0');
+      sqlLabel.classList.remove('text-white', 'font-medium');
+      sqlLabel.classList.add('text-gray-400');
+      sdbqlLabel.classList.remove('text-gray-400');
+      sdbqlLabel.classList.add('text-white', 'font-medium');
+      transcriptionPanel.classList.add('hidden');
+      title.textContent = 'SDBQL Query';
+      description.textContent = 'Execute SDBQL queries against your database';
+    }
+  }
+  
+  function debounceTranslation() {
+    if (translationTimeout) {
+      clearTimeout(translationTimeout);
+    }
+    
+    document.getElementById('translationStatus').textContent = 'Translating...';
+    
+    translationTimeout = setTimeout(async () => {
+      await translateCurrentQuery();
+    }, 300);
+  }
+  
+  async function translateCurrentQuery() {
+    const query = editor.getValue().trim();
+    const transcriptionEl = document.getElementById('sdbqlTranscription');
+    const statusEl = document.getElementById('translationStatus');
+    
+    if (!query) {
+      transcriptionEl.textContent = '-- Enter SQL query above';
+      statusEl.textContent = 'Ready';
+      return;
+    }
+    
+    try {
+      const response = await authenticatedFetch(`${getApiUrl()}/sql/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: query }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        transcriptionEl.textContent = data.sdbql;
+        transcriptionEl.classList.remove('text-red-400');
+        transcriptionEl.classList.add('text-green-400');
+        statusEl.textContent = '✓ Valid SQL';
+        statusEl.classList.remove('text-red-400');
+        statusEl.classList.add('text-green-400');
+      } else {
+        const err = await response.json();
+        transcriptionEl.textContent = '-- Error: ' + (err.error || 'Invalid SQL syntax');
+        transcriptionEl.classList.remove('text-green-400');
+        transcriptionEl.classList.add('text-red-400');
+        statusEl.textContent = '✗ Invalid SQL';
+        statusEl.classList.remove('text-green-400');
+        statusEl.classList.add('text-red-400');
+      }
+    } catch (e) {
+      transcriptionEl.textContent = '-- Network error: ' + e.message;
+      transcriptionEl.classList.remove('text-green-400');
+      transcriptionEl.classList.add('text-red-400');
+      statusEl.textContent = '✗ Error';
+    }
+  }
+  
+  window.toggleQueryMode = toggleQueryMode;
 
   // Close history on ESC key
   document.addEventListener("keydown", (e) => {

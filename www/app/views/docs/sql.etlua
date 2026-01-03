@@ -1,0 +1,741 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("sql_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"
+        ></div>
+        <div class="relative">
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight"
+          >
+            SQL Compatibility Layer
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Write familiar SQL queries that are automatically translated to SDBQL. 
+            Perfect for developers transitioning from traditional databases.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-indigo-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB provides a SQL compatibility layer that translates standard SQL syntax into SDBQL. 
+              This allows you to use familiar SQL statements while leveraging SoliDB's document-oriented storage.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-bold mb-3 flex items-center">
+                  <span class="bg-green-500/20 text-green-400 p-1.5 rounded mr-2 text-xs">✓</span>
+                  Supported Statements
+                </h3>
+                <ul class="text-sm text-gray-400 space-y-1">
+                  <li>• SELECT with columns and *</li>
+                  <li>• INSERT INTO ... VALUES</li>
+                  <li>• UPDATE ... SET ... WHERE</li>
+                  <li>• DELETE FROM ... WHERE</li>
+                </ul>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-white font-bold mb-3 flex items-center">
+                  <span class="bg-blue-500/20 text-blue-400 p-1.5 rounded mr-2 text-xs">✓</span>
+                  Supported Clauses
+                </h3>
+                <ul class="text-sm text-gray-400 space-y-1">
+                  <li>• WHERE with conditions</li>
+                  <li>• ORDER BY (ASC/DESC)</li>
+                  <li>• LIMIT / OFFSET</li>
+                  <li>• GROUP BY / HAVING</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SELECT -->
+      <section id="select" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-blue-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                ></path>
+              </svg>
+              SELECT Queries
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <h3 class="text-lg font-semibold text-white">Basic SELECT</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT * FROM users</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  RETURN doc</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">Selecting Columns</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT name, age FROM users</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  RETURN { name: doc.name, age: doc.age }</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">WHERE Clause</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT * FROM users
+WHERE age > 18 AND status = 'active'</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.age > 18 AND doc.status == "active"
+  RETURN doc</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">ORDER BY, LIMIT, OFFSET</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT * FROM users
+ORDER BY name DESC
+LIMIT 10 OFFSET 20</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  SORT doc.name DESC
+  LIMIT 20, 10
+  RETURN doc</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JOIN -->
+      <section id="joins" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-teal-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-teal-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                ></path>
+              </svg>
+              JOIN Queries
+              <span class="ml-3 px-2 py-1 text-xs font-bold text-teal-400 bg-teal-500/20 rounded-full border border-teal-500/30">NEW</span>
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              Join tables together to combine related data. JOINs are translated to nested FOR loops in SDBQL.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5 text-center">
+                <code class="text-teal-400 text-sm">JOIN</code>
+                <p class="text-xs text-gray-400 mt-1">Inner Join</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5 text-center">
+                <code class="text-teal-400 text-sm">LEFT JOIN</code>
+                <p class="text-xs text-gray-400 mt-1">Left Outer Join</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5 text-center">
+                <code class="text-teal-400 text-sm">RIGHT JOIN</code>
+                <p class="text-xs text-gray-400 mt-1">Right Outer Join</p>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white">Basic JOIN</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT u.name, o.total 
+FROM users u 
+JOIN orders o ON o.user_id = u._key</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR u IN users
+  FOR o IN orders
+    FILTER o.user_id == u._key
+    RETURN { name: u.name, total: o.total }</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">JOIN with SELECT *</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT * FROM users 
+INNER JOIN orders ON orders.user_id = users._key</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FOR orders IN orders
+    FILTER orders.user_id == doc._key
+    RETURN MERGE(doc, orders)</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">Multiple JOINs</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT u.name, o.total, p.title
+FROM users u
+JOIN orders o ON o.user_id = u._key
+JOIN products p ON p._key = o.product_id</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR u IN users
+  FOR o IN orders
+    FILTER o.user_id == u._key
+    FOR p IN products
+      FILTER p._key == o.product_id
+      RETURN { name: u.name, total: o.total, title: p.title }</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">LEFT JOIN</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT u.name, o.total
+FROM users u
+LEFT JOIN orders o ON o.user_id = u._key</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR u IN users
+  FOR o IN orders
+    FILTER o.user_id == u._key
+    RETURN { name: u.name, total: o.total }</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8">RIGHT JOIN</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">SELECT o.total, p.name
+FROM orders o
+RIGHT JOIN products p ON p._key = o.product_id</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR o IN orders
+  FOR p IN products
+    FILTER p._key == o.product_id
+    RETURN { total: o.total, name: p.name }</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSERT -->
+      <section id="insert" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-emerald-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-emerald-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                ></path>
+              </svg>
+              INSERT Statements
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">INSERT INTO users (name, age, email)
+VALUES ('Alice', 30, 'alice@example.com')</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">INSERT { 
+  name: "Alice", 
+  age: 30, 
+  email: "alice@example.com" 
+} INTO users
+RETURN NEW</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- UPDATE -->
+      <section id="update" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-orange-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-orange-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                ></path>
+              </svg>
+              UPDATE Statements
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">UPDATE users 
+SET age = 31, status = 'verified'
+WHERE name = 'Alice'</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.name == "Alice"
+  UPDATE doc WITH { 
+    age: 31, 
+    status: "verified" 
+  } IN users
+  RETURN NEW</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DELETE -->
+      <section id="delete" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-red-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-red-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                ></path>
+              </svg>
+              DELETE Statements
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">DELETE FROM users WHERE age < 18</code></pre>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
+                <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
+                  <pre><code class="language-sql text-sm">FOR doc IN users
+  FILTER doc.age < 18
+  REMOVE doc IN users
+  RETURN OLD</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Operators -->
+      <section id="operators" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-purple-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                ></path>
+              </svg>
+              Supported Operators
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left border-b border-white/10">
+                    <th class="pb-3 text-gray-400 font-semibold">SQL Operator</th>
+                    <th class="pb-3 text-gray-400 font-semibold">SDBQL Equivalent</th>
+                    <th class="pb-3 text-gray-400 font-semibold">Example</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="py-3 text-white"><code>=</code></td>
+                    <td class="py-3 text-green-400"><code>==</code></td>
+                    <td class="py-3 text-gray-400"><code>name = 'Alice'</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>!=</code> / <code>&lt;&gt;</code></td>
+                    <td class="py-3 text-green-400"><code>!=</code></td>
+                    <td class="py-3 text-gray-400"><code>status != 'deleted'</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>LIKE</code></td>
+                    <td class="py-3 text-green-400"><code>LIKE</code></td>
+                    <td class="py-3 text-gray-400"><code>name LIKE 'A%'</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>IN (...)</code></td>
+                    <td class="py-3 text-green-400"><code>IN [...]</code></td>
+                    <td class="py-3 text-gray-400"><code>status IN ('active', 'pending')</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>BETWEEN</code></td>
+                    <td class="py-3 text-green-400"><code>&gt;= AND &lt;=</code></td>
+                    <td class="py-3 text-gray-400"><code>age BETWEEN 18 AND 65</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>IS NULL</code></td>
+                    <td class="py-3 text-green-400"><code>== null</code></td>
+                    <td class="py-3 text-gray-400"><code>email IS NULL</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>IS NOT NULL</code></td>
+                    <td class="py-3 text-green-400"><code>!= null</code></td>
+                    <td class="py-3 text-gray-400"><code>email IS NOT NULL</code></td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 text-white"><code>AND</code> / <code>OR</code></td>
+                    <td class="py-3 text-green-400"><code>AND</code> / <code>OR</code></td>
+                    <td class="py-3 text-gray-400"><code>age > 18 AND active = true</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- API -->
+      <section id="api" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-cyan-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-cyan-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                ></path>
+              </svg>
+              API Endpoints
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <!-- Execute SQL -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Execute SQL Query</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mb-4">
+                <code class="text-cyan-400">POST /_api/database/{db}/sql</code>
+              </div>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-json text-sm">{
+  "query": "SELECT * FROM users WHERE age > 18",
+  "bind_vars": {},
+  "dry_run": false
+}</code></pre>
+              </div>
+              <p class="text-sm text-gray-400 mt-3">
+                Set <code class="text-cyan-300">dry_run: true</code> to preview the SDBQL without executing.
+              </p>
+            </div>
+
+            <!-- Translate Only -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Translate SQL to SDBQL</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4 mb-4">
+                <code class="text-cyan-400">POST /_api/sql/translate</code>
+              </div>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-json text-sm">{
+  "query": "SELECT name, age FROM users ORDER BY name LIMIT 10"
+}</code></pre>
+              </div>
+              <p class="text-sm text-gray-400 mt-3">
+                Returns the translated SDBQL query without executing it.
+              </p>
+            </div>
+
+            <!-- cURL Example -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">Example: cURL</h3>
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-bash text-sm">curl -X POST http://localhost:7777/_api/database/mydb/sql \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT * FROM users WHERE age > 18 ORDER BY name LIMIT 10"
+  }'</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard Mode -->
+      <section id="dashboard" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-fuchsia-500/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-fuchsia-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                ></path>
+              </svg>
+              Dashboard SQL Mode
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              The Query page in the SoliDB dashboard supports both SDBQL and SQL modes. 
+              Use the toggle switch in the header to switch between modes.
+            </p>
+
+            <div class="bg-gray-800/50 rounded-xl p-6 border border-white/10">
+              <h3 class="text-white font-bold mb-4">How to Use SQL Mode</h3>
+              <ol class="text-gray-300 space-y-3 list-decimal list-inside">
+                <li>Navigate to <span class="text-cyan-400">Dashboard → Query</span></li>
+                <li>Toggle the switch from <span class="text-indigo-400">SDBQL</span> to <span class="text-indigo-400">SQL</span></li>
+                <li>Write your SQL query in the editor</li>
+                <li>Watch the live SDBQL translation appear below the editor</li>
+                <li>Click <span class="text-indigo-400">Run Query</span> to execute</li>
+              </ol>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div class="bg-green-900/20 rounded-xl p-5 border border-green-500/30">
+                <h4 class="text-green-400 font-bold mb-2 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  Live Translation
+                </h4>
+                <p class="text-sm text-gray-400">
+                  See your SQL translated to SDBQL in real-time as you type.
+                </p>
+              </div>
+              <div class="bg-blue-900/20 rounded-xl p-5 border border-blue-500/30">
+                <h4 class="text-blue-400 font-bold mb-2 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                  </svg>
+                  Validation
+                </h4>
+                <p class="text-sm text-gray-400">
+                  Status indicator shows whether your SQL syntax is valid.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  // Initialize syntax highlighting
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.hljs) {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+      });
+    }
+  });
+</script>

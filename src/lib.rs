@@ -9,9 +9,13 @@ pub mod sharding;
 pub mod queue;
 pub mod ttl;
 pub mod driver;
+pub mod sql;
 
 // Synchronization module (new architecture)
 pub mod sync;
+
+// AI-augmented database module
+pub mod ai;
 
 // Schema validation module
 pub use storage::schema::{CollectionSchema as JsonSchema, SchemaValidationMode, SchemaValidator, SchemaCompilationError, SchemaValidationError, ValidationViolation, ValidationResult};

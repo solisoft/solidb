@@ -276,17 +276,17 @@ var collectionModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr802="expr802" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr803="expr803" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Collection</h3></div><div class="p-6"><div expr804="expr804" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr806="expr806"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr807="expr807" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g., users, products"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><div class="grid grid-cols-2 gap-3"><button expr808="expr808" type="button" data-type="document"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Document\n              </button><button expr809="expr809" type="button" data-type="edge"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>\n                Edge\n              </button><button expr810="expr810" type="button" data-type="timeseries"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>\n                Time Series\n              </button><button expr811="expr811" type="button" data-type="blob"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Blob\n              </button><button expr812="expr812" type="button" data-type="columnar"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h4v14H4V6zm6 0h4v14h-4V6zm6 0h4v14h-4V6z"/></svg>\n                Columnar\n              </button></div><p expr813="expr813" class="mt-2 text-xs text-fuchsia-400"></p><p expr814="expr814" class="mt-2 text-xs text-amber-400"></p><p expr815="expr815" class="mt-2 text-xs text-cyan-400"></p><p expr816="expr816" class="mt-2 text-xs text-emerald-400"></p></div><div expr817="expr817" class="mb-6 border-t border-gray-700/50 pt-4"></div><div expr826="expr826" class="mb-6 border-t border-gray-700/50 pt-4"></div><div class="flex justify-end space-x-3 pt-2"><button expr832="expr832" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr833="expr833" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
-    redundantAttribute: 'expr802',
-    selector: '[expr802]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr964="expr964" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr965="expr965" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Collection</h3></div><div class="p-6"><div expr966="expr966" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr968="expr968"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Name</label><input expr969="expr969" type="text" ref="nameInput" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors" placeholder="e.g., users, products"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Collection Type</label><div class="grid grid-cols-2 gap-3"><button expr970="expr970" type="button" data-type="document"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Document\n              </button><button expr971="expr971" type="button" data-type="edge"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>\n                Edge\n              </button><button expr972="expr972" type="button" data-type="timeseries"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>\n                Time Series\n              </button><button expr973="expr973" type="button" data-type="blob"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>\n                Blob\n              </button><button expr974="expr974" type="button" data-type="columnar"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h4v14H4V6zm6 0h4v14h-4V6zm6 0h4v14h-4V6z"/></svg>\n                Columnar\n              </button></div><p expr975="expr975" class="mt-2 text-xs text-fuchsia-400"></p><p expr976="expr976" class="mt-2 text-xs text-amber-400"></p><p expr977="expr977" class="mt-2 text-xs text-cyan-400"></p><p expr978="expr978" class="mt-2 text-xs text-emerald-400"></p></div><div expr979="expr979" class="mb-6 border-t border-gray-700/50 pt-4"></div><div expr988="expr988" class="mb-6 border-t border-gray-700/50 pt-4"></div><div class="flex justify-end space-x-3 pt-2"><button expr994="expr994" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr995="expr995" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
+    redundantAttribute: 'expr964',
+    selector: '[expr964]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr803',
-    selector: '[expr803]',
+    redundantAttribute: 'expr965',
+    selector: '[expr965]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -295,11 +295,11 @@ var collectionModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr804',
-    selector: '[expr804]',
-    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr805="expr805" class="text-sm text-red-300"> </p></div>', [{
-      redundantAttribute: 'expr805',
-      selector: '[expr805]',
+    redundantAttribute: 'expr966',
+    selector: '[expr966]',
+    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr967="expr967" class="text-sm text-red-300"> </p></div>', [{
+      redundantAttribute: 'expr967',
+      selector: '[expr967]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -307,16 +307,16 @@ var collectionModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr806',
-    selector: '[expr806]',
+    redundantAttribute: 'expr968',
+    selector: '[expr968]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onsubmit',
       evaluate: _scope => _scope.handleSubmit
     }]
   }, {
-    redundantAttribute: 'expr807',
-    selector: '[expr807]',
+    redundantAttribute: 'expr969',
+    selector: '[expr969]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.name
@@ -326,8 +326,8 @@ var collectionModal = {
       evaluate: _scope => _scope.handleInput
     }]
   }, {
-    redundantAttribute: 'expr808',
-    selector: '[expr808]',
+    redundantAttribute: 'expr970',
+    selector: '[expr970]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -339,8 +339,8 @@ var collectionModal = {
       evaluate: _scope => 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 ' + (_scope.state.collectionType === 'document' ? 'border-indigo-500/50 bg-indigo-500/10 text-indigo-300 shadow-[0_0_10px_rgba(99,102,241,0.1)]' : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800')
     }]
   }, {
-    redundantAttribute: 'expr809',
-    selector: '[expr809]',
+    redundantAttribute: 'expr971',
+    selector: '[expr971]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -352,8 +352,8 @@ var collectionModal = {
       evaluate: _scope => 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 ' + (_scope.state.collectionType === 'edge' ? 'border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-300 shadow-[0_0_10px_rgba(217,70,239,0.1)]' : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800')
     }]
   }, {
-    redundantAttribute: 'expr810',
-    selector: '[expr810]',
+    redundantAttribute: 'expr972',
+    selector: '[expr972]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -365,8 +365,8 @@ var collectionModal = {
       evaluate: _scope => 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 ' + (_scope.state.collectionType === 'timeseries' ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800')
     }]
   }, {
-    redundantAttribute: 'expr811',
-    selector: '[expr811]',
+    redundantAttribute: 'expr973',
+    selector: '[expr973]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -378,8 +378,8 @@ var collectionModal = {
       evaluate: _scope => 'px-2 py-3 rounded-lg border text-xs sm:text-sm font-medium transition-all flex flex-col sm:flex-row items-center justify-center gap-2 ' + (_scope.state.collectionType === 'blob' ? 'border-amber-500/50 bg-amber-500/10 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800')
     }]
   }, {
-    redundantAttribute: 'expr812',
-    selector: '[expr812]',
+    redundantAttribute: 'expr974',
+    selector: '[expr974]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -393,35 +393,35 @@ var collectionModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType === 'edge',
-    redundantAttribute: 'expr813',
-    selector: '[expr813]',
+    redundantAttribute: 'expr975',
+    selector: '[expr975]',
     template: template('\n              Edge collections require _from and _to fields for graph relationships\n            ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType === 'blob',
-    redundantAttribute: 'expr814',
-    selector: '[expr814]',
+    redundantAttribute: 'expr976',
+    selector: '[expr976]',
     template: template('\n              Blob collections are optimized for file storage and automatically shard large files\n            ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType === 'timeseries',
-    redundantAttribute: 'expr815',
-    selector: '[expr815]',
+    redundantAttribute: 'expr977',
+    selector: '[expr977]',
     template: template('\n              Time series collections are append-only and optimized for high-speed writes and range pruning\n            ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType === 'columnar',
-    redundantAttribute: 'expr816',
-    selector: '[expr816]',
+    redundantAttribute: 'expr978',
+    selector: '[expr978]',
     template: template('\n              Columnar collections are optimized for analytics and aggregation queries with LZ4 compression\n            ', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType === 'columnar',
-    redundantAttribute: 'expr817',
-    selector: '[expr817]',
-    template: template('<div class="flex items-center justify-between mb-3"><label class="block text-sm font-medium text-gray-300">Column Definitions</label><button expr818="expr818" type="button" class="text-xs px-2 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">\n                + Add Column\n              </button></div><div class="space-y-2 max-h-48 overflow-y-auto"><div expr819="expr819" class="flex items-center gap-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700/50"></div></div><p expr824="expr824" class="text-xs text-gray-500 mt-2"></p><div class="mt-4"><label class="block text-xs font-medium text-gray-400 mb-1">Compression</label><select expr825="expr825" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"><option value="lz4">LZ4 (Recommended)</option><option value="none">None</option></select></div>', [{
-      redundantAttribute: 'expr818',
-      selector: '[expr818]',
+    redundantAttribute: 'expr979',
+    selector: '[expr979]',
+    template: template('<div class="flex items-center justify-between mb-3"><label class="block text-sm font-medium text-gray-300">Column Definitions</label><button expr980="expr980" type="button" class="text-xs px-2 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">\n                + Add Column\n              </button></div><div class="space-y-2 max-h-48 overflow-y-auto"><div expr981="expr981" class="flex items-center gap-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700/50"></div></div><p expr986="expr986" class="text-xs text-gray-500 mt-2"></p><div class="mt-4"><label class="block text-xs font-medium text-gray-400 mb-1">Compression</label><select expr987="expr987" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"><option value="lz4">LZ4 (Recommended)</option><option value="none">None</option></select></div>', [{
+      redundantAttribute: 'expr980',
+      selector: '[expr980]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -431,9 +431,9 @@ var collectionModal = {
       type: bindingTypes.EACH,
       getKey: _scope => _scope.i,
       condition: null,
-      template: template('<input expr820="expr820" type="text" placeholder="Column name" class="flex-1 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500"/><select expr821="expr821" class="px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500"><option value="String">String</option><option value="Int64">Int64</option><option value="Float64">Float64</option><option value="Bool">Bool</option><option value="Timestamp">Timestamp</option></select><label class="flex items-center gap-1 text-xs text-gray-400"><input expr822="expr822" type="checkbox" class="h-3 w-3 text-emerald-500 border-gray-600 rounded bg-gray-800"/>\n                  Null\n                </label><button expr823="expr823" type="button" class="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>', [{
-        redundantAttribute: 'expr820',
-        selector: '[expr820]',
+      template: template('<input expr982="expr982" type="text" placeholder="Column name" class="flex-1 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500"/><select expr983="expr983" class="px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-gray-100 text-xs focus:outline-none focus:border-emerald-500"><option value="String">String</option><option value="Int64">Int64</option><option value="Float64">Float64</option><option value="Bool">Bool</option><option value="Timestamp">Timestamp</option></select><label class="flex items-center gap-1 text-xs text-gray-400"><input expr984="expr984" type="checkbox" class="h-3 w-3 text-emerald-500 border-gray-600 rounded bg-gray-800"/>\n                  Null\n                </label><button expr985="expr985" type="button" class="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>', [{
+        redundantAttribute: 'expr982',
+        selector: '[expr982]',
         expressions: [{
           type: expressionTypes.VALUE,
           evaluate: _scope => _scope.col.name
@@ -443,8 +443,8 @@ var collectionModal = {
           evaluate: _scope => e => _scope.updateColumnName(_scope.i, e)
         }]
       }, {
-        redundantAttribute: 'expr821',
-        selector: '[expr821]',
+        redundantAttribute: 'expr983',
+        selector: '[expr983]',
         expressions: [{
           type: expressionTypes.VALUE,
           evaluate: _scope => _scope.col.data_type
@@ -454,8 +454,8 @@ var collectionModal = {
           evaluate: _scope => e => _scope.updateColumnType(_scope.i, e)
         }]
       }, {
-        redundantAttribute: 'expr822',
-        selector: '[expr822]',
+        redundantAttribute: 'expr984',
+        selector: '[expr984]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: true,
@@ -467,28 +467,28 @@ var collectionModal = {
           evaluate: _scope => e => _scope.updateColumnNullable(_scope.i, e)
         }]
       }, {
-        redundantAttribute: 'expr823',
-        selector: '[expr823]',
+        redundantAttribute: 'expr985',
+        selector: '[expr985]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.removeColumn(_scope.i)
         }]
       }]),
-      redundantAttribute: 'expr819',
-      selector: '[expr819]',
+      redundantAttribute: 'expr981',
+      selector: '[expr981]',
       itemName: 'col',
       indexName: 'i',
       evaluate: _scope => _scope.state.columns
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.columns.length === 0,
-      redundantAttribute: 'expr824',
-      selector: '[expr824]',
+      redundantAttribute: 'expr986',
+      selector: '[expr986]',
       template: template('\n              Add at least one column to create a columnar collection\n            ', [])
     }, {
-      redundantAttribute: 'expr825',
-      selector: '[expr825]',
+      redundantAttribute: 'expr987',
+      selector: '[expr987]',
       expressions: [{
         type: expressionTypes.VALUE,
         evaluate: _scope => _scope.state.compression
@@ -501,11 +501,11 @@ var collectionModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.collectionType !== 'columnar',
-    redundantAttribute: 'expr826',
-    selector: '[expr826]',
-    template: template('<div class="flex items-center mb-4"><input expr827="expr827" id="enableSharding" type="checkbox" class="h-4 w-4 text-indigo-500 focus:ring-indigo-500 border-gray-600 rounded bg-gray-800 transition-colors"/><label for="enableSharding" class="ml-2 block text-sm text-gray-300">\n                Enable Sharding & Replication\n              </label></div><div expr828="expr828" class="space-y-4 pl-6 border-l-2 border-gray-700/50"></div>', [{
-      redundantAttribute: 'expr827',
-      selector: '[expr827]',
+    redundantAttribute: 'expr988',
+    selector: '[expr988]',
+    template: template('<div class="flex items-center mb-4"><input expr989="expr989" id="enableSharding" type="checkbox" class="h-4 w-4 text-indigo-500 focus:ring-indigo-500 border-gray-600 rounded bg-gray-800 transition-colors"/><label for="enableSharding" class="ml-2 block text-sm text-gray-300">\n                Enable Sharding & Replication\n              </label></div><div expr990="expr990" class="space-y-4 pl-6 border-l-2 border-gray-700/50"></div>', [{
+      redundantAttribute: 'expr989',
+      selector: '[expr989]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: true,
@@ -519,11 +519,11 @@ var collectionModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.isSharded,
-      redundantAttribute: 'expr828',
-      selector: '[expr828]',
-      template: template('<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr829="expr829" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr830="expr830" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr831="expr831" type="text" placeholder="_key" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Field to distribute documents (default: _key)</p></div>', [{
-        redundantAttribute: 'expr829',
-        selector: '[expr829]',
+      redundantAttribute: 'expr990',
+      selector: '[expr990]',
+      template: template('<div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-medium text-gray-400 mb-1">Number of Shards</label><input expr991="expr991" type="number" min="1" max="1024" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Replication Factor</label><input expr992="expr992" type="number" min="1" max="5" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/></div></div><div><label class="block text-xs font-medium text-gray-400 mb-1">Shard Key</label><input expr993="expr993" type="text" placeholder="_key" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"/><p class="mt-1 text-xs text-gray-500">Field to distribute documents (default: _key)</p></div>', [{
+        redundantAttribute: 'expr991',
+        selector: '[expr991]',
         expressions: [{
           type: expressionTypes.VALUE,
           evaluate: _scope => _scope.state.numShards
@@ -533,8 +533,8 @@ var collectionModal = {
           evaluate: _scope => _scope.handleNumShards
         }]
       }, {
-        redundantAttribute: 'expr830',
-        selector: '[expr830]',
+        redundantAttribute: 'expr992',
+        selector: '[expr992]',
         expressions: [{
           type: expressionTypes.VALUE,
           evaluate: _scope => _scope.state.replicationFactor
@@ -544,8 +544,8 @@ var collectionModal = {
           evaluate: _scope => _scope.handleReplicationFactor
         }]
       }, {
-        redundantAttribute: 'expr831',
-        selector: '[expr831]',
+        redundantAttribute: 'expr993',
+        selector: '[expr993]',
         expressions: [{
           type: expressionTypes.VALUE,
           evaluate: _scope => _scope.state.shardKey
@@ -557,16 +557,16 @@ var collectionModal = {
       }])
     }])
   }, {
-    redundantAttribute: 'expr832',
-    selector: '[expr832]',
+    redundantAttribute: 'expr994',
+    selector: '[expr994]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleClose
     }]
   }, {
-    redundantAttribute: 'expr833',
-    selector: '[expr833]',
+    redundantAttribute: 'expr995',
+    selector: '[expr995]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
