@@ -13,6 +13,10 @@
           <span class="w-1.5 h-1.5 rounded-full bg-gray-600 mr-3 group-hover:bg-indigo-400 transition-colors"></span>
           Overview
         </a>
+        <a href="#solidb-repl" class="flex items-center px-4 py-2 text-sm text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 rounded-lg transition-colors group">
+          <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-3 group-hover:bg-yellow-400 transition-colors"></span>
+          solidb-repl
+        </a>
         <a href="#solidb-dump" class="flex items-center px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors group">
           <span class="w-1.5 h-1.5 rounded-full bg-gray-600 mr-3 group-hover:bg-indigo-400 transition-colors"></span>
           solidb-dump

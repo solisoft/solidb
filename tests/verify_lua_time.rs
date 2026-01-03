@@ -3,7 +3,7 @@
 //! Verifies `solidb.now()` and time handling in Lua.
 
 use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, ScriptStats};
+use solidb::scripting::{ScriptEngine, ScriptStats, ScriptUser};
 use tempfile::TempDir;
 use std::sync::Arc;
 
@@ -50,6 +50,7 @@ async fn test_lua_now() {
         body: None,
         params: std::collections::HashMap::new(),
         is_websocket: false,
+        user: ScriptUser::anonymous(),
     };
     
     let result = script_engine.execute(&script, "testdb", &context).await.unwrap();

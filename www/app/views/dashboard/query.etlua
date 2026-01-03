@@ -358,6 +358,7 @@
     getApiUrl,
     authenticatedFetch,
   } from '<%= PublicPath("/api-config.js") %>';
+  import { registerSDBQLCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
 
   let db = "<%= Params['db'] %>";
   function getUrl() {
@@ -389,6 +390,20 @@
             console.error("Failed to load history for initial value", e);
           }
 
+          // Register SDBQL completions with collection fetcher
+          registerSDBQLCompletions(monaco, async () => {
+            try {
+              const response = await authenticatedFetch(getUrl() + "/collection");
+              const data = await response.json();
+              const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs', '_env', '_migrations'];
+              return (data.collections || [])
+                .filter(c => !hiddenCollections.includes(c.name) && !c.name.startsWith('_'))
+                .map(c => c.name);
+            } catch (e) {
+              return [];
+            }
+          });
+
           editor = monaco.editor.create(document.getElementById("queryEditor"), {
             value: initialValue,
           language: "sql",
@@ -403,6 +418,9 @@
           cursorStyle: "line",
           wordWrap: "on",
           tabSize: 2,
+          suggestOnTriggerCharacters: true,
+          quickSuggestions: true,
+          fixedOverflowWidgets: true,
         });
 
         // Ctrl+Enter to execute

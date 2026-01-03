@@ -10,8 +10,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::handlers::AppState;
+use super::auth::Claims;
 use crate::error::DbError;
-use crate::scripting::{Script, ScriptContext, ScriptEngine};
+use crate::scripting::{Script, ScriptContext, ScriptEngine, ScriptUser};
 use crate::sync::{Operation, LogEntry};
 
 /// System collection for storing scripts
@@ -315,6 +316,7 @@ pub async fn get_script_stats_handler(
 /// Execute a Lua script based on the URL path
 pub async fn execute_script_handler(
     State(state): State<AppState>,
+    claims: Option<axum::Extension<Claims>>,
     ws_res: Result<axum::extract::ws::WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
     method: axum::http::Method,
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
@@ -359,6 +361,18 @@ pub async fn execute_script_handler(
         })
         .collect();
 
+    // Build ScriptUser from claims if authenticated
+    let user = match claims {
+        Some(axum::Extension(c)) => ScriptUser {
+            username: c.sub.clone(),
+            roles: c.roles.clone().unwrap_or_default(),
+            authenticated: true,
+            scoped_databases: c.scoped_databases.clone(),
+            exp: Some(c.exp as u64),
+        },
+        None => ScriptUser::anonymous(),
+    };
+
     let context = ScriptContext {
         method: method.to_string(),
         path: script_path.to_string(),
@@ -367,6 +381,7 @@ pub async fn execute_script_handler(
         headers: headers_map,
         body: body.map(|b| b.0),
         is_websocket: ws_res.is_ok() && headers.get("upgrade").and_then(|v| v.to_str().ok()).unwrap_or_default().to_lowercase() == "websocket",
+        user,
     };
 
     // Execute script

@@ -185,7 +185,7 @@
           let collections = data.collections || [];
 
           // Always hide internal collections (managed via other tabs)
-          const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs'];
+          const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs', '_env', '_migrations'];
           collections = collections.filter(c => !hiddenCollections.includes(c.name));
 
           if (this.props.db === '_system') {

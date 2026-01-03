@@ -176,6 +176,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 <script type="module">
   import { getApiUrl, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
+  import { registerLuaCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
 
   let db = "<%= Params['db'] %>";
   let editor;
@@ -204,6 +205,9 @@
           }
         } catch (e) {}
 
+        // Register SoliDB Lua completion provider
+        registerLuaCompletions(monaco);
+
         editor = monaco.editor.create(document.getElementById("luaEditor"), {
           value: initialValue,
           language: "lua",
@@ -217,6 +221,9 @@
           cursorStyle: "line",
           wordWrap: "on",
           tabSize: 2,
+          suggestOnTriggerCharacters: true,
+          quickSuggestions: true,
+          fixedOverflowWidgets: true,
         });
 
         // Ctrl+Enter to execute

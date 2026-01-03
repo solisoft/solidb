@@ -38,6 +38,15 @@
           >
             SDBQL Query
           </h3>
+          <button
+            onclick="showHistory()"
+            class="inline-flex items-center px-3 py-1.5 border border-gray-600 rounded-md text-xs font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
+          >
+            <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            History
+          </button>
         </div>
         <div class="p-4 flex-1 flex flex-col gap-4">
           <div
@@ -124,6 +133,39 @@
       </div>
     </div>
   </div>
+
+  <!-- History Modal -->
+  <div
+    id="historyModal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0"
+    role="dialog"
+    aria-modal="true"
+  >
+    <div class="fixed inset-0 transition-opacity duration-300" onclick="closeHistory()"></div>
+    <div
+      id="historyModalContent"
+      class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0"
+    >
+      <div class="flex-none border-b border-gray-700 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 bg-cyan-500/10 rounded-lg">
+              <svg class="h-5 w-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white">Live Query History</h3>
+          </div>
+          <button onclick="closeHistory()" class="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-700/50 rounded-lg">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="historyList" class="flex-1 overflow-y-auto w-full p-6 space-y-3 bg-transparent"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Monaco Editor Loader -->
@@ -131,6 +173,7 @@
 
 <script type="module">
   import { getAuthToken, getApiUrl, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
+  import { registerSDBQLCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
 
   const dbName = "<%= Params.db or '_system' %>";
   const toggleBtn = document.getElementById("toggle-btn");
@@ -143,6 +186,9 @@
   let ws = null;
   let isRunning = false;
 
+  const HISTORY_KEY = "solidb_livequery_history";
+  const MAX_HISTORY = 50;
+
   // Initialize Monaco Editor
   require.config({
     paths: {
@@ -152,8 +198,31 @@
 
   window.addEventListener("load", function () {
     require(["vs/editor/editor.main"], function () {
+      // Register SDBQL completions with collection fetcher
+      registerSDBQLCompletions(monaco, async () => {
+        try {
+          const response = await authenticatedFetch(`${getApiUrl()}/database/${dbName}/collection`);
+          const data = await response.json();
+          const hiddenCollections = ['_scripts', '_cron_jobs', '_jobs', '_env', '_migrations'];
+          return (data.collections || [])
+            .filter(c => !hiddenCollections.includes(c.name) && !c.name.startsWith('_'))
+            .map(c => c.name);
+        } catch (e) {
+          return [];
+        }
+      });
+
+      // Load initial value from history
+      let initialValue = "FOR doc IN users\n  SORT doc._id DESC\n  LIMIT 3\n  RETURN doc";
+      try {
+        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        if (history.length > 0) {
+          initialValue = history[0];
+        }
+      } catch (e) {}
+
       editor = monaco.editor.create(document.getElementById("query-editor"), {
-        value: "FOR doc IN users\n  SORT doc._id DESC\n  LIMIT 3\n  RETURN doc",
+        value: initialValue,
         language: "sql",
         theme: "vs-dark",
         automaticLayout: true,
@@ -166,6 +235,9 @@
         cursorStyle: "line",
         wordWrap: "on",
         tabSize: 2,
+        suggestOnTriggerCharacters: true,
+        quickSuggestions: true,
+        fixedOverflowWidgets: true,
       });
 
       resultsEditor = monaco.editor.create(document.getElementById("results-editor"), {
@@ -305,6 +377,9 @@
     const query = editor.getValue().trim();
     if (!query) return;
 
+    // Save to history
+    saveToHistory(query);
+
     isRunning = true;
     toggleBtn.innerHTML = `
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
@@ -370,6 +445,106 @@
   // Cleanup
   window.addEventListener("beforeunload", () => {
     if (ws) ws.close();
+  });
+
+  // --- History Functions ---
+
+  function saveToHistory(query) {
+    if (!query) return;
+    try {
+      let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      history = history.filter(q => q !== query);
+      history.unshift(query);
+      if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch (e) {}
+  }
+
+  function showHistory() {
+    const modal = document.getElementById("historyModal");
+    const modalContent = document.getElementById("historyModalContent");
+    renderHistoryList();
+    modal.classList.remove("hidden");
+    setTimeout(() => {
+      modal.classList.remove("opacity-0");
+      modalContent.classList.remove("scale-95", "opacity-0");
+      modalContent.classList.add("scale-100", "opacity-100");
+    }, 10);
+  }
+
+  function closeHistory() {
+    const modal = document.getElementById("historyModal");
+    const modalContent = document.getElementById("historyModalContent");
+    modal.classList.add("opacity-0");
+    modalContent.classList.remove("scale-100", "opacity-100");
+    modalContent.classList.add("scale-95", "opacity-0");
+    setTimeout(() => modal.classList.add("hidden"), 300);
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function renderHistoryList() {
+    const container = document.getElementById("historyList");
+    try {
+      let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (history.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-gray-500">No history yet</div>';
+        return;
+      }
+
+      container.innerHTML = history.map((query, index) => `
+        <div class="group relative rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 hover:border-cyan-500/50 transition-all cursor-pointer" onclick="loadFromHistory(${index})">
+          <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+            <span class="text-xs text-cyan-300 bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/20">Load</span>
+            <button onclick="removeFromHistory(event, ${index})" class="text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/30 transition-colors" title="Remove">
+              <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+          <pre class="p-3 text-sm font-mono text-gray-200 overflow-x-auto whitespace-pre-wrap">${escapeHtml(query.substring(0, 300))}${query.length > 300 ? '...' : ''}</pre>
+        </div>
+      `).join('');
+    } catch (e) {
+      container.innerHTML = '<div class="p-4 text-center text-red-400">Failed to load history</div>';
+    }
+  }
+
+  function loadFromHistory(index) {
+    try {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (history[index] && editor) {
+        editor.setValue(history[index]);
+      }
+      closeHistory();
+    } catch (e) {}
+  }
+
+  function removeFromHistory(event, index) {
+    event.stopPropagation();
+    try {
+      let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (index >= 0 && index < history.length) {
+        history.splice(index, 1);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        renderHistoryList();
+      }
+    } catch (e) {}
+  }
+
+  // Expose functions to global scope
+  window.showHistory = showHistory;
+  window.closeHistory = closeHistory;
+  window.loadFromHistory = loadFromHistory;
+  window.removeFromHistory = removeFromHistory;
+
+  // ESC to close modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeHistory();
   });
 </script>
 
