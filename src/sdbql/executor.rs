@@ -49,6 +49,35 @@ fn parse_datetime(value: &Value) -> DbResult<chrono::DateTime<Utc>> {
 /// Execution context holding variable bindings
 type Context = HashMap<String, Value>;
 
+/// Statistics about mutation operations performed during query execution
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MutationStats {
+    pub documents_inserted: usize,
+    pub documents_updated: usize,
+    pub documents_removed: usize,
+}
+
+impl MutationStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn total(&self) -> usize {
+        self.documents_inserted + self.documents_updated + self.documents_removed
+    }
+
+    pub fn has_mutations(&self) -> bool {
+        self.total() > 0
+    }
+}
+
+/// Result of query execution including results and mutation statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryExecutionResult {
+    pub results: Vec<Value>,
+    pub mutations: MutationStats,
+}
+
 /// Bind variables for parameterized queries (prevents SDBQL injection)
 pub type BindVars = HashMap<String, Value>;
 
@@ -237,13 +266,13 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Try to execute a streaming bulk INSERT optimization
-    /// Returns Some(results) if the pattern matches, None otherwise
+    /// Returns Some((results, insert_count)) if the pattern matches, None otherwise
     /// Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
     fn try_streaming_bulk_insert(
         &self,
         query: &Query,
         initial_bindings: &Context,
-    ) -> DbResult<Option<Vec<Value>>> {
+    ) -> DbResult<Option<(Vec<Value>, usize)>> {
         // Check pattern: exactly 2 body clauses (FOR + INSERT), no sort/limit/filter
         if query.body_clauses.len() != 2
             || query.sort_clause.is_some()
@@ -381,7 +410,7 @@ impl<'a> QueryExecutor<'a> {
         // Final flush to ensure count is persisted
         collection.flush_stats();
 
-        Ok(Some(all_results))
+        Ok(Some((all_results, total_count as usize)))
     }
 
     /// Log a mutation to the replication service
@@ -474,7 +503,14 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// Execute query and return results only (backwards compatible)
     pub fn execute(&self, query: &Query) -> DbResult<Vec<Value>> {
+        let result = self.execute_with_stats(query)?;
+        Ok(result.results)
+    }
+
+    /// Execute query and return full results with mutation statistics
+    pub fn execute_with_stats(&self, query: &Query) -> DbResult<QueryExecutionResult> {
         // First, evaluate initial LET clauses (before any FOR) to create initial bindings
         let mut initial_bindings: Context = HashMap::new();
 
@@ -492,8 +528,15 @@ impl<'a> QueryExecutor<'a> {
         // Optimization: Streaming bulk INSERT for range-based FOR loops
         // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
         // This avoids materializing millions of row contexts in memory
-        if let Some(result) = self.try_streaming_bulk_insert(query, &initial_bindings)? {
-            return Ok(result);
+        if let Some((results, insert_count)) = self.try_streaming_bulk_insert(query, &initial_bindings)? {
+            return Ok(QueryExecutionResult {
+                results,
+                mutations: MutationStats {
+                    documents_inserted: insert_count,
+                    documents_updated: 0,
+                    documents_removed: 0,
+                },
+            });
         }
 
         // Optimization: Use index for SORT + LIMIT if available
@@ -529,7 +572,7 @@ impl<'a> QueryExecutor<'a> {
                                         let end = (start + limit_count).min(docs.len());
                                         let docs = &docs[start..end];
 
-                                        if let Some(ref return_clause) = query.return_clause {
+                                        let results = if let Some(ref return_clause) = query.return_clause {
                                             let results: DbResult<Vec<Value>> = docs
                                                 .iter()
                                                 .map(|doc| {
@@ -544,11 +587,16 @@ impl<'a> QueryExecutor<'a> {
                                                     )
                                                 })
                                                 .collect();
-                                            return results;
+                                            results?
                                         } else {
                                             // No RETURN clause - return empty array
-                                            return Ok(vec![]);
-                                        }
+                                            vec![]
+                                        };
+                                        // Index-sorted optimization is read-only, no mutations
+                                        return Ok(QueryExecutionResult {
+                                            results,
+                                            mutations: MutationStats::new(),
+                                        });
                                     }
                                 }
                             }
@@ -588,7 +636,7 @@ impl<'a> QueryExecutor<'a> {
 
         // Process body_clauses in order (supports correlated subqueries)
         // If body_clauses is empty, fall back to legacy behavior
-        let rows = if !query.body_clauses.is_empty() {
+        let (rows, mutation_stats) = if !query.body_clauses.is_empty() {
             self.execute_body_clauses(&query.body_clauses, &initial_bindings, scan_limit)?
         } else {
             // Legacy path: use for_clauses and filter_clauses separately
@@ -600,7 +648,7 @@ impl<'a> QueryExecutor<'a> {
                         .unwrap_or(false)
                 });
             }
-            rows
+            (rows, MutationStats::new())
         };
 
         let mut rows = rows;
@@ -642,27 +690,34 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Apply RETURN projection (if present)
-        if let Some(ref return_clause) = query.return_clause {
+        let results = if let Some(ref return_clause) = query.return_clause {
             let results: DbResult<Vec<Value>> = rows
                 .iter()
                 .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
                 .collect();
-            results
+            results?
         } else {
             // No RETURN clause - return empty array (mutations don't need to return anything)
-            Ok(vec![])
-        }
+            vec![]
+        };
+
+        Ok(QueryExecutionResult {
+            results,
+            mutations: mutation_stats,
+        })
     }
 
     /// Execute body clauses in order, supporting correlated subqueries
     /// LET clauses inside FOR loops are evaluated per-row with access to outer variables
+    /// Returns (row_contexts, mutation_stats) - mutation stats track INSERT/UPDATE/REMOVE counts
     fn execute_body_clauses(
         &self,
         clauses: &[BodyClause],
         initial_ctx: &Context,
         scan_limit: Option<usize>,
-    ) -> DbResult<Vec<Context>> {
+    ) -> DbResult<(Vec<Context>, MutationStats)> {
         let mut rows: Vec<Context> = vec![initial_ctx.clone()];
+        let mut stats = MutationStats::new();
 
         // Optimization: Check if we can use index for FOR + FILTER pattern
         // Pattern: FOR var IN collection, followed by FILTER on var.field == value
@@ -808,7 +863,8 @@ impl<'a> QueryExecutor<'a> {
                              // Wait for batch result
                              let result = rx.recv().map_err(|_| DbError::InternalError("Sharded batch insert failed".to_string()))??;
                              tracing::debug!("INSERT: Sharded batch completed - {} success, {} failed", result.0, result.1);
-                             
+                             stats.documents_inserted += result.0;
+
                              i += 1; // CRITICAL: Advance to next clause before continuing
                              continue; // Skip standard insert logic
                         }
@@ -841,6 +897,7 @@ impl<'a> QueryExecutor<'a> {
                         let insert_start = std::time::Instant::now();
                         let inserted_docs = collection.insert_batch(documents)?;
                         let insert_time = insert_start.elapsed();
+                        stats.documents_inserted += inserted_docs.len();
                         tracing::debug!(
                             "INSERT: Batch insert of {} docs took {:?}",
                             inserted_docs.len(),
@@ -878,6 +935,7 @@ impl<'a> QueryExecutor<'a> {
                     } else {
                         // Small inserts - use normal path with indexes
                         let insert_start = std::time::Instant::now();
+                        let insert_count = rows.len();
                         for ctx in &rows {
                             let doc_value =
                                 self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
@@ -890,6 +948,7 @@ impl<'a> QueryExecutor<'a> {
                                 Some(&doc.to_value()),
                             );
                         }
+                        stats.documents_inserted += insert_count;
                         let insert_time = insert_start.elapsed();
                         tracing::debug!(
                             "INSERT: {} docs with indexes took {:?}",
@@ -935,7 +994,8 @@ impl<'a> QueryExecutor<'a> {
                                       let _ = tx.send(res);
                                 });
                                 let updated_doc = rx.recv().map_err(|_| DbError::InternalError("Sharded update task failed".to_string()))??;
-                                
+                                stats.documents_updated += 1;
+
                                 // Inject NEW variable
                                 ctx.insert("NEW".to_string(), updated_doc.clone());
                              }
@@ -979,7 +1039,8 @@ impl<'a> QueryExecutor<'a> {
 
                         // Update the document (collection.update handles merging internally)
                         let doc = collection.update(&key, changes_value)?;
-                        
+                        stats.documents_updated += 1;
+
                         // Log to replication
                         self.log_mutation(
                             &update_clause.collection,
@@ -1026,6 +1087,7 @@ impl<'a> QueryExecutor<'a> {
                                       let _ = tx.send(res);
                                 });
                                 let _ = rx.recv().map_err(|_| DbError::InternalError("Sharded remove task failed".to_string()))??;
+                                stats.documents_removed += 1;
                              }
                              i += 1; // CRITICAL: Advance to next clause
                              continue;
@@ -1056,6 +1118,7 @@ impl<'a> QueryExecutor<'a> {
 
                         // Delete the document
                         collection.delete(&key)?;
+                        stats.documents_removed += 1;
                         // Log to replication
                         self.log_mutation(&remove_clause.collection, Operation::Delete, &key, None);
                     }
@@ -1088,9 +1151,10 @@ impl<'a> QueryExecutor<'a> {
                             if !update_value.is_object() {
                                 return Err(DbError::ExecutionError("UPSERT: update expression must be an object".to_string()));
                             }
-                            
+
                             let doc = collection.update(&key, update_value)?;
-                            
+                            stats.documents_updated += 1;
+
                             self.log_mutation(
                                 &upsert_clause.collection,
                                 Operation::Update,
@@ -1098,12 +1162,13 @@ impl<'a> QueryExecutor<'a> {
                                 Some(&doc.to_value()),
                             );
                             ctx.insert("NEW".to_string(), doc.to_value());
-                             
+
                         } else {
                              // Insert
                             let insert_value = self.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
                             let doc = collection.insert(insert_value)?;
-                            
+                            stats.documents_inserted += 1;
+
                             self.log_mutation(
                                 &upsert_clause.collection,
                                 Operation::Insert,
@@ -1357,7 +1422,7 @@ impl<'a> QueryExecutor<'a> {
             i += 1;
         }
 
-        Ok(rows)
+        Ok((rows, stats))
     }
 
     /// Compute aggregate function over group of rows
@@ -1794,7 +1859,8 @@ impl<'a> QueryExecutor<'a> {
         let mut rows = if !query.body_clauses.is_empty() {
             // Use optimized path with index support
             // Don't pass scan_limit to explain - we want to see full execution
-            self.execute_body_clauses(&query.body_clauses, &let_bindings, None)?
+            let (r, _) = self.execute_body_clauses(&query.body_clauses, &let_bindings, None)?;
+            r
         } else {
             // Legacy path for old queries
             self.build_row_combinations_with_context(&query.for_clauses, &let_bindings)?
@@ -2310,7 +2376,8 @@ impl<'a> QueryExecutor<'a> {
 
         // Process body_clauses in order
         let rows = if !query.body_clauses.is_empty() {
-            self.execute_body_clauses(&query.body_clauses, &initial_bindings, None)?
+            let (r, _) = self.execute_body_clauses(&query.body_clauses, &initial_bindings, None)?;
+            r
         } else {
             let mut rows =
                 self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;

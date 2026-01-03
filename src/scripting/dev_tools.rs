@@ -8,7 +8,7 @@ use std::time::Instant;
 /// Create solidb.debug(data) -> string
 /// Enhanced debugging that pretty-prints any value with type info
 pub fn create_debug_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, value: LuaValue| {
+    lua.create_function(|_lua, value: LuaValue| {
         let output = format_value(&value, 0);
 
         // Log to tracing as well
@@ -219,7 +219,7 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
 
         // mock:update(key, doc)
         let data_update = data.clone();
-        let update_fn = lua.create_function(move |lua, (_self, key, updates): (Table, String, Table)| {
+        let update_fn = lua.create_function(move |_lua, (_self, key, updates): (Table, String, Table)| {
             let existing: Option<Table> = data_update.get(key.clone()).ok();
             if let Some(doc) = existing {
                 for pair in updates.pairs::<String, LuaValue>() {

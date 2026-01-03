@@ -17,6 +17,7 @@ pub fn create_error_function(lua: &Lua) -> LuaResult<Function> {
 }
 
 /// Create solidb.assert(condition, message) -> boolean or error function
+#[allow(dead_code)]
 pub fn create_assert_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(move |_, (condition, message): (bool, String)| {
         if !condition {

@@ -4,5 +4,5 @@ pub mod lexer;
 pub mod parser;
 
 pub use ast::*;
-pub use executor::{BindVars, QueryExecutor, QueryExplain};
+pub use executor::{BindVars, MutationStats, QueryExecutionResult, QueryExecutor, QueryExplain};
 pub use parser::parse;

@@ -128,17 +128,17 @@ var envManager = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700 p-6"><div class="mb-8 p-4 bg-gray-750/50 rounded-lg border border-gray-700"><h3 class="text-lg font-medium text-gray-200 mb-4">Add / Update Variable</h3><form expr417="expr417" class="flex gap-4 items-end"><div class="flex-1"><label class="block text-sm font-medium text-gray-400 mb-1">Key</label><input expr418="expr418" type="text" id="env-key" required placeholder="API_KEY" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"/></div><div class="flex-2 w-full"><label class="block text-sm font-medium text-gray-400 mb-1">Value</label><input expr419="expr419" type="text" id="env-value" required placeholder="secret_value_123" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"/></div><button expr420="expr420" type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"> </button></form></div><div expr421="expr421" class="flex justify-center items-center py-12"></div><div expr422="expr422" class="text-center py-6 bg-red-900/20 rounded-lg border border-red-500/30 mb-6"></div><div expr425="expr425" class="text-center py-12"></div><div expr426="expr426" class="overflow-x-auto"></div><div class="mt-6 p-4 bg-gray-900/50 rounded-md border border-gray-700/50"><h4 class="text-sm font-medium text-gray-300 mb-2">Usage in Lua Scripts</h4><p class="text-xs text-gray-400 font-mono bg-gray-800 p-2 rounded border border-gray-700">\n                local api_key = solidb.env.API_KEY\n            </p></div></div>', [{
-    redundantAttribute: 'expr417',
-    selector: '[expr417]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700 p-6"><div class="mb-8 p-4 bg-gray-750/50 rounded-lg border border-gray-700"><h3 class="text-lg font-medium text-gray-200 mb-4">Add / Update Variable</h3><form expr433="expr433" class="flex gap-4 items-end"><div class="flex-1"><label class="block text-sm font-medium text-gray-400 mb-1">Key</label><input expr434="expr434" type="text" id="env-key" required placeholder="API_KEY" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"/></div><div class="flex-2 w-full"><label class="block text-sm font-medium text-gray-400 mb-1">Value</label><input expr435="expr435" type="text" id="env-value" required placeholder="secret_value_123" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"/></div><button expr436="expr436" type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"> </button></form></div><div expr437="expr437" class="flex justify-center items-center py-12"></div><div expr438="expr438" class="text-center py-6 bg-red-900/20 rounded-lg border border-red-500/30 mb-6"></div><div expr441="expr441" class="text-center py-12"></div><div expr442="expr442" class="overflow-x-auto"></div><div class="mt-6 p-4 bg-gray-900/50 rounded-md border border-gray-700/50"><h4 class="text-sm font-medium text-gray-300 mb-2">Usage in Lua Scripts</h4><p class="text-xs text-gray-400 font-mono bg-gray-800 p-2 rounded border border-gray-700">\n                local api_key = solidb.env.API_KEY\n            </p></div></div>', [{
+    redundantAttribute: 'expr433',
+    selector: '[expr433]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onsubmit',
       evaluate: _scope => _scope.saveVariable
     }]
   }, {
-    redundantAttribute: 'expr418',
-    selector: '[expr418]',
+    redundantAttribute: 'expr434',
+    selector: '[expr434]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -148,8 +148,8 @@ var envManager = {
       evaluate: _scope => _scope.state.newKey
     }]
   }, {
-    redundantAttribute: 'expr419',
-    selector: '[expr419]',
+    redundantAttribute: 'expr435',
+    selector: '[expr435]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'oninput',
@@ -159,8 +159,8 @@ var envManager = {
       evaluate: _scope => _scope.state.newValue
     }]
   }, {
-    redundantAttribute: 'expr420',
-    selector: '[expr420]',
+    redundantAttribute: 'expr436',
+    selector: '[expr436]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,
@@ -174,25 +174,25 @@ var envManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.loading,
-    redundantAttribute: 'expr421',
-    selector: '[expr421]',
+    redundantAttribute: 'expr437',
+    selector: '[expr437]',
     template: template('<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div><span class="ml-3 text-gray-400">Loading variables...</span>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr422',
-    selector: '[expr422]',
-    template: template('<p expr423="expr423" class="text-red-400"> </p><button expr424="expr424" class="mt-2 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
-      redundantAttribute: 'expr423',
-      selector: '[expr423]',
+    redundantAttribute: 'expr438',
+    selector: '[expr438]',
+    template: template('<p expr439="expr439" class="text-red-400"> </p><button expr440="expr440" class="mt-2 text-indigo-400 hover:text-indigo-300">Retry</button>', [{
+      redundantAttribute: 'expr439',
+      selector: '[expr439]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
         evaluate: _scope => ['Error: ', _scope.state.error].join('')
       }]
     }, {
-      redundantAttribute: 'expr424',
-      selector: '[expr424]',
+      redundantAttribute: 'expr440',
+      selector: '[expr440]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',
@@ -202,21 +202,21 @@ var envManager = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.variables.length === 0,
-    redundantAttribute: 'expr425',
-    selector: '[expr425]',
+    redundantAttribute: 'expr441',
+    selector: '[expr441]',
     template: template('<svg class="mx-auto h-12 w-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg><h3 class="mt-2 text-sm font-medium text-gray-300">No environment variables</h3><p class="mt-1 text-sm text-gray-500">Add variables to use them in your Lua scripts.</p>', [])
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.state.loading && !_scope.state.error && _scope.state.variables.length > 0,
-    redundantAttribute: 'expr426',
-    selector: '[expr426]',
-    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-750"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">\n                            Key</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Value\n                        </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n                            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr427="expr427" class="hover:bg-gray-750 transition-colors group"></tr></tbody></table>', [{
+    redundantAttribute: 'expr442',
+    selector: '[expr442]',
+    template: template('<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-750"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">\n                            Key</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Value\n                        </th><th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider w-32">\n                            Actions</th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr443="expr443" class="hover:bg-gray-750 transition-colors group"></tr></tbody></table>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<td expr428="expr428" class="px-6 py-4 whitespace-nowrap text-sm font-mono text-indigo-400 font-medium"> </td><td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-300"><span expr429="expr429"></span><span expr430="expr430" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end space-x-3"><button expr431="expr431" class="text-gray-500 hover:text-indigo-400 transition-colors focus:outline-none"><svg expr432="expr432" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr433="expr433" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg></button><button expr434="expr434" title="Copy Value" class="text-gray-500 hover:text-green-400 transition-colors focus:outline-none"><svg expr435="expr435" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr436="expr436" class="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg></button><button expr437="expr437" title="Delete Variable" class="text-gray-500 hover:text-red-400 transition-colors focus:outline-none"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
-        redundantAttribute: 'expr428',
-        selector: '[expr428]',
+      template: template('<td expr444="expr444" class="px-6 py-4 whitespace-nowrap text-sm font-mono text-indigo-400 font-medium"> </td><td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-300"><span expr445="expr445"></span><span expr446="expr446" class="text-gray-500"></span></td><td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end space-x-3"><button expr447="expr447" class="text-gray-500 hover:text-indigo-400 transition-colors focus:outline-none"><svg expr448="expr448" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr449="expr449" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg></button><button expr450="expr450" title="Copy Value" class="text-gray-500 hover:text-green-400 transition-colors focus:outline-none"><svg expr451="expr451" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg><svg expr452="expr452" class="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"></svg></button><button expr453="expr453" title="Delete Variable" class="text-gray-500 hover:text-red-400 transition-colors focus:outline-none"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>', [{
+        redundantAttribute: 'expr444',
+        selector: '[expr444]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
@@ -225,8 +225,8 @@ var envManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.v.visible,
-        redundantAttribute: 'expr429',
-        selector: '[expr429]',
+        redundantAttribute: 'expr445',
+        selector: '[expr445]',
         template: template(' ', [{
           expressions: [{
             type: expressionTypes.TEXT,
@@ -237,12 +237,12 @@ var envManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.v.visible,
-        redundantAttribute: 'expr430',
-        selector: '[expr430]',
+        redundantAttribute: 'expr446',
+        selector: '[expr446]',
         template: template('••••••••••••••••', [])
       }, {
-        redundantAttribute: 'expr431',
-        selector: '[expr431]',
+        redundantAttribute: 'expr447',
+        selector: '[expr447]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -256,18 +256,18 @@ var envManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.v.visible,
-        redundantAttribute: 'expr432',
-        selector: '[expr432]',
+        redundantAttribute: 'expr448',
+        selector: '[expr448]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.v.visible,
-        redundantAttribute: 'expr433',
-        selector: '[expr433]',
+        redundantAttribute: 'expr449',
+        selector: '[expr449]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>', [])
       }, {
-        redundantAttribute: 'expr434',
-        selector: '[expr434]',
+        redundantAttribute: 'expr450',
+        selector: '[expr450]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
@@ -276,26 +276,26 @@ var envManager = {
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => !_scope.v.copied,
-        redundantAttribute: 'expr435',
-        selector: '[expr435]',
+        redundantAttribute: 'expr451',
+        selector: '[expr451]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>', [])
       }, {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.v.copied,
-        redundantAttribute: 'expr436',
-        selector: '[expr436]',
+        redundantAttribute: 'expr452',
+        selector: '[expr452]',
         template: template('<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>', [])
       }, {
-        redundantAttribute: 'expr437',
-        selector: '[expr437]',
+        redundantAttribute: 'expr453',
+        selector: '[expr453]',
         expressions: [{
           type: expressionTypes.EVENT,
           name: 'onclick',
           evaluate: _scope => () => _scope.deleteVariable(_scope.v.key)
         }]
       }]),
-      redundantAttribute: 'expr427',
-      selector: '[expr427]',
+      redundantAttribute: 'expr443',
+      selector: '[expr443]',
       itemName: 'v',
       indexName: null,
       evaluate: _scope => _scope.state.variables

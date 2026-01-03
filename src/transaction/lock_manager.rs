@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use crate::error::{DbError, DbResult};
 use super::TransactionId;
 

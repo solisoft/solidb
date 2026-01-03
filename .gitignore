@@ -4,3 +4,4 @@
 *.log
 www/deploy.sh
 tmp
+node_modules

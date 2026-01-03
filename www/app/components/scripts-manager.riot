@@ -185,10 +185,10 @@
 
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-2">Lua Code</label>
-                    <div id="ace-editor" class="h-96 w-full rounded-md border border-gray-600"></div>
+                    <div id="monaco-editor" class="h-96 w-full rounded-md border border-gray-600 overflow-hidden"></div>
                     <p class="mt-2 text-sm text-gray-500">Global objects: <code class="text-indigo-400">db</code>, <code
                             class="text-indigo-400">solidb</code>,
-                        <code class="text-indigo-400">request</code>
+                        <code class="text-indigo-400">request</code>, <code class="text-indigo-400">crypto</code>, <code class="text-indigo-400">time</code>
                     </p>
                 </div>
 
@@ -421,25 +421,38 @@
             initEditor() {
                 // Give time for DOM to render the editor div
                 setTimeout(() => {
-                    if (!this.editor) {
-                        this.editor = ace.edit("ace-editor");
-                        this.editor.setTheme("ace/theme/tomorrow_night");
-                        this.editor.session.setMode("ace/mode/lua");
-                        this.editor.setOptions({
-                            fontSize: "14px",
-                            showPrintMargin: false,
-                            showGutter: true,
-                            highlightActiveLine: true,
-                            wrap: true
-                        });
+                    const container = document.getElementById("monaco-editor");
+                    if (!container) return;
 
-                        // Update state on change
-                        this.editor.session.on('change', () => {
-                            this.state.currentScript.code = this.editor.getValue();
-                        });
+                    // Dispose old editor if exists
+                    if (this.editor) {
+                        this.editor.dispose();
+                        this.editor = null;
                     }
 
-                    this.editor.setValue(this.state.currentScript.code, -1);
+                    // Create Monaco editor
+                    this.editor = window.monaco.editor.create(container, {
+                        value: this.state.currentScript.code,
+                        language: "lua",
+                        theme: "vs-dark",
+                        automaticLayout: true,
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        lineNumbers: "on",
+                        roundedSelection: true,
+                        scrollBeyondLastLine: false,
+                        cursorStyle: "line",
+                        wordWrap: "on",
+                        tabSize: 2,
+                        suggestOnTriggerCharacters: true,
+                        quickSuggestions: true,
+                        fixedOverflowWidgets: true,
+                    });
+
+                    // Update state on change
+                    this.editor.onDidChangeModelContent(() => {
+                        this.state.currentScript.code = this.editor.getValue();
+                    });
                 }, 50);
             },
 
@@ -466,7 +479,7 @@
             cancel() {
                 this.update({ view: 'list', currentScript: null });
                 if (this.editor) {
-                    this.editor.destroy();
+                    this.editor.dispose();
                     this.editor = null;
                 }
             },

@@ -2,12 +2,10 @@ use axum::{
     extract::{Path, State},
     Json,
     response::IntoResponse,
-    http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use crate::error::DbError;
 use crate::server::handlers;
-use crate::storage::{Collection, Document};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EnvVarValue {

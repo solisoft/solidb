@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::DbError;
-use crate::storage::{StorageEngine, Collection, Document, Database};
+use crate::storage::StorageEngine;
 use crate::sdbql::{parse, QueryExecutor};
 use futures::{SinkExt, StreamExt};
 

@@ -777,6 +777,17 @@ pub struct ExecuteQueryResponse {
     pub cached: bool,
     #[serde(rename = "executionTimeMs")]
     pub execution_time_ms: f64,
+    // Mutation statistics
+    #[serde(rename = "documentsInserted", skip_serializing_if = "is_zero")]
+    pub documents_inserted: usize,
+    #[serde(rename = "documentsUpdated", skip_serializing_if = "is_zero")]
+    pub documents_updated: usize,
+    #[serde(rename = "documentsRemoved", skip_serializing_if = "is_zero")]
+    pub documents_removed: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Serialize)]
@@ -3668,6 +3679,9 @@ pub async fn execute_query(
                 id: None,
                 cached: false,
                 execution_time_ms: 0.0,
+                documents_inserted: 0,
+                documents_updated: 0,
+                documents_removed: 0,
             }, &headers));
         }
 
@@ -3837,6 +3851,9 @@ pub async fn execute_query(
             id: None,
             cached: false,
             execution_time_ms: 0.0,
+            documents_inserted: 0, // Transactional mutations are not counted until commit
+            documents_updated: 0,
+            documents_removed: 0,
         }, &headers));
     }
 
@@ -3846,7 +3863,7 @@ pub async fn execute_query(
 
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
-    let (result, execution_time_ms) = if is_long_running_query(&query) {
+    let (query_result, execution_time_ms) = if is_long_running_query(&query) {
         let storage = state.storage.clone();
         let bind_vars = req.bind_vars.clone();
         let replication_log = state.replication_log.clone();
@@ -3876,7 +3893,7 @@ pub async fn execute_query(
                 }
 
                 let start = std::time::Instant::now();
-                let result = executor.execute(&query)?;
+                let result = executor.execute_with_stats(&query)?;
                 let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
                 Ok::<_, DbError>((result, execution_time_ms))
             })
@@ -3904,15 +3921,16 @@ pub async fn execute_query(
         }
 
         let start = std::time::Instant::now();
-        let result = executor.execute(&query)?;
+        let result = executor.execute_with_stats(&query)?;
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
         (result, execution_time_ms)
     };
 
-    let total_count = result.len();
+    let total_count = query_result.results.len();
+    let mutations = &query_result.mutations;
 
     if total_count > batch_size {
-        let cursor_id = state.cursor_store.store(result, batch_size);
+        let cursor_id = state.cursor_store.store(query_result.results, batch_size);
         let (first_batch, has_more) = state
             .cursor_store
             .get_next_batch(&cursor_id)
@@ -3925,15 +3943,21 @@ pub async fn execute_query(
             id: if has_more { Some(cursor_id) } else { None },
             cached: false,
             execution_time_ms,
+            documents_inserted: mutations.documents_inserted,
+            documents_updated: mutations.documents_updated,
+            documents_removed: mutations.documents_removed,
         }, &headers))
     } else {
         Ok(ApiResponse::new(ExecuteQueryResponse {
-            result,
+            result: query_result.results,
             count: total_count,
             has_more: false,
             id: None,
             cached: false,
             execution_time_ms,
+            documents_inserted: mutations.documents_inserted,
+            documents_updated: mutations.documents_updated,
+            documents_removed: mutations.documents_removed,
         }, &headers))
     }
 }
@@ -3981,6 +4005,9 @@ pub async fn get_next_batch(
             id: if has_more { Some(cursor_id) } else { None },
             cached: true,
             execution_time_ms: 0.0, // Cached results, no execution time
+            documents_inserted: 0,  // Mutations already counted in first response
+            documents_updated: 0,
+            documents_removed: 0,
         }))
     } else {
         Err(DbError::DocumentNotFound(format!(
