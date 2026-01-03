@@ -21,12 +21,14 @@ fn create_test_columns() -> Vec<ColumnDef> {
             data_type: ColumnType::Timestamp,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
         ColumnDef {
             name: "value".to_string(),
             data_type: ColumnType::Float64,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
     ]
 }

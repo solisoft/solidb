@@ -655,6 +655,106 @@ impl SyncWorker {
             Operation::PutBlobChunk | Operation::DeleteBlob => {
                 // TODO: Handle blob operations
             }
+            Operation::ColumnarInsert => {
+                if let Some(ref data) = entry.document_data {
+                    let row: serde_json::Value = serde_json::from_slice(data).map_err(|e| {
+                        TransportError::DecodeError(format!("Invalid columnar row: {}", e))
+                    })?;
+
+                    // Create database if it doesn't exist
+                    if self.storage.get_database(&entry.database).is_err() {
+                        let _ = self.storage.create_database(entry.database.clone());
+                    }
+
+                    if let Ok(db) = self.storage.get_database(&entry.database) {
+                        // Load columnar collection and insert with specific UUID
+                        match crate::storage::columnar::ColumnarCollection::load(
+                            entry.collection.clone(),
+                            &entry.database,
+                            db.db_arc(),
+                        ) {
+                            Ok(col) => {
+                                // Insert with specific UUID (idempotent)
+                                if let Err(e) = col.insert_row_with_id(&entry.document_key, row) {
+                                    warn!("apply_entry: columnar insert failed for {}: {}", entry.document_key, e);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("apply_entry: failed to load columnar collection {}: {}", entry.collection, e);
+                            }
+                        }
+                    }
+                }
+            }
+            Operation::ColumnarDelete => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    match crate::storage::columnar::ColumnarCollection::load(
+                        entry.collection.clone(),
+                        &entry.database,
+                        db.db_arc(),
+                    ) {
+                        Ok(col) => {
+                            if let Err(e) = col.delete_row(&entry.document_key) {
+                                warn!("apply_entry: columnar delete failed for {}: {}", entry.document_key, e);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("apply_entry: failed to load columnar collection {}: {}", entry.collection, e);
+                        }
+                    }
+                }
+            }
+            Operation::ColumnarCreateCollection => {
+                // Create database if it doesn't exist
+                if self.storage.get_database(&entry.database).is_err() {
+                    let _ = self.storage.create_database(entry.database.clone());
+                }
+
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    // Parse column definitions from entry.document_data
+                    if let Some(ref data) = entry.document_data {
+                        if let Ok(columns) = serde_json::from_slice::<Vec<crate::storage::columnar::ColumnDef>>(data) {
+                            let _ = crate::storage::columnar::ColumnarCollection::new(
+                                entry.collection.clone(),
+                                &entry.database,
+                                db.db_arc(),
+                                columns,
+                                crate::storage::columnar::CompressionType::Lz4,
+                            );
+                        }
+                    }
+                }
+            }
+            Operation::ColumnarDropCollection => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    match crate::storage::columnar::ColumnarCollection::load(
+                        entry.collection.clone(),
+                        &entry.database,
+                        db.db_arc(),
+                    ) {
+                        Ok(col) => {
+                            let _ = col.drop();
+                        }
+                        Err(_) => {} // Collection doesn't exist, nothing to do
+                    }
+                }
+            }
+            Operation::ColumnarTruncate => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    match crate::storage::columnar::ColumnarCollection::load(
+                        entry.collection.clone(),
+                        &entry.database,
+                        db.db_arc(),
+                    ) {
+                        Ok(col) => {
+                            if let Err(e) = col.truncate() {
+                                warn!("apply_entry: columnar truncate failed for {}: {}", entry.collection, e);
+                            }
+                        }
+                        Err(_) => {} // Collection doesn't exist, nothing to do
+                    }
+                }
+            }
         }
         
         // Update origin sequence

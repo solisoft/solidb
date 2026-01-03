@@ -48,8 +48,8 @@ fn test_explain_columnar_query() {
         "testdb",
         db_arc.clone(),
         vec![
-            ColumnDef { name: "ts".to_string(), data_type: ColumnType::Timestamp, nullable: false, indexed: true },
-            ColumnDef { name: "val".to_string(), data_type: ColumnType::Float64, nullable: false, indexed: false },
+            ColumnDef { name: "ts".to_string(), data_type: ColumnType::Timestamp, nullable: false, indexed: true, index_type: None },
+            ColumnDef { name: "val".to_string(), data_type: ColumnType::Float64, nullable: false, indexed: false, index_type: None },
         ],
         CompressionType::Lz4
     ).unwrap();

@@ -241,6 +241,29 @@ impl SyncLog {
     pub fn node_id(&self) -> &str {
         &self.node_id
     }
+
+    /// Convenience method to append a columnar operation
+    pub fn append_columnar(
+        &self,
+        database: &str,
+        collection: &str,
+        operation: Operation,
+        key: String,
+        data: Option<Vec<u8>>,
+    ) -> u64 {
+        let entry = LogEntry {
+            sequence: 0,
+            node_id: String::new(),
+            database: database.to_string(),
+            collection: collection.to_string(),
+            operation,
+            key,
+            data,
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        };
+        self.append(entry)
+    }
 }
 
 impl Clone for SyncLog {

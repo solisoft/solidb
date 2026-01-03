@@ -113,11 +113,27 @@
                     progress: 0,
                     isDragging: false
                 })
+
+                // Add ESC listener
+                this._handleKeyDown = this.handleKeyDown.bind(this)
+                document.addEventListener('keydown', this._handleKeyDown)
             },
 
             hide() {
                 if (!this.state.uploading) {
                     this.update({ visible: false })
+
+                    // Remove ESC listener
+                    if (this._handleKeyDown) {
+                        document.removeEventListener('keydown', this._handleKeyDown)
+                        this._handleKeyDown = null
+                    }
+                }
+            },
+
+            handleKeyDown(e) {
+                if (e.key === 'Escape') {
+                    this.handleClose(e)
                 }
             },
 

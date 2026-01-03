@@ -22,11 +22,27 @@ export default {
             progress: 0,
             isDragging: false
         })
+
+        // Add ESC listener
+        this._handleKeyDown = this.handleKeyDown.bind(this)
+        document.addEventListener('keydown', this._handleKeyDown)
     },
 
     hide() {
         if (!this.state.uploading) {
             this.update({ visible: false })
+
+            // Remove ESC listener
+            if (this._handleKeyDown) {
+                document.removeEventListener('keydown', this._handleKeyDown)
+                this._handleKeyDown = null
+            }
+        }
+    },
+
+    handleKeyDown(e) {
+        if (e.key === 'Escape') {
+            this.handleClose(e)
         }
     },
 
@@ -211,16 +227,16 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr672="expr672" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto"></div>',
+    '<div expr141="expr141" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto"></div>',
     [
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.visible,
-        redundantAttribute: 'expr672',
-        selector: '[expr672]',
+        redundantAttribute: 'expr141',
+        selector: '[expr141]',
 
         template: template(
-          '<div expr673="expr673" class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700 my-8"><div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-gray-100">Upload Blob</h3><button expr674="expr674" class="text-gray-400 hover:text-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr675="expr675" class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg flex items-start"></div><form expr677="expr677"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr678="expr678"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400 justify-center"><span class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span></span><p class="pl-1">or drag and drop</p></div><p expr679="expr679" class="text-xs text-gray-500"></p><p expr680="expr680" class="text-sm text-indigo-400 font-semibold"></p></div></div><input expr681="expr681" type="file" ref="fileInput" class="hidden"/></div><div expr682="expr682" class="mb-6"></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr685="expr685" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors bg-gray-700 hover:bg-gray-600 rounded-md">\n                        Cancel\n                    </button><button expr686="expr686" type="submit" class="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"><svg expr687="expr687" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>',
+          '<div expr142="expr142" class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-gray-700 my-8"><div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-gray-100">Upload Blob</h3><button expr143="expr143" class="text-gray-400 hover:text-gray-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div expr144="expr144" class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg flex items-start"></div><form expr146="expr146"><div class="mb-6"><label class="block text-sm font-medium text-gray-300 mb-2">Select File</label><div expr147="expr147"><div class="space-y-1 text-center"><svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="flex text-sm text-gray-400 justify-center"><span class="relative cursor-pointer bg-gray-800 rounded-md font-medium text-indigo-400 hover:text-indigo-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"><span>Upload a file</span></span><p class="pl-1">or drag and drop</p></div><p expr148="expr148" class="text-xs text-gray-500"></p><p expr149="expr149" class="text-sm text-indigo-400 font-semibold"></p></div></div><input expr150="expr150" type="file" ref="fileInput" class="hidden"/></div><div expr151="expr151" class="mb-6"></div><div class="flex justify-end space-x-3 pt-4 border-t border-gray-700"><button expr154="expr154" type="button" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors bg-gray-700 hover:bg-gray-600 rounded-md">\n                        Cancel\n                    </button><button expr155="expr155" type="submit" class="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"><svg expr156="expr156" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"></svg> </button></div></form></div>',
           [
             {
               expressions: [
@@ -232,8 +248,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr673',
-              selector: '[expr673]',
+              redundantAttribute: 'expr142',
+              selector: '[expr142]',
 
               expressions: [
                 {
@@ -244,8 +260,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr674',
-              selector: '[expr674]',
+              redundantAttribute: 'expr143',
+              selector: '[expr143]',
 
               expressions: [
                 {
@@ -258,15 +274,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.error,
-              redundantAttribute: 'expr675',
-              selector: '[expr675]',
+              redundantAttribute: 'expr144',
+              selector: '[expr144]',
 
               template: template(
-                '<svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span expr676="expr676" class="text-red-300 text-sm whitespace-pre-wrap"> </span>',
+                '<svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span expr145="expr145" class="text-red-300 text-sm whitespace-pre-wrap"> </span>',
                 [
                   {
-                    redundantAttribute: 'expr676',
-                    selector: '[expr676]',
+                    redundantAttribute: 'expr145',
+                    selector: '[expr145]',
 
                     expressions: [
                       {
@@ -280,8 +296,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr677',
-              selector: '[expr677]',
+              redundantAttribute: 'expr146',
+              selector: '[expr146]',
 
               expressions: [
                 {
@@ -292,8 +308,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr678',
-              selector: '[expr678]',
+              redundantAttribute: 'expr147',
+              selector: '[expr147]',
 
               expressions: [
                 {
@@ -332,8 +348,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => !_scope.state.selectedFile,
-              redundantAttribute: 'expr679',
-              selector: '[expr679]',
+              redundantAttribute: 'expr148',
+              selector: '[expr148]',
 
               template: template(
                 '\n                                Any file up to 1GB\n                            ',
@@ -343,8 +359,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.selectedFile,
-              redundantAttribute: 'expr680',
-              selector: '[expr680]',
+              redundantAttribute: 'expr149',
+              selector: '[expr149]',
 
               template: template(
                 ' ',
@@ -372,8 +388,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr681',
-              selector: '[expr681]',
+              redundantAttribute: 'expr150',
+              selector: '[expr150]',
 
               expressions: [
                 {
@@ -386,15 +402,15 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.uploading,
-              redundantAttribute: 'expr682',
-              selector: '[expr682]',
+              redundantAttribute: 'expr151',
+              selector: '[expr151]',
 
               template: template(
-                '<div class="flex justify-between mb-1"><span class="text-sm font-medium text-indigo-400">Uploading...</span><span expr683="expr683" class="text-sm font-medium text-indigo-400"> </span></div><div class="w-full bg-gray-700 rounded-full h-2.5"><div expr684="expr684" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"></div></div>',
+                '<div class="flex justify-between mb-1"><span class="text-sm font-medium text-indigo-400">Uploading...</span><span expr152="expr152" class="text-sm font-medium text-indigo-400"> </span></div><div class="w-full bg-gray-700 rounded-full h-2.5"><div expr153="expr153" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"></div></div>',
                 [
                   {
-                    redundantAttribute: 'expr683',
-                    selector: '[expr683]',
+                    redundantAttribute: 'expr152',
+                    selector: '[expr152]',
 
                     expressions: [
                       {
@@ -411,8 +427,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr684',
-                    selector: '[expr684]',
+                    redundantAttribute: 'expr153',
+                    selector: '[expr153]',
 
                     expressions: [
                       {
@@ -434,8 +450,8 @@ export default {
               )
             },
             {
-              redundantAttribute: 'expr685',
-              selector: '[expr685]',
+              redundantAttribute: 'expr154',
+              selector: '[expr154]',
 
               expressions: [
                 {
@@ -446,8 +462,8 @@ export default {
               ]
             },
             {
-              redundantAttribute: 'expr686',
-              selector: '[expr686]',
+              redundantAttribute: 'expr155',
+              selector: '[expr155]',
 
               expressions: [
                 {
@@ -471,8 +487,8 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.uploading,
-              redundantAttribute: 'expr687',
-              selector: '[expr687]',
+              redundantAttribute: 'expr156',
+              selector: '[expr156]',
 
               template: template(
                 '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>',

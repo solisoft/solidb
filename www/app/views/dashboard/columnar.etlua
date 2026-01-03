@@ -20,6 +20,12 @@
       </div>
     </div>
     <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+      <button id="indexesBtn" class="inline-flex items-center px-4 py-2 border border-purple-500/30 rounded-md shadow-sm text-sm font-medium text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 hover:text-purple-300 hover:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all duration-200">
+        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        Indexes
+      </button>
       <button id="insertBtn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors">
         <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -28,7 +34,7 @@
       </button>
       <button id="aggregateBtn" class="inline-flex items-center px-4 py-2 border border-teal-500/30 rounded-md shadow-sm text-sm font-medium text-teal-400 bg-teal-500/10 hover:bg-teal-500/20 hover:text-teal-300 hover:border-teal-500/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200">
         <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v2M7 7h10"/>
         </svg>
         Aggregation
       </button>
@@ -43,17 +49,20 @@
 <!-- Modals -->
 <columnar-insert-modal id="insertModal"></columnar-insert-modal>
 <columnar-aggregate-modal id="aggregateModal"></columnar-aggregate-modal>
+<columnar-indexes-modal id="indexesModal"></columnar-indexes-modal>
 
 <script type="module">
   import ColumnarTable from '<%= PublicPath("/app/components/columnar-table.riot.js") %>'
   import ColumnarInsertModal from '<%= PublicPath("/app/components/columnar-insert-modal.riot.js") %>'
   import ColumnarAggregateModal from '<%= PublicPath("/app/components/columnar-aggregate-modal.riot.js") %>'
+  import ColumnarIndexesModal from '<%= PublicPath("/app/components/columnar-indexes-modal.riot.js") %>'
   import { getApiUrl, authenticatedFetch } from '/api-config.js'
 
   // Register riot components
   riot.register('columnar-table', ColumnarTable)
   riot.register('columnar-insert-modal', ColumnarInsertModal)
   riot.register('columnar-aggregate-modal', ColumnarAggregateModal)
+  riot.register('columnar-indexes-modal', ColumnarIndexesModal)
 
   // Wait for DOM to be ready
   document.addEventListener('DOMContentLoaded', async () => {
@@ -91,6 +100,12 @@
       meta: meta
     })
 
+    const indexesModalComponent = riot.mount('columnar-indexes-modal', {
+      db: "<%= Params['db'] %>",
+      collection: "<%= Params['collection'] %>",
+      meta: meta
+    })
+
     // Handle button clicks
     document.getElementById('insertBtn').addEventListener('click', () => {
       insertModalComponent[0].show()
@@ -98,6 +113,10 @@
 
     document.getElementById('aggregateBtn').addEventListener('click', () => {
       aggregateModalComponent[0].show()
+    })
+
+    document.getElementById('indexesBtn').addEventListener('click', () => {
+      indexesModalComponent[0].show()
     })
   })
 </script>

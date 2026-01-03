@@ -173,17 +173,17 @@ var indexModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr381="expr381" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr382="expr382" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Index</h3></div><div class="p-6"><div expr383="expr383" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr385="expr385"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr386="expr386" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr387="expr387" type="text" required class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-500">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><div class="relative"><select expr388="expr388" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors appearance-none"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div><div expr389="expr389" class="mb-6"></div><div class="flex justify-end space-x-3 pt-2"><button expr391="expr391" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr392="expr392" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
-    redundantAttribute: 'expr381',
-    selector: '[expr381]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr122="expr122" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr123="expr123" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Create New Index</h3></div><div class="p-6"><div expr124="expr124" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><form expr126="expr126"><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Name</label><input expr127="expr127" type="text" required pattern="[a-zA-Z0-9_]+" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., idx_email, idx_age"/><p class="mt-1 text-xs text-gray-500">Only letters, numbers, and underscores allowed</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Field Path</label><input expr128="expr128" type="text" required class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500\n            focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500\n            transition-colors" placeholder="e.g., email, address.city"/><p class="mt-1 text-xs text-gray-500">Use dot notation for nested fields</p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Index Type</label><div class="relative"><select expr129="expr129" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors appearance-none"><option value="hash">Hash - Fast equality lookups (==)</option><option value="persistent">Persistent - Range queries and sorting (&gt;, &lt;, &gt;=, &lt;=)</option><option value="fulltext">Fulltext - N-gram text search with fuzzy matching</option><option value="geo">Geo - Geospatial queries (near, within)</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></div></div></div><div expr130="expr130" class="mb-6"></div><div class="flex justify-end space-x-3 pt-2"><button expr132="expr132" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n              Cancel\n            </button><button expr133="expr133" type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 disabled:shadow-none"> </button></div></form></div></div></div>', [{
+    redundantAttribute: 'expr122',
+    selector: '[expr122]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr382',
-    selector: '[expr382]',
+    redundantAttribute: 'expr123',
+    selector: '[expr123]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -192,11 +192,11 @@ var indexModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr383',
-    selector: '[expr383]',
-    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr384="expr384" class="text-sm text-red-300"> </p></div>', [{
-      redundantAttribute: 'expr384',
-      selector: '[expr384]',
+    redundantAttribute: 'expr124',
+    selector: '[expr124]',
+    template: template('<div class="flex items-start"><svg class="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><p expr125="expr125" class="text-sm text-red-300"> </p></div>', [{
+      redundantAttribute: 'expr125',
+      selector: '[expr125]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -204,16 +204,16 @@ var indexModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr385',
-    selector: '[expr385]',
+    redundantAttribute: 'expr126',
+    selector: '[expr126]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onsubmit',
       evaluate: _scope => _scope.handleSubmit
     }]
   }, {
-    redundantAttribute: 'expr386',
-    selector: '[expr386]',
+    redundantAttribute: 'expr127',
+    selector: '[expr127]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.name
@@ -223,8 +223,8 @@ var indexModal = {
       evaluate: _scope => _scope.handleNameInput
     }]
   }, {
-    redundantAttribute: 'expr387',
-    selector: '[expr387]',
+    redundantAttribute: 'expr128',
+    selector: '[expr128]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.field
@@ -234,8 +234,8 @@ var indexModal = {
       evaluate: _scope => _scope.handleFieldInput
     }]
   }, {
-    redundantAttribute: 'expr388',
-    selector: '[expr388]',
+    redundantAttribute: 'expr129',
+    selector: '[expr129]',
     expressions: [{
       type: expressionTypes.VALUE,
       evaluate: _scope => _scope.state.type
@@ -247,11 +247,11 @@ var indexModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.showUniqueOption,
-    redundantAttribute: 'expr389',
-    selector: '[expr389]',
-    template: template('<label class="flex items-center cursor-pointer group"><input expr390="expr390" type="checkbox" class="rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500\n              focus:ring-offset-gray-900 group-hover:border-gray-500 transition-colors"/><span class="ml-2 text-sm text-gray-300 group-hover:text-white transition-colors">Unique index (enforce\n                uniqueness)</span></label>', [{
-      redundantAttribute: 'expr390',
-      selector: '[expr390]',
+    redundantAttribute: 'expr130',
+    selector: '[expr130]',
+    template: template('<label class="flex items-center cursor-pointer group"><input expr131="expr131" type="checkbox" class="rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500\n              focus:ring-offset-gray-900 group-hover:border-gray-500 transition-colors"/><span class="ml-2 text-sm text-gray-300 group-hover:text-white transition-colors">Unique index (enforce\n                uniqueness)</span></label>', [{
+      redundantAttribute: 'expr131',
+      selector: '[expr131]',
       expressions: [{
         type: expressionTypes.ATTRIBUTE,
         isBoolean: true,
@@ -264,16 +264,16 @@ var indexModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr391',
-    selector: '[expr391]',
+    redundantAttribute: 'expr132',
+    selector: '[expr132]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleClose
     }]
   }, {
-    redundantAttribute: 'expr392',
-    selector: '[expr392]',
+    redundantAttribute: 'expr133',
+    selector: '[expr133]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,

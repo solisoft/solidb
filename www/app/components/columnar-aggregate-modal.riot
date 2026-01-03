@@ -49,12 +49,11 @@
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-300 mb-2">Group By (Optional)</label>
           <div class="flex flex-wrap gap-2">
-            <button each={ col in props.meta?.columns } type="button"
-              onclick={ () => toggleGroupBy(col.name) }
+            <button each={ col in props.meta?.columns } type="button" onclick={ ()=> toggleGroupBy(col.name) }
               class={ 'px-3 py-1.5 rounded-lg text-xs font-medium transition-all ' +
-                (state.groupBy.includes(col.name)
-                  ? 'bg-teal-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700') }>
+              (state.groupBy.includes(col.name)
+              ? 'bg-teal-600 text-white'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700') }>
               { col.name }
             </button>
           </div>
@@ -67,7 +66,7 @@
         </button>
 
         <!-- Results -->
-        <div if={ state.result !== null } class="mt-6">
+        <div if={ state.result !==null } class="mt-6">
           <h4 class="text-sm font-medium text-gray-400 mb-3">Result</h4>
 
           <!-- Simple Result (no group by) -->
@@ -81,7 +80,7 @@
           </div>
 
           <!-- Group By Results -->
-          <div if={ state.groupBy.length > 0 && Array.isArray(state.result) } class="overflow-x-auto">
+          <div if={ state.groupBy.length> 0 && Array.isArray(state.result) } class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-700">
               <thead class="bg-gray-700">
                 <tr>
@@ -89,7 +88,8 @@
                     class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                     { col }
                   </th>
-                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
+                  <th scope="col"
+                    class="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
                     { state.lastOp }({ state.lastColumn })
                   </th>
                 </tr>
@@ -142,6 +142,11 @@
 
       show() {
         this.update({ visible: true, error: null, result: null, groupBy: [], loading: false })
+
+        // Add ESC listener
+        this._handleKeyDown = this.handleKeyDown.bind(this)
+        document.addEventListener('keydown', this._handleKeyDown)
+
         const backdrop = this.$('#modalBackdrop')
         const content = this.$('#modalContent')
         backdrop.classList.remove('hidden')
@@ -153,6 +158,12 @@
       },
 
       hide() {
+        // Remove ESC listener
+        if (this._handleKeyDown) {
+          document.removeEventListener('keydown', this._handleKeyDown)
+          this._handleKeyDown = null
+        }
+
         const backdrop = this.$('#modalBackdrop')
         const content = this.$('#modalContent')
         backdrop.classList.add('opacity-0')
@@ -162,6 +173,12 @@
           this.update({ visible: false })
           backdrop.classList.add('hidden')
         }, 300)
+      },
+
+      handleKeyDown(e) {
+        if (e.key === 'Escape') {
+          this.hide()
+        }
       },
 
       handleBackdropClick(e) {

@@ -18,6 +18,12 @@ pub enum Operation {
     DeleteDatabase,
     PutBlobChunk,
     DeleteBlob,
+    // Columnar collection operations
+    ColumnarInsert,
+    ColumnarDelete,
+    ColumnarCreateCollection,
+    ColumnarDropCollection,
+    ColumnarTruncate,
 }
 
 /// A single entry in the sync log

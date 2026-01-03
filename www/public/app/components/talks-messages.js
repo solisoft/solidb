@@ -280,9 +280,9 @@ var talksMessages = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="flex-1 relative min-h-0 flex flex-col"><div expr16="expr16" ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-1"><div expr17="expr17" class="text-center text-gray-500 py-8"></div><virtual expr18="expr18"></virtual></div><div expr101="expr101" class="absolute bottom-6 right-8 z-10 animate-fade-in"></div></div>', [{
-    redundantAttribute: 'expr16',
-    selector: '[expr16]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div class="flex-1 relative min-h-0 flex flex-col"><div expr313="expr313" ref="messagesArea" class="flex-1 overflow-y-auto px-6 pb-6 pt-20 space-y-1"><div expr314="expr314" class="text-center text-gray-500 py-8"></div><virtual expr315="expr315"></virtual></div><div expr398="expr398" class="absolute bottom-6 right-8 z-10 animate-fade-in"></div></div>', [{
+    redundantAttribute: 'expr313',
+    selector: '[expr313]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onscroll',
@@ -291,8 +291,8 @@ var talksMessages = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => !_scope.props.messages || _scope.props.messages.length === 0,
-    redundantAttribute: 'expr17',
-    selector: '[expr17]',
+    redundantAttribute: 'expr314',
+    selector: '[expr314]',
     template: template('<i class="fas fa-comments text-4xl mb-4"></i><p>No messages yet. Start the conversation!</p>', [])
   }, {
     type: bindingTypes.EACH,
@@ -304,10 +304,10 @@ var talksMessages = {
       evaluate: _scope => 'virtual',
       slots: [{
         id: 'default',
-        html: '<div class="contents"><div class="relative flex items-center py-4"><div class="flex-grow border-t border-gray-800"></div><span expr19="expr19" class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider"> </span><div class="flex-grow border-t border-gray-800"></div></div><div expr20="expr20"></div></div>',
+        html: '<div class="contents"><div class="relative flex items-center py-4"><div class="flex-grow border-t border-gray-800"></div><span expr316="expr316" class="flex-shrink mx-4 text-xs font-bold text-gray-500 bg-[#1A1D21] px-2 uppercase tracking-wider"> </span><div class="flex-grow border-t border-gray-800"></div></div><div expr317="expr317"></div></div>',
         bindings: [{
-          redundantAttribute: 'expr19',
-          selector: '[expr19]',
+          redundantAttribute: 'expr316',
+          selector: '[expr316]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
@@ -317,7 +317,7 @@ var talksMessages = {
           type: bindingTypes.EACH,
           getKey: null,
           condition: null,
-          template: template('<div expr21="expr21"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr22="expr22" class="font-bold text-white mr-2 hover:underline cursor-pointer"> </span><span expr23="expr23" class="text-xs text-gray-500"> </span><span expr24="expr24" class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded"></span></div><div expr25="expr25"><div expr26="expr26" class="mt-2 mb-4"></div><virtual expr30="expr30"></virtual></div><div expr65="expr65" class="mt-3"></div><div expr74="expr74" class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr78="expr78" class="mt-2 flex flex-wrap\n                                gap-2"></div><div class="mt-0.5 flex flex-wrap gap-1.5 items-center"><div expr84="expr84" class="relative group/reaction"></div><div expr88="expr88" class="flex items-center gap-2 text-sm\n                                    cursor-pointer\n                                    group/thread ml-1 mr-1"></div><div class="relative group/emoji"><button expr92="expr92"><i class="far fa-smile text-sm"></i></button></div><div expr93="expr93" class="relative group/reply"></div><div expr95="expr95" class="relative group/quote"></div><div expr97="expr97" class="relative group/edit"></div><div expr99="expr99" class="relative group/delete"></div></div></div>', [{
+          template: template('<div expr318="expr318"> </div><div class="flex-1 min-w-0"><div class="flex items-baseline mb-1"><span expr319="expr319" class="font-bold text-white mr-2 hover:underline cursor-pointer"> </span><span expr320="expr320" class="text-xs text-gray-500"> </span><span expr321="expr321" class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded"></span></div><div expr322="expr322"><div expr323="expr323" class="mt-2 mb-4"></div><virtual expr327="expr327"></virtual></div><div expr362="expr362" class="mt-3"></div><div expr371="expr371" class="mt-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr375="expr375" class="mt-2 flex flex-wrap\n                                gap-2"></div><div class="mt-0.5 flex flex-wrap gap-1.5 items-center"><div expr381="expr381" class="relative group/reaction"></div><div expr385="expr385" class="flex items-center gap-2 text-sm\n                                    cursor-pointer\n                                    group/thread ml-1 mr-1"></div><div class="relative group/emoji"><button expr389="expr389"><i class="far fa-smile text-sm"></i></button></div><div expr390="expr390" class="relative group/reply"></div><div expr392="expr392" class="relative group/quote"></div><div expr394="expr394" class="relative group/edit"></div><div expr396="expr396" class="relative group/delete"></div></div></div>', [{
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
               isBoolean: false,
@@ -330,8 +330,8 @@ var talksMessages = {
               evaluate: _scope => _scope.getMessageRowClass(_scope.message)
             }]
           }, {
-            redundantAttribute: 'expr21',
-            selector: '[expr21]',
+            redundantAttribute: 'expr318',
+            selector: '[expr318]',
             expressions: [{
               type: expressionTypes.TEXT,
               childNodeIndex: 0,
@@ -343,16 +343,16 @@ var talksMessages = {
               evaluate: _scope => _scope.getAvatarClass(_scope.message.sender)
             }]
           }, {
-            redundantAttribute: 'expr22',
-            selector: '[expr22]',
+            redundantAttribute: 'expr319',
+            selector: '[expr319]',
             expressions: [{
               type: expressionTypes.TEXT,
               childNodeIndex: 0,
               evaluate: _scope => _scope.message.sender
             }]
           }, {
-            redundantAttribute: 'expr23',
-            selector: '[expr23]',
+            redundantAttribute: 'expr320',
+            selector: '[expr320]',
             expressions: [{
               type: expressionTypes.TEXT,
               childNodeIndex: 0,
@@ -361,8 +361,8 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.props.currentChannel === 'mentions' && _scope.message.channel_id,
-            redundantAttribute: 'expr24',
-            selector: '[expr24]',
+            redundantAttribute: 'expr321',
+            selector: '[expr321]',
             template: template(' ', [{
               expressions: [{
                 type: expressionTypes.TEXT,
@@ -371,8 +371,8 @@ var talksMessages = {
               }]
             }])
           }, {
-            redundantAttribute: 'expr25',
-            selector: '[expr25]',
+            redundantAttribute: 'expr322',
+            selector: '[expr322]',
             expressions: [{
               type: expressionTypes.ATTRIBUTE,
               isBoolean: false,
@@ -382,11 +382,11 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.state.editingMessageId === _scope.message._key,
-            redundantAttribute: 'expr26',
-            selector: '[expr26]',
-            template: template('<textarea expr27="expr27" ref="editInput" class="w-full bg-[#222529] text-white border border-indigo-500 rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-h-[80px]"> </textarea><div class="flex gap-2 mt-2"><button expr28="expr28" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded transition-colors font-medium">Save\n                                            Changes</button><button expr29="expr29" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1 rounded transition-colors font-medium">Cancel</button><span class="text-[10px] text-gray-500 flex-1 text-right mt-1">escape to cancel\n                                            • enter to save</span></div>', [{
-              redundantAttribute: 'expr27',
-              selector: '[expr27]',
+            redundantAttribute: 'expr323',
+            selector: '[expr323]',
+            template: template('<textarea expr324="expr324" ref="editInput" class="w-full bg-[#222529] text-white border border-indigo-500 rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-h-[80px]"> </textarea><div class="flex gap-2 mt-2"><button expr325="expr325" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded transition-colors font-medium">Save\n                                            Changes</button><button expr326="expr326" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1 rounded transition-colors font-medium">Cancel</button><span class="text-[10px] text-gray-500 flex-1 text-right mt-1">escape to cancel\n                                            • enter to save</span></div>', [{
+              redundantAttribute: 'expr324',
+              selector: '[expr324]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
@@ -397,16 +397,16 @@ var talksMessages = {
                 evaluate: _scope => _scope.handleEditKeyDown
               }]
             }, {
-              redundantAttribute: 'expr28',
-              selector: '[expr28]',
+              redundantAttribute: 'expr325',
+              selector: '[expr325]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
                 evaluate: _scope => _scope.saveEdit
               }]
             }, {
-              redundantAttribute: 'expr29',
-              selector: '[expr29]',
+              redundantAttribute: 'expr326',
+              selector: '[expr326]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -416,25 +416,25 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.state.editingMessageId !== _scope.message._key,
-            redundantAttribute: 'expr30',
-            selector: '[expr30]',
+            redundantAttribute: 'expr327',
+            selector: '[expr327]',
             template: template(null, [{
               type: bindingTypes.TAG,
               getComponent: getComponent,
               evaluate: _scope => 'virtual',
               slots: [{
                 id: 'default',
-                html: '<div expr31="expr31" class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block"></div><span expr41="expr41"></span><span expr64="expr64" class="text-[10px] text-gray-500 ml-1 italic"></span>',
+                html: '<div expr328="expr328" class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block"></div><span expr338="expr338"></span><span expr361="expr361" class="text-[10px] text-gray-500 ml-1 italic"></span>',
                 bindings: [{
                   type: bindingTypes.IF,
                   evaluate: _scope => _scope.message.quoted_message,
-                  redundantAttribute: 'expr31',
-                  selector: '[expr31]',
-                  template: template('<div expr32="expr32" class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide"></div><div class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words"><span expr33="expr33"></span></div>', [{
+                  redundantAttribute: 'expr328',
+                  selector: '[expr328]',
+                  template: template('<div expr329="expr329" class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide"></div><div class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words"><span expr330="expr330"></span></div>', [{
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.message.quoted_message.sender,
-                    redundantAttribute: 'expr32',
-                    selector: '[expr32]',
+                    redundantAttribute: 'expr329',
+                    selector: '[expr329]',
                     template: template('<i class="fas fa-reply text-[9px]"></i> ', [{
                       expressions: [{
                         type: expressionTypes.TEXT,
@@ -446,11 +446,11 @@ var talksMessages = {
                     type: bindingTypes.EACH,
                     getKey: null,
                     condition: null,
-                    template: template('<span expr34="expr34"></span><span expr35="expr35" class="text-indigo-400 hover:text-indigo-300\n                                                    hover:underline cursor-pointer font-medium"></span><a expr36="expr36" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 hover:underline\n                                                    decoration-indigo-500/30"></a><code expr37="expr37" class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20"></code><strong expr38="expr38" class="font-semibold text-indigo-200"></strong><em expr39="expr39" class="italic text-indigo-200/80"></em><span expr40="expr40" class="line-through text-gray-500"></span>', [{
+                    template: template('<span expr331="expr331"></span><span expr332="expr332" class="text-indigo-400 hover:text-indigo-300\n                                                    hover:underline cursor-pointer font-medium"></span><a expr333="expr333" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 hover:underline\n                                                    decoration-indigo-500/30"></a><code expr334="expr334" class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20"></code><strong expr335="expr335" class="font-semibold text-indigo-200"></strong><em expr336="expr336" class="italic text-indigo-200/80"></em><span expr337="expr337" class="line-through text-gray-500"></span>', [{
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'text',
-                      redundantAttribute: 'expr34',
-                      selector: '[expr34]',
+                      redundantAttribute: 'expr331',
+                      selector: '[expr331]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -461,8 +461,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'mention',
-                      redundantAttribute: 'expr35',
-                      selector: '[expr35]',
+                      redundantAttribute: 'expr332',
+                      selector: '[expr332]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -482,8 +482,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'link',
-                      redundantAttribute: 'expr36',
-                      selector: '[expr36]',
+                      redundantAttribute: 'expr333',
+                      selector: '[expr333]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -503,8 +503,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'code',
-                      redundantAttribute: 'expr37',
-                      selector: '[expr37]',
+                      redundantAttribute: 'expr334',
+                      selector: '[expr334]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -515,8 +515,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'bold',
-                      redundantAttribute: 'expr38',
-                      selector: '[expr38]',
+                      redundantAttribute: 'expr335',
+                      selector: '[expr335]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -527,8 +527,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'italic',
-                      redundantAttribute: 'expr39',
-                      selector: '[expr39]',
+                      redundantAttribute: 'expr336',
+                      selector: '[expr336]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -539,8 +539,8 @@ var talksMessages = {
                     }, {
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.segment.type === 'strike',
-                      redundantAttribute: 'expr40',
-                      selector: '[expr40]',
+                      redundantAttribute: 'expr337',
+                      selector: '[expr337]',
                       template: template(' ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -549,8 +549,8 @@ var talksMessages = {
                         }]
                       }])
                     }]),
-                    redundantAttribute: 'expr33',
-                    selector: '[expr33]',
+                    redundantAttribute: 'expr330',
+                    selector: '[expr330]',
                     itemName: 'segment',
                     indexName: null,
                     evaluate: _scope => _scope.parseTextWithLinks(_scope.message.quoted_message.text)
@@ -559,20 +559,20 @@ var talksMessages = {
                   type: bindingTypes.EACH,
                   getKey: null,
                   condition: null,
-                  template: template('<span expr42="expr42"></span><div expr51="expr51" class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr54="expr54" class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block"></div>', [{
+                  template: template('<span expr339="expr339"></span><div expr348="expr348" class="my-3 rounded-lg overflow-hidden border border-gray-700 bg-[#121016] shadow-inner"></div><div expr351="expr351" class="relative my-2.5 pl-4 pr-4 py-2 border-l-[3px] border-indigo-500/50 bg-[#2b2f36]/50 rounded-r-md overflow-hidden group/quote-block"></div>', [{
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.part.type === 'text',
-                    redundantAttribute: 'expr42',
-                    selector: '[expr42]',
-                    template: template('<span expr43="expr43"></span>', [{
+                    redundantAttribute: 'expr339',
+                    selector: '[expr339]',
+                    template: template('<span expr340="expr340"></span>', [{
                       type: bindingTypes.EACH,
                       getKey: null,
                       condition: null,
-                      template: template('<span expr44="expr44"></span><span expr45="expr45" class="text-blue-400 hover:text-blue-300\n                                                    hover:underline\n                                                    cursor-pointer font-medium bg-blue-500/10 px-0.5 rounded\n                                                    transition-colors"></span><a expr46="expr46" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 hover:underline"></a><code expr47="expr47" class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700"></code><strong expr48="expr48" class="font-bold text-gray-200"></strong><em expr49="expr49" class="italic text-gray-300"></em><span expr50="expr50" class="line-through text-gray-500"></span>', [{
+                      template: template('<span expr341="expr341"></span><span expr342="expr342" class="text-blue-400 hover:text-blue-300\n                                                    hover:underline\n                                                    cursor-pointer font-medium bg-blue-500/10 px-0.5 rounded\n                                                    transition-colors"></span><a expr343="expr343" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 hover:underline"></a><code expr344="expr344" class="bg-gray-800 text-red-300 font-mono px-1.5 py-0.5 rounded text-sm mx-0.5 border border-gray-700"></code><strong expr345="expr345" class="font-bold text-gray-200"></strong><em expr346="expr346" class="italic text-gray-300"></em><span expr347="expr347" class="line-through text-gray-500"></span>', [{
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'text',
-                        redundantAttribute: 'expr44',
-                        selector: '[expr44]',
+                        redundantAttribute: 'expr341',
+                        selector: '[expr341]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -583,8 +583,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'mention',
-                        redundantAttribute: 'expr45',
-                        selector: '[expr45]',
+                        redundantAttribute: 'expr342',
+                        selector: '[expr342]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -604,8 +604,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'link',
-                        redundantAttribute: 'expr46',
-                        selector: '[expr46]',
+                        redundantAttribute: 'expr343',
+                        selector: '[expr343]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -621,8 +621,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'code',
-                        redundantAttribute: 'expr47',
-                        selector: '[expr47]',
+                        redundantAttribute: 'expr344',
+                        selector: '[expr344]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -633,8 +633,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'bold',
-                        redundantAttribute: 'expr48',
-                        selector: '[expr48]',
+                        redundantAttribute: 'expr345',
+                        selector: '[expr345]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -645,8 +645,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'italic',
-                        redundantAttribute: 'expr49',
-                        selector: '[expr49]',
+                        redundantAttribute: 'expr346',
+                        selector: '[expr346]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -657,8 +657,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'strike',
-                        redundantAttribute: 'expr50',
-                        selector: '[expr50]',
+                        redundantAttribute: 'expr347',
+                        selector: '[expr347]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -667,8 +667,8 @@ var talksMessages = {
                           }]
                         }])
                       }]),
-                      redundantAttribute: 'expr43',
-                      selector: '[expr43]',
+                      redundantAttribute: 'expr340',
+                      selector: '[expr340]',
                       itemName: 'segment',
                       indexName: null,
                       evaluate: _scope => _scope.parseTextWithLinks(_scope.part.content)
@@ -676,19 +676,19 @@ var talksMessages = {
                   }, {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.part.type === 'code',
-                    redundantAttribute: 'expr51',
-                    selector: '[expr51]',
-                    template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span class="text-xs font-mono text-gray-500">code</span><span expr52="expr52" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr53="expr53"> </code></pre>', [{
-                      redundantAttribute: 'expr52',
-                      selector: '[expr52]',
+                    redundantAttribute: 'expr348',
+                    selector: '[expr348]',
+                    template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span class="text-xs font-mono text-gray-500">code</span><span expr349="expr349" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr350="expr350"> </code></pre>', [{
+                      redundantAttribute: 'expr349',
+                      selector: '[expr349]',
                       expressions: [{
                         type: expressionTypes.TEXT,
                         childNodeIndex: 0,
                         evaluate: _scope => _scope.part.lang || 'text'
                       }]
                     }, {
-                      redundantAttribute: 'expr53',
-                      selector: '[expr53]',
+                      redundantAttribute: 'expr350',
+                      selector: '[expr350]',
                       expressions: [{
                         type: expressionTypes.TEXT,
                         childNodeIndex: 0,
@@ -703,13 +703,13 @@ var talksMessages = {
                   }, {
                     type: bindingTypes.IF,
                     evaluate: _scope => _scope.part.type === 'quote',
-                    redundantAttribute: 'expr54',
-                    selector: '[expr54]',
-                    template: template('<div expr55="expr55" class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide"></div><div class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words"><span expr56="expr56"></span></div>', [{
+                    redundantAttribute: 'expr351',
+                    selector: '[expr351]',
+                    template: template('<div expr352="expr352" class="text-[11px] font-bold text-indigo-400 mb-1 flex items-center gap-1.5 uppercase tracking-wide"></div><div class="italic text-gray-300/90 text-[0.925rem] leading-relaxed font-light whitespace-pre-wrap break-words"><span expr353="expr353"></span></div>', [{
                       type: bindingTypes.IF,
                       evaluate: _scope => _scope.part.sender,
-                      redundantAttribute: 'expr55',
-                      selector: '[expr55]',
+                      redundantAttribute: 'expr352',
+                      selector: '[expr352]',
                       template: template('<i class="fas fa-reply text-[9px]"></i> ', [{
                         expressions: [{
                           type: expressionTypes.TEXT,
@@ -721,11 +721,11 @@ var talksMessages = {
                       type: bindingTypes.EACH,
                       getKey: null,
                       condition: null,
-                      template: template('<span expr57="expr57"></span><span expr58="expr58" class="text-indigo-400 hover:text-indigo-300\n                                                        hover:underline cursor-pointer font-medium"></span><a expr59="expr59" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 hover:underline\n                                                        decoration-indigo-500/30"></a><code expr60="expr60" class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20"></code><strong expr61="expr61" class="font-semibold text-indigo-200"></strong><em expr62="expr62" class="italic text-indigo-200/80"></em><span expr63="expr63" class="line-through text-gray-500"></span>', [{
+                      template: template('<span expr354="expr354"></span><span expr355="expr355" class="text-indigo-400 hover:text-indigo-300\n                                                        hover:underline cursor-pointer font-medium"></span><a expr356="expr356" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 hover:underline\n                                                        decoration-indigo-500/30"></a><code expr357="expr357" class="bg-indigo-500/10 text-indigo-200 font-mono px-1 py-0.5 rounded text-xs mx-0.5 border border-indigo-500/20"></code><strong expr358="expr358" class="font-semibold text-indigo-200"></strong><em expr359="expr359" class="italic text-indigo-200/80"></em><span expr360="expr360" class="line-through text-gray-500"></span>', [{
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'text',
-                        redundantAttribute: 'expr57',
-                        selector: '[expr57]',
+                        redundantAttribute: 'expr354',
+                        selector: '[expr354]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -736,8 +736,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'mention',
-                        redundantAttribute: 'expr58',
-                        selector: '[expr58]',
+                        redundantAttribute: 'expr355',
+                        selector: '[expr355]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -757,8 +757,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'link',
-                        redundantAttribute: 'expr59',
-                        selector: '[expr59]',
+                        redundantAttribute: 'expr356',
+                        selector: '[expr356]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -778,8 +778,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'code',
-                        redundantAttribute: 'expr60',
-                        selector: '[expr60]',
+                        redundantAttribute: 'expr357',
+                        selector: '[expr357]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -790,8 +790,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'bold',
-                        redundantAttribute: 'expr61',
-                        selector: '[expr61]',
+                        redundantAttribute: 'expr358',
+                        selector: '[expr358]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -802,8 +802,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'italic',
-                        redundantAttribute: 'expr62',
-                        selector: '[expr62]',
+                        redundantAttribute: 'expr359',
+                        selector: '[expr359]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -814,8 +814,8 @@ var talksMessages = {
                       }, {
                         type: bindingTypes.IF,
                         evaluate: _scope => _scope.segment.type === 'strike',
-                        redundantAttribute: 'expr63',
-                        selector: '[expr63]',
+                        redundantAttribute: 'expr360',
+                        selector: '[expr360]',
                         template: template(' ', [{
                           expressions: [{
                             type: expressionTypes.TEXT,
@@ -824,23 +824,23 @@ var talksMessages = {
                           }]
                         }])
                       }]),
-                      redundantAttribute: 'expr56',
-                      selector: '[expr56]',
+                      redundantAttribute: 'expr353',
+                      selector: '[expr353]',
                       itemName: 'segment',
                       indexName: null,
                       evaluate: _scope => _scope.parseTextWithLinks(_scope.part.content)
                     }])
                   }]),
-                  redundantAttribute: 'expr41',
-                  selector: '[expr41]',
+                  redundantAttribute: 'expr338',
+                  selector: '[expr338]',
                   itemName: 'part',
                   indexName: null,
                   evaluate: _scope => _scope.parseMessage(_scope.message.text)
                 }, {
                   type: bindingTypes.IF,
                   evaluate: _scope => _scope.message.updated_at,
-                  redundantAttribute: 'expr64',
-                  selector: '[expr64]',
+                  redundantAttribute: 'expr361',
+                  selector: '[expr361]',
                   template: template('(edited)', [])
                 }]
               }],
@@ -850,14 +850,14 @@ var talksMessages = {
             type: bindingTypes.EACH,
             getKey: null,
             condition: null,
-            template: template('<div expr66="expr66" class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg"></div>', [{
+            template: template('<div expr363="expr363" class="border border-gray-700 rounded-lg overflow-hidden bg-[#1A1D21] hover:border-gray-600 transition-colors max-w-lg"></div>', [{
               type: bindingTypes.IF,
               evaluate: _scope => _scope.props.ogCache[_scope.url] && !_scope.props.ogCache[_scope.url].error && _scope.message.text.trim() === _scope.url,
-              redundantAttribute: 'expr66',
-              selector: '[expr66]',
-              template: template('<a expr67="expr67" target="_blank" rel="noopener noreferrer" class="block"><div expr68="expr68" class="w-full h-48 bg-gray-800 border-b border-gray-700"></div><div class="p-3"><div class="flex items-center gap-2 mb-1"><img expr70="expr70" class="w-4 h-4 rounded"/><span expr71="expr71" class="text-xs text-gray-500"> </span></div><h4 expr72="expr72" class="text-sm font-semibold text-white line-clamp-1"> </h4><p expr73="expr73" class="text-xs text-gray-400 line-clamp-2 mt-1"></p></div></a>', [{
-                redundantAttribute: 'expr67',
-                selector: '[expr67]',
+              redundantAttribute: 'expr363',
+              selector: '[expr363]',
+              template: template('<a expr364="expr364" target="_blank" rel="noopener noreferrer" class="block"><div expr365="expr365" class="w-full h-48 bg-gray-800 border-b border-gray-700"></div><div class="p-3"><div class="flex items-center gap-2 mb-1"><img expr367="expr367" class="w-4 h-4 rounded"/><span expr368="expr368" class="text-xs text-gray-500"> </span></div><h4 expr369="expr369" class="text-sm font-semibold text-white line-clamp-1"> </h4><p expr370="expr370" class="text-xs text-gray-400 line-clamp-2 mt-1"></p></div></a>', [{
+                redundantAttribute: 'expr364',
+                selector: '[expr364]',
                 expressions: [{
                   type: expressionTypes.ATTRIBUTE,
                   isBoolean: false,
@@ -867,11 +867,11 @@ var talksMessages = {
               }, {
                 type: bindingTypes.IF,
                 evaluate: _scope => _scope.props.ogCache[_scope.url].image,
-                redundantAttribute: 'expr68',
-                selector: '[expr68]',
-                template: template('<img expr69="expr69" class="w-full h-full object-cover"/>', [{
-                  redundantAttribute: 'expr69',
-                  selector: '[expr69]',
+                redundantAttribute: 'expr365',
+                selector: '[expr365]',
+                template: template('<img expr366="expr366" class="w-full h-full object-cover"/>', [{
+                  redundantAttribute: 'expr366',
+                  selector: '[expr366]',
                   expressions: [{
                     type: expressionTypes.ATTRIBUTE,
                     isBoolean: false,
@@ -886,8 +886,8 @@ var talksMessages = {
               }, {
                 type: bindingTypes.IF,
                 evaluate: _scope => _scope.props.ogCache[_scope.url].favicon,
-                redundantAttribute: 'expr70',
-                selector: '[expr70]',
+                redundantAttribute: 'expr367',
+                selector: '[expr367]',
                 template: template(null, [{
                   expressions: [{
                     type: expressionTypes.ATTRIBUTE,
@@ -901,16 +901,16 @@ var talksMessages = {
                   }]
                 }])
               }, {
-                redundantAttribute: 'expr71',
-                selector: '[expr71]',
+                redundantAttribute: 'expr368',
+                selector: '[expr368]',
                 expressions: [{
                   type: expressionTypes.TEXT,
                   childNodeIndex: 0,
                   evaluate: _scope => _scope.props.ogCache[_scope.url].site_name || _scope.getDomain(_scope.url)
                 }]
               }, {
-                redundantAttribute: 'expr72',
-                selector: '[expr72]',
+                redundantAttribute: 'expr369',
+                selector: '[expr369]',
                 expressions: [{
                   type: expressionTypes.TEXT,
                   childNodeIndex: 0,
@@ -919,8 +919,8 @@ var talksMessages = {
               }, {
                 type: bindingTypes.IF,
                 evaluate: _scope => _scope.props.ogCache[_scope.url].description,
-                redundantAttribute: 'expr73',
-                selector: '[expr73]',
+                redundantAttribute: 'expr370',
+                selector: '[expr370]',
                 template: template(' ', [{
                   expressions: [{
                     type: expressionTypes.TEXT,
@@ -930,35 +930,35 @@ var talksMessages = {
                 }])
               }])
             }]),
-            redundantAttribute: 'expr65',
-            selector: '[expr65]',
+            redundantAttribute: 'expr362',
+            selector: '[expr362]',
             itemName: 'url',
             indexName: null,
             evaluate: _scope => _scope.getMessageUrls(_scope.message.text)
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.message.code_sample,
-            redundantAttribute: 'expr74',
-            selector: '[expr74]',
-            template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span expr75="expr75" class="text-xs font-mono text-gray-500"> </span><span expr76="expr76" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr77="expr77"> </code></pre>', [{
-              redundantAttribute: 'expr75',
-              selector: '[expr75]',
+            redundantAttribute: 'expr371',
+            selector: '[expr371]',
+            template: template('<div class="bg-[#1A1D21] px-4 py-2 border-b border-gray-700 flex items-center justify-between"><span expr372="expr372" class="text-xs font-mono text-gray-500"> </span><span expr373="expr373" class="text-[10px] text-gray-600 uppercase tracking-widest font-bold"> </span></div><pre class="!p-0 !m-0 text-sm overflow-x-auto rounded-t-none"><code expr374="expr374"> </code></pre>', [{
+              redundantAttribute: 'expr372',
+              selector: '[expr372]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
                 evaluate: _scope => _scope.message.code_sample.filename
               }]
             }, {
-              redundantAttribute: 'expr76',
-              selector: '[expr76]',
+              redundantAttribute: 'expr373',
+              selector: '[expr373]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
                 evaluate: _scope => _scope.message.code_sample.language
               }]
             }, {
-              redundantAttribute: 'expr77',
-              selector: '[expr77]',
+              redundantAttribute: 'expr374',
+              selector: '[expr374]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
@@ -973,26 +973,26 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.message.attachments && _scope.message.attachments.length > 0,
-            redundantAttribute: 'expr78',
-            selector: '[expr78]',
-            template: template('<div expr79="expr79" class="relative group/attachment"></div>', [{
+            redundantAttribute: 'expr375',
+            selector: '[expr375]',
+            template: template('<div expr376="expr376" class="relative group/attachment"></div>', [{
               type: bindingTypes.EACH,
               getKey: null,
               condition: null,
-              template: template('<div expr80="expr80" class="block cursor-pointer"></div><a expr82="expr82" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300"></a>', [{
+              template: template('<div expr377="expr377" class="block cursor-pointer"></div><a expr379="expr379" target="_blank" class="flex items-center p-2 rounded bg-[#222529] border border-gray-700 hover:border-gray-500 transition-colors text-blue-400 hover:text-blue-300"></a>', [{
                 type: bindingTypes.IF,
                 evaluate: _scope => _scope.isImage(_scope.attachment),
-                redundantAttribute: 'expr80',
-                selector: '[expr80]',
-                template: template('<img expr81="expr81" class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90"/>', [{
+                redundantAttribute: 'expr377',
+                selector: '[expr377]',
+                template: template('<img expr378="expr378" class="max-w-xs max-h-64 rounded-lg border border-gray-700 hover:border-gray-500 transition-colors hover:opacity-90"/>', [{
                   expressions: [{
                     type: expressionTypes.EVENT,
                     name: 'onclick',
                     evaluate: _scope => e => _scope.props.openLightbox(_scope.attachment, e)
                   }]
                 }, {
-                  redundantAttribute: 'expr81',
-                  selector: '[expr81]',
+                  redundantAttribute: 'expr378',
+                  selector: '[expr378]',
                   expressions: [{
                     type: expressionTypes.ATTRIBUTE,
                     isBoolean: false,
@@ -1008,9 +1008,9 @@ var talksMessages = {
               }, {
                 type: bindingTypes.IF,
                 evaluate: _scope => !_scope.isImage(_scope.attachment),
-                redundantAttribute: 'expr82',
-                selector: '[expr82]',
-                template: template('<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg><span expr83="expr83" class="text-sm truncate max-w-[150px]"> </span>', [{
+                redundantAttribute: 'expr379',
+                selector: '[expr379]',
+                template: template('<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg><span expr380="expr380" class="text-sm truncate max-w-[150px]"> </span>', [{
                   expressions: [{
                     type: expressionTypes.ATTRIBUTE,
                     isBoolean: false,
@@ -1018,8 +1018,8 @@ var talksMessages = {
                     evaluate: _scope => _scope.getFileUrl(_scope.attachment)
                   }]
                 }, {
-                  redundantAttribute: 'expr83',
-                  selector: '[expr83]',
+                  redundantAttribute: 'expr380',
+                  selector: '[expr380]',
                   expressions: [{
                     type: expressionTypes.TEXT,
                     childNodeIndex: 0,
@@ -1027,8 +1027,8 @@ var talksMessages = {
                   }]
                 }])
               }]),
-              redundantAttribute: 'expr79',
-              selector: '[expr79]',
+              redundantAttribute: 'expr376',
+              selector: '[expr376]',
               itemName: 'attachment',
               indexName: null,
               evaluate: _scope => _scope.message.attachments
@@ -1037,9 +1037,9 @@ var talksMessages = {
             type: bindingTypes.EACH,
             getKey: null,
             condition: null,
-            template: template('<button expr85="expr85"> <span expr86="expr86" class="ml-1 text-gray-400"> </span></button><div expr87="expr87" class="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-gray-900 border\n                                        border-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded shadow-xl opacity-0\n                                        group-hover/reaction:opacity-100 transition-opacity pointer-events-none\n                                        whitespace-nowrap z-50"></div>', [{
-              redundantAttribute: 'expr85',
-              selector: '[expr85]',
+            template: template('<button expr382="expr382"> <span expr383="expr383" class="ml-1 text-gray-400"> </span></button><div expr384="expr384" class="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-gray-900 border\n                                        border-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded shadow-xl opacity-0\n                                        group-hover/reaction:opacity-100 transition-opacity pointer-events-none\n                                        whitespace-nowrap z-50"></div>', [{
+              redundantAttribute: 'expr382',
+              selector: '[expr382]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
@@ -1060,8 +1060,8 @@ var talksMessages = {
                 evaluate: _scope => _scope.reaction.users ? _scope.reaction.users.join(', ') : ''
               }]
             }, {
-              redundantAttribute: 'expr86',
-              selector: '[expr86]',
+              redundantAttribute: 'expr383',
+              selector: '[expr383]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
@@ -1070,8 +1070,8 @@ var talksMessages = {
             }, {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.reaction.users && _scope.reaction.users.length > 0,
-              redundantAttribute: 'expr87',
-              selector: '[expr87]',
+              redundantAttribute: 'expr384',
+              selector: '[expr384]',
               template: template(' <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-gray-700"></div>', [{
                 expressions: [{
                   type: expressionTypes.TEXT,
@@ -1080,17 +1080,17 @@ var talksMessages = {
                 }]
               }])
             }]),
-            redundantAttribute: 'expr84',
-            selector: '[expr84]',
+            redundantAttribute: 'expr381',
+            selector: '[expr381]',
             itemName: 'reaction',
             indexName: null,
             evaluate: _scope => _scope.message.reactions || []
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.message.thread_count && _scope.message.thread_count > 0,
-            redundantAttribute: 'expr88',
-            selector: '[expr88]',
-            template: template('<div class="flex -space-x-1.5"><div expr89="expr89"></div><div expr90="expr90" class="w-5 h-5 rounded-full\n                                            flex items-center justify-center text-[8px] font-bold text-white bg-gray-600\n                                            border-2 border-[#1A1D21]"></div></div><span expr91="expr91" class="text-blue-400 text-xs group-hover/thread:underline font-medium"> </span>', [{
+            redundantAttribute: 'expr385',
+            selector: '[expr385]',
+            template: template('<div class="flex -space-x-1.5"><div expr386="expr386"></div><div expr387="expr387" class="w-5 h-5 rounded-full\n                                            flex items-center justify-center text-[8px] font-bold text-white bg-gray-600\n                                            border-2 border-[#1A1D21]"></div></div><span expr388="expr388" class="text-blue-400 text-xs group-hover/thread:underline font-medium"> </span>', [{
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -1117,16 +1117,16 @@ var talksMessages = {
                   evaluate: _scope => _scope.participant
                 }]
               }]),
-              redundantAttribute: 'expr89',
-              selector: '[expr89]',
+              redundantAttribute: 'expr386',
+              selector: '[expr386]',
               itemName: 'participant',
               indexName: 'idx',
               evaluate: _scope => _scope.getThreadParticipants(_scope.message).slice(0, 3)
             }, {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.getThreadParticipants(_scope.message).length > 3,
-              redundantAttribute: 'expr90',
-              selector: '[expr90]',
+              redundantAttribute: 'expr387',
+              selector: '[expr387]',
               template: template(' ', [{
                 expressions: [{
                   type: expressionTypes.TEXT,
@@ -1135,8 +1135,8 @@ var talksMessages = {
                 }]
               }])
             }, {
-              redundantAttribute: 'expr91',
-              selector: '[expr91]',
+              redundantAttribute: 'expr388',
+              selector: '[expr388]',
               expressions: [{
                 type: expressionTypes.TEXT,
                 childNodeIndex: 0,
@@ -1144,8 +1144,8 @@ var talksMessages = {
               }]
             }])
           }, {
-            redundantAttribute: 'expr92',
-            selector: '[expr92]',
+            redundantAttribute: 'expr389',
+            selector: '[expr389]',
             expressions: [{
               type: expressionTypes.EVENT,
               name: 'onclick',
@@ -1159,11 +1159,11 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => !_scope.message.thread_count || _scope.message.thread_count === 0,
-            redundantAttribute: 'expr93',
-            selector: '[expr93]',
-            template: template('<button expr94="expr94" title="Reply in thread"><i class="fas fa-reply text-sm"></i></button>', [{
-              redundantAttribute: 'expr94',
-              selector: '[expr94]',
+            redundantAttribute: 'expr390',
+            selector: '[expr390]',
+            template: template('<button expr391="expr391" title="Reply in thread"><i class="fas fa-reply text-sm"></i></button>', [{
+              redundantAttribute: 'expr391',
+              selector: '[expr391]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -1178,11 +1178,11 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.props.currentChannel !== "mentions",
-            redundantAttribute: 'expr95',
-            selector: '[expr95]',
-            template: template('<button expr96="expr96" title="Quote message"><i class="fas fa-quote-right text-sm"></i></button>', [{
-              redundantAttribute: 'expr96',
-              selector: '[expr96]',
+            redundantAttribute: 'expr392',
+            selector: '[expr392]',
+            template: template('<button expr393="expr393" title="Quote message"><i class="fas fa-quote-right text-sm"></i></button>', [{
+              redundantAttribute: 'expr393',
+              selector: '[expr393]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -1197,11 +1197,11 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.isOwner(_scope.message),
-            redundantAttribute: 'expr97',
-            selector: '[expr97]',
-            template: template('<button expr98="expr98" title="Edit message"><i class="fas fa-edit text-sm"></i></button>', [{
-              redundantAttribute: 'expr98',
-              selector: '[expr98]',
+            redundantAttribute: 'expr394',
+            selector: '[expr394]',
+            template: template('<button expr395="expr395" title="Edit message"><i class="fas fa-edit text-sm"></i></button>', [{
+              redundantAttribute: 'expr395',
+              selector: '[expr395]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -1216,11 +1216,11 @@ var talksMessages = {
           }, {
             type: bindingTypes.IF,
             evaluate: _scope => _scope.isOwner(_scope.message),
-            redundantAttribute: 'expr99',
-            selector: '[expr99]',
-            template: template('<button expr100="expr100" title="Delete message"><i class="fas fa-trash-alt text-sm"></i></button>', [{
-              redundantAttribute: 'expr100',
-              selector: '[expr100]',
+            redundantAttribute: 'expr396',
+            selector: '[expr396]',
+            template: template('<button expr397="expr397" title="Delete message"><i class="fas fa-trash-alt text-sm"></i></button>', [{
+              redundantAttribute: 'expr397',
+              selector: '[expr397]',
               expressions: [{
                 type: expressionTypes.EVENT,
                 name: 'onclick',
@@ -1233,8 +1233,8 @@ var talksMessages = {
               }]
             }])
           }]),
-          redundantAttribute: 'expr20',
-          selector: '[expr20]',
+          redundantAttribute: 'expr317',
+          selector: '[expr317]',
           itemName: 'message',
           indexName: null,
           evaluate: _scope => _scope.group.messages
@@ -1242,19 +1242,19 @@ var talksMessages = {
       }],
       attributes: []
     }]),
-    redundantAttribute: 'expr18',
-    selector: '[expr18]',
+    redundantAttribute: 'expr315',
+    selector: '[expr315]',
     itemName: 'group',
     indexName: null,
     evaluate: _scope => _scope.getMessagesByDay()
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.props.hasNewMessages,
-    redundantAttribute: 'expr101',
-    selector: '[expr101]',
-    template: template('<button expr102="expr102" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium"><span>Read\n                    latest messages</span><i class="fas fa-arrow-down"></i></button>', [{
-      redundantAttribute: 'expr102',
-      selector: '[expr102]',
+    redundantAttribute: 'expr398',
+    selector: '[expr398]',
+    template: template('<button expr399="expr399" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg transition-colors text-sm font-medium"><span>Read\n                    latest messages</span><i class="fas fa-arrow-down"></i></button>', [{
+      redundantAttribute: 'expr399',
+      selector: '[expr399]',
       expressions: [{
         type: expressionTypes.EVENT,
         name: 'onclick',

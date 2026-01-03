@@ -17,6 +17,10 @@ var columnarInsertModal = {
         formRows: [],
         loading: false
       });
+
+      // Add ESC listener
+      this._handleKeyDown = this.handleKeyDown.bind(this);
+      document.addEventListener('keydown', this._handleKeyDown);
       const backdrop = this.$('#modalBackdrop');
       const content = this.$('#modalContent');
       backdrop.classList.remove('hidden');
@@ -27,6 +31,11 @@ var columnarInsertModal = {
       }, 10);
     },
     hide() {
+      // Remove ESC listener
+      if (this._handleKeyDown) {
+        document.removeEventListener('keydown', this._handleKeyDown);
+        this._handleKeyDown = null;
+      }
       const backdrop = this.$('#modalBackdrop');
       const content = this.$('#modalContent');
       backdrop.classList.add('opacity-0');
@@ -38,6 +47,11 @@ var columnarInsertModal = {
         });
         backdrop.classList.add('hidden');
       }, 300);
+    },
+    handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        this.handleClose(e);
+      }
     },
     handleBackdropClick(e) {
       if (e.target.id === 'modalBackdrop' || e.target === e.currentTarget) {
@@ -160,17 +174,17 @@ var columnarInsertModal = {
       }
     }
   },
-  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr714="expr714" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr715="expr715" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-2xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Insert Data</h3><p class="text-sm text-gray-400 mt-1">Add rows to the columnar collection</p></div><div class="p-6 overflow-y-auto"><div expr716="expr716" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="mb-4"><div class="flex space-x-2"><button expr718="expr718" type="button">\n              Form Entry\n            </button><button expr719="expr719" type="button">\n              JSON (Bulk)\n            </button></div></div><div expr720="expr720"></div><div expr730="expr730"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end space-x-3"><button expr731="expr731" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Cancel\n        </button><button expr732="expr732" type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"> </button></div></div></div>', [{
-    redundantAttribute: 'expr714',
-    selector: '[expr714]',
+  template: (template, expressionTypes, bindingTypes, getComponent) => template('<div expr636="expr636" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr637="expr637" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-2xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Insert Data</h3><p class="text-sm text-gray-400 mt-1">Add rows to the columnar collection</p></div><div class="p-6 overflow-y-auto"><div expr638="expr638" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="mb-4"><div class="flex space-x-2"><button expr640="expr640" type="button">\n              Form Entry\n            </button><button expr641="expr641" type="button">\n              JSON (Bulk)\n            </button></div></div><div expr642="expr642"></div><div expr652="expr652"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end space-x-3"><button expr653="expr653" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Cancel\n        </button><button expr654="expr654" type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"> </button></div></div></div>', [{
+    redundantAttribute: 'expr636',
+    selector: '[expr636]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleBackdropClick
     }]
   }, {
-    redundantAttribute: 'expr715',
-    selector: '[expr715]',
+    redundantAttribute: 'expr637',
+    selector: '[expr637]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -179,11 +193,11 @@ var columnarInsertModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.error,
-    redundantAttribute: 'expr716',
-    selector: '[expr716]',
-    template: template('<p expr717="expr717" class="text-sm text-red-300"> </p>', [{
-      redundantAttribute: 'expr717',
-      selector: '[expr717]',
+    redundantAttribute: 'expr638',
+    selector: '[expr638]',
+    template: template('<p expr639="expr639" class="text-sm text-red-300"> </p>', [{
+      redundantAttribute: 'expr639',
+      selector: '[expr639]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -191,8 +205,8 @@ var columnarInsertModal = {
       }]
     }])
   }, {
-    redundantAttribute: 'expr718',
-    selector: '[expr718]',
+    redundantAttribute: 'expr640',
+    selector: '[expr640]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -204,8 +218,8 @@ var columnarInsertModal = {
       evaluate: _scope => 'px-4 py-2 rounded-lg text-sm font-medium transition-all ' + (_scope.state.mode === 'form' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700')
     }]
   }, {
-    redundantAttribute: 'expr719',
-    selector: '[expr719]',
+    redundantAttribute: 'expr641',
+    selector: '[expr641]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
@@ -219,31 +233,31 @@ var columnarInsertModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.mode === 'form',
-    redundantAttribute: 'expr720',
-    selector: '[expr720]',
-    template: template('<div class="space-y-3"><div expr721="expr721" class="flex items-center gap-3"></div></div><button expr725="expr725" type="button" class="mt-4 w-full px-4 py-2 bg-emerald-600/20 text-emerald-400 rounded-lg hover:bg-emerald-600/30 transition-colors text-sm"> </button><div expr726="expr726" class="mt-4 max-h-40 overflow-y-auto"></div>', [{
+    redundantAttribute: 'expr642',
+    selector: '[expr642]',
+    template: template('<div class="space-y-3"><div expr643="expr643" class="flex items-center gap-3"></div></div><button expr647="expr647" type="button" class="mt-4 w-full px-4 py-2 bg-emerald-600/20 text-emerald-400 rounded-lg hover:bg-emerald-600/30 transition-colors text-sm"> </button><div expr648="expr648" class="mt-4 max-h-40 overflow-y-auto"></div>', [{
       type: bindingTypes.EACH,
       getKey: null,
       condition: null,
-      template: template('<label expr722="expr722" class="w-32 text-sm font-medium text-gray-300 flex-shrink-0"> <span expr723="expr723" class="text-gray-500 text-xs ml-1"> </span></label><input expr724="expr724" type="text" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"/>', [{
-        redundantAttribute: 'expr722',
-        selector: '[expr722]',
+      template: template('<label expr644="expr644" class="w-32 text-sm font-medium text-gray-300 flex-shrink-0"> <span expr645="expr645" class="text-gray-500 text-xs ml-1"> </span></label><input expr646="expr646" type="text" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"/>', [{
+        redundantAttribute: 'expr644',
+        selector: '[expr644]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => [_scope.col.name].join('')
         }]
       }, {
-        redundantAttribute: 'expr723',
-        selector: '[expr723]',
+        redundantAttribute: 'expr645',
+        selector: '[expr645]',
         expressions: [{
           type: expressionTypes.TEXT,
           childNodeIndex: 0,
           evaluate: _scope => ['(', _scope.col.data_type, ')'].join('')
         }]
       }, {
-        redundantAttribute: 'expr724',
-        selector: '[expr724]',
+        redundantAttribute: 'expr646',
+        selector: '[expr646]',
         expressions: [{
           type: expressionTypes.ATTRIBUTE,
           isBoolean: false,
@@ -256,14 +270,14 @@ var columnarInsertModal = {
           evaluate: _scope => _scope.getPlaceholder(_scope.col.data_type)
         }]
       }]),
-      redundantAttribute: 'expr721',
-      selector: '[expr721]',
+      redundantAttribute: 'expr643',
+      selector: '[expr643]',
       itemName: 'col',
       indexName: null,
       evaluate: _scope => _scope.props.meta?.columns
     }, {
-      redundantAttribute: 'expr725',
-      selector: '[expr725]',
+      redundantAttribute: 'expr647',
+      selector: '[expr647]',
       expressions: [{
         type: expressionTypes.TEXT,
         childNodeIndex: 0,
@@ -276,31 +290,31 @@ var columnarInsertModal = {
     }, {
       type: bindingTypes.IF,
       evaluate: _scope => _scope.state.formRows.length > 0,
-      redundantAttribute: 'expr726',
-      selector: '[expr726]',
-      template: template('<div class="text-xs text-gray-500 mb-2">Queued rows:</div><div expr727="expr727" class="flex items-center justify-between p-2 bg-gray-800/50 rounded mb-1 text-xs"></div>', [{
+      redundantAttribute: 'expr648',
+      selector: '[expr648]',
+      template: template('<div class="text-xs text-gray-500 mb-2">Queued rows:</div><div expr649="expr649" class="flex items-center justify-between p-2 bg-gray-800/50 rounded mb-1 text-xs"></div>', [{
         type: bindingTypes.EACH,
         getKey: null,
         condition: null,
-        template: template('<span expr728="expr728" class="text-gray-400 truncate flex-1"> </span><button expr729="expr729" class="text-red-400 hover:text-red-300 ml-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>', [{
-          redundantAttribute: 'expr728',
-          selector: '[expr728]',
+        template: template('<span expr650="expr650" class="text-gray-400 truncate flex-1"> </span><button expr651="expr651" class="text-red-400 hover:text-red-300 ml-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>', [{
+          redundantAttribute: 'expr650',
+          selector: '[expr650]',
           expressions: [{
             type: expressionTypes.TEXT,
             childNodeIndex: 0,
             evaluate: _scope => JSON.stringify(_scope.row)
           }]
         }, {
-          redundantAttribute: 'expr729',
-          selector: '[expr729]',
+          redundantAttribute: 'expr651',
+          selector: '[expr651]',
           expressions: [{
             type: expressionTypes.EVENT,
             name: 'onclick',
             evaluate: _scope => () => _scope.removeFormRow(_scope.i)
           }]
         }]),
-        redundantAttribute: 'expr727',
-        selector: '[expr727]',
+        redundantAttribute: 'expr649',
+        selector: '[expr649]',
         itemName: 'row',
         indexName: 'i',
         evaluate: _scope => _scope.state.formRows
@@ -309,20 +323,20 @@ var columnarInsertModal = {
   }, {
     type: bindingTypes.IF,
     evaluate: _scope => _scope.state.mode === 'json',
-    redundantAttribute: 'expr730',
-    selector: '[expr730]',
+    redundantAttribute: 'expr652',
+    selector: '[expr652]',
     template: template('<div class="text-xs text-gray-500 mb-2">\n            Enter an array of row objects matching the column schema.\n          </div><textarea ref="jsonInput" rows="10" placeholder="Enter JSON array here..." class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm font-mono focus:outline-none focus:border-emerald-500"></textarea>', [])
   }, {
-    redundantAttribute: 'expr731',
-    selector: '[expr731]',
+    redundantAttribute: 'expr653',
+    selector: '[expr653]',
     expressions: [{
       type: expressionTypes.EVENT,
       name: 'onclick',
       evaluate: _scope => _scope.handleClose
     }]
   }, {
-    redundantAttribute: 'expr732',
-    selector: '[expr732]',
+    redundantAttribute: 'expr654',
+    selector: '[expr654]',
     expressions: [{
       type: expressionTypes.TEXT,
       childNodeIndex: 0,

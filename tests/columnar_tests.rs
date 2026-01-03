@@ -34,24 +34,28 @@ fn create_test_columns() -> Vec<ColumnDef> {
             data_type: ColumnType::String,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
         ColumnDef {
             name: "age".to_string(),
             data_type: ColumnType::Int64,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
         ColumnDef {
             name: "score".to_string(),
             data_type: ColumnType::Float64,
             nullable: true,
             indexed: false,
+            index_type: None,
         },
         ColumnDef {
             name: "active".to_string(),
             data_type: ColumnType::Bool,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
     ]
 }
@@ -172,12 +176,14 @@ fn test_create_columnar_collection() {
             data_type: ColumnType::Timestamp,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
         ColumnDef {
             name: "value".to_string(),
             data_type: ColumnType::Float64,
             nullable: false,
             indexed: false,
+            index_type: None,
         },
     ];
 
@@ -209,6 +215,7 @@ fn test_create_columnar_collection_no_compression() {
         data_type: ColumnType::String,
         nullable: true,
         indexed: false,
+        index_type: None,
     }];
 
     let col = ColumnarCollection::new(
@@ -252,7 +259,7 @@ fn test_insert_rows() {
     ];
 
     let inserted = col.insert_rows(rows).unwrap();
-    assert_eq!(inserted, 3);
+    assert_eq!(inserted.len(), 3);
 
     let meta = col.metadata().unwrap();
     assert_eq!(meta.row_count, 3);
@@ -276,7 +283,7 @@ fn test_insert_empty_rows() {
     .unwrap();
 
     let inserted = col.insert_rows(vec![]).unwrap();
-    assert_eq!(inserted, 0);
+    assert_eq!(inserted.len(), 0);
 }
 
 #[test]
@@ -302,7 +309,7 @@ fn test_insert_rows_with_nulls() {
     ];
 
     let inserted = col.insert_rows(rows).unwrap();
-    assert_eq!(inserted, 2);
+    assert_eq!(inserted.len(), 2);
 }
 
 // ============================================================================
@@ -363,7 +370,7 @@ fn test_read_column_specific_rows() {
     )
     .unwrap();
 
-    col.insert_rows(vec![
+    let inserted_ids = col.insert_rows(vec![
         json!({"name": "Alice", "age": 30, "score": 95.5, "active": true}),
         json!({"name": "Bob", "age": 25, "score": 88.0, "active": true}),
         json!({"name": "Charlie", "age": 35, "score": 92.0, "active": false}),
@@ -371,7 +378,9 @@ fn test_read_column_specific_rows() {
     ])
     .unwrap();
 
-    let names = col.read_column("name", Some(&[0, 2])).unwrap();
+    // Read specific rows by UUID (first and third row)
+    let selected_ids = vec![inserted_ids[0].clone(), inserted_ids[2].clone()];
+    let names = col.read_column("name", Some(&selected_ids)).unwrap();
     assert_eq!(names.len(), 2);
     assert_eq!(names[0], json!("Alice"));
     assert_eq!(names[1], json!("Charlie"));
@@ -898,7 +907,7 @@ fn test_large_batch_insert() {
         .collect();
 
     let inserted = col.insert_rows(rows).unwrap();
-    assert_eq!(inserted, 1000);
+    assert_eq!(inserted.len(), 1000);
 
     let meta = col.metadata().unwrap();
     assert_eq!(meta.row_count, 1000);

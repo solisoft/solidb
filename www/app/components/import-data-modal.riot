@@ -99,10 +99,26 @@
                     selectedFile: null,
                     stats: { imported: 0, failed: 0 }
                 })
+
+                // Add ESC listener
+                this._handleKeyDown = this.handleKeyDown.bind(this)
+                document.addEventListener('keydown', this._handleKeyDown)
             },
 
             hide() {
                 this.update({ visible: false })
+
+                // Remove ESC listener
+                if (this._handleKeyDown) {
+                    document.removeEventListener('keydown', this._handleKeyDown)
+                    this._handleKeyDown = null
+                }
+            },
+
+            handleKeyDown(e) {
+                if (e.key === 'Escape') {
+                    this.handleClose(e)
+                }
             },
 
             handleBackdropClick(e) {

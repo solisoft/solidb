@@ -801,6 +801,78 @@
                </div>
              </div>
 
+             <!-- POST /_api/database/:db/columnar/:name/index -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/index</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Create an index on a columnar collection column.</p>
+               
+                <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   {
+                     "column": "host",
+                     "index_type": "sorted"
+                   }
+                 </div>
+               </div>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "status": "created", "column": "host", "index_type": "sorted" }
+                 </div>
+               </div>
+             </div>
+
+             <!-- GET /_api/database/:db/columnar/:name/indexes -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/indexes</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">List indexes on a columnar collection.</p>
+               
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   {
+                     "indexes": [
+                       {"column": "host", "index_type": "sorted", "created_at": 1704067200}
+                     ],
+                     "count": 1
+                   }
+                 </div>
+               </div>
+             </div>
+
+             <!-- DELETE /_api/database/:db/columnar/:name/index/:column -->
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                 <code class="text-gray-300">/_api/database/:db/columnar/:name/index/:column</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Drop an index from a columnar collection.</p>
+               
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                   </div>
+                   { "status": "deleted", "column": "host" }
+                 </div>
+               </div>
+             </div>
+
            </div>
         </div>
 

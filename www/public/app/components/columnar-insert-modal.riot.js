@@ -14,6 +14,11 @@ export default {
 
     show() {
       this.update({ visible: true, error: null, formRows: [], loading: false })
+
+      // Add ESC listener
+      this._handleKeyDown = this.handleKeyDown.bind(this)
+      document.addEventListener('keydown', this._handleKeyDown)
+
       const backdrop = this.$('#modalBackdrop')
       const content = this.$('#modalContent')
       backdrop.classList.remove('hidden')
@@ -25,6 +30,12 @@ export default {
     },
 
     hide() {
+      // Remove ESC listener
+      if (this._handleKeyDown) {
+        document.removeEventListener('keydown', this._handleKeyDown)
+        this._handleKeyDown = null
+      }
+
       const backdrop = this.$('#modalBackdrop')
       const content = this.$('#modalContent')
       backdrop.classList.add('opacity-0')
@@ -34,6 +45,12 @@ export default {
         this.update({ visible: false })
         backdrop.classList.add('hidden')
       }, 300)
+    },
+
+    handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        this.handleClose(e)
+      }
     },
 
     handleBackdropClick(e) {
@@ -150,11 +167,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr270="expr270" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr271="expr271" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-2xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Insert Data</h3><p class="text-sm text-gray-400 mt-1">Add rows to the columnar collection</p></div><div class="p-6 overflow-y-auto"><div expr272="expr272" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="mb-4"><div class="flex space-x-2"><button expr274="expr274" type="button">\n              Form Entry\n            </button><button expr275="expr275" type="button">\n              JSON (Bulk)\n            </button></div></div><div expr276="expr276"></div><div expr286="expr286"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end space-x-3"><button expr287="expr287" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Cancel\n        </button><button expr288="expr288" type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"> </button></div></div></div>',
+    '<div expr94="expr94" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr95="expr95" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-2xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Insert Data</h3><p class="text-sm text-gray-400 mt-1">Add rows to the columnar collection</p></div><div class="p-6 overflow-y-auto"><div expr96="expr96" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="mb-4"><div class="flex space-x-2"><button expr98="expr98" type="button">\n              Form Entry\n            </button><button expr99="expr99" type="button">\n              JSON (Bulk)\n            </button></div></div><div expr100="expr100"></div><div expr110="expr110"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end space-x-3"><button expr111="expr111" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Cancel\n        </button><button expr112="expr112" type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"> </button></div></div></div>',
     [
       {
-        redundantAttribute: 'expr270',
-        selector: '[expr270]',
+        redundantAttribute: 'expr94',
+        selector: '[expr94]',
 
         expressions: [
           {
@@ -165,8 +182,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr271',
-        selector: '[expr271]',
+        redundantAttribute: 'expr95',
+        selector: '[expr95]',
 
         expressions: [
           {
@@ -179,15 +196,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr272',
-        selector: '[expr272]',
+        redundantAttribute: 'expr96',
+        selector: '[expr96]',
 
         template: template(
-          '<p expr273="expr273" class="text-sm text-red-300"> </p>',
+          '<p expr97="expr97" class="text-sm text-red-300"> </p>',
           [
             {
-              redundantAttribute: 'expr273',
-              selector: '[expr273]',
+              redundantAttribute: 'expr97',
+              selector: '[expr97]',
 
               expressions: [
                 {
@@ -201,8 +218,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr274',
-        selector: '[expr274]',
+        redundantAttribute: 'expr98',
+        selector: '[expr98]',
 
         expressions: [
           {
@@ -219,8 +236,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr275',
-        selector: '[expr275]',
+        redundantAttribute: 'expr99',
+        selector: '[expr99]',
 
         expressions: [
           {
@@ -239,11 +256,11 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.mode === 'form',
-        redundantAttribute: 'expr276',
-        selector: '[expr276]',
+        redundantAttribute: 'expr100',
+        selector: '[expr100]',
 
         template: template(
-          '<div class="space-y-3"><div expr277="expr277" class="flex items-center gap-3"></div></div><button expr281="expr281" type="button" class="mt-4 w-full px-4 py-2 bg-emerald-600/20 text-emerald-400 rounded-lg hover:bg-emerald-600/30 transition-colors text-sm"> </button><div expr282="expr282" class="mt-4 max-h-40 overflow-y-auto"></div>',
+          '<div class="space-y-3"><div expr101="expr101" class="flex items-center gap-3"></div></div><button expr105="expr105" type="button" class="mt-4 w-full px-4 py-2 bg-emerald-600/20 text-emerald-400 rounded-lg hover:bg-emerald-600/30 transition-colors text-sm"> </button><div expr106="expr106" class="mt-4 max-h-40 overflow-y-auto"></div>',
           [
             {
               type: bindingTypes.EACH,
@@ -251,11 +268,11 @@ export default {
               condition: null,
 
               template: template(
-                '<label expr278="expr278" class="w-32 text-sm font-medium text-gray-300 flex-shrink-0"> <span expr279="expr279" class="text-gray-500 text-xs ml-1"> </span></label><input expr280="expr280" type="text" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"/>',
+                '<label expr102="expr102" class="w-32 text-sm font-medium text-gray-300 flex-shrink-0"> <span expr103="expr103" class="text-gray-500 text-xs ml-1"> </span></label><input expr104="expr104" type="text" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"/>',
                 [
                   {
-                    redundantAttribute: 'expr278',
-                    selector: '[expr278]',
+                    redundantAttribute: 'expr102',
+                    selector: '[expr102]',
 
                     expressions: [
                       {
@@ -271,8 +288,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr279',
-                    selector: '[expr279]',
+                    redundantAttribute: 'expr103',
+                    selector: '[expr103]',
 
                     expressions: [
                       {
@@ -290,8 +307,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr280',
-                    selector: '[expr280]',
+                    redundantAttribute: 'expr104',
+                    selector: '[expr104]',
 
                     expressions: [
                       {
@@ -314,15 +331,15 @@ export default {
                 ]
               ),
 
-              redundantAttribute: 'expr277',
-              selector: '[expr277]',
+              redundantAttribute: 'expr101',
+              selector: '[expr101]',
               itemName: 'col',
               indexName: null,
               evaluate: _scope => _scope.props.meta?.columns
             },
             {
-              redundantAttribute: 'expr281',
-              selector: '[expr281]',
+              redundantAttribute: 'expr105',
+              selector: '[expr105]',
 
               expressions: [
                 {
@@ -347,11 +364,11 @@ export default {
             {
               type: bindingTypes.IF,
               evaluate: _scope => _scope.state.formRows.length > 0,
-              redundantAttribute: 'expr282',
-              selector: '[expr282]',
+              redundantAttribute: 'expr106',
+              selector: '[expr106]',
 
               template: template(
-                '<div class="text-xs text-gray-500 mb-2">Queued rows:</div><div expr283="expr283" class="flex items-center justify-between p-2 bg-gray-800/50 rounded mb-1 text-xs"></div>',
+                '<div class="text-xs text-gray-500 mb-2">Queued rows:</div><div expr107="expr107" class="flex items-center justify-between p-2 bg-gray-800/50 rounded mb-1 text-xs"></div>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -359,11 +376,11 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<span expr284="expr284" class="text-gray-400 truncate flex-1"> </span><button expr285="expr285" class="text-red-400 hover:text-red-300 ml-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>',
+                      '<span expr108="expr108" class="text-gray-400 truncate flex-1"> </span><button expr109="expr109" class="text-red-400 hover:text-red-300 ml-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>',
                       [
                         {
-                          redundantAttribute: 'expr284',
-                          selector: '[expr284]',
+                          redundantAttribute: 'expr108',
+                          selector: '[expr108]',
 
                           expressions: [
                             {
@@ -377,8 +394,8 @@ export default {
                           ]
                         },
                         {
-                          redundantAttribute: 'expr285',
-                          selector: '[expr285]',
+                          redundantAttribute: 'expr109',
+                          selector: '[expr109]',
 
                           expressions: [
                             {
@@ -391,8 +408,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr283',
-                    selector: '[expr283]',
+                    redundantAttribute: 'expr107',
+                    selector: '[expr107]',
                     itemName: 'row',
                     indexName: 'i',
                     evaluate: _scope => _scope.state.formRows
@@ -406,8 +423,8 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.mode === 'json',
-        redundantAttribute: 'expr286',
-        selector: '[expr286]',
+        redundantAttribute: 'expr110',
+        selector: '[expr110]',
 
         template: template(
           '<div class="text-xs text-gray-500 mb-2">\n            Enter an array of row objects matching the column schema.\n          </div><textarea ref="jsonInput" rows="10" placeholder="Enter JSON array here..." class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm font-mono focus:outline-none focus:border-emerald-500"></textarea>',
@@ -415,8 +432,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr287',
-        selector: '[expr287]',
+        redundantAttribute: 'expr111',
+        selector: '[expr111]',
 
         expressions: [
           {
@@ -427,8 +444,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr288',
-        selector: '[expr288]',
+        redundantAttribute: 'expr112',
+        selector: '[expr112]',
 
         expressions: [
           {

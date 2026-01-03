@@ -140,6 +140,15 @@
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                   </tr>
                   <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Columnar Analytics</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
                     <td class="py-3 px-4 text-gray-300">Real-time Changefeeds</td>
                     <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
@@ -296,6 +305,10 @@
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Built-in Job Queues</strong> - No need for external message brokers</span>
                   </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Columnar Engine</strong> - Native columnar storage for high-performance analytics</span>
+                  </li>
                 </ul>
               </div>
 
@@ -394,6 +407,10 @@
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Horizontal Scaling</strong> - Easier master-master clustering</span>
                   </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Columnar</strong> - No extensions required for analytical workloads</span>
+                  </li>
                 </ul>
               </div>
 
@@ -483,6 +500,10 @@
                   <li class="flex items-start">
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Lower Memory Usage</strong> - Disk-based storage with efficient caching</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Advanced Match & Regex</strong> - SDBQL supports regex matching and complex math functions</span>
                   </li>
                 </ul>
               </div>

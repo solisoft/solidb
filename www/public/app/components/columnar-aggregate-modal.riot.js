@@ -23,6 +23,11 @@ export default {
 
     show() {
       this.update({ visible: true, error: null, result: null, groupBy: [], loading: false })
+
+      // Add ESC listener
+      this._handleKeyDown = this.handleKeyDown.bind(this)
+      document.addEventListener('keydown', this._handleKeyDown)
+
       const backdrop = this.$('#modalBackdrop')
       const content = this.$('#modalContent')
       backdrop.classList.remove('hidden')
@@ -34,6 +39,12 @@ export default {
     },
 
     hide() {
+      // Remove ESC listener
+      if (this._handleKeyDown) {
+        document.removeEventListener('keydown', this._handleKeyDown)
+        this._handleKeyDown = null
+      }
+
       const backdrop = this.$('#modalBackdrop')
       const content = this.$('#modalContent')
       backdrop.classList.add('opacity-0')
@@ -43,6 +54,12 @@ export default {
         this.update({ visible: false })
         backdrop.classList.add('hidden')
       }, 300)
+    },
+
+    handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        this.hide()
+      }
     },
 
     handleBackdropClick(e) {
@@ -129,11 +146,11 @@ export default {
     bindingTypes,
     getComponent
   ) => template(
-    '<div expr327="expr327" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr328="expr328" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Aggregation Query</h3><p class="text-sm text-gray-400 mt-1">Run analytics queries on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr329="expr329" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><label class="block text-sm font-medium text-gray-300 mb-2">Aggregate Column</label><select ref="aggColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr331="expr331"></option></select></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Operation</label><select ref="aggOp" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="Sum">SUM</option><option value="Avg">AVG</option><option value="Count">COUNT</option><option value="Min">MIN</option><option value="Max">MAX</option><option value="CountDistinct">COUNT DISTINCT</option></select></div></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Group By (Optional)</label><div class="flex flex-wrap gap-2"><button expr332="expr332" type="button"></button></div></div><button expr333="expr333" type="button" class="w-full px-4 py-3 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50"> </button><div expr334="expr334" class="mt-6"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr344="expr344" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Close\n        </button></div></div></div>',
+    '<div expr76="expr76" id="modalBackdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden"><div class="absolute inset-0 bg-black/50 transition-opacity duration-300"></div><div expr77="expr77" id="modalContent" class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 max-h-[90vh]"><div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10"><h3 class="text-xl font-semibold text-white tracking-tight">Aggregation Query</h3><p class="text-sm text-gray-400 mt-1">Run analytics queries on columnar data</p></div><div class="p-6 overflow-y-auto"><div expr78="expr78" class="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded"></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><label class="block text-sm font-medium text-gray-300 mb-2">Aggregate Column</label><select ref="aggColumn" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value>Select column...</option><option expr80="expr80"></option></select></div><div><label class="block text-sm font-medium text-gray-300 mb-2">Operation</label><select ref="aggOp" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-teal-500"><option value="Sum">SUM</option><option value="Avg">AVG</option><option value="Count">COUNT</option><option value="Min">MIN</option><option value="Max">MAX</option><option value="CountDistinct">COUNT DISTINCT</option></select></div></div><div class="mb-4"><label class="block text-sm font-medium text-gray-300 mb-2">Group By (Optional)</label><div class="flex flex-wrap gap-2"><button expr81="expr81" type="button"></button></div></div><button expr82="expr82" type="button" class="w-full px-4 py-3 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50"> </button><div expr83="expr83" class="mt-6"></div></div><div class="px-6 py-4 border-t border-gray-700/50 bg-gray-800/50 flex justify-end"><button expr93="expr93" type="button" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">\n          Close\n        </button></div></div></div>',
     [
       {
-        redundantAttribute: 'expr327',
-        selector: '[expr327]',
+        redundantAttribute: 'expr76',
+        selector: '[expr76]',
 
         expressions: [
           {
@@ -144,8 +161,8 @@ export default {
         ]
       },
       {
-        redundantAttribute: 'expr328',
-        selector: '[expr328]',
+        redundantAttribute: 'expr77',
+        selector: '[expr77]',
 
         expressions: [
           {
@@ -158,15 +175,15 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.error,
-        redundantAttribute: 'expr329',
-        selector: '[expr329]',
+        redundantAttribute: 'expr78',
+        selector: '[expr78]',
 
         template: template(
-          '<p expr330="expr330" class="text-sm text-red-300"> </p>',
+          '<p expr79="expr79" class="text-sm text-red-300"> </p>',
           [
             {
-              redundantAttribute: 'expr330',
-              selector: '[expr330]',
+              redundantAttribute: 'expr79',
+              selector: '[expr79]',
 
               expressions: [
                 {
@@ -213,8 +230,8 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr331',
-        selector: '[expr331]',
+        redundantAttribute: 'expr80',
+        selector: '[expr80]',
         itemName: 'col',
         indexName: null,
         evaluate: _scope => _scope.numericColumns
@@ -255,15 +272,15 @@ export default {
           ]
         ),
 
-        redundantAttribute: 'expr332',
-        selector: '[expr332]',
+        redundantAttribute: 'expr81',
+        selector: '[expr81]',
         itemName: 'col',
         indexName: null,
         evaluate: _scope => _scope.props.meta?.columns
       },
       {
-        redundantAttribute: 'expr333',
-        selector: '[expr333]',
+        redundantAttribute: 'expr82',
+        selector: '[expr82]',
 
         expressions: [
           {
@@ -292,24 +309,24 @@ export default {
       {
         type: bindingTypes.IF,
         evaluate: _scope => _scope.state.result !== null,
-        redundantAttribute: 'expr334',
-        selector: '[expr334]',
+        redundantAttribute: 'expr83',
+        selector: '[expr83]',
 
         template: template(
-          '<h4 class="text-sm font-medium text-gray-400 mb-3">Result</h4><div expr335="expr335" class="bg-gray-800 rounded-lg p-6 text-center"></div><div expr338="expr338" class="overflow-x-auto"></div>',
+          '<h4 class="text-sm font-medium text-gray-400 mb-3">Result</h4><div expr84="expr84" class="bg-gray-800 rounded-lg p-6 text-center"></div><div expr87="expr87" class="overflow-x-auto"></div>',
           [
             {
               type: bindingTypes.IF,
               evaluate: _scope => !_scope.state.groupBy.length,
-              redundantAttribute: 'expr335',
-              selector: '[expr335]',
+              redundantAttribute: 'expr84',
+              selector: '[expr84]',
 
               template: template(
-                '<div expr336="expr336" class="text-4xl font-bold text-teal-400"> </div><div expr337="expr337" class="text-sm text-gray-500 mt-2"> </div>',
+                '<div expr85="expr85" class="text-4xl font-bold text-teal-400"> </div><div expr86="expr86" class="text-sm text-gray-500 mt-2"> </div>',
                 [
                   {
-                    redundantAttribute: 'expr336',
-                    selector: '[expr336]',
+                    redundantAttribute: 'expr85',
+                    selector: '[expr85]',
 
                     expressions: [
                       {
@@ -327,8 +344,8 @@ export default {
                     ]
                   },
                   {
-                    redundantAttribute: 'expr337',
-                    selector: '[expr337]',
+                    redundantAttribute: 'expr86',
+                    selector: '[expr86]',
 
                     expressions: [
                       {
@@ -350,12 +367,12 @@ export default {
             },
             {
               type: bindingTypes.IF,
-              evaluate: _scope => _scope.state.groupBy.length > 0 && Array.isArray(_scope.state.result),
-              redundantAttribute: 'expr338',
-              selector: '[expr338]',
+              evaluate: _scope => _scope.state.groupBy.length> 0 && Array.isArray(_scope.state.result),
+              redundantAttribute: 'expr87',
+              selector: '[expr87]',
 
               template: template(
-                '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700"><tr><th expr339="expr339" scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider"></th><th expr340="expr340" scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider"> </th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr341="expr341" class="hover:bg-gray-750"></tr></tbody></table>',
+                '<table class="min-w-full divide-y divide-gray-700"><thead class="bg-gray-700"><tr><th expr88="expr88" scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider"></th><th expr89="expr89" scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider"> </th></tr></thead><tbody class="bg-gray-800 divide-y divide-gray-700"><tr expr90="expr90" class="hover:bg-gray-750"></tr></tbody></table>',
                 [
                   {
                     type: bindingTypes.EACH,
@@ -382,15 +399,15 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr339',
-                    selector: '[expr339]',
+                    redundantAttribute: 'expr88',
+                    selector: '[expr88]',
                     itemName: 'col',
                     indexName: null,
                     evaluate: _scope => _scope.state.groupBy
                   },
                   {
-                    redundantAttribute: 'expr340',
-                    selector: '[expr340]',
+                    redundantAttribute: 'expr89',
+                    selector: '[expr89]',
 
                     expressions: [
                       {
@@ -414,7 +431,7 @@ export default {
                     condition: null,
 
                     template: template(
-                      '<td expr342="expr342" class="px-4 py-3 whitespace-nowrap text-sm text-gray-300"></td><td expr343="expr343" class="px-4 py-3 whitespace-nowrap text-sm text-teal-400 text-right font-medium"> </td>',
+                      '<td expr91="expr91" class="px-4 py-3 whitespace-nowrap text-sm text-gray-300"></td><td expr92="expr92" class="px-4 py-3 whitespace-nowrap text-sm text-teal-400 text-right font-medium"> </td>',
                       [
                         {
                           type: bindingTypes.EACH,
@@ -441,15 +458,15 @@ export default {
                             ]
                           ),
 
-                          redundantAttribute: 'expr342',
-                          selector: '[expr342]',
+                          redundantAttribute: 'expr91',
+                          selector: '[expr91]',
                           itemName: 'col',
                           indexName: null,
                           evaluate: _scope => _scope.state.groupBy
                         },
                         {
-                          redundantAttribute: 'expr343',
-                          selector: '[expr343]',
+                          redundantAttribute: 'expr92',
+                          selector: '[expr92]',
 
                           expressions: [
                             {
@@ -469,8 +486,8 @@ export default {
                       ]
                     ),
 
-                    redundantAttribute: 'expr341',
-                    selector: '[expr341]',
+                    redundantAttribute: 'expr90',
+                    selector: '[expr90]',
                     itemName: 'row',
                     indexName: null,
                     evaluate: _scope => _scope.state.result
@@ -482,8 +499,8 @@ export default {
         )
       },
       {
-        redundantAttribute: 'expr344',
-        selector: '[expr344]',
+        redundantAttribute: 'expr93',
+        selector: '[expr93]',
 
         expressions: [
           {
