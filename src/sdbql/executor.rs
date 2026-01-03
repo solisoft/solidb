@@ -1787,6 +1787,36 @@ impl<'a> QueryExecutor<'a> {
         let mut total_docs_scanned = 0usize;
 
         for for_clause in &query.for_clauses {
+            // Check if this is a range expression (e.g., FOR i IN 1..10)
+            if let Some(ref source_expr) = for_clause.source_expression {
+                let range_count = if let Expression::Range(start, end) = source_expr {
+                    // Try to evaluate the range bounds
+                    let start_val = self.evaluate_expr_with_context(start, &let_bindings).ok();
+                    let end_val = self.evaluate_expr_with_context(end, &let_bindings).ok();
+                    match (start_val, end_val) {
+                        (Some(Value::Number(s)), Some(Value::Number(e))) => {
+                            let s = s.as_i64().unwrap_or(0);
+                            let e = e.as_i64().unwrap_or(0);
+                            ((e - s + 1).max(0)) as usize
+                        }
+                        _ => 0,
+                    }
+                } else {
+                    // Other expression types
+                    1
+                };
+
+                collections_info.push(CollectionAccess {
+                    name: format!("range({})", range_count),
+                    variable: for_clause.variable.clone(),
+                    access_type: "range_iteration".to_string(),
+                    index_used: None,
+                    index_type: None,
+                    documents_count: range_count,
+                });
+                continue;
+            }
+
             let source_name = for_clause
                 .source_variable
                 .as_ref()
@@ -1801,6 +1831,9 @@ impl<'a> QueryExecutor<'a> {
                         None => 0,
                     };
                     (arr_len, "variable_iteration".to_string(), None, None)
+                } else if for_clause.collection.is_empty() {
+                    // No collection name - skip this clause
+                    continue;
                 } else {
                     // It's a collection - check for potential index usage
                     let collection = self.get_collection(&for_clause.collection)?;
@@ -1882,19 +1915,20 @@ impl<'a> QueryExecutor<'a> {
                     let mut can_use_index = false;
 
                     if !query.for_clauses.is_empty() {
-                        let var_name = &query.for_clauses[0].variable;
+                        let for_clause = &query.for_clauses[0];
+                        let var_name = &for_clause.variable;
                         if let Some(condition) =
                             self.extract_indexable_condition(&filter.expression, var_name)
                         {
                             index_candidate = Some(condition.field.clone());
-                            // Check if index exists
-                            if let Ok(collection) =
-                                self.get_collection(&query.for_clauses[0].collection)
-                            {
-                                for idx in collection.list_indexes() {
-                                    if idx.field == condition.field {
-                                        can_use_index = true;
-                                        break;
+                            // Check if index exists (only for collection-based FOR, not range)
+                            if for_clause.source_expression.is_none() && !for_clause.collection.is_empty() {
+                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                    for idx in collection.list_indexes() {
+                                        if idx.field == condition.field {
+                                            can_use_index = true;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1930,19 +1964,20 @@ impl<'a> QueryExecutor<'a> {
                 let mut can_use_index = false;
 
                 if !query.for_clauses.is_empty() {
-                    let var_name = &query.for_clauses[0].variable;
+                    let for_clause = &query.for_clauses[0];
+                    let var_name = &for_clause.variable;
                     if let Some(condition) =
                         self.extract_indexable_condition(&filter.expression, var_name)
                     {
                         index_candidate = Some(condition.field.clone());
-                        // Check if index exists
-                        if let Ok(collection) =
-                            self.get_collection(&query.for_clauses[0].collection)
-                        {
-                            for idx in collection.list_indexes() {
-                                if idx.field == condition.field {
-                                    can_use_index = true;
-                                    break;
+                        // Check if index exists (only for collection-based FOR, not range)
+                        if for_clause.source_expression.is_none() && !for_clause.collection.is_empty() {
+                            if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                for idx in collection.list_indexes() {
+                                    if idx.field == condition.field {
+                                        can_use_index = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
