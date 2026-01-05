@@ -3,17 +3,15 @@ use fuser::{
     FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
     ReplyOpen, Request,
 };
-use libc::{ENOENT, ENOSYS, EIO};
+use libc::{ENOENT, EIO};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
-use std::io::Read; // Keep needed if we use Read trait? Actually read() on response uses it implicitly? 
-// No, reqwest response.bytes() doesn't need Read trait imported unless using read_to_end on reader.
-// The error said it was unused.
 
-use chrono::{DateTime, Utc, Datelike, TimeZone};
+
+use chrono::{DateTime, Utc, Datelike};
 use uuid::Uuid;
 use tracing::{info, error, debug};
 
@@ -161,9 +159,7 @@ impl SolidBClient {
         Ok(())
     }
 
-    fn get_auth_header(&self) -> Option<String> {
-        self.token.as_ref().map(|t| t.clone())
-    }
+
 
     fn list_databases(&mut self) -> Result<Vec<String>, anyhow::Error> {
         // Check cache (TTL 5 seconds)

@@ -5,8 +5,10 @@
 //! - Response handling
 //! - Error handling
 
-use solidb::driver::protocol::{Command, Response, DriverError, IsolationLevel, encode_command, encode_response, encode_message, decode_message};
 use serde_json::json;
+use solidb::driver::protocol::{
+    decode_message, encode_command, encode_response, Command, DriverError, IsolationLevel, Response,
+};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -20,7 +22,7 @@ fn test_command_query() {
         sdbql: "FOR doc IN users RETURN doc".to_string(),
         bind_vars: HashMap::new(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
     assert!(!encoded.unwrap().is_empty());
@@ -31,13 +33,13 @@ fn test_command_query_with_bind_vars() {
     let mut bind_vars = HashMap::new();
     bind_vars.insert("name".to_string(), json!("Alice"));
     bind_vars.insert("age".to_string(), json!(30));
-    
+
     let cmd = Command::Query {
         database: "mydb".to_string(),
         sdbql: "FOR doc IN users FILTER doc.name == @name RETURN doc".to_string(),
         bind_vars,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -50,7 +52,7 @@ fn test_command_insert() {
         key: None,
         document: json!({"name": "Bob", "email": "bob@example.com"}),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -63,7 +65,7 @@ fn test_command_insert_with_key() {
         key: Some("user123".to_string()),
         document: json!({"name": "Bob"}),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -75,7 +77,7 @@ fn test_command_get() {
         collection: "users".to_string(),
         key: "user123".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -89,7 +91,7 @@ fn test_command_update() {
         document: json!({"name": "Updated Name"}),
         merge: true,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -101,7 +103,7 @@ fn test_command_delete() {
         collection: "users".to_string(),
         key: "user123".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -114,7 +116,7 @@ fn test_command_list() {
         limit: Some(100),
         offset: Some(0),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -126,14 +128,14 @@ fn test_command_list() {
 #[test]
 fn test_response_ok() {
     let response = Response::ok(json!({"_key": "abc123", "name": "Test"}));
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     // Decode
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Response::Ok { data, .. } => {
             assert!(data.is_some());
@@ -146,13 +148,13 @@ fn test_response_ok() {
 #[test]
 fn test_response_ok_empty() {
     let response = Response::ok_empty();
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Response::Ok { data, count, tx_id } => {
             assert!(data.is_none());
@@ -166,13 +168,13 @@ fn test_response_ok_empty() {
 #[test]
 fn test_response_ok_count() {
     let response = Response::ok_count(42);
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Response::Ok { count, .. } => {
             assert_eq!(count, Some(42));
@@ -184,13 +186,13 @@ fn test_response_ok_count() {
 #[test]
 fn test_response_ok_tx() {
     let response = Response::ok_tx("tx:12345".to_string());
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Response::Ok { tx_id, .. } => {
             assert_eq!(tx_id, Some("tx:12345".to_string()));
@@ -202,22 +204,20 @@ fn test_response_ok_tx() {
 #[test]
 fn test_response_error() {
     let response = Response::error(DriverError::DatabaseError("Document not found".to_string()));
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
-        Response::Error { error } => {
-            match error {
-                DriverError::DatabaseError(msg) => {
-                    assert!(msg.contains("not found"));
-                }
-                _ => panic!("Wrong error type"),
+        Response::Error { error } => match error {
+            DriverError::DatabaseError(msg) => {
+                assert!(msg.contains("not found"));
             }
-        }
+            _ => panic!("Wrong error type"),
+        },
         _ => panic!("Expected Error response"),
     }
 }
@@ -225,13 +225,13 @@ fn test_response_error() {
 #[test]
 fn test_response_pong() {
     let response = Response::pong();
-    
+
     let encoded = encode_response(&response);
     assert!(encoded.is_ok());
-    
+
     let bytes = encoded.unwrap();
     let decoded: Response = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Response::Pong { timestamp } => {
             assert!(timestamp > 0);
@@ -251,7 +251,7 @@ fn test_command_create_collection() {
         name: "new_collection".to_string(),
         collection_type: None,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -263,7 +263,7 @@ fn test_command_create_edge_collection() {
         name: "edges".to_string(),
         collection_type: Some("edge".to_string()),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -273,7 +273,7 @@ fn test_command_list_collections() {
     let cmd = Command::ListCollections {
         database: "_system".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -284,7 +284,7 @@ fn test_command_delete_collection() {
         database: "_system".to_string(),
         name: "to_delete".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -295,7 +295,7 @@ fn test_command_collection_stats() {
         database: "_system".to_string(),
         name: "users".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -307,7 +307,7 @@ fn test_command_collection_stats() {
 #[test]
 fn test_command_list_databases() {
     let cmd = Command::ListDatabases;
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -317,7 +317,7 @@ fn test_command_create_database() {
     let cmd = Command::CreateDatabase {
         name: "mydb".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -327,7 +327,7 @@ fn test_command_delete_database() {
     let cmd = Command::DeleteDatabase {
         name: "mydb".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -342,7 +342,7 @@ fn test_command_begin_transaction() {
         database: "_system".to_string(),
         isolation_level: IsolationLevel::ReadCommitted,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -353,7 +353,7 @@ fn test_command_begin_transaction_serializable() {
         database: "_system".to_string(),
         isolation_level: IsolationLevel::Serializable,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -363,7 +363,7 @@ fn test_command_commit_transaction() {
     let cmd = Command::CommitTransaction {
         tx_id: "tx:12345".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -373,7 +373,7 @@ fn test_command_rollback_transaction() {
     let cmd = Command::RollbackTransaction {
         tx_id: "tx:12345".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -386,12 +386,12 @@ fn test_command_transaction_command() {
         key: None,
         document: json!({"name": "Test"}),
     };
-    
+
     let cmd = Command::TransactionCommand {
         tx_id: "tx:12345".to_string(),
         command: Box::new(inner_cmd),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -410,7 +410,7 @@ fn test_command_create_index() {
         unique: true,
         sparse: false,
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -422,7 +422,7 @@ fn test_command_delete_index() {
         collection: "users".to_string(),
         name: "email_idx".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -433,7 +433,7 @@ fn test_command_list_indexes() {
         database: "_system".to_string(),
         collection: "users".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -453,7 +453,7 @@ fn test_command_bulk_insert() {
             json!({"name": "Charlie"}),
         ],
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -474,7 +474,7 @@ fn test_command_batch() {
             },
         ],
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -490,7 +490,7 @@ fn test_command_auth() {
         username: "admin".to_string(),
         password: "secret".to_string(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -498,7 +498,7 @@ fn test_command_auth() {
 #[test]
 fn test_command_ping() {
     let cmd = Command::Ping;
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -514,14 +514,18 @@ fn test_roundtrip_query_command() {
         sdbql: "RETURN 1+1".to_string(),
         bind_vars: HashMap::new(),
     };
-    
+
     let encoded = encode_command(&original).unwrap();
-    
+
     // Decode (skip 4-byte length prefix)
     let decoded: Command = decode_message(&encoded[4..]).unwrap();
-    
+
     match decoded {
-        Command::Query { database, sdbql, bind_vars } => {
+        Command::Query {
+            database,
+            sdbql,
+            bind_vars,
+        } => {
             assert_eq!(database, "testdb");
             assert_eq!(sdbql, "RETURN 1+1");
             assert!(bind_vars.is_empty());
@@ -538,12 +542,17 @@ fn test_roundtrip_insert_command() {
         key: Some("mykey".to_string()),
         document: json!({"key": "value", "number": 42}),
     };
-    
+
     let encoded = encode_command(&original).unwrap();
     let decoded: Command = decode_message(&encoded[4..]).unwrap();
-    
+
     match decoded {
-        Command::Insert { database, collection, key, document } => {
+        Command::Insert {
+            database,
+            collection,
+            key,
+            document,
+        } => {
             assert_eq!(database, "db");
             assert_eq!(collection, "col");
             assert_eq!(key, Some("mykey".to_string()));
@@ -562,10 +571,11 @@ fn test_roundtrip_insert_command() {
 fn test_command_with_special_characters() {
     let cmd = Command::Query {
         database: "db-with-dashes".to_string(),
-        sdbql: "FOR doc IN `collection with spaces` FILTER doc.name == 'O\\'Brien' RETURN doc".to_string(),
+        sdbql: "FOR doc IN `collection with spaces` FILTER doc.name == 'O\\'Brien' RETURN doc"
+            .to_string(),
         bind_vars: HashMap::new(),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
 }
@@ -582,14 +592,14 @@ fn test_command_with_unicode() {
             "emoji": "🎉"
         }),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
-    
+
     // Verify roundtrip preserves unicode
     let bytes = encoded.unwrap();
     let decoded: Command = decode_message(&bytes[4..]).unwrap();
-    
+
     match decoded {
         Command::Insert { document, .. } => {
             assert_eq!(document["name"], "Müller");
@@ -603,14 +613,14 @@ fn test_command_with_unicode() {
 #[test]
 fn test_command_with_large_document() {
     let large_array: Vec<i32> = (0..1000).collect();
-    
+
     let cmd = Command::Insert {
         database: "_system".to_string(),
         collection: "large".to_string(),
         key: None,
         document: json!({"data": large_array}),
     };
-    
+
     let encoded = encode_command(&cmd);
     assert!(encoded.is_ok());
     assert!(encoded.unwrap().len() > 1000); // Should be reasonably large

@@ -8,7 +8,7 @@
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use solidb::storage::StorageEngine;
 use solidb::server::routes::create_router;

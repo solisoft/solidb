@@ -147,7 +147,7 @@ impl ClusterStatsCollector {
                 // We need to write to _system database
                 let sys_db = self.storage.get_database("_system")?;
                 // Ensure collection exists
-                if let Err(_) = sys_db.get_collection("_cluster_informations") {
+                if sys_db.get_collection("_cluster_informations").is_err() {
                     sys_db.create_collection("_cluster_informations".to_string(), None)?;
                 }
                 let sys_coll = sys_db.get_collection("_cluster_informations")?;

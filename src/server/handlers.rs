@@ -553,11 +553,7 @@ pub async fn download_blob(
 
     let file_name = if let Ok(doc) = collection.get(&key) {
         if let Some(v) = doc.get("name") {
-            if let Some(s) = v.as_str() {
-                Some(s.to_string())
-            } else {
-                None
-            }
+            v.as_str().map(|s| s.to_string())
         } else {
             None
         }
@@ -586,16 +582,16 @@ pub async fn download_blob(
                                 }
                                 Ok(None) => break, // No more chunks
                                 Err(e) => {
-                                    yield Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                                    yield Err(std::io::Error::other(e.to_string()));
                                     break;
                                 }
                             }
                         } else {
-                            yield Err(std::io::Error::new(std::io::ErrorKind::Other, "Blob chunk not found locally and no cluster available".to_string()));
+                            yield Err(std::io::Error::other("Blob chunk not found locally and no cluster available".to_string()));
                             break;
                         }
                     } else {
-                        yield Err(std::io::Error::new(std::io::ErrorKind::Other, "Blob chunk not found".to_string()));
+                        yield Err(std::io::Error::other("Blob chunk not found".to_string()));
                         break;
                     }
                 }
@@ -946,7 +942,7 @@ pub async fn create_database(
 
     // Auto-create _scripts collection for the new database
     if let Ok(db) = state.storage.get_database(&req.name) {
-        if let Ok(_) = db.create_collection("_scripts".to_string(), None) {
+        if db.create_collection("_scripts".to_string(), None).is_ok() {
              // Record _scripts creation to replication log
             if let Some(ref log) = state.replication_log {
                 let metadata = serde_json::json!({
@@ -1690,7 +1686,7 @@ pub async fn repair_collection(
 ) -> Result<Json<Value>, DbError> {
     if let Some(coordinator) = state.shard_coordinator {
          let report = coordinator.repair_collection(&db_name, &coll_name).await
-             .map_err(|e| DbError::InternalError(e))?;
+             .map_err(DbError::InternalError)?;
 
          Ok(Json(serde_json::json!({
              "status": "repaired",
@@ -2005,10 +2001,10 @@ pub async fn get_sharding_details(
                         let count = body.get("document_count").and_then(|c| c.as_u64()).unwrap_or(0);
                         let chunk_count = body.get("chunk_count").and_then(|c| c.as_u64()).unwrap_or(0);
                         let disk = body.get("disk_usage");
-                        let size = disk.and_then(|d| {
+                        let size = disk.map(|d| {
                             let sst = d.get("sst_files_size").and_then(|v| v.as_u64()).unwrap_or(0);
                             let mem = d.get("memtable_size").and_then(|v| v.as_u64()).unwrap_or(0);
-                            Some(sst + mem)
+                            sst + mem
                         }).unwrap_or(0);
                         stats_result = Some((count, chunk_count, size));
                     }

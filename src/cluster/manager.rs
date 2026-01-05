@@ -313,7 +313,7 @@ impl ClusterManager {
                                     let key = (entry.database.clone(), entry.collection.clone());
                                     insert_update_groups
                                         .entry(key)
-                                        .or_insert_with(Vec::new)
+                                        .or_default()
                                         .push((entry.document_key.clone(), doc_value));
                                 }
                             }

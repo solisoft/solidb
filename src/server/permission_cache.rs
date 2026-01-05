@@ -190,7 +190,6 @@ impl Default for PermissionCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::authorization::PermissionAction;
 
     #[test]
     fn test_cache_set_and_get() {

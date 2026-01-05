@@ -1930,7 +1930,7 @@ impl<'a> QueryExecutor<'a> {
     /// Explain and profile a query execution
     pub fn explain(&self, query: &Query) -> DbResult<QueryExplain> {
         let total_start = Instant::now();
-        let mut warnings: Vec<String> = Vec::new();
+        let warnings: Vec<String> = Vec::new();
         let mut collections_info: Vec<CollectionAccess> = Vec::new();
         let mut let_bindings_info: Vec<LetBinding> = Vec::new();
         let mut filters_info: Vec<FilterInfo> = Vec::new();
@@ -2156,7 +2156,7 @@ impl<'a> QueryExecutor<'a> {
                 direction: if s.fields.first().map(|(_, asc)| *asc).unwrap_or(true) { "ASC".to_string() } else { "DESC".to_string() },
                 time_us: sort_us,
             }),
-            limit: query.limit_clause.as_ref().map(|l| LimitInfo {
+            limit: query.limit_clause.as_ref().map(|_l| LimitInfo {
                 offset: 0,
                 count: 0,
             }),
