@@ -1384,3 +1384,85 @@ mod tests {
         assert_eq!(context.priority, Priority::High);
     }
 }
+
+/// Request body for updating an agent
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentRequest {
+    pub name: Option<String>,
+    pub agent_type: Option<AgentType>,
+    pub capabilities: Option<Vec<String>>,
+    pub config: Option<serde_json::Value>,
+    pub url: Option<String>,
+    pub model: Option<String>,
+    pub system_prompt: Option<String>,
+}
+
+/// PUT /_api/ai/agents/:id - Update an existing agent
+///
+/// Requires Admin permission
+pub async fn update_agent_handler(
+    State(state): State<AppState>,
+    Path((db_name, agent_id)): Path<(String, String)>,
+    Json(request): Json<UpdateAgentRequest>,
+) -> Result<Json<Agent>, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let coll = db.get_collection("_ai_agents")?;
+
+    let doc = coll.get(&agent_id)?;
+    let mut agent: Agent = serde_json::from_value(doc.to_value())
+        .map_err(|e| DbError::InternalError(format!("Corrupted agent data: {}", e)))?;
+
+    if let Some(name) = request.name {
+        agent.name = name;
+    }
+    if let Some(agent_type) = request.agent_type {
+        agent.agent_type = agent_type;
+    }
+    if let Some(capabilities) = request.capabilities {
+        agent.capabilities = capabilities;
+    }
+    if let Some(url) = request.url {
+        agent.url = Some(url);
+    }
+
+    // Update config if needed
+    let mut config = agent.config.unwrap_or_else(|| serde_json::json!({}));
+    
+    // Merge provided config
+    if let Some(new_config) = request.config {
+        if let Some(obj) = config.as_object_mut() {
+            if let Some(new_obj) = new_config.as_object() {
+                for (k, v) in new_obj {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+        } else {
+             config = new_config;
+        }
+    }
+
+    // Update model/system_prompt in config
+    if let Some(model) = request.model {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("model".to_string(), serde_json::Value::String(model));
+        }
+    }
+    if let Some(system_prompt) = request.system_prompt {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("system_prompt".to_string(), serde_json::Value::String(system_prompt));
+        }
+    }
+
+    agent.config = if config.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+        None
+    } else {
+        Some(config)
+    };
+
+    // Save update
+    let doc_value = serde_json::to_value(&agent)
+        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+    coll.update(&agent_id, doc_value)?;
+
+    Ok(Json(agent))
+}

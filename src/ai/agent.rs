@@ -57,10 +57,13 @@ pub struct Agent {
     #[serde(rename = "_key")]
     pub id: String,
     /// Human-readable name
+    #[serde(default = "default_name")]
     pub name: String,
     /// Type of agent
+    #[serde(default = "default_agent_type")]
     pub agent_type: AgentType,
     /// Current status
+    #[serde(default)]
     pub status: AgentStatus,
     /// Webhook URL for task notifications (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,6 +75,7 @@ pub struct Agent {
     #[serde(default)]
     pub config: Option<Value>,
     /// When the agent was registered
+    #[serde(default = "Utc::now")]
     pub registered_at: DateTime<Utc>,
     /// Last heartbeat timestamp
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,6 +89,14 @@ pub struct Agent {
     /// Total tasks failed
     #[serde(default)]
     pub tasks_failed: u64,
+}
+
+fn default_name() -> String {
+    "Unnamed Agent".to_string()
+}
+
+fn default_agent_type() -> AgentType {
+    AgentType::Analyzer
 }
 
 impl Agent {

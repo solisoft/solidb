@@ -519,6 +519,11 @@ end)</pre>
                   <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local users = db:collection("users")</pre>
                 </li>
                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:insert(collection, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <div class="text-xs text-gray-500 mt-1">Insert a document into a collection. (Shortcut for <code>db:collection(name):insert(doc)</code>)</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local user = db:insert("users", { name = "Alice", active = true })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
                   <span class="text-purple-400">db:query(query, params)</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
                   <div class="text-xs text-gray-500 mt-1">Execute an SDBQL query.</div>
                   <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local results = db:query("FOR u IN users FILTER u.active == @active RETURN u", { active = true })</pre>

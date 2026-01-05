@@ -6,10 +6,15 @@ local QueryController = DashboardBaseController:extend()
 -- Query editor page
 function QueryController:index()
   self.layout = "dashboard"
+  local api_url = GetCookie("sdb_server") or "http://localhost:6745"
+  -- Ensure no trailing slash
+  api_url = api_url:gsub("/$", "")
+  
   self:render("dashboard/query", {
     title = "Query - " .. self:get_db(),
     db = self:get_db(),
-    current_page = "query"
+    current_page = "query",
+    api_url = api_url
   })
 end
 
@@ -123,6 +128,40 @@ function QueryController:explain()
       error_msg = err.error or err.message or error_msg
     end
     self:html('<div class="p-4 text-error">' .. error_msg .. '</div>')
+  end
+end
+
+-- Translate SQL to SDBQL (JSON proxy)
+function QueryController:translate()
+  local query = self.params.query or ""
+  
+  if query == "" then
+    self:json({ error = "Query cannot be empty" })
+    return
+  end
+  
+  local status, headers, body = self:fetch_api("/_api/sql/translate", {
+    method = "POST",
+    body = EncodeJson({ query = query })
+  })
+  
+  if status and status >= 200 and status < 300 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok then
+      self:json(data)
+    else
+      self:json({ error = "Failed to parse backend response" })
+    end
+  else
+     local ok, err_data = pcall(DecodeJson, body or "")
+     local error_msg = "Translation failed"
+     if ok and err_data and err_data.error then
+       error_msg = err_data.error
+     elseif type(body) == "string" and body ~= "" then
+       -- If body is plain text (e.g. from a raw 404/500), use it
+       error_msg = body
+     end
+     self:json({ error = error_msg, status = status })
   end
 end
 

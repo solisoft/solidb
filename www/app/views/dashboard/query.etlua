@@ -27,6 +27,16 @@
         <i class="fas fa-lightbulb" id="explain-icon"></i>
         <span id="explain-text">Explain</span>
       </button>
+      <div class="inline-flex items-center gap-2 mr-2">
+        <label for="query-limit" class="text-xs text-text-dim font-medium">Limit:</label>
+        <select id="query-limit" class="bg-bg-dark border border-border/50 rounded-lg text-text text-sm px-2 py-1.5 focus:outline-none focus:border-primary/50">
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+          <option value="">No Limit</option>
+        </select>
+      </div>
       <button type="button" onclick="executeQuery()" id="execute-btn"
               class="inline-flex items-center gap-2 px-4 py-2 bg-success hover:bg-success/90 disabled:opacity-50 text-white font-medium rounded-lg transition-colors">
         <i class="fas fa-play" id="execute-icon"></i>
@@ -46,7 +56,15 @@
         </button>
       </div>
     </div>
-    <div id="monaco-editor" style="height: 300px;"></div>
+    <div class="grid grid-cols-1 divide-x divide-border/30 transition-all duration-300" id="editor-grid">
+      <div id="monaco-editor" style="height: 300px;"></div>
+      <div id="monaco-preview-container" style="height: 300px;" class="hidden relative bg-bg-dark/50">
+        <div class="absolute top-0 right-0 z-10 px-2 py-1 bg-bg-card/80 backdrop-blur border-b border-l border-border/30 rounded-bl-lg text-xs font-mono text-primary-light">
+          SDBQL Preview
+        </div>
+        <div id="monaco-preview" style="height: 100%; width: 100%;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Results -->
@@ -121,10 +139,12 @@
 <!-- Monaco Editor (loader already included in dashboard layout) -->
 <script>
 var editor = null;
+var previewEditor = null;
 var currentDb = '<%= db %>';
 var historyKey = 'solidb_query_history_' + currentDb;
 var maxHistoryItems = 100;
 var currentQueryType = 'sdbql';
+var translateTimeout = null;
 
 // Default queries for each type
 var defaultQueries = {
@@ -132,7 +152,7 @@ var defaultQueries = {
   sql: 'SELECT * FROM users'
 };
 
-// History management functions (defined early so they're available for Monaco init)
+// History management functions
 function getHistory() {
   try {
     return JSON.parse(localStorage.getItem(historyKey)) || [];
@@ -174,7 +194,6 @@ function loadFromHistory(index) {
   if (history[index]) {
     setQuery(history[index].query);
     setQueryType(history[index].type || 'sdbql');
-    // Close modal only if it's visible
     var modal = document.getElementById('history-modal');
     if (modal && !modal.classList.contains('hidden')) {
       toggleHistory();
@@ -190,7 +209,7 @@ function deleteFromHistory(index, event) {
   renderHistory();
 }
 
-// Results history management (stored in memory, last 10 results)
+// Results history management
 var resultsHistory = [];
 var maxResultsHistory = 10;
 
@@ -217,7 +236,6 @@ function clearResultsHistory() {
 function viewResultFromHistory(index) {
   if (resultsHistory[index]) {
     var item = resultsHistory[index];
-    // Mark as selected
     document.querySelectorAll('#results-history .result-item').forEach(function(el, i) {
       if (i === index) {
         el.classList.add('bg-primary/10', 'border-l-2', 'border-l-primary');
@@ -225,7 +243,6 @@ function viewResultFromHistory(index) {
         el.classList.remove('bg-primary/10', 'border-l-2', 'border-l-primary');
       }
     });
-    // Re-render results in the main results area using stored HTML or rebuild
     var container = document.getElementById('query-results');
     if (item.resultsHtml) {
       container.innerHTML = item.resultsHtml;
@@ -237,7 +254,6 @@ function renderResultsHistory() {
   var container = document.getElementById('results-history');
   if (!container) return;
 
-  // Update mode badge
   var modeBadge = document.getElementById('results-history-mode');
   if (modeBadge) {
     modeBadge.textContent = currentQueryType.toUpperCase();
@@ -248,7 +264,6 @@ function renderResultsHistory() {
     }
   }
 
-  // Filter by current query type
   var filteredResults = resultsHistory.filter(function(item) {
     return (item.type || 'sdbql') === currentQueryType;
   });
@@ -260,7 +275,6 @@ function renderResultsHistory() {
 
   var html = '';
   filteredResults.forEach(function(item, filteredIndex) {
-    // Find original index for viewing
     var originalIndex = resultsHistory.indexOf(item);
     var date = new Date(item.timestamp);
     var timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -268,13 +282,29 @@ function renderResultsHistory() {
     if (item.query.length > 60) preview += '...';
     var resultCount = item.stats && item.stats.count !== undefined ? item.stats.count : '?';
     var execTime = item.stats && item.stats.execution_time_ms ? item.stats.execution_time_ms.toFixed(1) + 'ms' : '';
+    var inserted = item.stats && item.stats.documents_inserted ? item.stats.documents_inserted : 0;
+    var updated = item.stats && item.stats.documents_updated ? item.stats.documents_updated : 0;
+    var removed = item.stats && item.stats.documents_removed ? item.stats.documents_removed : 0;
+
+    var itemType = item.type || 'sdbql';
+    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : 'bg-primary/20 text-primary-light';
 
     html += '<div class="result-item px-4 py-2 hover:bg-white/5 cursor-pointer flex items-center justify-between gap-2' + (filteredIndex === 0 ? ' bg-primary/10 border-l-2 border-l-primary' : '') + '" onclick="viewResultFromHistory(' + originalIndex + ')">';
     html += '  <div class="flex items-center gap-2 min-w-0 flex-1">';
-    html += '    <code class="text-xs text-text font-mono truncate">' + escapeHtml(preview) + '</code>';
+    html += '    <span class="text-[10px] px-1 py-0.5 rounded flex-shrink-0 ' + typeBadgeClass + '">' + itemType.toUpperCase() + '</span>';
+    html += '    <code class="text-xs font-mono truncate">' + highlightSyntax(preview, itemType) + '</code>';
     html += '  </div>';
     html += '  <div class="flex items-center gap-2 flex-shrink-0">';
     html += '    <span class="text-xs text-success">' + resultCount + ' docs</span>';
+    if (inserted > 0) {
+      html += '    <span class="text-xs text-info"><i class="fas fa-plus mr-0.5"></i>' + inserted + '</span>';
+    }
+    if (updated > 0) {
+      html += '    <span class="text-xs text-warning"><i class="fas fa-pen mr-0.5"></i>' + updated + '</span>';
+    }
+    if (removed > 0) {
+      html += '    <span class="text-xs text-error"><i class="fas fa-trash mr-0.5"></i>' + removed + '</span>';
+    }
     if (execTime) {
       html += '    <span class="text-xs text-text-dim">' + execTime + '</span>';
     }
@@ -291,7 +321,6 @@ function renderHistory() {
   var container = document.getElementById('history-list');
   if (!container) return;
 
-  // Update mode badge
   var modeBadge = document.getElementById('history-mode-badge');
   if (modeBadge) {
     modeBadge.textContent = currentQueryType.toUpperCase();
@@ -302,21 +331,18 @@ function renderHistory() {
     }
   }
 
-  // Get search filter
   var searchInput = document.getElementById('history-search');
   var searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
 
-  // Filter history based on current mode and search
   var filteredHistory = [];
   history.forEach(function(item, index) {
     var itemType = item.type || 'sdbql';
-    if (itemType !== currentQueryType) return; // Filter by mode
+    if (itemType !== currentQueryType) return;
     if (!searchTerm || item.query.toLowerCase().indexOf(searchTerm) !== -1) {
       filteredHistory.push({ item: item, originalIndex: index });
     }
   });
 
-  // Check if there's any history for current mode
   var modeHistory = history.filter(function(item) {
     return (item.type || 'sdbql') === currentQueryType;
   });
@@ -341,13 +367,17 @@ function renderHistory() {
     var preview = item.query.substring(0, 100).replace(/\n/g, ' ');
     if (item.query.length > 100) preview += '...';
 
+    var itemType = item.type || 'sdbql';
+    var typeBadgeClass = itemType === 'sql' ? 'bg-accent/20 text-accent-light' : 'bg-primary/20 text-primary-light';
+
     html += '<div class="px-4 py-3 border-b border-border/20 hover:bg-white/5 cursor-pointer group" onclick="loadFromHistory(' + index + ')">';
     html += '  <div class="flex items-start justify-between gap-2">';
     html += '    <div class="flex-1 min-w-0">';
     html += '      <div class="flex items-center gap-2 mb-1">';
+    html += '        <span class="text-[10px] px-1.5 py-0.5 rounded ' + typeBadgeClass + '">' + itemType.toUpperCase() + '</span>';
     html += '        <span class="text-xs text-text-dim">' + dateStr + ' ' + timeStr + '</span>';
     html += '      </div>';
-    html += '      <code class="text-xs text-text font-mono break-all leading-relaxed">' + escapeHtml(preview) + '</code>';
+    html += '      <code class="text-xs font-mono break-all leading-relaxed block bg-bg-dark/50 px-2 py-1 rounded">' + highlightSyntax(preview, itemType) + '</code>';
     html += '    </div>';
     html += '    <button type="button" onclick="deleteFromHistory(' + index + ', event)" class="opacity-0 group-hover:opacity-100 text-text-dim hover:text-error transition-opacity flex-shrink-0 p-1">';
     html += '      <i class="fas fa-times"></i>';
@@ -364,7 +394,6 @@ function toggleHistory() {
   if (modal) {
     modal.classList.toggle('hidden');
     if (!modal.classList.contains('hidden')) {
-      // Clear search and focus
       var searchInput = document.getElementById('history-search');
       if (searchInput) {
         searchInput.value = '';
@@ -375,7 +404,6 @@ function toggleHistory() {
   }
 }
 
-// Close modal on Escape key
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     var modal = document.getElementById('history-modal');
@@ -389,6 +417,93 @@ function escapeHtml(text) {
   var div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// Syntax highlighting for SDBQL and SQL queries
+function highlightSyntax(text, type) {
+  var escaped = escapeHtml(text);
+
+  // SDBQL keywords
+  var sdbqlKeywords = ['FOR', 'IN', 'FILTER', 'SORT', 'ASC', 'DESC', 'LIMIT', 'RETURN',
+    'LET', 'COLLECT', 'INTO', 'WITH', 'COUNT', 'AGGREGATE', 'INSERT', 'UPDATE',
+    'REPLACE', 'REMOVE', 'UPSERT', 'AND', 'OR', 'NOT', 'LIKE', 'GRAPH', 'OUTBOUND',
+    'INBOUND', 'ANY', 'ALL', 'NONE', 'TRUE', 'FALSE', 'NULL', 'DISTINCT', 'HAVING'];
+
+  // SQL keywords
+  var sqlKeywords = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
+    'ON', 'AS', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'INSERT', 'INTO',
+    'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE', 'INDEX',
+    'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'TRUE', 'FALSE', 'LIKE', 'BETWEEN',
+    'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'DISTINCT',
+    'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'UNION', 'ALL'];
+
+  var keywords = type === 'sql' ? sqlKeywords : sdbqlKeywords;
+
+  // Highlight strings (single and double quotes)
+  escaped = escaped.replace(/(&quot;[^&]*&quot;|'[^']*')/g, '<span class="text-orange-400">$1</span>');
+
+  // Highlight numbers
+  escaped = escaped.replace(/\b(\d+\.?\d*)\b/g, '<span class="text-green-400">$1</span>');
+
+  // Highlight keywords (case insensitive)
+  keywords.forEach(function(keyword) {
+    var regex = new RegExp('\\b(' + keyword + ')\\b', 'gi');
+    escaped = escaped.replace(regex, '<span class="text-purple-400 font-semibold">$1</span>');
+  });
+
+  // Highlight operators
+  escaped = escaped.replace(/(\s)(==|!=|&lt;=|&gt;=|&lt;|&gt;|=)(\s)/g, '$1<span class="text-cyan-400">$2</span>$3');
+
+  // Highlight comments
+  escaped = escaped.replace(/(\/\/[^\n]*)/g, '<span class="text-gray-500">$1</span>');
+  escaped = escaped.replace(/(--[^\n]*)/g, '<span class="text-gray-500">$1</span>');
+
+  return escaped;
+}
+
+function debounceTranslate() {
+  if (translateTimeout) clearTimeout(translateTimeout);
+  
+  if (currentQueryType !== 'sql') return;
+  
+  var query = getQuery().trim();
+  if (!query) {
+    if (previewEditor) previewEditor.setValue('');
+    return;
+  }
+  
+  translateTimeout = setTimeout(function() {
+    // Use dashboard proxy to avoid auth/CORS issues with direct backend call
+    var url = '/database/' + currentDb + '/query/translate';
+    fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ query: query })
+    })
+    .then(function(response) {
+      if (!response.ok) {
+        return response.text().then(function(text) {
+          throw new Error('Server error ' + response.status + ': ' + text);
+        });
+      }
+      return response.json();
+    })
+    .then(function(data) {
+      if (previewEditor) {
+        if (data.sdbql) {
+          previewEditor.setValue(data.sdbql);
+        } else if (data.error) {
+           previewEditor.setValue('// Error translating SQL:\n// ' + data.error);
+        }
+      }
+    })
+    .catch(function(err) {
+      if (previewEditor) previewEditor.setValue('// Error translating SQL:\n// ' + err.message);
+    });
+  }, 500);
 }
 
 // Initialize Monaco Editor
@@ -476,7 +591,7 @@ require(['vs/editor/editor.main'], function () {
     }
   });
 
-  // Load initial query from history (scoped by default mode: sdbql) or use default
+  // Load initial query from history
   var initialQuery = defaultQueries.sdbql;
   var history = getHistory();
   // Find the latest SDBQL query
@@ -487,7 +602,7 @@ require(['vs/editor/editor.main'], function () {
     }
   }
 
-  // Create editor (always starts in SDBQL mode)
+  // Create main editor
   editor = monaco.editor.create(document.getElementById('monaco-editor'), {
     value: initialQuery,
     language: 'sdbql',
@@ -503,9 +618,34 @@ require(['vs/editor/editor.main'], function () {
     padding: { top: 16, bottom: 16 },
   });
 
+  // Create preview editor
+  previewEditor = monaco.editor.create(document.getElementById('monaco-preview'), {
+    value: '// SDBQL Preview will appear here...',
+    language: 'sdbql',
+    theme: 'solidb-dark',
+    minimap: { enabled: false },
+    fontSize: 13,
+    fontFamily: 'JetBrains Mono, Fira Code, monospace',
+    lineNumbers: 'off',
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    tabSize: 2,
+    wordWrap: 'on',
+    padding: { top: 24, bottom: 16 }, // Extra top padding for label
+    readOnly: true,
+    domReadOnly: true
+  });
+
   // Keyboard shortcut: Ctrl+Enter to execute
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function () {
     executeQuery();
+  });
+  
+  // Listen for changes
+  editor.onDidChangeModelContent(function() {
+    if (currentQueryType === 'sql') {
+      debounceTranslate();
+    }
   });
 
   // Load history on init
@@ -535,6 +675,8 @@ function setQueryType(type) {
   // Update button styles
   var btnSdbql = document.getElementById('btn-sdbql');
   var btnSql = document.getElementById('btn-sql');
+  var editorGrid = document.getElementById('editor-grid');
+  var previewContainer = document.getElementById('monaco-preview-container');
 
   if (type === 'sdbql') {
     btnSdbql.className = 'px-3 py-2 text-sm font-medium bg-primary text-white transition-colors';
@@ -542,12 +684,24 @@ function setQueryType(type) {
     if (editor) {
       monaco.editor.setModelLanguage(editor.getModel(), 'sdbql');
     }
+    // Hide preview
+    editorGrid.classList.remove('grid-cols-2');
+    editorGrid.classList.add('grid-cols-1');
+    previewContainer.classList.add('hidden');
+    
   } else {
     btnSql.className = 'px-3 py-2 text-sm font-medium bg-primary text-white transition-colors';
     btnSdbql.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
     if (editor) {
       monaco.editor.setModelLanguage(editor.getModel(), 'sql');
     }
+    // Show preview
+    editorGrid.classList.remove('grid-cols-1');
+    editorGrid.classList.add('grid-cols-2');
+    previewContainer.classList.remove('hidden');
+    
+    // Trigger translation immediately
+    debounceTranslate();
   }
 
   // When switching types, load the most recent query of the new type from history, or use default
@@ -555,14 +709,14 @@ function setQueryType(type) {
     var history = getHistory();
     var found = false;
     for (var i = 0; i < history.length; i++) {
-      if ((history[i].type || 'sdbql') === type) {
-        editor.setValue(history[i].query);
-        found = true;
-        break;
-      }
+       if ((history[i].type || 'sdbql') === type) {
+          editor.setValue(history[i].query);
+          found = true;
+          break;
+       }
     }
     if (!found) {
-      editor.setValue(defaultQueries[type]);
+       editor.setValue(defaultQueries[type]);
     }
   }
 
@@ -593,10 +747,38 @@ function executeQuery() {
   var executedType = currentQueryType;
 
   // Execute via HTMX
+  var limit = document.getElementById('query-limit').value;
+  var finalQuery = query;
+  
+  // Append LIMIT if selected and not already present (checking end of string loosely)
+  // Append LIMIT if selected
+  // SQL: Check end of string
+  // SDBQL: Check before last RETURN or end of string
+  if (limit) {
+    if (currentQueryType === 'sql') {
+       if (!/\bLIMIT\s+\d+\s*$/i.test(finalQuery)) {
+          finalQuery += ' LIMIT ' + limit;
+       }
+    } else {
+       // SDBQL: Insert LIMIT before the final RETURN
+       // Check if there's already a LIMIT before the final RETURN
+       var hasLimit = /\bLIMIT\s+\d+\s*(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i.test(finalQuery);
+       
+       if (!hasLimit) {
+           var newQuery = finalQuery.replace(/(\bRETURN\b)(?![\s\S]*\bRETURN\b)/i, ' LIMIT ' + limit + ' $1');
+           
+           if (newQuery !== finalQuery) {
+               finalQuery = newQuery;
+           }
+           // Fallback removed: do not apply LIMIT if no RETURN found
+       }
+    }
+  }
+
   htmx.ajax('POST', '/database/' + currentDb + '/query/execute', {
     target: '#query-results',
     swap: 'innerHTML',
-    values: { query: query, type: currentQueryType }
+    values: { query: finalQuery, type: currentQueryType }
   }).then(function() {
     var elapsed = ((performance.now() - startTime) / 1000).toFixed(3);
     document.getElementById('result-time').textContent = elapsed + 's';

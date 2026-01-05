@@ -563,17 +563,23 @@ pub async fn repl_eval_handler(
 
     // Get or create session
     let mut session = state.repl_sessions.get_or_create(req.session_id.as_deref(), &db_name);
+
+    // Get history BEFORE adding new code (so we don't replay current command)
+    let history: Vec<String> = session.history.clone();
+
+    // Now add the new code to history
     session.add_to_history(req.code.clone());
 
     // Create script engine
     let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
 
-    // Execute with session variables
+    // Execute with session variables and history for function replay
     let mut output_capture: Vec<String> = Vec::new();
     let result = engine.execute_repl(
         &req.code,
         &db_name,
         &session.variables,
+        &history,
         &mut output_capture,
     ).await;
 

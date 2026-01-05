@@ -367,11 +367,11 @@ impl SqlLexer {
                 return self.read_number();
             }
             
-            Some('\'') => {
+            Some('\'') | Some('"') => {
                 return self.read_string();
             }
             
-            Some('"') | Some('`') | Some('[') => {
+            Some('`') | Some('[') => {
                 return self.read_quoted_identifier();
             }
             

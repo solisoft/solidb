@@ -93,28 +93,28 @@
               end
             %>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="capabilities" value="database"
+              <input type="checkbox" name="capabilities[]" value="database"
                      <%= has_cap("database") and "checked" or "" %>
                      class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
               <span class="text-sm text-text">Database</span>
               <span class="text-xs text-text-dim">- CRUD operations on collections</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="capabilities" value="http"
+              <input type="checkbox" name="capabilities[]" value="http"
                      <%= has_cap("http") and "checked" or "" %>
                      class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
               <span class="text-sm text-text">HTTP</span>
               <span class="text-xs text-text-dim">- External API requests</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="capabilities" value="scripts"
+              <input type="checkbox" name="capabilities[]" value="scripts"
                      <%= has_cap("scripts") and "checked" or "" %>
                      class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
               <span class="text-sm text-text">Scripts</span>
               <span class="text-xs text-text-dim">- Execute Lua scripts</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="capabilities" value="notifications"
+              <input type="checkbox" name="capabilities[]" value="notifications"
                      <%= has_cap("notifications") and "checked" or "" %>
                      class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
               <span class="text-sm text-text">Notifications</span>

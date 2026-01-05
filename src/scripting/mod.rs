@@ -433,6 +433,7 @@ impl ScriptEngine {
         code: &str,
         db_name: &str,
         variables: &HashMap<String, JsonValue>,
+        history: &[String],
         output_capture: &mut Vec<String>,
     ) -> Result<(JsonValue, HashMap<String, JsonValue>), DbError> {
         self.stats.active_scripts.fetch_add(1, Ordering::SeqCst);
@@ -477,10 +478,35 @@ impl ScriptEngine {
 
         // Inject session variables into global scope
         for (name, value) in variables {
+            // Check if this is a saved collection handle that needs recreation
+            if let JsonValue::Object(ref obj) = value {
+                if obj.get("_solidb_handle").and_then(|v| v.as_bool()) == Some(true) {
+                    // Recreate collection handle using db:collection()
+                    if let Some(coll_name) = obj.get("_name").and_then(|v| v.as_str()) {
+                        let recreate_code = format!("{} = db:collection(\"{}\")", name, coll_name);
+                        let _ = lua.load(&recreate_code).exec();
+                        continue;
+                    }
+                }
+            }
             let lua_val = json_to_lua(&lua, value)
                 .map_err(|e| DbError::InternalError(format!("Failed to convert variable '{}': {}", name, e)))?;
             globals.set(name.clone(), lua_val)
                 .map_err(|e| DbError::InternalError(format!("Failed to inject variable '{}': {}", name, e)))?;
+        }
+
+        // Replay function definitions from history (functions can't be serialized to JSON)
+        // This allows functions defined in previous commands to persist across REPL calls
+        for prev_code in history {
+            let trimmed = prev_code.trim();
+            // Check if this looks like a function definition
+            if trimmed.starts_with("function ")
+                || trimmed.contains("= function")
+                || trimmed.starts_with("local function ")
+            {
+                // Silently re-execute function definitions
+                let _ = lua.load(prev_code).exec();
+            }
         }
 
         // Set up output capture by replacing solidb.log
@@ -571,24 +597,58 @@ impl ScriptEngine {
         }
 
         // Extract updated variables from global scope
-        // We only extract variables that were originally injected or newly created
+        // Scan all globals and capture user-defined variables (excluding built-ins)
         let mut updated_vars = HashMap::new();
 
-        // Get variables that were originally in the session
-        for name in variables.keys() {
-            if let Ok(val) = globals.get::<LuaValue>(name.clone()) {
-                if !matches!(val, LuaValue::Nil) {
-                    if let Ok(json_val) = self.lua_to_json(&lua, val) {
-                        updated_vars.insert(name.clone(), json_val);
+        // Built-in globals to skip (Lua standard library + solidb namespace)
+        let skip_globals: std::collections::HashSet<&str> = [
+            // Lua standard library
+            "solidb", "string", "table", "math", "utf8", "bit32", "coroutine",
+            // Lua built-in functions
+            "print", "type", "tostring", "tonumber", "pairs", "ipairs", "next",
+            "select", "error", "pcall", "xpcall", "assert", "rawget", "rawset",
+            "rawequal", "rawlen", "setmetatable", "getmetatable", "collectgarbage",
+            // Lua global variables
+            "_G", "_VERSION",
+            // SoliDB globals (should not be overwritten by user variables)
+            "db", "request", "response", "time",
+            // Removed for security (but check anyway)
+            "os", "io", "debug", "package", "dofile", "load", "loadfile", "require",
+        ].iter().cloned().collect();
+
+        // Iterate all globals and capture user-defined variables
+        if let Ok(pairs) = globals.pairs::<String, LuaValue>().collect::<Result<Vec<_>, _>>() {
+            for (name, val) in pairs {
+                // Skip built-ins and nil values
+                if skip_globals.contains(name.as_str()) || matches!(val, LuaValue::Nil) {
+                    continue;
+                }
+                // Skip functions (they're replayed from history instead)
+                if matches!(val, LuaValue::Function(_)) {
+                    continue;
+                }
+                // For SoliDB handles (collection handles), save metadata to recreate later
+                if let LuaValue::Table(ref t) = val {
+                    if t.get::<bool>("_solidb_handle").unwrap_or(false) {
+                        // Save metadata for recreation: {_solidb_handle: true, _db: "...", _name: "..."}
+                        let mut handle_meta = serde_json::Map::new();
+                        handle_meta.insert("_solidb_handle".to_string(), JsonValue::Bool(true));
+                        if let Ok(db_name) = t.get::<String>("_db") {
+                            handle_meta.insert("_db".to_string(), JsonValue::String(db_name));
+                        }
+                        if let Ok(coll_name) = t.get::<String>("_name") {
+                            handle_meta.insert("_name".to_string(), JsonValue::String(coll_name));
+                        }
+                        updated_vars.insert(name, JsonValue::Object(handle_meta));
+                        continue;
                     }
+                }
+                // Convert to JSON and store
+                if let Ok(json_val) = self.lua_to_json(&lua, val) {
+                    updated_vars.insert(name, json_val);
                 }
             }
         }
-
-        // Also look for new top-level variables defined by the user
-        // This is a bit limited since we can't easily iterate all globals
-        // without including built-in functions. For now, we only persist
-        // variables that were explicitly in the session.
 
         match result {
             Ok(json_result) => Ok((json_result, updated_vars)),
@@ -1132,6 +1192,285 @@ impl ScriptEngine {
         globals.set("solidb", solidb)
             .map_err(|e| DbError::InternalError(format!("Failed to set solidb global: {}", e)))?;
 
+        // Create 'time' module with safe time functions
+        let time_table = lua.create_table()
+            .map_err(|e| DbError::InternalError(format!("Failed to create time table: {}", e)))?;
+
+        // time.now() - current Unix timestamp in seconds
+        let now_fn = lua.create_function(|_, ()| {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| mlua::Error::external(e))?;
+            Ok(now.as_secs() as i64)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.now: {}", e)))?;
+        time_table.set("now", now_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.now: {}", e)))?;
+
+        // time.millis() - current Unix timestamp in milliseconds
+        let millis_fn = lua.create_function(|_, ()| {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| mlua::Error::external(e))?;
+            Ok(now.as_millis() as i64)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.millis: {}", e)))?;
+        time_table.set("millis", millis_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.millis: {}", e)))?;
+
+        // time.date(format, timestamp?) - format a timestamp (or current time)
+        let date_fn = lua.create_function(|_, (format, timestamp): (Option<String>, Option<i64>)| {
+            use chrono::{DateTime, Utc, TimeZone};
+            let fmt = format.unwrap_or_else(|| "%Y-%m-%d %H:%M:%S".to_string());
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.format(&fmt).to_string())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.date: {}", e)))?;
+        time_table.set("date", date_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.date: {}", e)))?;
+
+        // time.parse(str, format?) - parse a date string to timestamp
+        let parse_fn = lua.create_function(|_, (date_str, format): (String, Option<String>)| {
+            use chrono::{DateTime, NaiveDateTime, Utc};
+            let fmt = format.unwrap_or_else(|| "%Y-%m-%d %H:%M:%S".to_string());
+            let naive = NaiveDateTime::parse_from_str(&date_str, &fmt)
+                .map_err(|e| mlua::Error::external(format!("Date parse error: {}", e)))?;
+            let dt: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive, Utc);
+            Ok(dt.timestamp())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.parse: {}", e)))?;
+        time_table.set("parse", parse_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.parse: {}", e)))?;
+
+        // time.iso(timestamp?) - format as ISO 8601 string
+        let iso_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.to_rfc3339())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.iso: {}", e)))?;
+        time_table.set("iso", iso_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.iso: {}", e)))?;
+
+        // time.diff(t1, t2) - difference in seconds
+        let diff_fn = lua.create_function(|_, (t1, t2): (i64, i64)| {
+            Ok(t1 - t2)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.diff: {}", e)))?;
+        time_table.set("diff", diff_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.diff: {}", e)))?;
+
+        // time.add(timestamp, seconds) - add seconds to timestamp
+        let add_fn = lua.create_function(|_, (timestamp, seconds): (i64, i64)| {
+            Ok(timestamp + seconds)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.add: {}", e)))?;
+        time_table.set("add", add_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.add: {}", e)))?;
+
+        // time.year/month/day/hour/minute/second(timestamp?) - extract components
+        let year_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Datelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.year())
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.year: {}", e)))?;
+        time_table.set("year", year_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.year: {}", e)))?;
+
+        let month_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Datelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.month() as i32)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.month: {}", e)))?;
+        time_table.set("month", month_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.month: {}", e)))?;
+
+        let day_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Datelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.day() as i32)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.day: {}", e)))?;
+        time_table.set("day", day_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.day: {}", e)))?;
+
+        let hour_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Timelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.hour() as i32)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.hour: {}", e)))?;
+        time_table.set("hour", hour_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.hour: {}", e)))?;
+
+        let minute_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Timelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.minute() as i32)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.minute: {}", e)))?;
+        time_table.set("minute", minute_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.minute: {}", e)))?;
+
+        let second_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Timelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.second() as i32)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.second: {}", e)))?;
+        time_table.set("second", second_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.second: {}", e)))?;
+
+        // time.weekday(timestamp?) - day of week (1=Monday, 7=Sunday)
+        let weekday_fn = lua.create_function(|_, timestamp: Option<i64>| {
+            use chrono::{DateTime, Utc, TimeZone, Datelike};
+            let dt: DateTime<Utc> = if let Some(ts) = timestamp {
+                Utc.timestamp_opt(ts, 0).single()
+                    .ok_or_else(|| mlua::Error::external("Invalid timestamp"))?
+            } else {
+                Utc::now()
+            };
+            Ok(dt.weekday().num_days_from_monday() as i32 + 1)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create time.weekday: {}", e)))?;
+        time_table.set("weekday", weekday_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time.weekday: {}", e)))?;
+
+        globals.set("time", time_table)
+            .map_err(|e| DbError::InternalError(format!("Failed to set time global: {}", e)))?;
+
+        // Add enhanced table functions (extend standard table library)
+        lua.load(r#"
+            -- table.sorted(t, comp?) - returns sorted copy of table
+            function table.sorted(t, comp)
+                local copy = {}
+                for i, v in ipairs(t) do copy[i] = v end
+                table.sort(copy, comp)
+                return copy
+            end
+
+            -- table.keys(t) - returns array of keys
+            function table.keys(t)
+                local keys = {}
+                for k, _ in pairs(t) do
+                    keys[#keys + 1] = k
+                end
+                return keys
+            end
+
+            -- table.values(t) - returns array of values
+            function table.values(t)
+                local values = {}
+                for _, v in pairs(t) do
+                    values[#values + 1] = v
+                end
+                return values
+            end
+
+            -- table.merge(t1, t2) - merge two tables (t2 overwrites t1)
+            function table.merge(t1, t2)
+                local result = {}
+                for k, v in pairs(t1) do result[k] = v end
+                for k, v in pairs(t2) do result[k] = v end
+                return result
+            end
+
+            -- table.filter(t, fn) - filter array elements
+            function table.filter(t, fn)
+                local result = {}
+                for i, v in ipairs(t) do
+                    if fn(v, i) then
+                        result[#result + 1] = v
+                    end
+                end
+                return result
+            end
+
+            -- table.map(t, fn) - map array elements
+            function table.map(t, fn)
+                local result = {}
+                for i, v in ipairs(t) do
+                    result[i] = fn(v, i)
+                end
+                return result
+            end
+
+            -- table.find(t, fn) - find first element matching predicate
+            function table.find(t, fn)
+                for i, v in ipairs(t) do
+                    if fn(v, i) then
+                        return v, i
+                    end
+                end
+                return nil
+            end
+
+            -- table.contains(t, value) - check if array contains value
+            function table.contains(t, value)
+                for _, v in ipairs(t) do
+                    if v == value then return true end
+                end
+                return false
+            end
+
+            -- table.reverse(t) - reverse array
+            function table.reverse(t)
+                local result = {}
+                for i = #t, 1, -1 do
+                    result[#result + 1] = t[i]
+                end
+                return result
+            end
+
+            -- table.slice(t, start, stop) - slice array
+            function table.slice(t, start, stop)
+                local result = {}
+                start = start or 1
+                stop = stop or #t
+                for i = start, stop do
+                    result[#result + 1] = t[i]
+                end
+                return result
+            end
+
+            -- table.len(t) - count elements (works for non-arrays too)
+            function table.len(t)
+                local count = 0
+                for _ in pairs(t) do count = count + 1 end
+                return count
+            end
+        "#).exec().map_err(|e| DbError::InternalError(format!("Failed to setup table extensions: {}", e)))?;
+
         // Create global 'db' object
         let db_handle = lua.create_table()
             .map_err(|e| DbError::InternalError(format!("Failed to create db table: {}", e)))?;
@@ -1148,6 +1487,7 @@ impl ScriptEngine {
 
             // Create collection handle table
             let coll_handle = lua.create_table()?;
+            coll_handle.set("_solidb_handle", true)?;  // Marker to skip during session capture
             coll_handle.set("_db", db_name.clone())?;
             coll_handle.set("_name", coll_name.clone())?;
 

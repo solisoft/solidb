@@ -241,6 +241,14 @@ function AIController:agents_grid()
     local ok, data = pcall(DecodeJson, body)
     if ok and data then
       agents = data.agents or data or {}
+      -- Normalize agents
+      for _, agent in ipairs(agents) do
+        agent.id = agent._key or agent.id
+        if agent.config then
+          agent.model = agent.model or agent.config.model
+          agent.system_prompt = agent.system_prompt or agent.config.system_prompt
+        end
+      end
     end
   end
 
@@ -267,7 +275,15 @@ function AIController:agents_modal_edit()
   if status == 200 then
     local ok, data = pcall(DecodeJson, body)
     if ok and data then
-      agent = data
+      agent = data.agent or data
+      -- Normalize agent data for view
+      if agent then
+        agent.id = agent._key or agent.id
+        if agent.config then
+          agent.model = agent.model or agent.config.model
+          agent.system_prompt = agent.system_prompt or agent.config.system_prompt
+        end
+      end
     end
   end
 
@@ -283,7 +299,16 @@ function AIController:create_agent()
   local name = self.params.name or ""
   local model = self.params.model or "claude-3-5-haiku"
   local system_prompt = self.params.system_prompt or ""
-  local capabilities = self.params.capabilities or {}
+  ngx.req.read_body()
+  local post_args = ngx.req.get_post_args()
+  local raw_capabilities = post_args["capabilities[]"] or self.params.capabilities
+  print("DEBUG: create_agent params:", EncodeJson(self.params))
+  print("DEBUG: raw_capabilities type:", type(raw_capabilities))
+  if type(raw_capabilities) == "table" then
+    print("DEBUG: raw_capabilities content:", EncodeJson(raw_capabilities))
+  else
+    print("DEBUG: raw_capabilities value:", tostring(raw_capabilities))
+  end
   local api_url = self.params.api_url or ""
   local api_key = self.params.api_key or ""
 
@@ -292,9 +317,17 @@ function AIController:create_agent()
     return self:agents_grid()
   end
 
-  -- Normalize capabilities to array
-  if type(capabilities) == "string" then
-    capabilities = { capabilities }
+  -- Robust capabilities parsing
+  local capabilities = {}
+  if type(raw_capabilities) == "table" then
+    -- Handle array/map from Lapis
+    for _, v in pairs(raw_capabilities) do
+      if type(v) == "string" and v ~= "" then
+        table.insert(capabilities, v)
+      end
+    end
+  elseif type(raw_capabilities) == "string" and raw_capabilities ~= "" then
+    table.insert(capabilities, raw_capabilities)
   end
 
   -- Build config object
@@ -333,13 +366,30 @@ function AIController:update_agent()
   local name = self.params.name or ""
   local model = self.params.model or "claude-3-5-haiku"
   local system_prompt = self.params.system_prompt or ""
-  local capabilities = self.params.capabilities or {}
+  ngx.req.read_body()
+  local post_args = ngx.req.get_post_args()
+  local raw_capabilities = post_args["capabilities[]"] or self.params.capabilities
+  print("DEBUG: update_agent params:", EncodeJson(self.params))
+  print("DEBUG: raw_capabilities type:", type(raw_capabilities))
+  if type(raw_capabilities) == "table" then
+    print("DEBUG: raw_capabilities content:", EncodeJson(raw_capabilities))
+  else
+    print("DEBUG: raw_capabilities value:", tostring(raw_capabilities))
+  end
   local api_url = self.params.api_url or ""
   local api_key = self.params.api_key or ""
 
-  -- Normalize capabilities to array
-  if type(capabilities) == "string" then
-    capabilities = { capabilities }
+  -- Robust capabilities parsing
+  local capabilities = {}
+  if type(raw_capabilities) == "table" then
+    -- Handle array/map from Lapis
+    for _, v in pairs(raw_capabilities) do
+      if type(v) == "string" and v ~= "" then
+        table.insert(capabilities, v)
+      end
+    end
+  elseif type(raw_capabilities) == "string" and raw_capabilities ~= "" then
+    table.insert(capabilities, raw_capabilities)
   end
 
   -- Build config object
@@ -357,6 +407,8 @@ function AIController:update_agent()
       config = config
     })
   })
+  print("DEBUG: update_agent backend status:", status)
+  print("DEBUG: update_agent backend body:", body)
 
   if status == 200 then
     SetHeader("HX-Trigger", '{"showToast": {"message": "Agent updated", "type": "success"}, "agentUpdated": true}')

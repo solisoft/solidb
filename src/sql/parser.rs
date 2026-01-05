@@ -193,6 +193,11 @@ impl SqlParser {
                 self.advance();
                 Ok(name)
             }
+            Token::String(name) => {
+                // Allow strings as identifiers (for double-quoted identifiers that are now lexed as strings)
+                self.advance();
+                Ok(name)
+            }
             other => Err(DbError::ParseError(format!(
                 "Expected identifier, found {:?}",
                 other

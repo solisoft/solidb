@@ -10,70 +10,126 @@
     </div>
 
     <div class="flex items-center gap-2">
+      <!-- Mode Toggle -->
+      <div class="inline-flex rounded-lg border border-border/50 overflow-hidden">
+        <button type="button" id="btn-editor" onclick="setReplMode('editor')"
+                class="px-3 py-2 text-sm font-medium bg-warning text-white transition-colors">
+          <i class="fas fa-code mr-1"></i>Editor
+        </button>
+        <button type="button" id="btn-terminal" onclick="setReplMode('terminal')"
+                class="px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors">
+          <i class="fas fa-terminal mr-1"></i>Terminal
+        </button>
+      </div>
       <button type="button" onclick="showHistory()"
               class="inline-flex items-center gap-2 px-3 py-2 bg-bg border border-border/50 rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
         <i class="fas fa-history"></i>
-        <span>History</span>
+        <span class="hidden sm:inline">History</span>
       </button>
-      <button type="button" onclick="executeRepl()"
+      <button type="button" id="run-btn" onclick="executeRepl()"
               class="inline-flex items-center gap-2 px-4 py-2 bg-warning hover:bg-warning/90 text-white font-medium rounded-lg transition-colors">
         <i class="fas fa-play" id="run-icon"></i>
         <span>Run</span>
-        <kbd class="text-xs opacity-70 ml-1">Ctrl+Enter</kbd>
+        <kbd class="text-xs opacity-70 ml-1 hidden sm:inline">Ctrl+Enter</kbd>
       </button>
     </div>
   </div>
 
-  <!-- Main Container - Split View -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- Editor Panel -->
-    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
-      <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fas fa-code text-warning"></i>
-          <span class="text-sm font-medium text-text">Lua Code</span>
+  <!-- Editor Mode -->
+  <div id="editor-mode">
+    <!-- Main Container - Split View -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Editor Panel -->
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+        <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-code text-warning"></i>
+            <span class="text-sm font-medium text-text">Lua Code</span>
+          </div>
+        </div>
+        <div id="lua-editor" class="h-80 bg-[#1e1e1e]"></div>
+      </div>
+
+      <!-- Output Panel -->
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+        <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-terminal text-success"></i>
+            <span class="text-sm font-medium text-text">Output</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span id="execution-time" class="text-xs text-text-dim"></span>
+            <button type="button" onclick="clearOutput()" class="text-text-muted hover:text-text transition-colors" title="Clear output">
+              <i class="fas fa-eraser"></i>
+            </button>
+          </div>
+        </div>
+        <div id="output-container" class="h-80 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
+          <div class="text-text-dim italic">Output will appear here...</div>
         </div>
       </div>
-      <div id="lua-editor" class="h-80 bg-[#1e1e1e]"></div>
     </div>
 
-    <!-- Output Panel -->
+    <!-- Console Log Output -->
+    <div class="mt-6 bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+      <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fas fa-stream text-info"></i>
+          <span class="text-sm font-medium text-text">Console</span>
+        </div>
+        <button type="button" onclick="clearConsole()" class="text-text-muted hover:text-text transition-colors" title="Clear console">
+          <i class="fas fa-eraser"></i>
+        </button>
+      </div>
+      <div id="console-container" class="max-h-48 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
+        <div class="text-text-dim italic">Console output (print/log) will appear here...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terminal Mode -->
+  <div id="terminal-mode" class="hidden">
     <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
       <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <i class="fas fa-terminal text-success"></i>
-          <span class="text-sm font-medium text-text">Output</span>
+          <i class="fas fa-terminal text-warning"></i>
+          <span class="text-sm font-medium text-text">Interactive Terminal</span>
+          <span id="terminal-session" class="text-xs text-text-dim"></span>
         </div>
-        <div class="flex items-center gap-3">
-          <span id="execution-time" class="text-xs text-text-dim"></span>
-          <button type="button" onclick="clearOutput()" class="text-text-muted hover:text-text transition-colors" title="Clear output">
-            <i class="fas fa-eraser"></i>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="clearTerminal()" class="text-text-muted hover:text-text transition-colors text-xs px-2 py-1 rounded hover:bg-white/5" title="Clear display">
+            <i class="fas fa-eraser mr-1"></i>Clear
+          </button>
+          <button type="button" onclick="resetSession()" class="text-text-muted hover:text-error transition-colors text-xs px-2 py-1 rounded hover:bg-white/5" title="Reset session">
+            <i class="fas fa-redo mr-1"></i>Reset
           </button>
         </div>
       </div>
-      <div id="output-container" class="h-80 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
-        <div class="text-text-dim italic">Output will appear here...</div>
+      <!-- Terminal Output -->
+      <div id="terminal-output" class="h-96 overflow-y-auto p-4 font-mono text-sm bg-[#1a1a2e]">
+        <div class="text-text-dim">Welcome to SoliDB Lua REPL. Type Lua code and press Enter.</div>
+        <div class="text-text-dim mb-4">Variables and functions persist between commands.</div>
       </div>
+      <!-- Terminal Input -->
+      <div class="border-t border-border/30 px-4 py-2 bg-[#1a1a2e] flex items-center gap-2">
+        <span class="text-warning font-mono text-[14px] leading-6">lua&gt;</span>
+        <div id="terminal-input-container" class="flex-1 h-6"></div>
+        <span id="terminal-spinner" class="hidden">
+          <i class="fas fa-spinner fa-spin text-warning"></i>
+        </span>
+      </div>
+    </div>
+
+    <!-- Terminal Tips -->
+    <div class="mt-4 text-xs text-text-dim flex items-center gap-4 flex-wrap">
+      <span><kbd class="px-1.5 py-0.5 bg-bg-dark rounded">Enter</kbd> Execute</span>
+      <span><kbd class="px-1.5 py-0.5 bg-bg-dark rounded">Shift+Enter</kbd> Multiline</span>
+      <span><kbd class="px-1.5 py-0.5 bg-bg-dark rounded">Up/Down</kbd> History</span>
+      <span><kbd class="px-1.5 py-0.5 bg-bg-dark rounded">Ctrl+L</kbd> Clear</span>
     </div>
   </div>
 
-  <!-- Console Log Output -->
-  <div class="mt-6 bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
-    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <i class="fas fa-stream text-info"></i>
-        <span class="text-sm font-medium text-text">Console</span>
-      </div>
-      <button type="button" onclick="clearConsole()" class="text-text-muted hover:text-text transition-colors" title="Clear console">
-        <i class="fas fa-eraser"></i>
-      </button>
-    </div>
-    <div id="console-container" class="max-h-48 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
-      <div class="text-text-dim italic">Console output (print/Log) will appear here...</div>
-    </div>
-  </div>
-
-  <!-- Quick Reference -->
+  <!-- Quick Reference (shown in both modes) -->
   <div class="mt-6 bg-bg-card/30 border border-border/30 rounded-xl p-4">
     <div class="flex items-center gap-2 mb-3">
       <i class="fas fa-lightbulb text-accent-light"></i>
@@ -107,8 +163,8 @@
     </div>
   </div>
 
-  <!-- Quick Examples -->
-  <div class="mt-6">
+  <!-- Quick Examples (editor mode only) -->
+  <div id="quick-examples" class="mt-6">
     <h3 class="text-sm font-medium text-text-muted mb-3">Quick Examples</h3>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       <button type="button" onclick="setCode('local coll = db:collection(\"users\")\nreturn coll:count()')"
@@ -151,11 +207,28 @@
   // Configuration
   var dbName = '<%= db %>';
   var HISTORY_KEY = 'solidb_repl_history_' + dbName;
+  var TERMINAL_HISTORY_KEY = 'solidb_terminal_history_' + dbName;
+  var MODE_KEY = 'solidb_repl_mode_' + dbName;
   var MAX_HISTORY = 50;
+  var MAX_TERMINAL_HISTORY = 200;
 
   // State
   var editor = null;
+  var terminalEditor = null;
   var sessionId = null;
+  var currentMode = 'editor';
+  var terminalHistory = [];
+  var terminalHistoryIndex = -1;
+  var multilineBuffer = '';
+
+  // Load terminal history from localStorage
+  try {
+    var savedTerminalHistory = JSON.parse(localStorage.getItem(TERMINAL_HISTORY_KEY) || '[]');
+    if (Array.isArray(savedTerminalHistory)) {
+      terminalHistory = savedTerminalHistory;
+      terminalHistoryIndex = terminalHistory.length;
+    }
+  } catch (e) {}
 
   // Initialize Monaco Editor
   require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
@@ -205,26 +278,335 @@
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function() {
       executeRepl();
     });
+
+    // Create terminal input editor (single line Monaco)
+    terminalEditor = monaco.editor.create(document.getElementById('terminal-input-container'), {
+      value: '',
+      language: 'lua',
+      theme: 'solidb-dark',
+      minimap: { enabled: false },
+      fontSize: 14,
+      lineHeight: 24,
+      fontFamily: "'JetBrains Mono', monospace",
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      wordWrap: 'off',
+      lineNumbers: 'off',
+      glyphMargin: false,
+      folding: false,
+      lineDecorationsWidth: 0,
+      lineNumbersMinChars: 0,
+      renderLineHighlight: 'none',
+      scrollbar: { vertical: 'hidden', horizontal: 'hidden' },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      overviewRulerBorder: false,
+      contextmenu: false,
+      quickSuggestions: false,
+      suggestOnTriggerCharacters: false,
+      acceptSuggestionOnEnter: 'off',
+      tabCompletion: 'off',
+      parameterHints: { enabled: false },
+      hover: { enabled: false },
+      padding: { top: 0, bottom: 0 }
+    });
+
+    // Terminal Enter to execute
+    terminalEditor.addCommand(monaco.KeyCode.Enter, function() {
+      var code = multilineBuffer + terminalEditor.getValue().trim();
+      multilineBuffer = '';
+      if (code) {
+        executeTerminalCommand(code);
+        if (terminalHistory.length === 0 || terminalHistory[terminalHistory.length - 1] !== code) {
+          terminalHistory.push(code);
+          if (terminalHistory.length > MAX_TERMINAL_HISTORY) {
+            terminalHistory = terminalHistory.slice(-MAX_TERMINAL_HISTORY);
+          }
+          saveTerminalHistory();
+        }
+        terminalHistoryIndex = terminalHistory.length;
+      }
+      terminalEditor.setValue('');
+    });
+
+    // Terminal Shift+Enter for multiline
+    terminalEditor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, function() {
+      var line = terminalEditor.getValue();
+      multilineBuffer += line + '\n';
+      appendColorizedContinuation(line);
+      terminalEditor.setValue('');
+    });
+
+    // Terminal Up arrow for history
+    terminalEditor.addCommand(monaco.KeyCode.UpArrow, function() {
+      if (terminalHistoryIndex > 0) {
+        terminalHistoryIndex--;
+        terminalEditor.setValue(terminalHistory[terminalHistoryIndex] || '');
+        // Move cursor to end
+        var model = terminalEditor.getModel();
+        var lastLine = model.getLineCount();
+        var lastCol = model.getLineMaxColumn(lastLine);
+        terminalEditor.setPosition({ lineNumber: lastLine, column: lastCol });
+      }
+    });
+
+    // Terminal Down arrow for history
+    terminalEditor.addCommand(monaco.KeyCode.DownArrow, function() {
+      if (terminalHistoryIndex < terminalHistory.length - 1) {
+        terminalHistoryIndex++;
+        terminalEditor.setValue(terminalHistory[terminalHistoryIndex] || '');
+      } else {
+        terminalHistoryIndex = terminalHistory.length;
+        terminalEditor.setValue('');
+      }
+    });
+
+    // Terminal Ctrl+L to clear
+    terminalEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, function() {
+      clearTerminal();
+    });
+
+    // Load saved mode
+    var savedMode = localStorage.getItem(MODE_KEY);
+    if (savedMode === 'terminal') {
+      setReplMode('terminal');
+    }
   });
 
-  // Execute REPL
+  // Set REPL mode
+  window.setReplMode = function(mode) {
+    currentMode = mode;
+    localStorage.setItem(MODE_KEY, mode);
+
+    var btnEditor = document.getElementById('btn-editor');
+    var btnTerminal = document.getElementById('btn-terminal');
+    var editorMode = document.getElementById('editor-mode');
+    var terminalMode = document.getElementById('terminal-mode');
+    var runBtn = document.getElementById('run-btn');
+    var quickExamples = document.getElementById('quick-examples');
+
+    if (mode === 'editor') {
+      btnEditor.className = 'px-3 py-2 text-sm font-medium bg-warning text-white transition-colors';
+      btnTerminal.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
+      editorMode.classList.remove('hidden');
+      terminalMode.classList.add('hidden');
+      runBtn.classList.remove('hidden');
+      quickExamples.classList.remove('hidden');
+    } else {
+      btnTerminal.className = 'px-3 py-2 text-sm font-medium bg-warning text-white transition-colors';
+      btnEditor.className = 'px-3 py-2 text-sm font-medium bg-bg-dark text-text-muted hover:text-text transition-colors';
+      editorMode.classList.add('hidden');
+      terminalMode.classList.remove('hidden');
+      runBtn.classList.add('hidden');
+      quickExamples.classList.add('hidden');
+
+      // Focus terminal editor
+      setTimeout(function() {
+        if (terminalEditor) terminalEditor.focus();
+      }, 100);
+    }
+  };
+
+  // Execute terminal command
+  function executeTerminalCommand(code) {
+    // Colorize the command with Lua syntax highlighting
+    appendColorizedCommand(code);
+
+    var spinner = document.getElementById('terminal-spinner');
+    spinner.classList.remove('hidden');
+
+    saveToHistory(code);
+
+    fetch('/database/' + dbName + '/repl/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code, session_id: sessionId })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      spinner.classList.add('hidden');
+
+      if (data.session_id) {
+        sessionId = data.session_id;
+        document.getElementById('terminal-session').textContent = '(session: ' + sessionId.substring(0, 8) + '...)';
+      }
+
+      // Show console output first
+      if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+        data.output.forEach(function(line) {
+          appendToTerminal(line, 'output');
+        });
+      }
+
+      // Show result or error
+      if (data.error) {
+        var errMsg = data.error.message || data.error;
+        if (data.error.line) {
+          errMsg = 'line ' + data.error.line + ': ' + errMsg;
+        }
+        appendToTerminal('Error: ' + errMsg, 'error');
+      } else {
+        var result = formatResult(data.result);
+        appendToTerminal('=> ' + result, 'result');
+      }
+
+      scrollTerminalToBottom();
+    })
+    .catch(function(error) {
+      spinner.classList.add('hidden');
+      appendToTerminal('Network Error: ' + error.message, 'error');
+      scrollTerminalToBottom();
+    });
+  }
+
+  // Append colorized Lua command to terminal
+  function appendColorizedCommand(code) {
+    var output = document.getElementById('terminal-output');
+    var lines = code.split('\n');
+
+    lines.forEach(function(line, index) {
+      var div = document.createElement('div');
+      div.className = 'whitespace-pre font-mono text-sm flex';
+
+      // Prompt
+      var prompt = document.createElement('span');
+      prompt.className = 'text-warning mr-1 flex-shrink-0';
+      prompt.textContent = index === 0 ? 'lua> ' : '.... ';
+      div.appendChild(prompt);
+
+      // Colorize the code line
+      var codeContainer = document.createElement('span');
+      codeContainer.className = 'flex-1';
+
+      if (typeof monaco !== 'undefined' && monaco.editor.colorize) {
+        monaco.editor.colorize(line, 'lua', { theme: 'solidb-dark' }).then(function(html) {
+          codeContainer.innerHTML = html;
+        });
+      } else {
+        codeContainer.textContent = line;
+      }
+
+      div.appendChild(codeContainer);
+      output.appendChild(div);
+    });
+
+    scrollTerminalToBottom();
+  }
+
+  // Append colorized continuation line (for multiline input)
+  function appendColorizedContinuation(line) {
+    var output = document.getElementById('terminal-output');
+    var div = document.createElement('div');
+    div.className = 'whitespace-pre font-mono text-sm flex';
+
+    // Prompt
+    var prompt = document.createElement('span');
+    prompt.className = 'text-warning/70 mr-1 flex-shrink-0';
+    prompt.textContent = '.... ';
+    div.appendChild(prompt);
+
+    // Colorize the code line
+    var codeContainer = document.createElement('span');
+    codeContainer.className = 'flex-1';
+
+    if (typeof monaco !== 'undefined' && monaco.editor.colorize) {
+      monaco.editor.colorize(line, 'lua', { theme: 'solidb-dark' }).then(function(html) {
+        codeContainer.innerHTML = html;
+      });
+    } else {
+      codeContainer.textContent = line;
+    }
+
+    div.appendChild(codeContainer);
+    output.appendChild(div);
+    scrollTerminalToBottom();
+  }
+
+  // Append to terminal output
+  function appendToTerminal(text, type) {
+    var output = document.getElementById('terminal-output');
+    var div = document.createElement('div');
+    div.className = 'whitespace-pre-wrap font-mono text-sm';
+
+    switch (type) {
+      case 'continuation':
+        div.className += ' text-warning/70';
+        break;
+      case 'result':
+        div.className += ' text-success';
+        break;
+      case 'output':
+        div.className += ' text-info';
+        break;
+      case 'error':
+        div.className += ' text-error';
+        break;
+      default:
+        div.className += ' text-text';
+    }
+
+    div.textContent = text;
+    output.appendChild(div);
+  }
+
+  function scrollTerminalToBottom() {
+    var output = document.getElementById('terminal-output');
+    output.scrollTop = output.scrollHeight;
+  }
+
+  // Format result for display
+  function formatResult(result) {
+    if (result === null || result === undefined) return 'nil';
+    if (typeof result === 'object') {
+      try {
+        return JSON.stringify(result, null, 2);
+      } catch (e) {
+        return '[object]';
+      }
+    }
+    return String(result);
+  }
+
+  // Clear terminal display (keeps session)
+  window.clearTerminal = function() {
+    var output = document.getElementById('terminal-output');
+    output.innerHTML = '<div class="text-text-dim">Terminal cleared. Session preserved.</div>';
+  };
+
+  // Reset session (keeps command history)
+  window.resetSession = function() {
+    sessionId = null;
+    terminalHistoryIndex = terminalHistory.length;
+    var output = document.getElementById('terminal-output');
+    output.innerHTML = '<div class="text-text-dim">Session reset. Variables and functions cleared.</div>' +
+                       '<div class="text-text-dim">Command history preserved (Up/Down arrows).</div>';
+    document.getElementById('terminal-session').textContent = '';
+  };
+
+  // Clear command history
+  window.clearCommandHistory = function() {
+    terminalHistory = [];
+    terminalHistoryIndex = -1;
+    try {
+      localStorage.removeItem(TERMINAL_HISTORY_KEY);
+    } catch (e) {}
+  };
+
+  // Execute REPL (editor mode)
   window.executeRepl = function() {
     if (!editor) return;
 
     var code = editor.getValue().trim();
     if (!code) return;
 
-    // Save to history
     saveToHistory(code);
 
-    // Show loading state
     var runIcon = document.getElementById('run-icon');
     runIcon.className = 'fas fa-spinner fa-spin';
 
     var outputContainer = document.getElementById('output-container');
     outputContainer.innerHTML = '<div class="flex items-center gap-2 text-text-muted"><i class="fas fa-spinner fa-spin"></i><span>Executing...</span></div>';
 
-    // Execute via API
     fetch('/database/' + dbName + '/repl/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -234,18 +616,15 @@
     .then(function(data) {
       runIcon.className = 'fas fa-play';
 
-      // Store session ID
       if (data.session_id) {
         sessionId = data.session_id;
       }
 
-      // Update execution time
       var timeEl = document.getElementById('execution-time');
       if (data.execution_time_ms) {
         timeEl.textContent = data.execution_time_ms.toFixed(2) + 'ms';
       }
 
-      // Display result
       if (data.error) {
         outputContainer.innerHTML = '<div class="bg-error/10 border border-error/30 rounded-lg p-3">' +
           '<div class="text-error font-medium mb-1">Error' + (data.error.line ? ' (line ' + data.error.line + ')' : '') + '</div>' +
@@ -258,7 +637,6 @@
         '</div>';
       }
 
-      // Display console output
       if (data.output && Array.isArray(data.output) && data.output.length > 0) {
         var consoleContainer = document.getElementById('console-container');
         var hasPlaceholder = consoleContainer.querySelector('.italic');
@@ -298,7 +676,7 @@
 
   // Clear console
   window.clearConsole = function() {
-    document.getElementById('console-container').innerHTML = '<div class="text-text-dim italic">Console output (print/Log) will appear here...</div>';
+    document.getElementById('console-container').innerHTML = '<div class="text-text-dim italic">Console output (print/log) will appear here...</div>';
   };
 
   // Escape HTML
@@ -316,20 +694,20 @@
     return json.replace(
       /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
       function(match) {
-        var cls = 'text-warning'; // number
+        var cls = 'text-warning';
         if (/^"/.test(match)) {
-          cls = /:$/.test(match) ? 'text-info' : 'text-success'; // key : string
+          cls = /:$/.test(match) ? 'text-info' : 'text-success';
         } else if (/true|false/.test(match)) {
-          cls = 'text-accent-light'; // boolean
+          cls = 'text-accent-light';
         } else if (/null/.test(match)) {
-          cls = 'text-text-dim'; // null
+          cls = 'text-text-dim';
         }
         return '<span class="' + cls + '">' + match + '</span>';
       }
     );
   }
 
-  // Save to history
+  // Save to history (editor)
   function saveToHistory(code) {
     if (!code) return;
     try {
@@ -341,10 +719,16 @@
     } catch (e) {}
   }
 
+  // Save terminal history to localStorage
+  function saveTerminalHistory() {
+    try {
+      localStorage.setItem(TERMINAL_HISTORY_KEY, JSON.stringify(terminalHistory));
+    } catch (e) {}
+  }
+
   // History editors storage
   var historyEditors = [];
 
-  // Dispose history editors
   function disposeHistoryEditors() {
     historyEditors.forEach(function(ed) {
       if (ed) ed.dispose();
@@ -357,7 +741,6 @@
     var modal = document.getElementById('history-modal');
     var container = document.getElementById('history-list');
 
-    // Dispose previous editors
     disposeHistoryEditors();
 
     try {
@@ -377,7 +760,6 @@
           '</div>';
         }).join('');
 
-        // Create Monaco editors for each history item after DOM is ready
         setTimeout(function() {
           history.forEach(function(code, index) {
             var editorContainer = document.getElementById('history-editor-' + index);
@@ -415,24 +797,26 @@
     modal.classList.remove('hidden');
   };
 
-  // Close history modal
   window.closeHistory = function() {
     disposeHistoryEditors();
     document.getElementById('history-modal').classList.add('hidden');
   };
 
-  // Load from history
   window.loadFromHistory = function(index) {
     try {
       var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-      if (history[index] && editor) {
-        editor.setValue(history[index]);
+      if (history[index]) {
+        if (currentMode === 'editor' && editor) {
+          editor.setValue(history[index]);
+        } else if (terminalEditor) {
+          terminalEditor.setValue(history[index]);
+          terminalEditor.focus();
+        }
       }
       closeHistory();
     } catch (e) {}
   };
 
-  // Remove from history
   window.removeFromHistory = function(event, index) {
     event.stopPropagation();
     try {
@@ -440,12 +824,11 @@
       if (index >= 0 && index < history.length) {
         history.splice(index, 1);
         localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-        showHistory(); // Refresh
+        showHistory();
       }
     } catch (e) {}
   };
 
-  // Close modal on Escape
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       closeHistory();

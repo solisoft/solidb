@@ -339,6 +339,7 @@ pub fn create_router(
         .route("/_api/database/{db}/ai/agents", get(super::ai_handlers::list_agents_handler))
         .route("/_api/database/{db}/ai/agents", post(super::ai_handlers::register_agent_handler))
         .route("/_api/database/{db}/ai/agents/{id}", get(super::ai_handlers::get_agent_handler))
+        .route("/_api/database/{db}/ai/agents/{id}", put(super::ai_handlers::update_agent_handler))
         .route("/_api/database/{db}/ai/agents/{id}", delete(super::ai_handlers::unregister_agent_handler))
         .route("/_api/database/{db}/ai/agents/{id}/heartbeat", post(super::ai_handlers::agent_heartbeat_handler))
         // AI Marketplace routes
