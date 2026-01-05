@@ -1,0 +1,167 @@
+<%
+local nodes = nodes or {}
+local total_shards = total_shards or 0
+local total_documents = total_documents or 0
+local total_size = total_size or 0
+local replication_factor = replication_factor or 1
+local balance_status = balance_status or "Unknown"
+
+-- Helper to format bytes
+local function format_bytes(bytes)
+  if not bytes or bytes == 0 then return "0 B" end
+  local units = {"B", "KB", "MB", "GB", "TB"}
+  local i = 1
+  while bytes >= 1024 and i < #units do
+    bytes = bytes / 1024
+    i = i + 1
+  end
+  if i == 1 then
+    return string.format("%d %s", bytes, units[i])
+  else
+    return string.format("%.1f %s", bytes, units[i])
+  end
+end
+
+-- Helper to get status color
+local function status_color(status)
+  if status == "healthy" or status == "active" then
+    return "bg-success/10 text-success", "bg-success"
+  elseif status == "syncing" or status == "joining" then
+    return "bg-warning/10 text-warning", "bg-warning"
+  elseif status == "dead" or status == "suspected" then
+    return "bg-error/10 text-error", "bg-error"
+  else
+    return "bg-text-muted/10 text-text-muted", "bg-text-muted"
+  end
+end
+
+-- Balance status color
+local balance_color = "text-success"
+if balance_status == "Unbalanced" then
+  balance_color = "text-error"
+elseif balance_status == "Slightly Unbalanced" then
+  balance_color = "text-warning"
+end
+%>
+
+<!-- Stats Cards (via JS update) -->
+<script>
+  document.getElementById('total-shards').textContent = '<%= total_shards %>';
+  document.getElementById('replication-factor').textContent = '<%= replication_factor %>';
+  document.getElementById('balance-status').textContent = '<%= balance_status %>';
+  document.getElementById('balance-status').className = 'text-2xl font-bold <%= balance_color %>';
+</script>
+
+<% if #nodes == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-12 h-12 mx-auto mb-3 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-cubes text-info"></i>
+  </div>
+  <p class="text-text-muted">No sharded collections found</p>
+  <p class="text-xs text-text-dim mt-1">Create a sharded collection to see distribution</p>
+</div>
+<% else %>
+<!-- Distribution Summary -->
+<div class="p-4 border-b border-border/30">
+  <div class="grid grid-cols-3 gap-4 text-center">
+    <div>
+      <p class="text-2xl font-bold text-primary-light"><%= #nodes %></p>
+      <p class="text-xs text-text-dim">Active Nodes</p>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-accent-light"><%= total_documents %></p>
+      <p class="text-xs text-text-dim">Total Documents</p>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-info"><%= format_bytes(total_size) %></p>
+      <p class="text-xs text-text-dim">Total Size</p>
+    </div>
+  </div>
+</div>
+
+<!-- Node Distribution Table -->
+<table class="w-full text-sm text-left">
+  <thead class="bg-bg/50 border-b border-border/30 text-text-muted uppercase text-xs">
+    <tr>
+      <th class="px-4 py-3 font-semibold">Node</th>
+      <th class="px-4 py-3 font-semibold text-center">Primary Shards</th>
+      <th class="px-4 py-3 font-semibold text-center">Replica Shards</th>
+      <th class="px-4 py-3 font-semibold text-right">Documents</th>
+      <th class="px-4 py-3 font-semibold text-right">Size</th>
+      <th class="px-4 py-3 font-semibold text-center">Status</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-border/20">
+    <% for _, node in ipairs(nodes) do
+      local status = node.status or "unknown"
+      local badge_class, dot_class = status_color(status)
+      local total_shards_node = (node.primary_shards or 0) + (node.replica_shards or 0)
+    %>
+    <tr class="hover:bg-white/5 transition-colors">
+      <td class="px-4 py-3">
+        <div>
+          <span class="font-mono text-primary-light text-xs"><%= node.node_id or "-" %></span>
+          <p class="text-xs text-text-dim"><%= node.address or "-" %></p>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-center">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary-light font-semibold">
+          <%= node.primary_shards or 0 %>
+        </span>
+      </td>
+      <td class="px-4 py-3 text-center">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 text-accent-light font-semibold">
+          <%= node.replica_shards or 0 %>
+        </span>
+      </td>
+      <td class="px-4 py-3 text-right text-text-muted">
+        <%= node.document_count or 0 %>
+      </td>
+      <td class="px-4 py-3 text-right text-text-muted">
+        <%= format_bytes(node.disk_size or 0) %>
+      </td>
+      <td class="px-4 py-3 text-center">
+        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium <%= badge_class %>">
+          <span class="w-1.5 h-1.5 rounded-full <%= dot_class %> <% if status == 'syncing' then %>animate-pulse<% end %>"></span>
+          <span class="capitalize"><%= status %></span>
+        </span>
+      </td>
+    </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<!-- Distribution Bar Visualization -->
+<div class="p-4 border-t border-border/30">
+  <p class="text-xs text-text-muted mb-2">Shard Distribution by Node</p>
+  <div class="flex h-8 rounded-lg overflow-hidden bg-bg-dark">
+    <%
+    local colors = {"bg-primary", "bg-accent", "bg-info", "bg-success", "bg-warning", "bg-error"}
+    local total_all = 0
+    for _, node in ipairs(nodes) do
+      total_all = total_all + (node.primary_shards or 0) + (node.replica_shards or 0)
+    end
+    for i, node in ipairs(nodes) do
+      local node_total = (node.primary_shards or 0) + (node.replica_shards or 0)
+      local pct = total_all > 0 and (node_total / total_all * 100) or 0
+      local color = colors[((i - 1) % #colors) + 1]
+    %>
+    <div class="<%= color %> h-full flex items-center justify-center text-xs font-medium text-white"
+         style="width: <%= pct %>%"
+         title="<%= node.node_id or 'Node ' .. i %>: <%= node_total %> shards (<%= string.format('%.1f', pct) %>%)">
+      <% if pct > 10 then %><%= node_total %><% end %>
+    </div>
+    <% end %>
+  </div>
+  <div class="flex flex-wrap gap-3 mt-2">
+    <% for i, node in ipairs(nodes) do
+      local color = colors[((i - 1) % #colors) + 1]:gsub("bg%-", "")
+    %>
+    <div class="flex items-center gap-1 text-xs text-text-muted">
+      <span class="w-3 h-3 rounded bg-<%= color %>"></span>
+      <span class="font-mono"><%= node.node_id or 'Node ' .. i %></span>
+    </div>
+    <% end %>
+  </div>
+</div>
+<% end %>

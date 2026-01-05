@@ -8,10 +8,9 @@
 
   <div class="grid grid-cols-12 gap-8 lg:gap-12">
     <!-- Sidebar Partial -->
-    <%- Partial("columnar_sidebar") %>
 
     <!-- Main Content -->
-    <main class="col-span-12 lg:col-span-9 space-y-12">
+    <main class="col-span-12 lg:col-span-12 space-y-12">
       <!-- Header Section -->
       <div class="relative">
         <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>

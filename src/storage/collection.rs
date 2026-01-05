@@ -12,8 +12,10 @@ use super::index::{
     IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
 };
 use crate::error::{DbError, DbResult};
-use crate::storage::schema::CollectionSchema;
+use crate::storage::schema::{CollectionSchema, SchemaValidator};
+use cuckoofilter::CuckooFilter;
 use fastbloom::BloomFilter;
+use std::collections::hash_map::DefaultHasher;
 
 
 /// Key prefixes for different data types
@@ -33,6 +35,7 @@ const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
 
 const BLO_IDX_PREFIX: &str = "blo_idx:"; // Bloom filter index prefix
+const CFO_IDX_PREFIX: &str = "cfo_idx:"; // Cuckoo filter index prefix
 const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
 
 /// Type of change event
@@ -113,6 +116,8 @@ pub struct Collection {
     pub collection_type: Arc<RwLock<String>>,
     /// In-memory Bloom filters for indexes
     pub bloom_filters: Arc<RwLock<HashMap<String, BloomFilter>>>,
+    /// In-memory Cuckoo filters for indexes
+    pub cuckoo_filters: Arc<RwLock<HashMap<String, CuckooFilter<DefaultHasher>>>>,
 }
 
 impl Clone for Collection {
@@ -127,6 +132,7 @@ impl Clone for Collection {
             change_sender: self.change_sender.clone(),
             collection_type: self.collection_type.clone(),
             bloom_filters: self.bloom_filters.clone(),
+            cuckoo_filters: self.cuckoo_filters.clone(),
         }
     }
 }
@@ -208,6 +214,7 @@ impl Collection {
             change_sender: Arc::new(change_sender),
             collection_type: Arc::new(RwLock::new(collection_type)),
             bloom_filters: Arc::new(RwLock::new(HashMap::new())),
+            cuckoo_filters: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -336,6 +343,11 @@ impl Collection {
     /// Build a bloom filter key
     fn blo_idx_key(&self, index_name: &str) -> Vec<u8> {
         format!("{}{}", BLO_IDX_PREFIX, index_name).into_bytes()
+    }
+
+    /// Build a cuckoo filter key
+    fn cfo_idx_key(&self, index_name: &str) -> Vec<u8> {
+        format!("{}{}", CFO_IDX_PREFIX, index_name).into_bytes()
     }
 
     // ==================== Blob Operations ====================
@@ -542,6 +554,116 @@ impl Collection {
             });
     }
 
+    // ==================== Cuckoo Filter Operations ====================
+
+    /// Load Cuckoo filter for an index
+    fn load_cuckoo_filter(&self, index_name: &str) -> Option<CuckooFilter<DefaultHasher>> {
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let idx_key = self.cfo_idx_key(index_name);
+
+        match db.get_cf(cf, &idx_key) {
+            Ok(Some(bytes)) => {
+                // Deserialize ExportedCuckooFilter and convert to CuckooFilter
+                serde_json::from_slice::<cuckoofilter::ExportedCuckooFilter>(&bytes)
+                    .ok()
+                    .map(CuckooFilter::from)
+            }
+            _ => None,
+        }
+    }
+
+    /// Save Cuckoo filter for an index
+    fn save_cuckoo_filter(&self, index_name: &str, filter: &CuckooFilter<DefaultHasher>) -> DbResult<()> {
+        let db = self.db.write().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+        let idx_key = self.cfo_idx_key(index_name);
+
+        // Export to ExportedCuckooFilter and serialize
+        let exported = filter.export();
+        let bytes = serde_json::to_vec(&exported)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        db.put_cf(cf, &idx_key, &bytes)
+            .map_err(|e| DbError::InternalError(e.to_string()))
+    }
+
+    /// Preload cuckoo filter into memory (or create new if not exists)
+    fn preload_cuckoo_filter(&self, index_name: &str) {
+        let mut filters = self.cuckoo_filters.write().unwrap();
+        if !filters.contains_key(index_name) {
+            if let Some(filter) = self.load_cuckoo_filter(index_name) {
+                filters.insert(index_name.to_string(), filter);
+            } else {
+                filters.insert(index_name.to_string(), CuckooFilter::new());
+            }
+        }
+    }
+
+    /// Check if item might exist in the index using Cuckoo Filter
+    pub fn cuckoo_check(&self, index_name: &str, value: &str) -> bool {
+        // Try read lock first
+        {
+            let filters = self.cuckoo_filters.read().unwrap();
+            if let Some(filter) = filters.get(index_name) {
+                return filter.contains(value);
+            }
+        }
+
+        // Try load from disk
+        if let Some(filter) = self.load_cuckoo_filter(index_name) {
+            let contains = filter.contains(value);
+            let mut filters = self.cuckoo_filters.write().unwrap();
+            filters.insert(index_name.to_string(), filter);
+            return contains;
+        }
+
+        // Filter doesn't exist, item can't be in it
+        false
+    }
+
+    /// Insert item into Cuckoo Filter
+    pub fn cuckoo_insert(&self, index_name: &str, value: &str) {
+        let mut filters = self.cuckoo_filters.write().unwrap();
+
+        // If not in memory, try loading from disk first
+        if !filters.contains_key(index_name) {
+            if let Some(filter) = self.load_cuckoo_filter(index_name) {
+                filters.insert(index_name.to_string(), filter);
+            }
+        }
+
+        filters
+            .entry(index_name.to_string())
+            .and_modify(|f| {
+                let _ = f.add(value);
+            })
+            .or_insert_with(|| {
+                let mut f = CuckooFilter::new();
+                let _ = f.add(value);
+                f
+            });
+    }
+
+    /// Delete item from Cuckoo Filter (unique capability vs Bloom)
+    pub fn cuckoo_delete(&self, index_name: &str, value: &str) {
+        let mut filters = self.cuckoo_filters.write().unwrap();
+
+        // If not in memory, try loading from disk first
+        if !filters.contains_key(index_name) {
+            if let Some(filter) = self.load_cuckoo_filter(index_name) {
+                filters.insert(index_name.to_string(), filter);
+            }
+        }
+
+        if let Some(filter) = filters.get_mut(index_name) {
+            filter.delete(value);
+        }
+    }
+
     // ==================== Document Operations ====================
 
     /// Insert a document into the collection
@@ -713,10 +835,12 @@ impl Collection {
             return Ok(0);
         }
 
-        // Preload bloom filters to avoid deadlock
+        // Preload bloom/cuckoo filters to avoid deadlock
         for index in &indexes {
             if index.index_type == IndexType::Bloom {
                 let _ = self.get_or_create_bloom_filter(&index.name);
+            } else if index.index_type == IndexType::Cuckoo {
+                self.preload_cuckoo_filter(&index.name);
             }
         }
 
@@ -752,10 +876,14 @@ impl Collection {
                     if !field_values.iter().all(|v| v.is_null()) {
                         let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
                         batch.put_cf(cf, entry_key, doc.key.as_bytes());
-                        
+
                         if index.index_type == IndexType::Bloom {
                             for value in &field_values {
                                 self.bloom_insert(&index.name, &value.to_string());
+                            }
+                        } else if index.index_type == IndexType::Cuckoo {
+                            for value in &field_values {
+                                self.cuckoo_insert(&index.name, &value.to_string());
                             }
                         }
                     }
@@ -839,6 +967,16 @@ impl Collection {
         // Validate edge documents
         if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&data)?;
+        }
+
+        // Validate against JSON schema if defined
+        if let Some(schema) = self.get_json_schema() {
+            let validator = SchemaValidator::new(schema).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema compilation error: {}", e))
+            })?;
+            validator.validate(&data).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
         }
 
         // Extract or generate key
@@ -937,6 +1075,16 @@ impl Collection {
         // Validate edge documents after update
         if *self.collection_type.read().unwrap() == "edge" {
             self.validate_edge_document(&new_value)?;
+        }
+
+        // Validate against JSON schema if defined
+        if let Some(schema) = self.get_json_schema() {
+            let validator = SchemaValidator::new(schema).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema compilation error: {}", e))
+            })?;
+            validator.validate(&new_value).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
         }
 
         let doc_bytes = serde_json::to_vec(&doc)?;
@@ -1938,10 +2086,12 @@ impl Collection {
     fn update_indexes_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         
-        // Preload bloom filters to avoid deadlock during db read lock
+        // Preload bloom/cuckoo filters to avoid deadlock during db read lock
         for index in &indexes {
             if index.index_type == IndexType::Bloom {
                 let _ = self.get_or_create_bloom_filter(&index.name);
+            } else if index.index_type == IndexType::Cuckoo {
+                self.preload_cuckoo_filter(&index.name);
             }
         }
 
@@ -1962,10 +2112,14 @@ impl Collection {
                 db.put_cf(cf, entry_key, doc_key.as_bytes()).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
-                
+
                 if index.index_type == IndexType::Bloom {
                     for value in field_values {
                         self.bloom_insert(&index.name, &value.to_string());
+                    }
+                } else if index.index_type == IndexType::Cuckoo {
+                    for value in field_values {
+                        self.cuckoo_insert(&index.name, &value.to_string());
                     }
                 }
             }
@@ -2152,22 +2306,29 @@ impl Collection {
                 let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
                 db.put_cf(cf, entry_key, doc.key.as_bytes())
                     .map_err(|e| DbError::InternalError(format!("Failed to build index: {}", e)))?;
-                
-                // If bloom filter, also update in-memory filter
+
+                // If bloom/cuckoo filter, also update in-memory filter
                 if index_type == IndexType::Bloom {
                     for value in &field_values {
-                        // Use consistent string representation
                         self.bloom_insert(&name, &value.to_string());
+                    }
+                } else if index_type == IndexType::Cuckoo {
+                    for value in &field_values {
+                        self.cuckoo_insert(&name, &value.to_string());
                     }
                 }
             }
         }
-        
-        // Save bloom filter if applicable
+
+        // Save bloom/cuckoo filter if applicable
         if index_type == IndexType::Bloom {
-             if let Some(filter) = self.bloom_filters.read().unwrap().get(&name) {
-                 self.save_bloom_filter(&name, filter)?;
-             }
+            if let Some(filter) = self.bloom_filters.read().unwrap().get(&name) {
+                self.save_bloom_filter(&name, filter)?;
+            }
+        } else if index_type == IndexType::Cuckoo {
+            if let Some(filter) = self.cuckoo_filters.read().unwrap().get(&name) {
+                self.save_cuckoo_filter(&name, filter)?;
+            }
         }
 
         Ok(IndexStats {
@@ -2515,11 +2676,16 @@ impl Collection {
     /// Lookup documents using index (equality) - optimized version
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
         let index = self.get_index_for_field(field)?;
-        
-        // Fast-path: Check Bloom Filter if available
+
+        // Fast-path: Check Bloom/Cuckoo Filter if available
         if index.index_type == IndexType::Bloom {
             if !self.bloom_check(&index.name, &value.to_string()) {
                 tracing::debug!("Bloom filter pruning: {} not found in {}", value, index.name);
+                return Some(Vec::new());
+            }
+        } else if index.index_type == IndexType::Cuckoo {
+            if !self.cuckoo_check(&index.name, &value.to_string()) {
+                tracing::debug!("Cuckoo filter pruning: {} not found in {}", value, index.name);
                 return Some(Vec::new());
             }
         }
@@ -2635,6 +2801,41 @@ impl Collection {
         limit: Option<usize>,
     ) -> Option<Vec<Document>> {
         use rocksdb::{IteratorMode, Direction};
+
+        // OPTIMIZATION: Primary Key Sort (_id or _key)
+        // Uses the native storage order of RocksDB (lexicographical on keys)
+        if field == "_id" || field == "_key" {
+             let db = self.db.read().unwrap();
+             let cf = match db.cf_handle(&self.name) {
+                 Some(h) => h,
+                 None => return None,
+             };
+             let prefix = DOC_PREFIX.as_bytes();
+             
+             let iter = if ascending {
+                 let mode = IteratorMode::From(prefix, Direction::Forward);
+                 db.iterator_cf(cf, mode)
+             } else {
+                 // For descending, we seek past the end of the prefix
+                 let mut seek_key = prefix.to_vec();
+                 seek_key.push(0xFF);
+                 let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+                 db.iterator_cf(cf, mode)
+             };
+
+             let docs: Vec<Document> = iter
+                 // Filter for IO errors
+                 .filter_map(|r| r.ok())
+                 // Stop if we went past the prefix
+                 .take_while(|(k, _)| k.starts_with(prefix))
+                 // Deserialize valid documents
+                 .filter_map(|(_, v)| serde_json::from_slice::<Document>(&v).ok())
+                 // Apply limit early to avoid scanning everything
+                 .take(limit.unwrap_or(usize::MAX))
+                 .collect();
+                 
+             return Some(docs);
+        }
         
         let index = self.get_index_for_field(field)?;
         let index_name = index.name.clone();
@@ -3469,6 +3670,13 @@ impl Collection {
 
     /// Set JSON schema for this collection
     pub fn set_json_schema(&self, schema: CollectionSchema) -> DbResult<()> {
+        // Validate the schema by trying to compile it
+        if schema.is_enabled() {
+            SchemaValidator::new(schema.clone()).map_err(|e| {
+                DbError::InvalidDocument(format!("Invalid JSON schema: {}", e))
+            })?;
+        }
+
         let db = self.db.write().unwrap();
         let cf = db
             .cf_handle(&self.name)

@@ -2,6 +2,7 @@ pub mod cursor_store;
 pub mod handlers;
 pub mod routes;
 pub mod transaction_handlers;
+pub mod managed_agent_template;
 pub mod auth;
 pub mod script_handlers;
 pub mod queue_handlers;

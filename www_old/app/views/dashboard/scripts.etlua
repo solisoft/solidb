@@ -1,0 +1,28 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <scripts-manager></scripts-manager>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
+<script type="module">
+  import ScriptsManager from '<%= PublicPath("/app/components/scripts-manager.riot.js") %>';
+  import { registerLuaCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
+
+  // Initialize Monaco loader
+  require.config({
+    paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" }
+  });
+
+  // Pre-load Monaco and register completions
+  require(["vs/editor/editor.main"], function () {
+    registerLuaCompletions(monaco);
+
+    // Make monaco available globally for the riot component
+    window.monaco = monaco;
+
+    riot.register('scripts-manager', ScriptsManager);
+    riot.mount('scripts-manager', {
+      db: '<%= Params["db"] %>'
+    });
+  });
+</script>

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title or "Sign In - SoliDB Talks" %></title>
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body class="bg-bg text-text font-sans antialiased">
+  <%- yield() %>
+  <%- ((type(RefreshPageForDevMode) == "function") and RefreshPageForDevMode() or "") %>
+</body>
+</html>

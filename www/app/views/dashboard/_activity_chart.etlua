@@ -1,0 +1,153 @@
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-6 mb-8 relative overflow-hidden group">
+  <!-- Glow effect -->
+  <div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-[80px] group-hover:bg-primary/10 transition-colors duration-500"></div>
+
+  <div class="flex items-center justify-between mb-6 relative z-10">
+    <div>
+      <h3 class="text-lg font-bold text-text flex items-center gap-2">
+        <i class="fas fa-chart-area text-primary-light"></i>
+        Activity Monitor
+      </h3>
+      <p class="text-xs text-text-muted">Real-time requests & system load</p>
+    </div>
+    
+    <div class="flex items-center gap-3">
+       <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20 text-xs font-medium text-success">
+         <span class="relative flex h-2 w-2">
+           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+           <span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+         </span>
+         Live
+       </span>
+       <select class="bg-bg/50 border border-border/50 text-text text-xs rounded-lg px-2 py-1 focus:ring-1 focus:ring-primary/50 outline-none">
+         <option>Last 1 Hour</option>
+         <option>Last 24 Hours</option>
+         <option>Last 7 Days</option>
+       </select>
+    </div>
+  </div>
+
+  <div class="relative h-64 w-full z-10">
+    <canvas id="activityChart"></canvas>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('activityChart').getContext('2d');
+
+    // Gradient for the chart area
+    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(56, 189, 248, 0.2)');
+    gradient.addColorStop(1, 'rgba(56, 189, 248, 0)');
+
+    // Initialize with zeros - will be populated with real data
+    const dataPoints = Array(20).fill(0);
+    let lastRequestCount = 0;
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: Array.from({length: 20}, (_, i) => i),
+        datasets: [{
+          label: 'Requests/s',
+          data: dataPoints,
+          borderColor: '#38bdf8',
+          backgroundColor: gradient,
+          borderWidth: 2,
+          pointBackgroundColor: '#38bdf8',
+          pointBorderColor: '#0f172a',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: '#38bdf8',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+            titleColor: '#94a3b8',
+            bodyColor: '#f8fafc',
+            borderColor: 'rgba(148, 163, 184, 0.1)',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: false
+          }
+        },
+        scales: {
+          x: {
+            display: false,
+            grid: { display: false }
+          },
+          y: {
+            display: true,
+            beginAtZero: true,
+            grid: {
+              color: 'rgba(148, 163, 184, 0.05)',
+              drawBorder: false
+            },
+            ticks: {
+              color: '#64748b',
+              font: { size: 10 }
+            }
+          }
+        },
+        interaction: {
+          intersect: false,
+          mode: 'index',
+        },
+      }
+    });
+
+    // Fetch real metrics from cluster status API
+    function fetchMetrics() {
+      var token = getCookie('sdb_token');
+      var serverUrl = getCookie('sdb_server') || 'http://localhost:6745';
+
+      fetch(serverUrl + '/_api/cluster/status', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        var stats = data.stats || {};
+        var currentRequests = stats.request_count || 0;
+
+        // Calculate requests per second (difference since last fetch)
+        var requestsPerSecond = 0;
+        if (lastRequestCount > 0) {
+          requestsPerSecond = Math.max(0, (currentRequests - lastRequestCount) / 2); // divided by interval
+        }
+        lastRequestCount = currentRequests;
+
+        // Update chart data
+        var chartData = chart.data.datasets[0].data;
+        chartData.shift();
+        chartData.push(requestsPerSecond);
+        chart.update('none');
+      })
+      .catch(function(err) {
+        console.error('Failed to fetch metrics:', err);
+      });
+    }
+
+    function getCookie(name) {
+      var value = '; ' + document.cookie;
+      var parts = value.split('; ' + name + '=');
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return '';
+    }
+
+    // Initial fetch and start polling
+    fetchMetrics();
+    setInterval(fetchMetrics, 2000);
+  });
+</script>

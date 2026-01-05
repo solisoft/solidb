@@ -1,0 +1,214 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("blobs_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-teal-500 to-emerald-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 via-emerald-400 to-green-400 mb-4 tracking-tight">Blob Storage</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Store large binary files like images and videos directly in SoliDB with automatic chunking, metadata management, and high-availability replication.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+              Overview
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB Blob Collections provide a native way to store binary large objects (BLOBs). Unlike standard collections which store JSON documents, blob collections are optimized for immutable binary data.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-teal-400 font-bold mb-2 flex items-center"><i class="fas fa-cut mr-2"></i> Chunking</h3>
+                <p class="text-sm text-gray-400">Files are automatically split into manageable chunks for efficient storage and streaming.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-teal-400 font-bold mb-2 flex items-center"><i class="fas fa-clone mr-2"></i> Replication</h3>
+                <p class="text-sm text-gray-400">Chunks are consistently hashed and replicated across the cluster. SoliDB automates replication factors (min 2, max 10) for high availability.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                 <h3 class="text-teal-400 font-bold mb-2 flex items-center"><i class="fas fa-file-alt mr-2"></i> Metadata</h3>
+                <p class="text-sm text-gray-400">Automatic JSON metadata document generation for querying and management.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Section -->
+      <section id="creating" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Creating a Blob Collection
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Create a collection with <code>type: "blob"</code>.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-4">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/database/:db/collection</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/_system/collection \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Content-Type: application/json"</span> \
+              </div>
+              <div class="pl-4">
+                -d <span class="text-yellow-300">'{
+  "name": "images",
+  "type": "blob",
+  "replicationFactor": 3
+}'</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Uploading Section -->
+      <section id="uploading" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+               Uploading Files
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Use <code>multipart/form-data</code> to upload files. The field name for the file content must be <code>file</code>.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/blob/:db/:collection</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/blob/_system/images \
+              </div>
+               <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+              </div>
+              <div class="pl-4">
+                -F <span class="text-green-400">"file=@my-photo.jpg"</span>
+              </div>
+            </div>
+
+             <div class="mt-6">
+              <h3 class="text-lg font-semibold text-white mb-3">Response</h3>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+<pre>{
+  "_key": "018e2345-6789-7abc-def0-1234567890ab",
+  "name": "my-photo.jpg",
+  "type": "image/jpeg",
+  "size": 1048576,
+  "chunks": 4,
+  "created": "2024-03-15T10:00:00Z"
+}</pre>
+                  </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Downloading Section -->
+      <section id="downloading" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+               Downloading Files
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">GET /_api/blob/:db/:collection/:key</span>
+              </div>
+              <span class="text-gray-500"># Download file with original name</span><br>
+              <div>
+                <span class="text-purple-400">curl</span> -O -J http://localhost:6745/_api/blob/_system/images/&lt;key&gt; \
+              </div>
+               <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Metadata Section -->
+      <section id="metadata" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+               Metadata & Querying
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+               Because metadata is stored as standard JSON documents, you can filter and query your blobs using SDBQL.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+              <span class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">SDBQL Query</span>
+<pre class="text-gray-300">
+<span class="text-purple-400">FOR</span> doc <span class="text-purple-400">IN</span> images
+  <span class="text-purple-400">FILTER</span> doc.type == <span class="text-green-400">"image/jpeg"</span>
+  <span class="text-purple-400">FILTER</span> doc.size > <span class="text-yellow-300">5000000</span>
+  <span class="text-purple-400">RETURN</span> doc</pre>
+            </div>
+
+            <div class="bg-amber-900/10 border border-amber-500/30 rounded-xl p-4 flex items-start">
+               <svg class="w-6 h-6 text-amber-500 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+               <div>
+                 <h4 class="text-amber-400 font-bold text-sm mb-1">Important Note</h4>
+                 <p class="text-amber-200/80 text-sm leading-relaxed">
+                   Deleting the metadata document does NOT automatically delete the binary chunks. Use the <code>DELETE /_api/blob</code> endpoint (coming soon) for full cleanup.
+                 </p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

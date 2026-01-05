@@ -1,0 +1,933 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <%- Partial("architecture_sidebar") %>
+
+    <div class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 mb-4 tracking-tight">
+            System Architecture
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            A deep dive into the internals of SoliDB — a high-performance, distributed, multi-model database built with Rust.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+              <i class="fas fa-layer-group text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB is engineered for <strong>performance</strong>, <strong>scalability</strong>, and <strong>developer experience</strong>. It combines document storage, graph traversal, full-text search, and time-series capabilities in a single, cohesive system.
+          </p>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+              <div class="text-3xl font-black text-indigo-400 mb-1">40K+</div>
+              <p class="text-xs text-gray-500">Lines of Rust</p>
+            </div>
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+              <div class="text-3xl font-black text-blue-400 mb-1">14+</div>
+              <p class="text-xs text-gray-500">Core Modules</p>
+            </div>
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+              <div class="text-3xl font-black text-purple-400 mb-1">5</div>
+              <p class="text-xs text-gray-500">Index Types</p>
+            </div>
+            <div class="bg-gray-900/50 rounded-xl p-4 border border-white/5 text-center">
+              <div class="text-3xl font-black text-pink-400 mb-1">100+</div>
+              <p class="text-xs text-gray-500">SDBQL Functions</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 rounded-xl p-4 border border-indigo-500/20 text-center">
+              <div class="text-indigo-400 font-bold mb-1">API Layer</div>
+              <p class="text-xs text-gray-400">Axum + Tokio</p>
+            </div>
+            <div class="bg-gradient-to-br from-blue-500/20 to-blue-600/10 rounded-xl p-4 border border-blue-500/20 text-center">
+              <div class="text-blue-400 font-bold mb-1">Cluster Layer</div>
+              <p class="text-xs text-gray-400">Sharding + Sync</p>
+            </div>
+            <div class="bg-gradient-to-br from-purple-500/20 to-purple-600/10 rounded-xl p-4 border border-purple-500/20 text-center">
+              <div class="text-purple-400 font-bold mb-1">Query Layer</div>
+              <p class="text-xs text-gray-400">SDBQL Engine</p>
+            </div>
+            <div class="bg-gradient-to-br from-pink-500/20 to-pink-600/10 rounded-xl p-4 border border-pink-500/20 text-center">
+              <div class="text-pink-400 font-bold mb-1">Storage Layer</div>
+              <p class="text-xs text-gray-400">RocksDB</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Core Features Section -->
+      <section id="features" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+              <i class="fas fa-star text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Core Features</h2>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-file-alt text-amber-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Document Store</h4>
+              </div>
+              <p class="text-sm text-gray-400">Schema-free JSON documents with optional JSON Schema validation. Auto-generated keys (UUIDv7) and atomic updates.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-project-diagram text-cyan-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Graph Database</h4>
+              </div>
+              <p class="text-sm text-gray-400">Native graph traversal with SDBQL. Edge collections, vertex relationships, and path queries.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-search text-purple-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Full-Text Search</h4>
+              </div>
+              <p class="text-sm text-gray-400">Built-in fulltext indexing with n-gram tokenization and fuzzy matching support.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-globe text-teal-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Geo Spatial</h4>
+              </div>
+              <p class="text-sm text-gray-400">Geo indexes with haversine distance, radius queries, and nearest-neighbor search.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-clock text-orange-400 mr-3"></i>
+                <h4 class="text-white font-semibold">TTL Indexes</h4>
+              </div>
+              <p class="text-sm text-gray-400">Time-to-live indexes for automatic document expiration. Perfect for caching and sessions.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-bolt text-yellow-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Live Queries</h4>
+              </div>
+              <p class="text-sm text-gray-400">Real-time WebSocket subscriptions with SDBQL. Push updates on document changes.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-exchange-alt text-indigo-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Transactions</h4>
+              </div>
+              <p class="text-sm text-gray-400">ACID transactions with WAL (Write-Ahead Log). Commit, rollback, and isolation levels.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-tasks text-rose-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Job Queues</h4>
+              </div>
+              <p class="text-sm text-gray-400">Built-in priority queues with scheduling, retries, and dead-letter handling.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-chart-line text-cyan-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Time Series</h4>
+              </div>
+              <p class="text-sm text-gray-400">Optimized storage for time-series data with ranged pruning and downsampling aggregations.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-code text-lime-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Lua Scripting</h4>
+              </div>
+              <p class="text-sm text-gray-400">Server-side Lua scripts for custom logic, triggers, and stored procedures.</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex items-center mb-3">
+                <i class="fas fa-chart-bar text-teal-400 mr-3"></i>
+                <h4 class="text-white font-semibold">Columnar Storage</h4>
+              </div>
+              <p class="text-sm text-gray-400">Column-oriented storage engine with LZ4 compression. Optimized for analytics, aggregations, and report generation.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Technology Stack Section -->
+      <section id="tech-stack" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+              <i class="fas fa-code text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Technology Stack</h2>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fab fa-rust text-orange-500 mr-2 text-xl"></i> Core Runtime
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><strong class="text-gray-300">Rust:</strong> Memory safety, zero-cost abstractions, no garbage collection.</li>
+                <li><strong class="text-gray-300">Tokio:</strong> Async runtime with work-stealing scheduler (multi-threaded).</li>
+                <li><strong class="text-gray-300">Tower:</strong> Middleware stack for request/response pipelines.</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-hdd text-green-500 mr-2"></i> Storage Engine
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><strong class="text-gray-300">RocksDB:</strong> LSM-tree storage with column families, compression, compaction.</li>
+                <li><strong class="text-gray-300">Column Families:</strong> Separate namespaces for collections, indexes, metadata.</li>
+                <li><strong class="text-gray-300">Write Batches:</strong> Atomic multi-key operations for consistency.</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-network-wired text-purple-500 mr-2"></i> Network Layer
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><strong class="text-gray-300">Axum:</strong> Type-safe, ergonomic HTTP framework built on Hyper.</li>
+                <li><strong class="text-gray-300">WebSocket:</strong> Tokio-tungstenite for live queries and changefeeds.</li>
+                <li><strong class="text-gray-300">Reqwest:</strong> HTTP client for inter-node cluster communication.</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h3 class="text-white font-semibold mb-3 flex items-center">
+                <i class="fas fa-cogs text-yellow-500 mr-2"></i> Tooling & Serialization
+              </h3>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><strong class="text-gray-300">Serde:</strong> Zero-copy JSON serialization/deserialization.</li>
+                <li><strong class="text-gray-300">mlua:</strong> Lua 5.4 interpreter for server-side scripting.</li>
+                <li><strong class="text-gray-300">Tracing:</strong> Structured logging with span-based instrumentation.</li>
+                <li><strong class="text-gray-300">jsonwebtoken:</strong> JWT-based authentication and authorization.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Project Structure Section -->
+      <section id="project-structure" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+              <i class="fas fa-folder-open text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Project Structure</h2>
+          </div>
+
+          <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
+            <div class="flex items-center px-4 py-2 bg-white/5 border-b border-white/5 text-gray-500">
+              src/
+            </div>
+            <div class="p-4 space-y-2">
+              <div class="flex"><span class="text-cyan-400 w-40">storage/</span><span class="text-gray-500"># Document storage, collections, indexes (RocksDB wrapper)</span></div>
+              <div class="flex"><span class="text-purple-400 w-40">sdbql/</span><span class="text-gray-500"># Query language: lexer, parser, AST, executor</span></div>
+              <div class="flex"><span class="text-indigo-400 w-40">server/</span><span class="text-gray-500"># HTTP handlers, routes, auth, WebSocket</span></div>
+              <div class="flex"><span class="text-blue-400 w-40">cluster/</span><span class="text-gray-500"># Node discovery, health checks, HLC clocks</span></div>
+              <div class="flex"><span class="text-pink-400 w-40">sharding/</span><span class="text-gray-500"># Coordinator, distribution, migration, routing</span></div>
+              <div class="flex"><span class="text-emerald-400 w-40">sync/</span><span class="text-gray-500"># Replication transport, worker, blob sync</span></div>
+              <div class="flex"><span class="text-amber-400 w-40">transaction/</span><span class="text-gray-500"># Transaction manager, WAL, isolation</span></div>
+              <div class="flex"><span class="text-rose-400 w-40">queue/</span><span class="text-gray-500"># Priority queues, scheduling, dead-letter</span></div>
+              <div class="flex"><span class="text-lime-400 w-40">scripting/</span><span class="text-gray-500"># Lua runtime, sandbox, script execution</span></div>
+              <div class="flex"><span class="text-teal-400 w-40">driver/</span><span class="text-gray-500"># Internal cluster client & protocol</span></div>
+              <div class="flex"><span class="text-orange-400 w-40">ttl/</span><span class="text-gray-500"># TTL index cleanup worker</span></div>
+              <div class="flex"><span class="text-gray-400 w-40">bin/</span><span class="text-gray-500"># CLI tools (dump, restore, bench, fuse)</span></div>
+              <div class="flex"><span class="text-gray-400 w-40">error.rs</span><span class="text-gray-500"># Error types (DbError, DbResult)</span></div>
+              <div class="flex"><span class="text-gray-400 w-40">lib.rs</span><span class="text-gray-500"># Public API exports</span></div>
+              <div class="flex"><span class="text-white w-40">main.rs</span><span class="text-gray-500"># Server entrypoint</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Storage Layer Section -->
+      <section id="storage-layer" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]">
+              <i class="fas fa-database text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Storage Layer</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            The storage layer provides an abstraction over <strong>RocksDB</strong> using column families for isolation. Each collection gets its own column family with documents, indexes, and metadata stored using prefixed keys.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-yellow-400 font-bold mb-3">Key Components</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code class="text-cyan-400">StorageEngine</code> — Database instance manager</li>
+                <li><code class="text-cyan-400">Collection</code> — Document operations, indexing</li>
+                <li><code class="text-cyan-400">Document</code> — JSON wrapper with key/value</li>
+                <li><code class="text-cyan-400">Index</code> — Compound index metadata</li>
+                <li><code class="text-cyan-400">GeoIndex</code> — Spatial index with RTrees</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-yellow-400 font-bold mb-3">Key Prefixes</h4>
+              <div class="font-mono text-xs space-y-1">
+                <div><span class="text-green-400">doc:</span> <span class="text-gray-500">Document data</span></div>
+                <div><span class="text-blue-400">idx:</span> <span class="text-gray-500">Secondary index entries</span></div>
+                <div><span class="text-purple-400">idx_meta:</span> <span class="text-gray-500">Index metadata</span></div>
+                <div><span class="text-teal-400">geo:</span> <span class="text-gray-500">Geo index entries</span></div>
+                <div><span class="text-orange-400">ft:</span> <span class="text-gray-500">Fulltext n-grams</span></div>
+                <div><span class="text-rose-400">ttl:</span> <span class="text-gray-500">TTL index metadata</span></div>
+                <div><span class="text-emerald-400">col:</span> <span class="text-gray-500">Columnar data & metadata</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-900/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-white font-bold mb-3">Index Types</h4>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div class="bg-white/5 rounded-lg p-3 text-center">
+                <div class="text-emerald-400 font-bold text-sm">Persistent</div>
+                <p class="text-xs text-gray-500">Sorted B-tree</p>
+              </div>
+              <div class="bg-white/5 rounded-lg p-3 text-center">
+                <div class="text-indigo-400 font-bold text-sm">Hash</div>
+                <p class="text-xs text-gray-500">O(1) lookup</p>
+              </div>
+              <div class="bg-white/5 rounded-lg p-3 text-center">
+                <div class="text-purple-400 font-bold text-sm">Fulltext</div>
+                <p class="text-xs text-gray-500">N-gram tokens</p>
+              </div>
+              <div class="bg-white/5 rounded-lg p-3 text-center">
+                <div class="text-teal-400 font-bold text-sm">Geo</div>
+                <p class="text-xs text-gray-500">Haversine</p>
+              </div>
+              <div class="bg-white/5 rounded-lg p-3 text-center">
+                <div class="text-orange-400 font-bold text-sm">TTL</div>
+                <p class="text-xs text-gray-500">Expiration</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JSON Schema Validation Section -->
+      <section id="json-schema" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-teal-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(20,184,166,0.5)]">
+              <i class="fas fa-check-double text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">JSON Schema Validation</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            While SoliDB is schema-less by default, it supports <strong>optional JSON Schema validation</strong> at the collection level. This allows you to enforce data integrity rules while maintaining flexibility.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-teal-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-shield-alt mr-2"></i> Validation Modes
+              </h4>
+              <ul class="space-y-3 text-sm text-gray-400">
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">off</span>
+                  <span>No validation (default). Any valid JSON is accepted.</span>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">strict</span>
+                  <span>Rejects any document that violates the schema. Returns formatted error details.</span>
+                </li>
+                <li class="flex items-start">
+                  <span class="text-teal-500 font-mono mr-2">lenient</span>
+                  <span>Accepts invalid documents but logs warnings. Useful for schema migrations or testing.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-teal-400 font-bold mb-3 flex items-center">
+                <i class="fas fa-cog mr-2"></i> Configuration
+              </h4>
+              <p class="text-sm text-gray-400 mb-4">
+                Schemas are stored in the <code class="text-teal-300">_schema</code> system collection and can be updated at any time.
+              </p>
+              <div class="bg-black/40 rounded-lg p-3 font-mono text-xs text-gray-300 border border-white/10">
+                <div class="text-teal-300">// Example Schema Object</div>
+                {
+                  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"users_v1"</span>,
+                  <span class="text-purple-400">"validation_mode"</span>: <span class="text-green-400">"strict"</span>,
+                  <span class="text-purple-400">"schema"</span>: {
+                    <span class="text-purple-400">"type"</span>: <span class="text-green-400">"object"</span>,
+                    <span class="text-purple-400">"required"</span>: [<span class="text-green-400">"email"</span>],
+                    <span class="text-purple-400">"properties"</span>: {
+                      <span class="text-purple-400">"email"</span>: { <span class="text-purple-400">"type"</span>: <span class="text-green-400">"string"</span> }
+                    }
+                  }
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-teal-900/10 rounded-xl p-5 border border-teal-500/20">
+             <div class="flex items-start">
+               <i class="fas fa-info-circle text-teal-400 mt-1 mr-3"></i>
+               <div>
+                 <h4 class="text-teal-400 font-bold mb-1">Standard Compliance</h4>
+                 <p class="text-sm text-gray-300">
+                   SoliDB uses the <code class="text-teal-300">jsonschema</code> crate, supporting Draft 7, Draft 2019-09, and Draft 2020-12 specifications. Complex validation rules like <code class="text-white/80">oneOf</code>, <code class="text-white/80">pattern</code>, and <code class="text-white/80">dependencies</code> are fully supported.
+                 </p>
+               </div>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SDBQL Engine Section -->
+      <section id="sdbql-engine" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+              <i class="fas fa-terminal text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">SDBQL Engine</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SDBQL (SoliDB Query Language) is an AQL-inspired query language with <strong>100+ built-in functions</strong>. It supports document queries, graph traversal, aggregations, and data manipulation.
+          </p>
+
+          <div class="bg-gray-900 rounded-xl border border-white/10 p-4 font-mono text-sm text-gray-400 flex justify-between items-center overflow-x-auto mb-6">
+            <div class="text-center">
+              <div class="text-white">Query</div>
+              <div class="text-xs">String</div>
+            </div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-center">
+              <div class="text-cyan-400">Lexer</div>
+              <div class="text-xs">Tokens</div>
+            </div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-center">
+              <div class="text-purple-400">Parser</div>
+              <div class="text-xs">AST</div>
+            </div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-center">
+              <div class="text-yellow-400">Optimizer</div>
+              <div class="text-xs">Plan</div>
+            </div>
+            <i class="fas fa-arrow-right text-gray-600"></i>
+            <div class="text-center">
+              <div class="text-green-400">Executor</div>
+              <div class="text-xs">Results</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-950/50 col-span-2 rounded-xl p-6 border border-white/10">
+              <h4 class="text-purple-400 font-bold mb-6 flex items-center">
+                <i class="fas fa-rocket mr-3"></i> Query Capabilities
+              </h4>
+              
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+                <!-- Iteration -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-purple-500/50 to-indigo-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center mr-3 border border-purple-500/30">
+                        <i class="fas fa-redo text-purple-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Iteration</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Multi-source iteration over collections, ranges, and static arrays.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-purple-300 border border-white/5">
+                      FOR doc IN users
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Filtering -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500/50 to-indigo-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center mr-3 border border-blue-500/30">
+                        <i class="fas fa-filter text-blue-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Filtering</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Advanced filtering with optimized index usage and logical operators.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-blue-300 border border-white/5">
+                      FILTER d.age > 18
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Variables -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/50 to-cyan-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3 border border-indigo-500/30">
+                        <i class="fas fa-calculator text-indigo-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Bindings</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Variable declarations, intermediate results, and subqueries.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-indigo-300 border border-white/5">
+                      LET avg = (FOR ...)
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Aggregation -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-500/50 to-purple-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center mr-3 border border-pink-500/30">
+                        <i class="fas fa-layer-group text-pink-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Grouping</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Data reduction via COLLECT with COUNT and AGGREGATE.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-pink-300 border border-white/5">
+                      COLLECT city = d.city
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Graph -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/50 to-teal-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mr-3 border border-cyan-500/30">
+                        <i class="fas fa-project-diagram text-cyan-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Graph</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Native graph traversal with edge/vertex hops and path finding.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-cyan-300 border border-white/5">
+                      FOR v,e,p IN 1..3
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Patterns -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/50 to-teal-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-3 border border-emerald-500/30">
+                        <i class="fas fa-search text-emerald-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Matching</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Pattern matching using LIKE and regular expressions (=~, !~).</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-emerald-300 border border-white/5">
+                      FILTER u.name =~ "J.*"
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Mutations -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-orange-500/50 to-red-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center mr-3 border border-orange-500/30">
+                        <i class="fas fa-bolt text-orange-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Mutations</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Atomic multi-document mutations within the query flow.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-orange-300 border border-white/5">
+                      UPDATE u WITH {v:1}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Results -->
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-rose-500/50 to-pink-500/50 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                  <div class="relative bg-gray-900/80 border border-white/5 rounded-xl p-4 h-full flex flex-col">
+                    <div class="flex items-center mb-3">
+                      <div class="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center mr-3 border border-rose-500/30">
+                        <i class="fas fa-external-link-alt text-rose-400 text-xs"></i>
+                      </div>
+                      <span class="text-gray-100 font-bold text-xs uppercase tracking-wider">Returning</span>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-4 leading-relaxed flex-grow">Flexible response construction with projection and mapping.</p>
+                    <div class="bg-black/40 rounded-lg px-2 py-2 font-mono text-[10px] text-rose-300 border border-white/5">
+                      RETURN { name: u.v }
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h4 class="text-purple-400 font-bold mb-6 flex items-center">
+                <i class="fas fa-book-open mr-3"></i> Built-in Functions Reference
+              </h4>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-sm">
+                <!-- String & Pattern -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-quote-left text-cyan-400 mr-2"></i> String & Pattern
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"CONCAT", "CONCAT_SEPARATOR", "SPLIT", "SUBSTRING", "TRIM", "LTRIM", "RTRIM", "UPPER", "LOWER", "CONTAINS", "SUBSTITUTE", "REGEX_REPLACE", "LEVENSHTEIN", "LEFT", "RIGHT", "CHAR_LENGTH", "FIND_FIRST", "FIND_LAST", "REGEX_TEST", "REGEXP_MATCH"}) do %>
+                      <span class="text-cyan-400/80 hover:text-cyan-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Numeric & Math -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-calculator text-blue-400 mr-2"></i> Numeric & Math
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"ABS", "ROUND", "FLOOR", "CEIL", "SQRT", "POW", "RANDOM", "LOG", "LOG10", "LOG2", "EXP", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2", "PI"}) do %>
+                      <span class="text-blue-400/80 hover:text-blue-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Array & List -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-list text-purple-400 mr-2"></i> Array Operations
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"LENGTH", "PUSH", "APPEND", "SLICE", "FLATTEN", "FIRST", "LAST", "NTH", "POSITION", "CONTAINS_ARRAY", "UNIQUE", "SORTED", "REVERSE", "UNION", "INTERSECTION", "MINUS", "RANGE", "ZIP", "REMOVE_VALUE"}) do %>
+                      <span class="text-purple-400/80 hover:text-purple-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Aggregation -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-layer-group text-pink-400 mr-2"></i> Aggregation (Arrays)
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT", "MEDIAN", "PERCENTILE", "VARIANCE", "STDDEV"}) do %>
+                      <span class="text-pink-400/80 hover:text-pink-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Object & Document -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-code text-indigo-400 mr-2"></i> Object & JSON
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"HAS", "KEEP", "UNSET", "ATTRIBUTES", "VALUES", "MERGE", "JSON_PARSE", "JSON_STRINGIFY"}) do %>
+                      <span class="text-indigo-400/80 hover:text-indigo-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Date & Time -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-clock text-rose-400 mr-2"></i> Date & Time
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"DATE_NOW", "DATE_ISO8601", "DATE_TIMESTAMP", "DATE_FORMAT", "DATE_ADD", "DATE_SUBTRACT", "DATE_DIFF", "DATE_TRUNC", "TIME_BUCKET", "DATE_YEAR", "DATE_MONTH", "DATE_DAY", "DATE_HOUR", "DATE_MINUTE", "DATE_SECOND", "DATE_DAYOFWEEK", "DATE_QUARTER"}) do %>
+                      <span class="text-rose-400/80 hover:text-rose-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Geo & Search -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-search text-emerald-400 mr-2"></i> Geo & Search
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"DISTANCE", "GEO_DISTANCE", "FULLTEXT", "BM25"}) do %>
+                      <span class="text-emerald-400/80 hover:text-emerald-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Type Checking -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-check-circle text-orange-400 mr-2"></i> Type Checking
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"IS_ARRAY", "IS_BOOL", "IS_NUMBER", "IS_STRING", "IS_OBJECT", "IS_NULL", "IS_DATE", "TYPENAME", "TO_STRING", "TO_NUMBER"}) do %>
+                      <span class="text-orange-400/80 hover:text-orange-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+
+                <!-- Utils -->
+                <div class="bg-gray-900/30 p-4 rounded-xl border border-white/5">
+                  <h5 class="text-white font-bold mb-3 flex items-center text-xs uppercase tracking-widest text-gray-400">
+                    <i class="fas fa-wrench text-amber-400 mr-2"></i> Utilities
+                  </h5>
+                  <div class="flex flex-wrap gap-x-2 gap-y-1">
+                    <% for _, func in ipairs({"UUIDV4", "UUIDV7", "MD5", "SHA256", "BASE64_ENCODE", "BASE64_DECODE", "SLEEP", "ASSERT", "IF", "COLLECTION_COUNT", "COALESCE", "NOT_NULL", "FIRST_NOT_NULL"}) do %>
+                      <span class="text-amber-400/80 hover:text-amber-300 transition-colors cursor-default"><%= func %></span>
+                      <span class="text-gray-700 last:hidden">·</span>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- Server & API Section -->
+      <section id="server-api" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+              <i class="fas fa-server text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Server & API</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            The HTTP server is built on <strong>Axum</strong> with async handlers powered by Tokio. It provides RESTful endpoints, WebSocket support, and JWT-based authentication.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-red-400 font-bold mb-3">HTTP Endpoints</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li><code>/_api/query</code> — SDBQL execution</li>
+                <li><code>/_api/document</code> — CRUD operations</li>
+                <li><code>/_api/collection</code> — Management</li>
+                <li><code>/_api/index</code> — Index operations</li>
+                <li><code>/_api/blob</code> — Binary storage</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-red-400 font-bold mb-3">WebSocket</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li><code>/ws/live</code> — Live queries</li>
+                <li><code>/ws/changefeed</code> — Real-time changes</li>
+                <li><code>/ws/presence</code> — User presence</li>
+                <li>Multiplexed connections</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-red-400 font-bold mb-3">Authentication</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li>JWT Bearer tokens</li>
+                <li>Database-level auth</li>
+                <li>Admin vs user roles</li>
+                <li>Token refresh flow</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cluster & Sharding Section -->
+      <section id="cluster-sharding" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+              <i class="fas fa-network-wired text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Cluster & Sharding</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB supports <strong>horizontal scaling</strong> through sharding. Collections can be distributed across multiple nodes with configurable replication factors.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-pink-400 font-bold mb-3">Cluster Module</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code class="text-cyan-400">ClusterManager</code> — Node registration, heartbeats</li>
+                <li><code class="text-cyan-400">HealthChecker</code> — Node liveness detection</li>
+                <li><code class="text-cyan-400">HLC</code> — Hybrid Logical Clocks for ordering</li>
+                <li><code class="text-cyan-400">ClusterState</code> — Membership and topology</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-pink-400 font-bold mb-3">Sharding Module</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code class="text-cyan-400">ShardCoordinator</code> — Shard assignment, healing</li>
+                <li><code class="text-cyan-400">Distribution</code> — Replica placement algorithms</li>
+                <li><code class="text-cyan-400">Migration</code> — Live shard rebalancing</li>
+                <li><code class="text-cyan-400">Router</code> — Request routing to primaries</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="mt-6 bg-gray-900/50 rounded-xl p-5 border border-white/5">
+            <h4 class="text-white font-bold mb-3">Replication Flow</h4>
+            <div class="flex items-center justify-between font-mono text-sm overflow-x-auto">
+              <div class="text-center p-2">
+                <div class="text-emerald-400">Write</div>
+                <div class="text-xs text-gray-500">Primary</div>
+              </div>
+              <i class="fas fa-arrow-right text-gray-600"></i>
+              <div class="text-center p-2">
+                <div class="text-blue-400">SyncLog</div>
+                <div class="text-xs text-gray-500">Append entry</div>
+              </div>
+              <i class="fas fa-arrow-right text-gray-600"></i>
+              <div class="text-center p-2">
+                <div class="text-purple-400">Transport</div>
+                <div class="text-xs text-gray-500">HTTP/WS</div>
+              </div>
+              <i class="fas fa-arrow-right text-gray-600"></i>
+              <div class="text-center p-2">
+                <div class="text-pink-400">Replicas</div>
+                <div class="text-xs text-gray-500">Apply changes</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Transactions Section -->
+      <section id="transactions" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+              <i class="fas fa-exchange-alt text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Transactions</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            SoliDB provides <strong>ACID transactions</strong> with a Write-Ahead Log (WAL) for durability. Transactions support multiple operations across collections.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-amber-400 font-bold mb-3">Transaction API</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li><code>BEGIN</code> — Start transaction</li>
+                <li><code>COMMIT</code> — Apply changes</li>
+                <li><code>ROLLBACK</code> — Discard changes</li>
+                <li>Collection locking</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-amber-400 font-bold mb-3">WAL (Write-Ahead Log)</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li>Append-only log file</li>
+                <li>Crash recovery</li>
+                <li>Log truncation</li>
+                <li>Replay on startup</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-amber-400 font-bold mb-3">Isolation Levels</h4>
+              <ul class="space-y-1 text-sm text-gray-400">
+                <li>Read Uncommitted</li>
+                <li>Read Committed</li>
+                <li>Snapshot Isolation</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scripting Section -->
+      <section id="scripting" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-lime-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(132,204,22,0.5)]">
+              <i class="fas fa-code text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Lua Scripting</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Server-side <strong>Lua 5.4</strong> scripts enable custom business logic, API endpoints, and background jobs. Scripts run in a secure sandbox with access to SDBQL and HTTP utilities.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-lime-400 font-bold mb-3">Script Types</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><strong class="text-gray-300">GET/POST/PUT/DELETE:</strong> Custom API endpoints</li>
+                <li><strong class="text-gray-300">WS:</strong> WebSocket handlers</li>
+                <li><strong class="text-gray-300">Scheduled:</strong> Cron-like execution</li>
+                <li><strong class="text-gray-300">Triggers:</strong> Document change handlers</li>
+              </ul>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <h4 class="text-lime-400 font-bold mb-3">Available APIs</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code class="text-cyan-400">sdbql(query)</code> — Execute SDBQL</li>
+                <li><code class="text-cyan-400">fetch(url, opts)</code> — HTTP client</li>
+                <li><code class="text-cyan-400">json.encode/decode</code> — JSON handling</li>
+                <li><code class="text-cyan-400">crypto.*</code> — Hash, HMAC, JWT</li>
+                <li><code class="text-cyan-400">time.*</code> — Date/time utilities</li>
+                <li><code class="text-cyan-400">log.*</code> — Debug logging (debug, info, error)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>

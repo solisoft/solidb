@@ -23,10 +23,9 @@
 
   <div class="lg:grid lg:grid-cols-12 lg:gap-12">
     <!-- Sidebar Partial -->
-    <%- Partial("sql_sidebar") %>
 
     <!-- Main Content -->
-    <main class="lg:col-span-9 space-y-12">
+    <main class="lg:col-span-12 space-y-12">
       <!-- Header -->
       <div class="relative">
         <div
@@ -39,7 +38,7 @@
             SQL Compatibility Layer
           </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Write familiar SQL queries that are automatically translated to SDBQL. 
+            Write familiar SQL queries that are automatically translated to SDBQL.
             Perfect for developers transitioning from traditional databases.
           </p>
         </div>
@@ -70,7 +69,7 @@
           </div>
           <div class="p-8 space-y-6">
             <p class="text-gray-300 leading-relaxed">
-              SoliDB provides a SQL compatibility layer that translates standard SQL syntax into SDBQL. 
+              SoliDB provides a SQL compatibility layer that translates standard SQL syntax into SDBQL.
               This allows you to use familiar SQL statements while leveraging SoliDB's document-oriented storage.
             </p>
 
@@ -139,7 +138,7 @@
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   RETURN doc</code></pre>
                 </div>
               </div>
@@ -156,7 +155,7 @@
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   RETURN { name: doc.name, age: doc.age }</code></pre>
                 </div>
               </div>
@@ -174,7 +173,7 @@ WHERE age > 18 AND status = 'active'</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   FILTER doc.age > 18 AND doc.status == "active"
   RETURN doc</code></pre>
                 </div>
@@ -194,7 +193,7 @@ LIMIT 10 OFFSET 20</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   SORT doc.name DESC
   LIMIT 20, 10
   RETURN doc</code></pre>
@@ -254,15 +253,15 @@ LIMIT 10 OFFSET 20</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
-                  <pre><code class="language-sql text-sm">SELECT u.name, o.total 
-FROM users u 
+                  <pre><code class="language-sql text-sm">SELECT u.name, o.total
+FROM users u
 JOIN orders o ON o.user_id = u._key</code></pre>
                 </div>
               </div>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR u IN users
+                  <pre><code class="language-sdbql text-sm">FOR u IN users
   FOR o IN orders
     FILTER o.user_id == u._key
     RETURN { name: u.name, total: o.total }</code></pre>
@@ -275,14 +274,14 @@ JOIN orders o ON o.user_id = u._key</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
-                  <pre><code class="language-sql text-sm">SELECT * FROM users 
+                  <pre><code class="language-sql text-sm">SELECT * FROM users
 INNER JOIN orders ON orders.user_id = users._key</code></pre>
                 </div>
               </div>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   FOR j0 IN orders
     FILTER orders.user_id == doc._key
     RETURN MERGE(doc, j0)</code></pre>
@@ -304,7 +303,7 @@ JOIN products p ON p._key = o.product_id</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR u IN users
+                  <pre><code class="language-sdbql text-sm">FOR u IN users
   FOR o IN orders
     FILTER o.user_id == u._key
     FOR p IN products
@@ -327,7 +326,7 @@ LEFT JOIN orders o ON o.user_id = u._key</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR u IN users
+                  <pre><code class="language-sdbql text-sm">FOR u IN users
   FOR o IN orders
     FILTER o.user_id == u._key
     RETURN { name: u.name, total: o.total }</code></pre>
@@ -348,7 +347,7 @@ RIGHT JOIN products p ON p._key = o.product_id</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR o IN orders
+                  <pre><code class="language-sdbql text-sm">FOR o IN orders
   FOR p IN products
     FILTER p._key == o.product_id
     RETURN { total: o.total, name: p.name }</code></pre>
@@ -394,10 +393,10 @@ VALUES ('Alice', 30, 'alice@example.com')</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">INSERT { 
-  name: "Alice", 
-  age: 30, 
-  email: "alice@example.com" 
+                  <pre><code class="language-sdbql text-sm">INSERT {
+  name: "Alice",
+  age: 30,
+  email: "alice@example.com"
 } INTO users
 RETURN NEW</code></pre>
                 </div>
@@ -435,7 +434,7 @@ RETURN NEW</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
-                  <pre><code class="language-sql text-sm">UPDATE users 
+                  <pre><code class="language-sql text-sm">UPDATE users
 SET age = 31, status = 'verified'
 WHERE name = 'Alice'</code></pre>
                 </div>
@@ -443,11 +442,11 @@ WHERE name = 'Alice'</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   FILTER doc.name == "Alice"
-  UPDATE doc WITH { 
-    age: 31, 
-    status: "verified" 
+  UPDATE doc WITH {
+    age: 31,
+    status: "verified"
   } IN users
   RETURN NEW</code></pre>
                 </div>
@@ -491,7 +490,7 @@ WHERE name = 'Alice'</code></pre>
               <div>
                 <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">SDBQL</p>
                 <div class="bg-gray-950/50 rounded-xl border border-green-500/20 p-4">
-                  <pre><code class="language-sql text-sm">FOR doc IN users
+                  <pre><code class="language-sdbql text-sm">FOR doc IN users
   FILTER doc.age < 18
   REMOVE doc IN users
   RETURN OLD</code></pre>
@@ -682,7 +681,7 @@ WHERE name = 'Alice'</code></pre>
           </div>
           <div class="p-8 space-y-6">
             <p class="text-gray-300 leading-relaxed">
-              The Query page in the SoliDB dashboard supports both SDBQL and SQL modes. 
+              The Query page in the SoliDB dashboard supports both SDBQL and SQL modes.
               Use the toggle switch in the header to switch between modes.
             </p>
 
@@ -729,13 +728,3 @@ WHERE name = 'Alice'</code></pre>
   </div>
 </div>
 
-<script>
-  // Initialize syntax highlighting
-  document.addEventListener('DOMContentLoaded', function() {
-    if (window.hljs) {
-      document.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightElement(block);
-      });
-    }
-  });
-</script>

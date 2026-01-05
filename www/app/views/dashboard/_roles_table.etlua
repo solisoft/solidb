@@ -1,0 +1,83 @@
+<% if #roles == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-shield-alt text-2xl text-info"></i>
+  </div>
+  <p class="text-text-muted">No roles defined</p>
+  <p class="text-xs text-text-dim mt-1">Create a new role to define permissions</p>
+</div>
+<% else %>
+<div class="overflow-x-auto">
+  <table class="w-full">
+    <thead>
+      <tr class="border-b border-border/30">
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Role Name</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Permissions</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
+        <th class="text-right py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/20">
+      <% for _, role in ipairs(roles) do
+        local role_name = role.name or role
+        local is_builtin = role.is_builtin or false
+        local permissions = role.permissions or {}
+        local description = role.description or ""
+      %>
+      <tr class="role-row hover:bg-white/5 transition-colors">
+        <td class="py-3 px-4">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg <%= is_builtin and 'bg-error/10' or 'bg-warning/10' %> flex items-center justify-center">
+              <i class="fas fa-shield-alt <%= is_builtin and 'text-error' or 'text-warning' %> text-sm"></i>
+            </div>
+            <div>
+              <span class="font-medium text-text"><%= role_name %></span>
+              <% if is_builtin then %>
+              <span class="ml-2 text-xs text-error">Built-in</span>
+              <% end %>
+              <% if description ~= "" then %>
+              <p class="text-xs text-text-dim"><%= description %></p>
+              <% end %>
+            </div>
+          </div>
+        </td>
+        <td class="py-3 px-4">
+          <div class="flex flex-wrap gap-1">
+            <% if #permissions == 0 then %>
+            <span class="text-xs text-text-dim">No permissions</span>
+            <% else
+              for _, perm in ipairs(permissions) do
+                local action = perm.action or ""
+                local scope = perm.scope or ""
+                local is_admin = action == "admin"
+            %>
+            <span class="px-2 py-0.5 rounded text-xs <%= is_admin and 'bg-error/10 text-error' or 'bg-info/10 text-info' %>">
+              <%= action %><% if scope ~= "" and scope ~= "global" then %>:<%= scope %><% end %>
+            </span>
+            <%  end
+            end %>
+          </div>
+        </td>
+        <td class="py-3 px-4 text-sm text-text-muted" title="<%= role.created_at or '' %>">
+          <%= format_datetime(role.created_at, "short") %>
+        </td>
+        <td class="py-3 px-4 text-right">
+          <% if not is_builtin then %>
+          <button type="button"
+                  hx-delete="/database/_system/roles/<%= role_name %>"
+                  hx-target="closest .role-row"
+                  hx-swap="outerHTML"
+                  hx-confirm="Are you sure you want to delete role '<%= role_name %>'?"
+                  class="p-2 text-text-muted hover:text-error transition-colors">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+          <% else %>
+          <span class="text-xs text-text-dim">Protected</span>
+          <% end %>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>

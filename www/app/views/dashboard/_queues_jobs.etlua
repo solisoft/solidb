@@ -1,0 +1,182 @@
+<%
+  local jobs = jobs or {}
+  local status_filter = status_filter or "pending"
+  local db = db or "_system"
+
+  -- Helper to format timestamp
+  local function format_time(ts)
+    if not ts then return "-" end
+    -- ts is in seconds (unix timestamp)
+    local t = os.date("*t", ts)
+    return string.format("%02d:%02d:%02d", t.hour, t.min, t.sec)
+  end
+
+  local function format_datetime(ts)
+    if not ts then return "-" end
+    local t = os.date("*t", ts)
+    return string.format("%d-%02d-%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.min)
+  end
+
+  -- Helper to format duration
+  local function format_duration(start_ms, end_ms)
+    if not start_ms or not end_ms then return "-" end
+    local diff = end_ms - start_ms
+    if diff < 1000 then
+      return string.format("%dms", diff)
+    elseif diff < 60000 then
+      return string.format("%.1fs", diff / 1000)
+    else
+      return string.format("%.1fm", diff / 60000)
+    end
+  end
+
+  local status_colors = {
+    pending = "warning",
+    running = "info",
+    completed = "success",
+    failed = "error"
+  }
+
+  local status_icons = {
+    pending = "fa-hourglass-half",
+    running = "fa-cog fa-spin",
+    completed = "fa-check",
+    failed = "fa-times"
+  }
+%>
+
+<% if #jobs == 0 then %>
+  <div class="p-8 text-center text-text-muted">
+    <% if status_filter == "pending" then %>
+      <i class="fas fa-hourglass text-4xl mb-4 opacity-30"></i>
+      <p class="text-sm">No pending jobs</p>
+    <% elseif status_filter == "running" then %>
+      <i class="fas fa-cog text-4xl mb-4 opacity-30"></i>
+      <p class="text-sm">No running jobs</p>
+    <% elseif status_filter == "completed" then %>
+      <i class="fas fa-check-circle text-4xl mb-4 opacity-30"></i>
+      <p class="text-sm">No completed jobs</p>
+    <% elseif status_filter == "failed" then %>
+      <i class="fas fa-exclamation-triangle text-4xl mb-4 opacity-30"></i>
+      <p class="text-sm">No failed jobs</p>
+    <% end %>
+  </div>
+<% else %>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-bg-dark/50 text-left">
+        <tr>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Job ID</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Queue</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Script</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Priority</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">
+            <% if status_filter == "pending" then %>
+              Scheduled
+            <% elseif status_filter == "running" then %>
+              Started
+            <% elseif status_filter == "completed" then %>
+              Duration
+            <% else %>
+              Retries
+            <% end %>
+          </th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border/20">
+        <% for _, job in ipairs(jobs) do %>
+          <% local color = status_colors[status_filter] or "text-dim" %>
+          <tr class="hover:bg-white/5 transition-colors" id="job-<%= job._key or job.id %>">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <% if job.cron_job_id then %>
+                  <i class="fas fa-clock text-accent-light text-xs" title="Spawned by cron"></i>
+                <% end %>
+                <code class="text-xs font-mono text-text"><%= job._key or job.id or "?" %></code>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-1 rounded bg-bg-dark text-xs text-text-muted"><%= job.queue or "default" %></span>
+            </td>
+            <td class="px-4 py-3">
+              <code class="text-xs font-mono text-primary-light"><%= job.script_path or job.script or "-" %></code>
+              <% if job.params and type(job.params) == "table" and next(job.params) then %>
+                <button type="button" onclick="toggleJobParams('<%= job._key or job.id %>')" class="ml-2 text-text-dim hover:text-text text-xs">
+                  <i class="fas fa-chevron-down"></i>
+                </button>
+              <% end %>
+            </td>
+            <td class="px-4 py-3">
+              <span class="<%= (job.priority or 0) > 0 and 'text-warning' or 'text-text-dim' %>">
+                <%= job.priority or 0 %>
+              </span>
+            </td>
+            <td class="px-4 py-3 text-xs text-text-muted">
+              <% if status_filter == "pending" then %>
+                <% if job.run_at and job.run_at > os.time() then %>
+                  <span class="text-warning"><i class="fas fa-clock mr-1"></i><%= format_datetime(job.run_at) %></span>
+                <% else %>
+                  <span class="text-text-dim">Now</span>
+                <% end %>
+              <% elseif status_filter == "running" then %>
+                <%= format_time(job.started_at and math.floor(job.started_at / 1000) or nil) %>
+              <% elseif status_filter == "completed" then %>
+                <%= format_duration(job.started_at, job.completed_at) %>
+              <% else %>
+                <span class="<%= (job.retry_count or 0) > 0 and 'text-warning' or '' %>">
+                  <%= job.retry_count or 0 %>/<%= job.max_retries or 20 %>
+                </span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3">
+              <% if status_filter == "pending" then %>
+                <button type="button"
+                        hx-delete="/database/<%= db %>/queues/jobs/<%= job._key or job.id %>"
+                        hx-target="#job-<%= job._key or job.id %>"
+                        hx-swap="outerHTML"
+                        hx-confirm="Cancel this job?"
+                        class="text-xs text-text-muted hover:text-error transition-colors">
+                  <i class="fas fa-times mr-1"></i>Cancel
+                </button>
+              <% elseif status_filter == "failed" and job.last_error then %>
+                <button type="button" onclick="showJobError('<%= (job.last_error or ''):gsub("'", "\\'"):gsub("\n", "\\n") %>')" class="text-xs text-error hover:text-error/80 transition-colors">
+                  <i class="fas fa-exclamation-circle mr-1"></i>View Error
+                </button>
+              <% else %>
+                <span class="text-text-dim text-xs">-</span>
+              <% end %>
+            </td>
+          </tr>
+          <% if job.params and type(job.params) == "table" and next(job.params) then %>
+            <tr id="params-<%= job._key or job.id %>" class="hidden bg-bg-dark/30">
+              <td colspan="6" class="px-4 py-3">
+                <div class="text-xs">
+                  <span class="text-text-dim font-medium">Parameters:</span>
+                  <pre class="mt-1 p-2 bg-bg-dark rounded text-text-muted font-mono overflow-x-auto"><%- EncodeJson(job.params) %></pre>
+                </div>
+              </td>
+            </tr>
+          <% end %>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="px-4 py-3 border-t border-border/30 text-xs text-text-dim">
+    Showing <%= #jobs %> <%= status_filter %> job<%= #jobs ~= 1 and 's' or '' %>
+  </div>
+<% end %>
+
+<script>
+function toggleJobParams(jobId) {
+  var row = document.getElementById('params-' + jobId);
+  if (row) {
+    row.classList.toggle('hidden');
+  }
+}
+
+function showJobError(error) {
+  alert('Error: ' + error);
+}
+</script>

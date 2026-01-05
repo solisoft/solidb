@@ -1,0 +1,152 @@
+<%
+local collections = collections or {}
+
+-- Helper to format bytes
+local function format_bytes(bytes)
+  if not bytes or bytes == 0 then return "0 B" end
+  local units = {"B", "KB", "MB", "GB", "TB"}
+  local i = 1
+  while bytes >= 1024 and i < #units do
+    bytes = bytes / 1024
+    i = i + 1
+  end
+  if i == 1 then
+    return string.format("%d %s", bytes, units[i])
+  else
+    return string.format("%.1f %s", bytes, units[i])
+  end
+end
+
+-- Helper to get type badge
+local function type_badge(coll_type)
+  if coll_type == "document" then
+    return "bg-primary/10 text-primary-light", "fa-file-alt"
+  elseif coll_type == "edge" then
+    return "bg-accent/10 text-accent-light", "fa-project-diagram"
+  elseif coll_type == "timeseries" then
+    return "bg-info/10 text-info", "fa-chart-line"
+  elseif coll_type == "blob" then
+    return "bg-warning/10 text-warning", "fa-database"
+  else
+    return "bg-text-muted/10 text-text-muted", "fa-folder"
+  end
+end
+
+-- Helper to get shard status color
+local function shard_status_color(status)
+  if status == "healthy" then
+    return "bg-success"
+  elseif status == "syncing" then
+    return "bg-warning animate-pulse"
+  elseif status == "dead" then
+    return "bg-error"
+  else
+    return "bg-text-muted"
+  end
+end
+%>
+
+<% if #collections == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-12 h-12 mx-auto mb-3 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-layer-group text-info"></i>
+  </div>
+  <p class="text-text-muted">No sharded collections</p>
+  <p class="text-xs text-text-dim mt-1">Collections with multiple shards will appear here</p>
+</div>
+<% else %>
+<div class="divide-y divide-border/20">
+  <% for _, coll in ipairs(collections) do
+    local badge_class, icon = type_badge(coll.type)
+  %>
+  <div class="p-4 hover:bg-white/5 transition-colors">
+    <!-- Collection Header -->
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg <%= badge_class %> flex items-center justify-center">
+          <i class="fas <%= icon %>"></i>
+        </div>
+        <div>
+          <h3 class="font-semibold text-text"><%= coll.name %></h3>
+          <p class="text-xs text-text-dim">
+            <span class="capitalize"><%= coll.type or "document" %></span> collection
+          </p>
+        </div>
+      </div>
+      <a href="/database/_system/documents/<%= coll.name %>"
+         class="text-sm text-primary-light hover:text-primary transition-colors">
+        <i class="fas fa-external-link-alt mr-1"></i> View
+      </a>
+    </div>
+
+    <!-- Collection Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-3">
+      <div class="bg-bg-dark/50 rounded-lg p-2">
+        <p class="text-lg font-semibold text-primary-light"><%= coll.num_shards %></p>
+        <p class="text-xs text-text-dim">Shards</p>
+      </div>
+      <div class="bg-bg-dark/50 rounded-lg p-2">
+        <p class="text-lg font-semibold text-accent-light"><%= coll.replication_factor %></p>
+        <p class="text-xs text-text-dim">Replication</p>
+      </div>
+      <div class="bg-bg-dark/50 rounded-lg p-2">
+        <p class="text-lg font-semibold text-info"><%= coll.total_documents %></p>
+        <p class="text-xs text-text-dim">Documents</p>
+      </div>
+      <div class="bg-bg-dark/50 rounded-lg p-2">
+        <p class="text-lg font-semibold text-text"><%= coll.total_size_formatted or format_bytes(coll.total_size or 0) %></p>
+        <p class="text-xs text-text-dim">Size</p>
+      </div>
+    </div>
+
+    <!-- Shard Key -->
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-xs text-text-muted">Shard Key:</span>
+      <code class="px-2 py-0.5 bg-bg-dark rounded text-xs text-primary-light font-mono"><%= coll.shard_key or "_key" %></code>
+    </div>
+
+    <!-- Shard Status Grid -->
+    <% if coll.shards and #coll.shards > 0 then %>
+    <div class="bg-bg-dark/30 rounded-lg p-3">
+      <p class="text-xs text-text-muted mb-2">Shard Health</p>
+      <div class="flex flex-wrap gap-1">
+        <% for _, shard in ipairs(coll.shards) do
+          local shard_color = shard_status_color(shard.status)
+        %>
+        <div class="group relative">
+          <div class="w-6 h-6 rounded <%= shard_color %> flex items-center justify-center text-white text-[10px] font-bold cursor-help">
+            <%= shard.shard_id %>
+          </div>
+          <!-- Tooltip -->
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
+            <div class="bg-bg-dark border border-border/50 rounded-lg p-2 shadow-lg whitespace-nowrap text-xs">
+              <p class="font-semibold text-text mb-1">Shard <%= shard.shard_id %></p>
+              <p class="text-text-muted">Primary: <span class="text-primary-light"><%= shard.primary and shard.primary.node_id or "unknown" %></span></p>
+              <p class="text-text-muted">Docs: <span class="text-text"><%= shard.document_count or 0 %></span></p>
+              <p class="text-text-muted">Size: <span class="text-text"><%= shard.disk_size_formatted or format_bytes(shard.disk_size or 0) %></span></p>
+              <p class="text-text-muted">Status: <span class="capitalize <%= shard.status == 'healthy' and 'text-success' or (shard.status == 'syncing' and 'text-warning' or 'text-error') %>"><%= shard.status or "unknown" %></span></p>
+            </div>
+          </div>
+        </div>
+        <% end %>
+      </div>
+      <div class="flex items-center gap-4 mt-2 text-xs">
+        <div class="flex items-center gap-1">
+          <span class="w-3 h-3 rounded bg-success"></span>
+          <span class="text-text-dim">Healthy</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-3 h-3 rounded bg-warning"></span>
+          <span class="text-text-dim">Syncing</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-3 h-3 rounded bg-error"></span>
+          <span class="text-text-dim">Dead</span>
+        </div>
+      </div>
+    </div>
+    <% end %>
+  </div>
+  <% end %>
+</div>
+<% end %>

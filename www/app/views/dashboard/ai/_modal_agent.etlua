@@ -1,0 +1,139 @@
+<%
+  local agent = agent or {}
+  local is_edit = is_edit or false
+%>
+<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4"
+     onclick="if(event.target === this) closeModal()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between p-4 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-robot mr-2 text-accent-light"></i>
+        <%= is_edit and "Edit" or "Create" %> Agent
+      </h3>
+      <button type="button" onclick="closeModal()" class="p-2 text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <form hx-<%= is_edit and "put" or "post" %>="/database/<%= db %>/ai/agents<%= is_edit and '/' .. (agent.id or '') or '' %>"
+          hx-target="#agents-grid"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) closeModal()">
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Agent Name</label>
+          <input type="text" name="name" required
+                 value="<%= agent.name or '' %>"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                 placeholder="e.g., Data Analyst, Content Writer">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">AI Model</label>
+          <select name="model" required
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary">
+            <optgroup label="Anthropic (Claude)">
+              <option value="claude-opus-4-5" <%= agent.model == "claude-opus-4-5" and "selected" or "" %>>Claude 4.5 Opus (Most capable)</option>
+              <option value="claude-sonnet-4" <%= agent.model == "claude-sonnet-4" and "selected" or "" %>>Claude 4 Sonnet (Balanced)</option>
+              <option value="claude-3-5-haiku" <%= (not agent.model or agent.model == "claude-3-5-haiku") and "selected" or "" %>>Claude 3.5 Haiku (Fast)</option>
+            </optgroup>
+            <optgroup label="Google (Gemini)">
+              <option value="gemini-3-pro" <%= agent.model == "gemini-3-pro" and "selected" or "" %>>Gemini 3 Pro (Most capable)</option>
+              <option value="gemini-3-flash" <%= agent.model == "gemini-3-flash" and "selected" or "" %>>Gemini 3 Flash (Fast)</option>
+            </optgroup>
+            <optgroup label="OpenAI (GPT)">
+              <option value="gpt-4o" <%= agent.model == "gpt-4o" and "selected" or "" %>>GPT-4o (Latest)</option>
+              <option value="gpt-4-turbo" <%= agent.model == "gpt-4-turbo" and "selected" or "" %>>GPT-4 Turbo</option>
+              <option value="gpt-3.5-turbo" <%= agent.model == "gpt-3.5-turbo" and "selected" or "" %>>GPT-3.5 Turbo (Fast)</option>
+            </optgroup>
+            <optgroup label="Ollama (Local)">
+              <option value="llama3" <%= agent.model == "llama3" and "selected" or "" %>>Llama 3</option>
+              <option value="mistral" <%= agent.model == "mistral" and "selected" or "" %>>Mistral</option>
+              <option value="codellama" <%= agent.model == "codellama" and "selected" or "" %>>Code Llama</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">API URL <span class="text-text-dim font-normal">(optional)</span></label>
+          <input type="url" name="api_url"
+                 value="<%= agent.config and agent.config.api_url or '' %>"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                 placeholder="https://api.anthropic.com (leave empty for default)">
+          <p class="text-xs text-text-dim mt-1">Custom API endpoint for self-hosted or proxy</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">API Key</label>
+          <input type="password" name="api_key"
+                 value="<%= agent.config and agent.config.api_key or '' %>"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                 placeholder="sk-...">
+          <p class="text-xs text-text-dim mt-1">Your API key for the selected provider</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">System Prompt</label>
+          <textarea name="system_prompt" rows="3"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                    placeholder="You are a helpful assistant that..."><%= agent.system_prompt or '' %></textarea>
+          <p class="text-xs text-text-dim mt-1">Instructions that define how the agent behaves</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-2">Capabilities</label>
+          <div class="space-y-2">
+            <%
+              local caps = agent.capabilities or {}
+              local has_cap = function(c)
+                for _, v in ipairs(caps) do
+                  if v == c then return true end
+                end
+                return false
+              end
+            %>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="capabilities" value="database"
+                     <%= has_cap("database") and "checked" or "" %>
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text">Database</span>
+              <span class="text-xs text-text-dim">- CRUD operations on collections</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="capabilities" value="http"
+                     <%= has_cap("http") and "checked" or "" %>
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text">HTTP</span>
+              <span class="text-xs text-text-dim">- External API requests</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="capabilities" value="scripts"
+                     <%= has_cap("scripts") and "checked" or "" %>
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text">Scripts</span>
+              <span class="text-xs text-text-dim">- Execute Lua scripts</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="capabilities" value="notifications"
+                     <%= has_cap("notifications") and "checked" or "" %>
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text">Notifications</span>
+              <span class="text-xs text-text-dim">- Send alerts and messages</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 p-4 border-t border-border/30">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <%= is_edit and "Update" or "Create" %> Agent
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

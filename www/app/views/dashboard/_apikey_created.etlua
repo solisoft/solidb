@@ -1,0 +1,125 @@
+<div class="p-6">
+  <div class="bg-success/10 border border-success/30 rounded-xl p-6 mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-full bg-success/20 flex items-center justify-center flex-shrink-0">
+        <i class="fas fa-check text-success text-xl"></i>
+      </div>
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold text-text mb-1">API Key Created Successfully!</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Copy your API key now. For security reasons, it won't be shown again.
+        </p>
+
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">Key Name</label>
+          <p class="text-text font-medium"><%= apikey.name %></p>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">API Key</label>
+          <div class="flex items-center gap-2">
+            <code id="api-key-value" class="flex-1 px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-success font-mono text-sm break-all">
+              <%= apikey.key %>
+            </code>
+            <button type="button" onclick="copyApiKey(this)"
+                    class="px-3 py-2 bg-primary hover:bg-primary-light text-white rounded-lg transition-colors"
+                    title="Copy to clipboard">
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+          <p id="copy-feedback" class="text-xs text-success mt-2 hidden">
+            <i class="fas fa-check-circle mr-1"></i>
+            API key copied to clipboard!
+          </p>
+        </div>
+
+        <% if apikey.roles and #apikey.roles > 0 then %>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">Roles</label>
+          <div class="flex flex-wrap gap-1">
+            <% for _, role in ipairs(apikey.roles) do %>
+            <span class="px-2 py-0.5 rounded text-xs bg-info/10 text-info"><%= role %></span>
+            <% end %>
+          </div>
+        </div>
+        <% end %>
+
+        <% if apikey.created_at then %>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">Created</label>
+          <p class="text-text"><%= format_datetime(apikey.created_at, "long") %></p>
+        </div>
+        <% end %>
+
+        <% if apikey.scoped_databases and #apikey.scoped_databases > 0 then %>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">Database Scope</label>
+          <div class="flex flex-wrap gap-1">
+            <% for _, db in ipairs(apikey.scoped_databases) do %>
+            <span class="px-2 py-0.5 rounded text-xs bg-secondary/50 text-text-muted"><%= db %></span>
+            <% end %>
+          </div>
+        </div>
+        <% else %>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-text-muted mb-1">Database Scope</label>
+          <span class="text-xs text-success">All databases</span>
+        </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end">
+    <button type="button"
+            hx-get="/database/_system/apikeys/table"
+            hx-target="#apikeys-table"
+            hx-swap="innerHTML"
+            class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+      Done
+    </button>
+  </div>
+</div>
+
+<script>
+function copyApiKey(btn) {
+  var keyValue = document.getElementById('api-key-value').textContent.trim();
+  navigator.clipboard.writeText(keyValue).then(function() {
+    // Update button
+    var originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    btn.classList.remove('bg-primary', 'hover:bg-primary-light');
+    btn.classList.add('bg-success');
+
+    // Show feedback message
+    var feedback = document.getElementById('copy-feedback');
+    feedback.classList.remove('hidden');
+
+    // Also trigger toast if available
+    if (window.showToast) {
+      window.showToast('API key copied to clipboard!', 'success');
+    }
+
+    // Reset after delay
+    setTimeout(function() {
+      btn.innerHTML = originalHtml;
+      btn.classList.remove('bg-success');
+      btn.classList.add('bg-primary', 'hover:bg-primary-light');
+    }, 3000);
+  }).catch(function(err) {
+    // Fallback: select the text for manual copy
+    var codeEl = document.getElementById('api-key-value');
+    var range = document.createRange();
+    range.selectNodeContents(codeEl);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    // Show fallback message
+    var feedback = document.getElementById('copy-feedback');
+    feedback.innerHTML = '<i class="fas fa-info-circle mr-1"></i> Press Ctrl+C / Cmd+C to copy the selected key';
+    feedback.classList.remove('hidden', 'text-success');
+    feedback.classList.add('text-warning');
+  });
+}
+</script>

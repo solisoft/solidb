@@ -1,0 +1,120 @@
+<%
+  local db = db or "_system"
+  local queues = queues or {}
+  local scripts = scripts or {}
+%>
+<div class="fixed inset-0 z-[150] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-plus-circle mr-2 text-primary-light"></i>Create Job
+      </h3>
+      <button type="button" onclick="closeModal()" class="text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-post="/database/<%= db %>/queues/jobs"
+          hx-target="#jobs-content"
+          hx-swap="innerHTML"
+          class="p-6 space-y-4">
+
+      <!-- Queue -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Queue</label>
+        <% if #queues > 0 then %>
+          <select name="queue" class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+            <% for _, queue in ipairs(queues) do %>
+              <% local q_name = type(queue) == "table" and queue.name or queue %>
+              <option value="<%= q_name %>" <%= q_name == "default" and 'selected' or '' %>><%= q_name %></option>
+            <% end %>
+          </select>
+        <% else %>
+          <input type="text" name="queue" value="default"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <% end %>
+        <p class="text-xs text-text-dim mt-1">Queue to add the job to</p>
+      </div>
+
+      <!-- Script Path -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Script Path <span class="text-error">*</span></label>
+        <% if #scripts > 0 then %>
+          <select name="script" required class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+            <option value="">Select a script...</option>
+            <% for _, script in ipairs(scripts) do %>
+              <option value="<%= script.path or script %>"><%= script.name or script.path or script %></option>
+            <% end %>
+          </select>
+        <% else %>
+          <input type="text" name="script" required placeholder="scripts/my_job.lua"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <% end %>
+        <p class="text-xs text-text-dim mt-1">Lua script to execute</p>
+      </div>
+
+      <!-- Parameters -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Parameters (JSON)</label>
+        <textarea name="params" rows="3" placeholder='{"key": "value"}'
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text font-mono text-sm placeholder-text-dim focus:outline-none focus:border-primary/50"></textarea>
+        <p class="text-xs text-text-dim mt-1">JSON object passed to the script</p>
+      </div>
+
+      <!-- Priority & Retries -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Priority</label>
+          <input type="number" name="priority" value="0" min="-100" max="100"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+          <p class="text-xs text-text-dim mt-1">Higher = runs first</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Max Retries</label>
+          <input type="number" name="max_retries" value="20" min="0" max="100"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+          <p class="text-xs text-text-dim mt-1">Retry on failure</p>
+        </div>
+      </div>
+
+      <!-- Scheduled Time (optional) -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Schedule (optional)</label>
+        <input type="datetime-local" name="run_at"
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+        <p class="text-xs text-text-dim mt-1">Leave empty to run immediately</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-3 pt-4 border-t border-border/30">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 bg-bg-dark border border-border/50 rounded-lg text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-plus mr-2"></i>Create Job
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function closeModal() {
+  document.getElementById('modal-container').innerHTML = '';
+}
+
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+
+// Listen for closeModal event from HTMX
+document.body.addEventListener('closeModal', function() {
+  closeModal();
+});
+</script>

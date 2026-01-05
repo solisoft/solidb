@@ -1,0 +1,135 @@
+<%
+local collections = collections or {}
+
+-- Helper to format bytes to human-readable size
+local function format_size(bytes)
+  if not bytes then return "-" end
+  bytes = tonumber(bytes) or 0
+  if bytes == 0 then return "0 B" end
+  local units = {"B", "KB", "MB", "GB", "TB"}
+  local unit_index = 1
+  local size = bytes
+  while size >= 1024 and unit_index < #units do
+    size = size / 1024
+    unit_index = unit_index + 1
+  end
+  if unit_index == 1 then
+    return string.format("%d %s", size, units[unit_index])
+  else
+    return string.format("%.1f %s", size, units[unit_index])
+  end
+end
+
+%>
+
+<% if #collections == 0 then %>
+<!-- Empty State -->
+<div class="p-12 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-folder-open text-2xl text-primary-light"></i>
+  </div>
+  <h3 class="text-lg font-medium text-text mb-2">No collections yet</h3>
+  <p class="text-text-muted mb-4">Create your first collection to get started</p>
+  <button hx-get="/database/<%= db %>/collections/modal/create"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+    <i class="fas fa-plus"></i>
+    <span>Create Collection</span>
+  </button>
+</div>
+<% else %>
+<!-- Table -->
+<table class="w-full">
+  <thead class="bg-bg/50 border-b border-border/30">
+    <tr>
+      <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Name</th>
+      <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Type</th>
+      <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Documents</th>
+      <th class="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Size</th>
+      <th class="px-6 py-3 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Actions</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-border/20">
+    <% for _, coll in ipairs(collections) do %>
+    <tr id="collection-<%= coll.name %>" class="hover:bg-white/5 transition-colors">
+      <td class="px-6 py-4">
+        <a href="/database/<%= db %>/documents/<%= coll.name %>" class="font-medium text-text hover:text-primary-light transition-colors">
+          <%
+            local icon = "fa-folder"
+            local color = "primary-light"
+            if coll.type == "edge" or coll.type == 3 then
+              icon = "fa-share-nodes"
+              color = "accent-light"
+            elseif coll.type == "columnar" then
+              icon = "fa-columns"
+              color = "info"
+            elseif coll.type == "timeseries" then
+              icon = "fa-clock"
+              color = "success"
+            elseif coll.type == "blob" then
+              icon = "fa-cube"
+              color = "warning"
+            end
+          %>
+          <i class="fas <%= icon %> mr-2 text-<%= color %>"></i>
+          <%= coll.name %>
+        </a>
+      </td>
+      <td class="px-6 py-4">
+        <%
+          local type_label = "Document"
+          local type_class = "bg-primary/10 text-primary-light"
+          if coll.type == "edge" or coll.type == 3 then
+            type_label = "Edge"
+            type_class = "bg-accent/10 text-accent-light"
+          elseif coll.type == "columnar" then
+            type_label = "Columnar"
+            type_class = "bg-info/10 text-info"
+          elseif coll.type == "timeseries" then
+            type_label = "Timeseries"
+            type_class = "bg-success/10 text-success"
+          elseif coll.type == "blob" then
+            type_label = "Blob Store"
+            type_class = "bg-warning/10 text-warning"
+          end
+        %>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <%= type_class %>">
+          <%= type_label %>
+        </span>
+      </td>
+      <td class="px-6 py-4 text-text-muted">
+        <%= coll.count or "-" %>
+      </td>
+      <td class="px-6 py-4 text-text-muted">
+        <% if coll.stats and coll.stats.disk_usage then
+             local du = coll.stats.disk_usage
+             local size = (du.sst_files_size or 0) + (du.memtable_size or 0)
+        %>
+          <%= format_size(size) %>
+        <% else %>
+          -
+        <% end %>
+      </td>
+      <td class="px-6 py-4 text-right">
+        <div class="flex items-center justify-end gap-2">
+          <a href="/database/<%= db %>/documents/<%= coll.name %>"
+             class="p-2 rounded-lg text-text-muted hover:text-info hover:bg-info/10 transition-all"
+             title="Browse Documents">
+            <i class="fas fa-table"></i>
+          </a>
+          <button hx-delete="/database/<%= db %>/collections/<%= coll.name %>"
+                  hx-target="#collection-<%= coll.name %>"
+                  hx-swap="outerHTML swap:0.3s"
+                  hx-confirm="Delete collection '<%= coll.name %>'? This action cannot be undone."
+                  class="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-all"
+                  title="Delete">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </div>
+      </td>
+    </tr>
+    <% end %>
+  </tbody>
+</table>
+<% end %>

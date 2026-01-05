@@ -117,6 +117,7 @@ time = "0.3"
 # Caching
 lru = "0.12"
 fastbloom = { version = "0.14.0", features = ["serde"] }
+cuckoofilter = { version = "0.5", features = ["serde_support"] }
 
 # Default binary
 [[bin]]

@@ -1,434 +1,455 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<%
+  local db = db or "_system"
+%>
+<div class="max-w-6xl mx-auto">
   <!-- Header -->
-  <div class="md:flex md:items-center md:justify-between mb-8">
-    <div class="flex-1 min-w-0">
-      <h2
-        class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400"
-      >
-        Lua REPL
-      </h2>
-      <p class="mt-2 text-sm text-gray-400">
-        Interactive Lua scripting console with database access
-      </p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Lua REPL</h1>
+      <p class="text-text-muted text-sm">Interactive Lua console for <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" onclick="showHistory()"
+              class="inline-flex items-center gap-2 px-3 py-2 bg-bg border border-border/50 rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
+        <i class="fas fa-history"></i>
+        <span>History</span>
+      </button>
+      <button type="button" onclick="executeRepl()"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-warning hover:bg-warning/90 text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-play" id="run-icon"></i>
+        <span>Run</span>
+        <kbd class="text-xs opacity-70 ml-1">Ctrl+Enter</kbd>
+      </button>
     </div>
   </div>
 
   <!-- Main Container - Split View -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Editor Panel -->
-    <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
-      <div class="bg-gray-700 px-4 py-3 border-b border-gray-600 flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-          </svg>
-          <span class="text-sm font-medium text-gray-300">Lua Code</span>
-        </div>
-        <div class="flex items-center space-x-2">
-          <button
-            onclick="showHistory()"
-            class="inline-flex items-center px-3 py-1.5 border border-gray-600 rounded-md text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-colors"
-          >
-            <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            History
-          </button>
-          <button
-            onclick="executeRepl()"
-            class="inline-flex items-center px-4 py-1.5 border border-transparent rounded-md text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 transition-colors"
-          >
-            <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            Run (Ctrl+Enter)
-          </button>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+      <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fas fa-code text-warning"></i>
+          <span class="text-sm font-medium text-text">Lua Code</span>
         </div>
       </div>
-      <div class="p-0">
-        <div id="luaEditor" style="height: 400px; width: 100%;"></div>
-      </div>
+      <div id="lua-editor" class="h-80 bg-[#1e1e1e]"></div>
     </div>
 
     <!-- Output Panel -->
-    <div class="bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
-      <div class="bg-gray-700 px-4 py-3 border-b border-gray-600 flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="text-sm font-medium text-gray-300">Output</span>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+      <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fas fa-terminal text-success"></i>
+          <span class="text-sm font-medium text-text">Output</span>
         </div>
-        <div class="flex items-center space-x-2">
-          <span id="executionTime" class="text-xs text-gray-500"></span>
-          <button
-            onclick="clearOutput()"
-            class="text-sm text-gray-400 hover:text-gray-300 transition-colors"
-            title="Clear output"
-          >
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-            </svg>
+        <div class="flex items-center gap-3">
+          <span id="execution-time" class="text-xs text-text-dim"></span>
+          <button type="button" onclick="clearOutput()" class="text-text-muted hover:text-text transition-colors" title="Clear output">
+            <i class="fas fa-eraser"></i>
           </button>
         </div>
       </div>
-      <div id="outputContainer" class="p-4 max-h-[400px] overflow-y-auto font-mono text-sm space-y-2">
-        <div class="text-gray-500 italic">Output will appear here...</div>
+      <div id="output-container" class="h-80 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
+        <div class="text-text-dim italic">Output will appear here...</div>
       </div>
     </div>
   </div>
 
   <!-- Console Log Output -->
-  <div class="mt-6 bg-gray-800 shadow-xl rounded-lg overflow-hidden border border-gray-700">
-    <div class="bg-gray-700 px-4 py-3 border-b border-gray-600 flex items-center justify-between">
-      <div class="flex items-center space-x-2">
-        <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-        </svg>
-        <span class="text-sm font-medium text-gray-300">Console</span>
+  <div class="mt-6 bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i class="fas fa-stream text-info"></i>
+        <span class="text-sm font-medium text-text">Console</span>
       </div>
-      <button
-        onclick="clearConsole()"
-        class="text-sm text-gray-400 hover:text-gray-300 transition-colors"
-        title="Clear console"
-      >
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-        </svg>
+      <button type="button" onclick="clearConsole()" class="text-text-muted hover:text-text transition-colors" title="Clear console">
+        <i class="fas fa-eraser"></i>
       </button>
     </div>
-    <div id="consoleContainer" class="p-4 max-h-[200px] overflow-y-auto font-mono text-sm space-y-1">
-      <div class="text-gray-500 italic">Console output (print/solidb.log) will appear here...</div>
+    <div id="console-container" class="max-h-48 overflow-y-auto p-4 font-mono text-sm bg-bg-dark">
+      <div class="text-text-dim italic">Console output (print/Log) will appear here...</div>
     </div>
   </div>
 
   <!-- Quick Reference -->
-  <div class="mt-6 bg-gray-800/50 rounded-lg border border-gray-700 p-4">
-    <div class="flex items-center mb-3">
-      <svg class="h-5 w-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-      <span class="text-sm font-medium text-gray-300">Quick Reference</span>
+  <div class="mt-6 bg-bg-card/30 border border-border/30 rounded-xl p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <i class="fas fa-lightbulb text-accent-light"></i>
+      <span class="text-sm font-medium text-text">Quick Reference</span>
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-gray-400">
-      <div>
-        <span class="text-indigo-400 font-semibold">Database:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">db:collection("name")</code>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">Database:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">db:collection("name")</code>
       </div>
-      <div>
-        <span class="text-indigo-400 font-semibold">Query:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">db:query("SELECT...")</code>
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">Query:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">db:query("FOR...")</code>
       </div>
-      <div>
-        <span class="text-indigo-400 font-semibold">Log:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">print(value)</code>
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">Log:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">print(value)</code>
       </div>
-      <div>
-        <span class="text-indigo-400 font-semibold">Insert:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">coll:insert({...})</code>
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">Insert:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">coll:insert({...})</code>
       </div>
-      <div>
-        <span class="text-indigo-400 font-semibold">Get:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">coll:get("key")</code>
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">Get:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">coll:get("key")</code>
       </div>
-      <div>
-        <span class="text-indigo-400 font-semibold">Time:</span>
-        <code class="ml-1 bg-gray-900 px-1 rounded">time.now()</code>
+      <div class="flex items-center gap-2">
+        <span class="text-primary-light font-medium">JSON:</span>
+        <code class="bg-bg-dark px-2 py-0.5 rounded text-text-muted">EncodeJson(table)</code>
       </div>
     </div>
   </div>
 
-  <!-- History Modal -->
-  <div
-    id="historyModal"
-    class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0"
-    role="dialog"
-    aria-modal="true"
-  >
-    <div class="fixed inset-0 transition-opacity duration-300" onclick="closeHistory()"></div>
-    <div
-      id="historyModalContent"
-      class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0"
-    >
-      <div class="flex-none border-b border-gray-700 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
-        <div class="flex items-center justify-between px-6 py-4">
-          <div class="flex items-center space-x-3">
-            <div class="p-2 bg-yellow-500/10 rounded-lg">
-              <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-            </div>
-            <h3 class="text-xl font-semibold text-white">REPL History</h3>
-          </div>
-          <button onclick="closeHistory()" class="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-700/50 rounded-lg">
-            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div id="historyList" class="flex-1 overflow-y-auto w-full p-6 space-y-3 bg-transparent"></div>
+  <!-- Quick Examples -->
+  <div class="mt-6">
+    <h3 class="text-sm font-medium text-text-muted mb-3">Quick Examples</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <button type="button" onclick="setCode('local coll = db:collection(\"users\")\nreturn coll:count()')"
+              class="text-left p-3 bg-bg-card/30 border border-border/30 rounded-lg hover:border-primary/50 transition-colors">
+        <code class="text-xs text-primary-light">coll:count()</code>
+        <p class="text-xs text-text-dim mt-1">Count documents in collection</p>
+      </button>
+      <button type="button" onclick="setCode('return db:query(\"FOR doc IN users LIMIT 5 RETURN doc\")')"
+              class="text-left p-3 bg-bg-card/30 border border-border/30 rounded-lg hover:border-primary/50 transition-colors">
+        <code class="text-xs text-primary-light">db:query(...)</code>
+        <p class="text-xs text-text-dim mt-1">Execute SDBQL query</p>
+      </button>
+      <button type="button" onclick="setCode('local coll = db:collection(\"test\")\nreturn coll:insert({name = \"Hello\", value = 42})')"
+              class="text-left p-3 bg-bg-card/30 border border-border/30 rounded-lg hover:border-primary/50 transition-colors">
+        <code class="text-xs text-primary-light">coll:insert(...)</code>
+        <p class="text-xs text-text-dim mt-1">Insert a document</p>
+      </button>
     </div>
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
-<script type="module">
-  import { getApiUrl, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
-  import { registerLuaCompletions } from '<%= PublicPath("/js/solidb-completions.js") %>';
+<!-- History Modal -->
+<div id="history-modal" class="fixed inset-0 z-[150] flex items-center justify-center p-4 hidden">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeHistory()"></div>
+  <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-history mr-2 text-warning"></i>REPL History
+      </h3>
+      <button type="button" onclick="closeHistory()" class="text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+    <div id="history-list" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+  </div>
+</div>
 
-  let db = "<%= Params['db'] %>";
-  let editor;
-  let sessionId = null;
-  const HISTORY_KEY = "solidb_repl_history";
-  const MAX_HISTORY = 50;
+<script>
+(function() {
+  // Configuration
+  var dbName = '<%= db %>';
+  var HISTORY_KEY = 'solidb_repl_history_' + dbName;
+  var MAX_HISTORY = 50;
 
-  function getUrl() {
-    return `${getApiUrl()}/database/${db}`;
-  }
+  // State
+  var editor = null;
+  var sessionId = null;
 
   // Initialize Monaco Editor
-  require.config({
-    paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" }
-  });
+  require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
 
-  window.addEventListener("load", function () {
-    if (typeof require !== "undefined") {
-      require(["vs/editor/editor.main"], function () {
-        let initialValue = `-- Try some Lua code!\nlocal coll = db:collection("users")\nreturn coll:count()`;
+  require(['vs/editor/editor.main'], function() {
+    // Load initial code from history
+    var initialCode = '-- Try some Lua code!\nlocal coll = db:collection("users")\nreturn coll:count()';
+    try {
+      var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (history.length > 0) {
+        initialCode = history[0];
+      }
+    } catch (e) {}
 
-        try {
-          const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-          if (history.length > 0) {
-            initialValue = history[0];
-          }
-        } catch (e) {}
-
-        // Register SoliDB Lua completion provider
-        registerLuaCompletions(monaco);
-
-        editor = monaco.editor.create(document.getElementById("luaEditor"), {
-          value: initialValue,
-          language: "lua",
-          theme: "vs-dark",
-          automaticLayout: true,
-          minimap: { enabled: false },
-          fontSize: 14,
-          lineNumbers: "on",
-          roundedSelection: true,
-          scrollBeyondLastLine: false,
-          cursorStyle: "line",
-          wordWrap: "on",
-          tabSize: 2,
-          suggestOnTriggerCharacters: true,
-          quickSuggestions: true,
-          fixedOverflowWidgets: true,
-        });
-
-        // Ctrl+Enter to execute
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, executeRepl);
-      });
-    } else {
-      useFallbackEditor();
-    }
-  });
-
-  function useFallbackEditor() {
-    const container = document.getElementById("luaEditor");
-    container.innerHTML = "";
-    const textarea = document.createElement("textarea");
-    textarea.id = "fallbackEditor";
-    textarea.className = "w-full h-full px-4 py-3 bg-gray-900 border-0 text-gray-100 font-mono text-sm focus:outline-none resize-none";
-    textarea.value = `-- Try some Lua code!\nlocal coll = db:collection("users")\nreturn coll:count()`;
-    container.appendChild(textarea);
-
-    editor = {
-      getValue: () => textarea.value,
-      setValue: (val) => { textarea.value = val; }
-    };
-
-    textarea.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        executeRepl();
+    // Define custom theme
+    monaco.editor.defineTheme('solidb-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'C586C0' },
+        { token: 'string', foreground: 'CE9178' },
+        { token: 'number', foreground: 'B5CEA8' },
+        { token: 'comment', foreground: '6A9955' },
+      ],
+      colors: {
+        'editor.background': '#1a1a2e',
       }
     });
-  }
 
-  async function executeRepl() {
-    const code = editor.getValue().trim();
+    // Create editor
+    editor = monaco.editor.create(document.getElementById('lua-editor'), {
+      value: initialCode,
+      language: 'lua',
+      theme: 'solidb-dark',
+      minimap: { enabled: false },
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', monospace",
+      automaticLayout: true,
+      padding: { top: 16, bottom: 16 },
+      scrollBeyondLastLine: false,
+      wordWrap: 'on',
+      tabSize: 2,
+      lineNumbers: 'on'
+    });
+
+    // Ctrl+Enter to execute
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function() {
+      executeRepl();
+    });
+  });
+
+  // Execute REPL
+  window.executeRepl = function() {
+    if (!editor) return;
+
+    var code = editor.getValue().trim();
     if (!code) return;
 
     // Save to history
     saveToHistory(code);
 
     // Show loading state
-    const outputContainer = document.getElementById("outputContainer");
-    outputContainer.innerHTML = '<div class="flex items-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400 mr-2"></div><span class="text-gray-400">Executing...</span></div>';
+    var runIcon = document.getElementById('run-icon');
+    runIcon.className = 'fas fa-spinner fa-spin';
 
-    try {
-      const response = await authenticatedFetch(`${getUrl()}/repl`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code,
-          session_id: sessionId
-        })
-      });
+    var outputContainer = document.getElementById('output-container');
+    outputContainer.innerHTML = '<div class="flex items-center gap-2 text-text-muted"><i class="fas fa-spinner fa-spin"></i><span>Executing...</span></div>';
 
-      const data = await response.json();
+    // Execute via API
+    fetch('/database/' + dbName + '/repl/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code, session_id: sessionId })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      runIcon.className = 'fas fa-play';
 
-      // Store session ID for subsequent calls
+      // Store session ID
       if (data.session_id) {
         sessionId = data.session_id;
       }
 
       // Update execution time
-      document.getElementById("executionTime").textContent = `${data.execution_time_ms?.toFixed(2) || 0}ms`;
+      var timeEl = document.getElementById('execution-time');
+      if (data.execution_time_ms) {
+        timeEl.textContent = data.execution_time_ms.toFixed(2) + 'ms';
+      }
 
       // Display result
       if (data.error) {
-        outputContainer.innerHTML = `
-          <div class="bg-red-900/20 border border-red-500/50 rounded p-3">
-            <div class="text-red-400 font-semibold mb-1">Error${data.error.line ? ` (line ${data.error.line})` : ''}</div>
-            <div class="text-red-300">${escapeHtml(data.error.message)}</div>
-          </div>
-        `;
+        outputContainer.innerHTML = '<div class="bg-error/10 border border-error/30 rounded-lg p-3">' +
+          '<div class="text-error font-medium mb-1">Error' + (data.error.line ? ' (line ' + data.error.line + ')' : '') + '</div>' +
+          '<div class="text-error/80">' + escapeHtml(data.error.message || data.error) + '</div>' +
+        '</div>';
       } else {
-        const formatted = JSON.stringify(data.result, null, 2);
-        outputContainer.innerHTML = `
-          <div class="bg-gray-900 rounded p-3 overflow-x-auto">
-            <pre class="text-green-300">${syntaxHighlight(formatted)}</pre>
-          </div>
-        `;
+        var formatted = JSON.stringify(data.result !== undefined ? data.result : data.output, null, 2);
+        outputContainer.innerHTML = '<div class="bg-bg rounded-lg p-3 overflow-x-auto">' +
+          '<pre class="text-success whitespace-pre-wrap">' + syntaxHighlight(formatted) + '</pre>' +
+        '</div>';
       }
 
       // Display console output
-      if (data.output && data.output.length > 0) {
-        const consoleContainer = document.getElementById("consoleContainer");
-        const existingContent = consoleContainer.querySelector('.text-gray-500.italic') ? '' : consoleContainer.innerHTML;
-        const newOutput = data.output.map(line => `<div class="text-blue-300">&gt; ${escapeHtml(line)}</div>`).join('');
-        consoleContainer.innerHTML = existingContent + newOutput;
+      if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+        var consoleContainer = document.getElementById('console-container');
+        var hasPlaceholder = consoleContainer.querySelector('.italic');
+        if (hasPlaceholder) {
+          consoleContainer.innerHTML = '';
+        }
+        data.output.forEach(function(line) {
+          var div = document.createElement('div');
+          div.className = 'text-info';
+          div.innerHTML = '<span class="text-text-dim">&gt;</span> ' + escapeHtml(line);
+          consoleContainer.appendChild(div);
+        });
         consoleContainer.scrollTop = consoleContainer.scrollHeight;
       }
+    })
+    .catch(function(error) {
+      runIcon.className = 'fas fa-play';
+      outputContainer.innerHTML = '<div class="bg-error/10 border border-error/30 rounded-lg p-3">' +
+        '<div class="text-error font-medium mb-1">Network Error</div>' +
+        '<div class="text-error/80">' + escapeHtml(error.message) + '</div>' +
+      '</div>';
+    });
+  };
 
-    } catch (error) {
-      outputContainer.innerHTML = `
-        <div class="bg-red-900/20 border border-red-500/50 rounded p-3">
-          <div class="text-red-400 font-semibold mb-1">Network Error</div>
-          <div class="text-red-300">${escapeHtml(error.message)}</div>
-        </div>
-      `;
+  // Set code in editor
+  window.setCode = function(code) {
+    if (editor) {
+      editor.setValue(code);
     }
-  }
+  };
 
+  // Clear output
+  window.clearOutput = function() {
+    document.getElementById('output-container').innerHTML = '<div class="text-text-dim italic">Output will appear here...</div>';
+    document.getElementById('execution-time').textContent = '';
+  };
+
+  // Clear console
+  window.clearConsole = function() {
+    document.getElementById('console-container').innerHTML = '<div class="text-text-dim italic">Console output (print/Log) will appear here...</div>';
+  };
+
+  // Escape HTML
   function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
+    if (text === null || text === undefined) return '';
+    var div = document.createElement('div');
+    div.textContent = String(text);
     return div.innerHTML;
   }
 
+  // Syntax highlight JSON
   function syntaxHighlight(json) {
-    json = json.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    if (!json) return '';
+    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return json.replace(
       /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-      function (match) {
-        let cls = "text-orange-400";
+      function(match) {
+        var cls = 'text-warning'; // number
         if (/^"/.test(match)) {
-          cls = /:$/.test(match) ? "text-blue-400" : "text-green-400";
+          cls = /:$/.test(match) ? 'text-info' : 'text-success'; // key : string
         } else if (/true|false/.test(match)) {
-          cls = "text-purple-400";
+          cls = 'text-accent-light'; // boolean
         } else if (/null/.test(match)) {
-          cls = "text-gray-500";
+          cls = 'text-text-dim'; // null
         }
-        return '<span class="' + cls + '">' + match + "</span>";
+        return '<span class="' + cls + '">' + match + '</span>';
       }
     );
   }
 
-  function clearOutput() {
-    document.getElementById("outputContainer").innerHTML = '<div class="text-gray-500 italic">Output will appear here...</div>';
-    document.getElementById("executionTime").textContent = '';
-  }
-
-  function clearConsole() {
-    document.getElementById("consoleContainer").innerHTML = '<div class="text-gray-500 italic">Console output will appear here...</div>';
-  }
-
+  // Save to history
   function saveToHistory(code) {
+    if (!code) return;
     try {
-      let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-      history = history.filter(q => q !== code);
+      var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      history = history.filter(function(q) { return q !== code; });
       history.unshift(code);
       if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
     } catch (e) {}
   }
 
-  function showHistory() {
-    const modal = document.getElementById("historyModal");
-    const modalContent = document.getElementById("historyModalContent");
-    renderHistoryList();
-    modal.classList.remove("hidden");
-    setTimeout(() => {
-      modal.classList.remove("opacity-0");
-      modalContent.classList.remove("scale-95", "opacity-0");
-      modalContent.classList.add("scale-100", "opacity-100");
-    }, 10);
+  // History editors storage
+  var historyEditors = [];
+
+  // Dispose history editors
+  function disposeHistoryEditors() {
+    historyEditors.forEach(function(ed) {
+      if (ed) ed.dispose();
+    });
+    historyEditors = [];
   }
 
-  function closeHistory() {
-    const modal = document.getElementById("historyModal");
-    const modalContent = document.getElementById("historyModalContent");
-    modal.classList.add("opacity-0");
-    modalContent.classList.remove("scale-100", "opacity-100");
-    modalContent.classList.add("scale-95", "opacity-0");
-    setTimeout(() => modal.classList.add("hidden"), 300);
-  }
+  // Show history modal
+  window.showHistory = function() {
+    var modal = document.getElementById('history-modal');
+    var container = document.getElementById('history-list');
 
-  function renderHistoryList() {
-    const container = document.getElementById("historyList");
+    // Dispose previous editors
+    disposeHistoryEditors();
+
     try {
-      let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
       if (history.length === 0) {
-        container.innerHTML = '<div class="p-8 text-center text-gray-500">No history yet</div>';
-        return;
+        container.innerHTML = '<div class="p-8 text-center text-text-muted">No history yet</div>';
+      } else {
+        container.innerHTML = history.map(function(code, index) {
+          return '<div class="group relative rounded-lg overflow-hidden border border-border/30 bg-bg-dark hover:border-warning/50 transition-all cursor-pointer" onclick="loadFromHistory(' + index + ')">' +
+            '<div class="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">' +
+              '<span class="text-xs text-warning bg-warning/10 px-2 py-1 rounded">Load</span>' +
+              '<button type="button" onclick="removeFromHistory(event, ' + index + ')" class="text-xs text-error bg-error/10 px-2 py-1 rounded hover:bg-error/20 transition-colors" title="Remove">' +
+                '<i class="fas fa-times"></i>' +
+              '</button>' +
+            '</div>' +
+            '<div id="history-editor-' + index + '" class="h-32" data-code="' + index + '"></div>' +
+          '</div>';
+        }).join('');
+
+        // Create Monaco editors for each history item after DOM is ready
+        setTimeout(function() {
+          history.forEach(function(code, index) {
+            var editorContainer = document.getElementById('history-editor-' + index);
+            if (editorContainer && typeof monaco !== 'undefined') {
+              var historyEditor = monaco.editor.create(editorContainer, {
+                value: code,
+                language: 'lua',
+                theme: 'solidb-dark',
+                minimap: { enabled: false },
+                fontSize: 12,
+                fontFamily: "'JetBrains Mono', monospace",
+                automaticLayout: true,
+                readOnly: true,
+                domReadOnly: true,
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                lineNumbers: 'off',
+                folding: false,
+                renderLineHighlight: 'none',
+                scrollbar: { vertical: 'hidden', horizontal: 'hidden' },
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                overviewRulerBorder: false,
+                contextmenu: false
+              });
+              historyEditors.push(historyEditor);
+            }
+          });
+        }, 50);
       }
-
-      container.innerHTML = history.map((code, index) => `
-        <div class="group relative rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 hover:border-yellow-500/50 transition-all cursor-pointer" onclick="loadFromHistory(${index})">
-          <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <span class="text-xs text-yellow-300 bg-yellow-500/20 px-2 py-1 rounded border border-yellow-500/20">Load</span>
-          </div>
-          <pre class="p-3 text-sm font-mono text-gray-200 overflow-x-auto whitespace-pre-wrap">${escapeHtml(code.substring(0, 200))}${code.length > 200 ? '...' : ''}</pre>
-        </div>
-      `).join('');
     } catch (e) {
-      container.innerHTML = '<div class="p-4 text-center text-red-400">Failed to load history</div>';
+      container.innerHTML = '<div class="p-4 text-center text-error">Failed to load history</div>';
     }
-  }
 
-  function loadFromHistory(index) {
+    modal.classList.remove('hidden');
+  };
+
+  // Close history modal
+  window.closeHistory = function() {
+    disposeHistoryEditors();
+    document.getElementById('history-modal').classList.add('hidden');
+  };
+
+  // Load from history
+  window.loadFromHistory = function(index) {
     try {
-      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
       if (history[index] && editor) {
         editor.setValue(history[index]);
       }
       closeHistory();
     } catch (e) {}
-  }
+  };
 
-  // Expose functions to global scope
-  window.executeRepl = executeRepl;
-  window.clearOutput = clearOutput;
-  window.clearConsole = clearConsole;
-  window.showHistory = showHistory;
-  window.closeHistory = closeHistory;
-  window.loadFromHistory = loadFromHistory;
+  // Remove from history
+  window.removeFromHistory = function(event, index) {
+    event.stopPropagation();
+    try {
+      var history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (index >= 0 && index < history.length) {
+        history.splice(index, 1);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        showHistory(); // Refresh
+      }
+    } catch (e) {}
+  };
 
-  // ESC to close modal
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeHistory();
+  // Close modal on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeHistory();
+    }
   });
+})();
 </script>

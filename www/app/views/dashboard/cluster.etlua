@@ -1,34 +1,81 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-6xl mx-auto">
   <!-- Header -->
-  <div class="md:flex md:items-center md:justify-between mb-8">
-    <div class="flex-1 min-w-0">
-      <h2
-        class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400"
-      >
-        Cluster Nodes
-      </h2>
-      <p class="mt-2 text-sm text-gray-400">
-        Live cluster status and node information
-      </p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Cluster</h1>
+      <p class="text-text-muted text-sm">Monitor and manage SoliDB cluster nodes</p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button"
+              hx-get="/database/_system/cluster/nodes"
+              hx-target="#nodes-list"
+              class="inline-flex items-center gap-2 px-4 py-2 border border-border/50 hover:border-primary/50 text-text-muted hover:text-text font-medium rounded-lg transition-colors">
+        <i class="fas fa-sync-alt"></i>
+        <span>Refresh</span>
+      </button>
     </div>
   </div>
 
-  <!-- Cluster Dashboard Component -->
-  <cluster-dashboard></cluster-dashboard>
+  <!-- Cluster Status Cards -->
+  <div id="cluster-stats"
+       hx-get="/database/_system/cluster/stats"
+       hx-trigger="load, every 30s"
+       hx-swap="innerHTML"
+       class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <!-- Loading state -->
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 col-span-4">
+      <div class="flex items-center justify-center gap-2 text-text-muted">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Loading cluster status...</span>
+      </div>
+    </div>
+  </div>
 
-  <!-- Detailed Stats Component Removed by Request -->
+  <!-- Nodes List -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden mb-6">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <h2 class="font-semibold text-text">Cluster Nodes</h2>
+      <button type="button"
+              hx-get="/database/_system/cluster/nodes"
+              hx-target="#nodes-list"
+              class="text-sm text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-sync-alt mr-1"></i> Refresh
+      </button>
+    </div>
+    <div id="nodes-list"
+         hx-get="/database/_system/cluster/nodes"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+      <!-- Loading state -->
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading nodes...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Replication Info -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <h2 class="font-semibold text-text">Replication Status</h2>
+      <button type="button"
+              hx-get="/database/_system/cluster/replication-log"
+              hx-target="#replication-log"
+              class="text-sm text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-sync-alt mr-1"></i> Refresh
+      </button>
+    </div>
+    <div id="replication-log"
+         hx-get="/database/_system/cluster/replication-log"
+         hx-trigger="load"
+         hx-swap="innerHTML"
+         class="max-h-64 overflow-y-auto">
+      <!-- Loading state -->
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading replication status...</p>
+      </div>
+    </div>
+  </div>
 </div>
-
-<script type="module">
-  // import the component JavaScript output generated via @riotjs/compiler
-  import ClusterDashboard from '<%= PublicPath("/app/components/cluster-dashboard.riot.js") %>';
-
-  // register the riot components
-  riot.register("cluster-dashboard", ClusterDashboard);
-
-  // Wait for DOM to be ready
-  document.addEventListener("DOMContentLoaded", () => {
-    // Mount the components
-    riot.mount("cluster-dashboard");
-  });
-</script>

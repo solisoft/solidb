@@ -1,0 +1,10 @@
+<html>
+<head>
+  <%- content_for("header") %>
+</head>
+<body>
+  <%- yield() %>
+  <footer><%- content_for("footer") %></footer>
+  <sidebar><%- content_for("sidebar") %></sidebar>
+</body>
+</html>

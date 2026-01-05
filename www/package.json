@@ -4,15 +4,11 @@
   "description": "A tiny [redbean](https://redbean.dev/) MVC Lua framework",
   "author": "",
   "license": "MIT",
-  "scripts": {
-    "build:riot": "riot app/components --output public/app/components",
-    "build:css": "tailwindcss -i ./app/views/layouts/app/css_tw_src.css -o ./public/app.css",
-    "watch:css": "tailwindcss -i ./app/views/layouts/app/css_tw_src.css -o ./public/app.css --watch"
-  },
-  "dependencies": {
-    "@riotjs/cli": "^10.0.0",
-    "@riotjs/compiler": "^10.0.1",
-    "@tailwindcss/cli": "^4.1.13",
-    "navigo": "^8.11.1"
-  }
+   "dependencies": {
+     "@tailwindcss/cli": "^4.1.13"
+   },
+   "scripts": {
+     "build:css": "npx @tailwindcss/cli -i app/views/layouts/css_tw_src.css -o public/layouts.css --content './app/**/*.{html,js,riot,etlua}'",
+     "watch:css": "npx @tailwindcss/cli -i app/views/layouts/css_tw_src.css -o public/layouts.css --content './app/**/*.{html,js,riot,etlua}' --watch"
+   }
 }

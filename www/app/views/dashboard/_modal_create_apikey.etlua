@@ -1,0 +1,84 @@
+<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-md" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between p-4 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">Generate API Key</h3>
+      <button type="button" onclick="this.closest('.fixed').remove()" class="p-2 text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <form hx-post="/database/_system/apikeys"
+          hx-target="#apikeys-table"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) this.closest('.fixed').remove()">
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Key Name</label>
+          <input type="text" name="name" required
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                 placeholder="e.g., production-api, ci-cd-pipeline">
+          <p class="text-xs text-text-dim mt-1">A descriptive name to identify this key</p>
+        </div>
+
+        <% if #roles > 0 then %>
+        <div>
+          <label class="block text-sm font-medium text-text mb-2">Roles</label>
+          <div class="space-y-2 max-h-32 overflow-y-auto">
+            <% for _, role in ipairs(roles) do
+              local role_name = role.name or role
+              local is_admin = role_name == "admin"
+            %>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="roles" value="<%= role_name %>"
+                     <%= is_admin and 'checked' or '' %>
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text"><%= role_name %></span>
+              <% if role.description then %>
+              <span class="text-xs text-text-dim">- <%= role.description %></span>
+              <% end %>
+            </label>
+            <% end %>
+          </div>
+        </div>
+        <% end %>
+
+        <% if #databases > 0 then %>
+        <div>
+          <label class="block text-sm font-medium text-text mb-2">Database Scope (optional)</label>
+          <p class="text-xs text-text-dim mb-2">Leave unchecked for access to all databases</p>
+          <div class="space-y-2 max-h-32 overflow-y-auto">
+            <% for _, db in ipairs(databases) do
+              local db_name = type(db) == "table" and db.name or db
+            %>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="scoped_databases" value="<%= db_name %>"
+                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
+              <span class="text-sm text-text"><%= db_name %></span>
+            </label>
+            <% end %>
+          </div>
+        </div>
+        <% end %>
+
+        <div class="bg-warning/10 border border-warning/30 rounded-lg p-3">
+          <p class="text-xs text-warning">
+            <i class="fas fa-exclamation-triangle mr-1"></i>
+            The API key will only be shown once after creation. Make sure to copy it!
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 p-4 border-t border-border/30">
+        <button type="button" onclick="this.closest('.fixed').remove()"
+                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          Generate Key
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

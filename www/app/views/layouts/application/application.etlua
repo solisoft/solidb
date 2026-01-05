@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" style="scroll-behavior: smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <title><%= title or "SoliDB - High Performance Rust Database" %></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SoliDB - A New High Performance Database Server"
+    />
+    <meta property="og:image" content="/images/logo.jpg" />
+    <link rel="stylesheet" href="<%= public_path("/layouts.css") %>" />
+    <link rel="icon" type="image/png" href="<%= public_path("/favicon.png") %>" />
+    <!-- Apple PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Talks" />
+    <link rel="apple-touch-icon" href="/images/logo.jpg" />
+    <meta name="theme-color" content="#1A1D21" />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  </head>
+
+  <body
+    class="h-screen flex flex-col bg-gray-900 font-sans text-gray-100 overflow-hidden"
+  >
+    <!-- Global Background Decorations -->
+    <div
+      class="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none"
+    >
+      <div
+        class="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-indigo-900/20 rounded-full blur-[120px]"
+      ></div>
+      <div
+        class="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-purple-900/20 rounded-full blur-[120px]"
+      ></div>
+    </div>
+
+    <!-- Header (Fixed Top) -->
+    <% if not hide_header then %>
+    <div class="relative z-0 flex-shrink-0"><%- partial("shared/header") %></div>
+    <% end %>
+
+    <!-- Flex Container for Sidebar + Main Content -->
+    <div class="flex flex-1 overflow-hidden relative z-10">
+      <!-- Main Scrollable Content -->
+      <main
+        class="flex-1 <%= full_height and 'overflow-hidden' or 'overflow-y-auto' %> bg-transparent"
+      >
+        <div class="h-full flex flex-col">
+          <div
+            class="flex-1 <%= (full_height or no_padding) and 'p-0 min-h-0' or 'p-4 sm:p-6 lg:p-8' %>"
+          >
+            <%- yield() %>
+          </div>
+          <% if not full_height then %>
+          <div class="mt-auto"><%- partial("shared/footer") %></div>
+          <% end %>
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      document.addEventListener("DOMContentLoaded", (event) => {
+        document.querySelectorAll("pre code").forEach((el) => {
+          hljs.highlightElement(el);
+        });
+      });
+    </script>
+
+    <style>
+      /* Custom scrollbar for code blocks */
+      pre::-webkit-scrollbar {
+        height: 8px;
+      }
+      pre::-webkit-scrollbar-track {
+        background: #282c34;
+        border-radius: 0 0 8px 8px;
+      }
+      pre::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 4px;
+      }
+      pre::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+      }
+
+      /* Ensure code blocks have rounded corners and nice spacing in prose contexts */
+      .prose pre {
+        border-radius: 0.5rem !important;
+        margin-top: 1.5rem !important;
+        margin-bottom: 1.5rem !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        background-color: #282c34 !important; /* Match atom-one-dark */
+        color: #abb2bf !important;
+      }
+    </style>
+    <%- RefreshPageForDevMode() %>
+  </body>
+</html>

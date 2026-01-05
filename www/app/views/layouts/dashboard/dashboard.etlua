@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- title or "SoliDB Dashboard" %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- HTMX WebSocket extension -->
+  <script src="https://unpkg.com/htmx-ext-ws@2.0.0/ws.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <!-- Monaco Editor -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  <%- head_content or "" %>
+</head>
+<body class="min-h-screen bg-bg text-text">
+  <!-- Background decorations -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-primary/10 rounded-full blur-[120px]"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-accent/10 rounded-full blur-[120px]"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-[100] bg-gray-900/60 backdrop-blur-md border-b border-white/10 px-4 h-14 flex items-center">
+    <div class="w-full flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <!-- Mobile menu button -->
+        <button type="button" onclick="toggleSidebar()" class="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+
+        <a href="/" class="flex items-center gap-2 group">
+          <i class="fas fa-database text-xl text-primary-light group-hover:rotate-12 transition-transform"></i>
+          <span class="font-bold text-gradient text-lg">SoliDB</span>
+        </a>
+
+        <% if db then %>
+        <div class="hidden sm:flex items-center gap-2 text-text-muted">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+          </svg>
+          <span class="font-medium text-text"><%= db %></span>
+        </div>
+        <% end %>
+      </div>
+
+      <nav class="flex items-center gap-4">
+        <a href="/docs" class="text-text-muted hover:text-text transition-colors text-sm">Docs</a>
+        <a href="/database/_system/databases" class="text-text-muted hover:text-text transition-colors text-sm">Databases</a>
+        <a href="/dashboard/logout" class="text-text-muted hover:text-error transition-colors text-sm" title="Logout">
+          <i class="fas fa-sign-out-alt"></i>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="flex min-h-[calc(100vh-56px)] relative z-10">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-bg-dark/95 backdrop-blur-xl border-r border-border/50 transform transition-transform duration-300 lg:relative lg:translate-x-0 -translate-x-full">
+      <div class="sticky top-14 h-[calc(100vh-56px)] overflow-y-auto py-4">
+        <%- partial("dashboard/sidebar", { db = db, current_page = current_page }) %>
+      </div>
+    </aside>
+
+    <!-- Overlay for mobile -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity opacity-0 pointer-events-none"></div>
+
+    <!-- Main Content -->
+    <main class="flex-1 min-w-0 overflow-y-auto">
+      <div class="p-4 sm:p-6 lg:p-8">
+        <%- yield() %>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[200] space-y-2"></div>
+
+  <!-- Modal container -->
+  <div id="modal-container"></div>
+
+  <script>
+    // Sidebar toggle
+    function toggleSidebar() {
+      var sidebar = document.getElementById('sidebar');
+      var overlay = document.getElementById('sidebar-overlay');
+      var isOpen = !sidebar.classList.contains('-translate-x-full');
+
+      if (isOpen) {
+        sidebar.classList.add('-translate-x-full');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+        overlay.classList.remove('opacity-100', 'pointer-events-auto');
+      } else {
+        sidebar.classList.remove('-translate-x-full');
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+        overlay.classList.add('opacity-100', 'pointer-events-auto');
+      }
+    }
+
+    // Close modal helper
+    function closeModal() {
+      disposeDocumentEditor();
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    // Apply syntax highlighting
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('pre code').forEach(function(block) {
+        hljs.highlightElement(block);
+      });
+    });
+
+    // HTMX after-swap: process HTMX and syntax highlighting
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      var target = evt.detail.target;
+      // Process HTMX attributes on dynamically loaded content
+      htmx.process(target);
+      // Apply syntax highlighting
+      target.querySelectorAll('pre code').forEach(function(block) {
+        hljs.highlightElement(block);
+      });
+    });
+
+    // Toast helper
+    function showToast(message, type) {
+      type = type || 'info';
+      var container = document.getElementById('toast-container');
+      var toast = document.createElement('div');
+      toast.className = 'px-4 py-3 rounded-lg shadow-lg backdrop-blur-xl animate-in ' +
+        (type === 'success' ? 'bg-success/90 text-white' :
+         type === 'error' ? 'bg-error/90 text-white' :
+         'bg-bg-card/90 text-text border border-border/50');
+      toast.innerHTML = '<div class="flex items-center gap-2"><i class="fas ' +
+        (type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle') +
+        '"></i><span>' + message + '</span></div>';
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.classList.add('animate-out');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 5000);
+    }
+
+    // HTMX custom event listener for showToast (from HX-Trigger header)
+    document.body.addEventListener('showToast', function(evt) {
+      showToast(evt.detail.message, evt.detail.type);
+    });
+
+    // HTMX custom event listener for closeModal (from HX-Trigger header)
+    document.body.addEventListener('closeModal', function(evt) {
+      closeModal();
+    });
+
+    // Monaco Editor initialization for document modals
+    var documentEditor = null;
+
+    function initDocumentEditor(initialValue) {
+      var container = document.getElementById('monaco-editor-container');
+      if (!container) return;
+
+      function createEditor() {
+        // Define dark theme matching our UI
+        monaco.editor.defineTheme('solidb-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [
+            { token: 'string.key.json', foreground: '7dd3fc' },
+            { token: 'string.value.json', foreground: '86efac' },
+            { token: 'number', foreground: 'fbbf24' },
+            { token: 'keyword', foreground: 'c084fc' }
+          ],
+          colors: {
+            'editor.background': '#1a1a2e',
+            'editor.foreground': '#e2e8f0',
+            'editor.lineHighlightBackground': '#ffffff08',
+            'editorCursor.foreground': '#7c3aed',
+            'editor.selectionBackground': '#7c3aed40',
+            'editorLineNumber.foreground': '#64748b',
+            'editorLineNumber.activeForeground': '#94a3b8'
+          }
+        });
+
+        documentEditor = monaco.editor.create(container, {
+          value: initialValue,
+          language: 'json',
+          theme: 'solidb-dark',
+          automaticLayout: true,
+          minimap: { enabled: false },
+          fontSize: 14,
+          fontFamily: "'JetBrains Mono', monospace",
+          lineNumbers: 'on',
+          scrollBeyondLastLine: false,
+          wordWrap: 'on',
+          tabSize: 2,
+          insertSpaces: true,
+          formatOnPaste: true,
+          bracketPairColorization: { enabled: true }
+        });
+
+        // Update hidden input before HTMX sends request
+        // Update hidden input before HTMX sends request
+        var form = document.getElementById('document-form') || document.getElementById('schema-form');
+        if (form) {
+          console.log('Attaching htmx:configRequest to form:', form.id);
+          form.addEventListener('htmx:configRequest', function(e) {
+            console.log('htmx:configRequest triggered for form:', form.id);
+            if (documentEditor) {
+                var value = documentEditor.getValue();
+                console.log('Editor value:', value);
+                var input = document.getElementById('document-input');
+                if (input) {
+                    input.value = value;
+                    // Use the input name if available, otherwise default to 'document'
+                    var paramName = input.getAttribute('name') || 'document';
+                    console.log('Setting param:', paramName, 'to value length:', value.length);
+                    e.detail.parameters[paramName] = value;
+                } else {
+                    console.error('document-input not found');
+                }
+            } else {
+                console.error('documentEditor not initialized');
+            }
+          });
+        } else {
+            console.error('Form not found (document-form or schema-form)');
+        }
+
+        // Validate JSON and update button state
+        function validateDocumentJson() {
+          var submitBtn = document.getElementById('document-submit-btn');
+          if (!submitBtn) return;
+
+          try {
+            var value = documentEditor.getValue().trim();
+            if (!value) {
+              submitBtn.disabled = true;
+              submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+              return;
+            }
+            JSON.parse(value);
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+          } catch (e) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          }
+        }
+
+        // Listen for content changes
+        documentEditor.onDidChangeModelContent(function() {
+          validateDocumentJson();
+        });
+
+        // Format on load and validate
+        setTimeout(function() {
+          if (documentEditor) {
+            documentEditor.getAction('editor.action.formatDocument').run();
+            validateDocumentJson();
+          }
+        }, 100);
+      }
+
+      // Initialize Monaco Editor
+      if (typeof monaco !== 'undefined') {
+        createEditor();
+      } else if (typeof require !== 'undefined') {
+        require.config({
+          paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }
+        });
+        require(['vs/editor/editor.main'], function() {
+          createEditor();
+        });
+      }
+    }
+
+    function formatDocument() {
+      if (documentEditor) {
+        documentEditor.getAction('editor.action.formatDocument').run();
+      }
+    }
+
+    function disposeDocumentEditor() {
+      if (documentEditor) {
+        documentEditor.dispose();
+        documentEditor = null;
+      }
+    }
+  </script>
+
+  <style>
+    .animate-in { animation: slideIn 0.3s ease-out; }
+    .animate-out { animation: slideOut 0.3s ease-in forwards; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+  </style>
+  <%- RefreshPageForDevMode() %>
+</body>
+</html>

@@ -1,12 +1,127 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  <queue-manager></queue-manager>
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Job Queues</h1>
+      <p class="text-text-muted text-sm">Manage background jobs in <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button"
+              hx-get="/database/<%= db %>/queues/modal/create-cron"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-2 px-3 py-2 bg-bg-dark border border-border/50 hover:bg-white/5 text-text font-medium rounded-lg transition-colors">
+        <i class="fas fa-calendar-alt"></i>
+        <span>Schedule Cron</span>
+      </button>
+      <button type="button"
+              hx-get="/database/<%= db %>/queues/modal/create-job"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-plus"></i>
+        <span>Create Job</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Queue Stats -->
+  <div id="queue-stats"
+       hx-get="/database/<%= db %>/queues/stats"
+       hx-trigger="load, refreshStats from:body"
+       hx-swap="innerHTML"
+       class="mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+        <div class="h-12 bg-bg-dark rounded"></div>
+      </div>
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+        <div class="h-12 bg-bg-dark rounded"></div>
+      </div>
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+        <div class="h-12 bg-bg-dark rounded"></div>
+      </div>
+      <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+        <div class="h-12 bg-bg-dark rounded"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4">
+      <nav class="flex gap-1 -mb-px" id="queue-tabs">
+        <button type="button"
+                hx-get="/database/<%= db %>/queues/jobs?status=pending"
+                hx-target="#jobs-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)"
+                class="queue-tab py-3 px-4 border-b-2 border-primary-light text-text text-sm font-medium transition-colors">
+          <i class="fas fa-hourglass-half mr-2 text-warning"></i>Pending
+        </button>
+        <button type="button"
+                hx-get="/database/<%= db %>/queues/jobs?status=running"
+                hx-target="#jobs-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)"
+                class="queue-tab py-3 px-4 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
+          <i class="fas fa-cog mr-2 text-info"></i>Running
+        </button>
+        <button type="button"
+                hx-get="/database/<%= db %>/queues/jobs?status=completed"
+                hx-target="#jobs-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)"
+                class="queue-tab py-3 px-4 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
+          <i class="fas fa-check mr-2 text-success"></i>Completed
+        </button>
+        <button type="button"
+                hx-get="/database/<%= db %>/queues/jobs?status=failed"
+                hx-target="#jobs-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)"
+                class="queue-tab py-3 px-4 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
+          <i class="fas fa-times mr-2 text-error"></i>Failed
+        </button>
+        <button type="button"
+                hx-get="/database/<%= db %>/queues/cron"
+                hx-target="#jobs-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)"
+                class="queue-tab py-3 px-4 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
+          <i class="fas fa-calendar-alt mr-2 text-accent-light"></i>Scheduled
+        </button>
+      </nav>
+    </div>
+
+    <!-- Tab Content -->
+    <div id="jobs-content"
+         hx-get="/database/<%= db %>/queues/jobs?status=pending"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading jobs...</p>
+      </div>
+    </div>
+  </div>
 </div>
 
-<script type="module">
-  import QueueManager from '<%= PublicPath("/app/components/queue-manager.riot.js") %>';
-  
-  riot.register('queue-manager', QueueManager);
-  riot.mount('queue-manager', {
-    db: '<%= Params["db"] %>'
+<script>
+function setActiveTab(clickedTab) {
+  // Remove active state from all tabs
+  document.querySelectorAll('.queue-tab').forEach(function(tab) {
+    tab.classList.remove('border-primary-light', 'text-text');
+    tab.classList.add('border-transparent', 'text-text-muted');
   });
+  // Add active state to clicked tab
+  clickedTab.classList.remove('border-transparent', 'text-text-muted');
+  clickedTab.classList.add('border-primary-light', 'text-text');
+}
+
+// Auto-refresh stats every 10 seconds
+setInterval(function() {
+  htmx.trigger('#queue-stats', 'refreshStats');
+}, 10000);
 </script>

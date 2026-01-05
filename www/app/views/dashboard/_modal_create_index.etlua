@@ -1,0 +1,170 @@
+<!-- Create Index Modal -->
+<div class="fixed inset-0 z-[150] flex items-center justify-center px-4 sm:px-6"
+     role="dialog"
+     aria-modal="true">
+
+  <!-- Backdrop -->
+  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+
+  <!-- Modal Panel -->
+  <div class="relative w-full max-w-lg">
+    <div class="bg-bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl overflow-hidden">
+      <!-- Header -->
+      <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between bg-white/5">
+        <h3 class="text-xl font-bold text-text flex items-center gap-2">
+          <i class="fas fa-plus-circle text-primary-light"></i>
+          New Index
+        </h3>
+        <button type="button" onclick="closeModal()"
+                class="text-text-muted hover:text-text p-1 rounded-lg hover:bg-white/10 transition-colors">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+      </div>
+
+      <form hx-post="/database/<%= db %>/indexes/<%= collection %>"
+            hx-target="#indexes-table"
+            hx-swap="innerHTML"
+            hx-on--after-request="if(event.detail.successful) closeModal()">
+        <div class="p-6 space-y-4">
+          <% if is_columnar then %>
+          <!-- Columnar Index - just column name -->
+          <input type="hidden" name="index_type" value="columnar">
+
+          <div>
+            <label class="block text-sm font-medium text-text mb-2">Column Name</label>
+            <input type="text" name="column" required
+                   placeholder="e.g., timestamp, user_id"
+                   class="w-full px-3 py-2 bg-bg border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+            <p class="text-xs text-text-dim mt-1">The column to create an index on</p>
+          </div>
+          <% else %>
+          <!-- Regular Index Types -->
+          <div>
+            <label class="block text-sm font-medium text-text mb-2">Index Type</label>
+            <select name="index_type" id="index-type-select"
+                    class="w-full px-3 py-2 bg-bg border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50"
+                    onchange="updateIndexForm()">
+              <option value="hash">Hash (exact match)</option>
+              <option value="persistent">Persistent (range queries)</option>
+              <option value="fulltext">Fulltext (text search)</option>
+              <option value="geo">Geo (geospatial)</option>
+              <option value="ttl">TTL (auto-expire)</option>
+              <option value="bloom">Bloom Filter (probabilistic)</option>
+              <option value="cuckoo">Cuckoo Filter (probabilistic + deletion)</option>
+            </select>
+          </div>
+
+          <!-- Index Name -->
+          <div>
+            <label class="block text-sm font-medium text-text mb-2">Index Name</label>
+            <input type="text" name="name" required
+                   placeholder="e.g., idx_email"
+                   class="w-full px-3 py-2 bg-bg border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+          </div>
+
+          <!-- Fields -->
+          <div>
+            <label class="block text-sm font-medium text-text mb-2">
+              <span id="fields-label">Fields</span>
+              <span class="text-text-dim font-normal" id="fields-hint">(comma-separated)</span>
+            </label>
+            <input type="text" name="fields" id="fields-input" required
+                   placeholder="e.g., email, username"
+                   class="w-full px-3 py-2 bg-bg border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+          </div>
+
+          <!-- TTL specific field -->
+          <div id="ttl-field" class="hidden">
+            <label class="block text-sm font-medium text-text mb-2">TTL (seconds)</label>
+            <input type="number" name="ttl" value="3600" min="1"
+                   class="w-full px-3 py-2 bg-bg border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+            <p class="text-xs text-text-dim mt-1">Documents will expire after this many seconds</p>
+          </div>
+
+          <!-- Options for hash/persistent -->
+          <div id="index-options" class="flex items-center gap-6">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="unique"
+                     class="w-4 h-4 rounded border-border/50 text-primary focus:ring-primary/50 bg-bg">
+              <span class="text-sm text-text">Unique</span>
+            </label>
+          </div>
+          <% end %>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 bg-white/5 border-t border-border/30 flex items-center justify-end gap-3">
+          <button type="button" onclick="closeModal()"
+                  class="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors cancel-btn">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-5 py-2 bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white font-medium rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+            <i class="fas fa-plus submit-icon"></i>
+            <i class="fas fa-spinner fa-spin loading-icon" style="display:none"></i>
+            <span class="submit-text">Create Index</span>
+            <span class="loading-text" style="display:none">Creating...</span>
+          </button>
+        </div>
+      </form>
+
+      <style>
+        form.htmx-request .submit-icon { display: none; }
+        form.htmx-request .submit-text { display: none; }
+        form.htmx-request .loading-icon { display: inline-block !important; }
+        form.htmx-request .loading-text { display: inline !important; }
+        form.htmx-request button[type="submit"] { pointer-events: none; }
+        form.htmx-request .cancel-btn { pointer-events: none; opacity: 0.5; }
+      </style>
+    </div>
+  </div>
+</div>
+
+<script>
+  function updateIndexForm() {
+    var type = document.getElementById('index-type-select').value;
+    var ttlField = document.getElementById('ttl-field');
+    var indexOptions = document.getElementById('index-options');
+    var fieldsLabel = document.getElementById('fields-label');
+    var fieldsHint = document.getElementById('fields-hint');
+    var fieldsInput = document.getElementById('fields-input');
+
+    if (type === 'ttl') {
+      ttlField.classList.remove('hidden');
+      indexOptions.classList.add('hidden');
+      fieldsLabel.textContent = 'Timestamp Field';
+      fieldsHint.textContent = '(field containing timestamp)';
+      fieldsInput.placeholder = 'e.g., created_at';
+    } else if (type === 'geo') {
+      ttlField.classList.add('hidden');
+      indexOptions.classList.add('hidden');
+      fieldsLabel.textContent = 'Location Field';
+      fieldsHint.textContent = '(field containing [lat, lng])';
+      fieldsInput.placeholder = 'e.g., location';
+    } else if (type === 'fulltext') {
+      ttlField.classList.add('hidden');
+      indexOptions.classList.add('hidden');
+      fieldsLabel.textContent = 'Text Fields';
+      fieldsHint.textContent = '(comma-separated)';
+      fieldsInput.placeholder = 'e.g., title, description';
+    } else if (type === 'bloom') {
+      ttlField.classList.add('hidden');
+      indexOptions.classList.add('hidden');
+      fieldsLabel.textContent = 'Fields';
+      fieldsHint.textContent = '(comma-separated)';
+      fieldsInput.placeholder = 'e.g., email, user_id';
+    } else if (type === 'cuckoo') {
+      ttlField.classList.add('hidden');
+      indexOptions.classList.add('hidden');
+      fieldsLabel.textContent = 'Fields';
+      fieldsHint.textContent = '(comma-separated)';
+      fieldsInput.placeholder = 'e.g., email, user_id';
+    } else {
+      ttlField.classList.add('hidden');
+      indexOptions.classList.remove('hidden');
+      fieldsLabel.textContent = 'Fields';
+      fieldsHint.textContent = '(comma-separated)';
+      fieldsInput.placeholder = 'e.g., email, username';
+    }
+  }
+</script>

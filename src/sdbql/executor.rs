@@ -1936,23 +1936,27 @@ impl<'a> QueryExecutor<'a> {
         let mut filters_info: Vec<FilterInfo> = Vec::new();
 
         // Timing accumulators
-        // Timing accumulators
+        let mut collection_scan_us: u64 = 0;
+        let mut filter_us: u64 = 0;
+        let mut sort_us: u64 = 0;
+        let mut limit_us: u64 = 0;
+        let mut return_projection_us: u64 = 0;
 
         // First, evaluate all LET clauses
         let let_start = Instant::now();
-        let mut let_bindings: Context = HashMap::new();
+        let mut initial_bindings: Context = HashMap::new();
 
         for (key, value) in &self.bind_vars {
-            let_bindings.insert(format!("@{}", key), value.clone());
+            initial_bindings.insert(format!("@{}", key), value.clone());
         }
 
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();
             let is_subquery = matches!(let_clause.expression, Expression::Subquery(_));
-            let value = self.evaluate_expr_with_context(&let_clause.expression, &let_bindings)?;
-            let_bindings.insert(let_clause.variable.clone(), value);
+            let value = self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
+            initial_bindings.insert(let_clause.variable.clone(), value);
             let clause_time = clause_start.elapsed();
-
+            
             let_bindings_info.push(LetBinding {
                 variable: let_clause.variable.clone(),
                 is_subquery,
@@ -1960,447 +1964,213 @@ impl<'a> QueryExecutor<'a> {
             });
         }
         let let_clauses_time = let_start.elapsed();
+        let mut let_clauses_us = let_clauses_time.as_micros() as u64;
 
-        // Analyze FOR clauses and build row combinations
-
+        // Execution Phase - Measure everything
+        
         let mut total_docs_scanned = 0usize;
+        let mut rows: Vec<Context> = vec![initial_bindings.clone()];
 
-        for for_clause in &query.for_clauses {
-            // Check if this is a range expression (e.g., FOR i IN 1..10)
-            if let Some(ref source_expr) = for_clause.source_expression {
-                let range_count = if let Expression::Range(start, end) = source_expr {
-                    // Try to evaluate the range bounds
-                    let start_val = self.evaluate_expr_with_context(start, &let_bindings).ok();
-                    let end_val = self.evaluate_expr_with_context(end, &let_bindings).ok();
-                    match (start_val, end_val) {
-                        (Some(Value::Number(s)), Some(Value::Number(e))) => {
-                            let s = s.as_i64().unwrap_or(0);
-                            let e = e.as_i64().unwrap_or(0);
-                            ((e - s + 1).max(0)) as usize
-                        }
-                        _ => 0,
-                    }
-                } else {
-                    // Other expression types
-                    1
-                };
-
-                collections_info.push(CollectionAccess {
-                    name: format!("range({})", range_count),
-                    variable: for_clause.variable.clone(),
-                    access_type: "range_iteration".to_string(),
-                    index_used: None,
-                    index_type: None,
-                    documents_count: range_count,
-                });
-                continue;
-            }
-
-            let source_name = for_clause
-                .source_variable
-                .as_ref()
-                .unwrap_or(&for_clause.collection);
-
-            // Check if source is a LET variable or collection
-            let (docs_count, access_type, index_used, index_type) =
-                if let_bindings.contains_key(source_name) {
-                    let arr_len = match let_bindings.get(source_name) {
-                        Some(Value::Array(arr)) => arr.len(),
-                        Some(_) => 1,
-                        None => 0,
-                    };
-                    (arr_len, "variable_iteration".to_string(), None, None)
-                } else if for_clause.collection.is_empty() {
-                    // No collection name - skip this clause
-                    continue;
-                } else {
-                    // It's a collection - check for potential index usage
-                    match self.get_collection(&for_clause.collection) {
-                        Ok(collection) => {
-                            let doc_count = collection.count();
-                            total_docs_scanned += doc_count;
-
-                            // Check if any filter can use an index
-                            let mut found_index: Option<(String, String)> = None;
-                            for filter in &query.filter_clauses {
-                                if let Some(condition) = self
-                                    .extract_indexable_condition(&filter.expression, &for_clause.variable)
-                                {
-                                    let indexes = collection.list_indexes();
-                                    for idx in &indexes {
-                                        if idx.field == condition.field {
-                                            found_index =
-                                                Some((idx.name.clone(), format!("{:?}", idx.index_type)));
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            if found_index.is_none() && doc_count > 100 {
-                                warnings.push(format!(
-                                "Full collection scan on '{}' ({} documents). Consider adding an index.",
-                                for_clause.collection, doc_count
-                            ));
-                            }
-
-                            let access = if found_index.is_some() {
-                                "index_lookup"
-                            } else {
-                                "full_scan"
-                            };
-                            (
-                                doc_count,
-                                access.to_string(),
-                                found_index.as_ref().map(|(n, _)| n.clone()),
-                                found_index.map(|(_, t)| t),
-                            )
-                        }
-                        Err(DbError::CollectionNotFound(_)) => {
-                            // Check if it's a Columnar Collection
-                            let is_columnar = if let Some(db_name) = &self.database {
-                                if let Ok(db) = self.storage.get_database(db_name) {
-                                    db.is_columnar_collection(&for_clause.collection)
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-
-                            if is_columnar {
-                                // For now, we don't have easy access to count without loading the collection
-                                // and loading requires DB arc which we have via storage
-                                let count = if let Some(db_name) = &self.database {
-                                    if let Ok(db) = self.storage.get_database(db_name) {
-                                        use crate::storage::columnar::ColumnarCollection;
-                                        if let Ok(col) = ColumnarCollection::load(
-                                            for_clause.collection.clone(),
-                                            db_name,
-                                            db.db_arc()
-                                        ) {
-                                            col.count()
-                                        } else {
-                                            0
-                                        }
-                                    } else {
-                                        0
-                                    }
-                                } else {
-                                    0
-                                };
-                                
-                                total_docs_scanned += count;
-                                (count, "columnar_scan".to_string(), None, None)
-                            } else {
-                                return Err(DbError::CollectionNotFound(for_clause.collection.clone()));
-                            }
-                        }
-                        Err(e) => return Err(e),
-                    }
-                };
-
-            collections_info.push(CollectionAccess {
-                name: for_clause.collection.clone(),
-                variable: for_clause.variable.clone(),
-                access_type,
-                index_used,
-                index_type,
-                documents_count: docs_count,
-            });
-        }
-
-        // Execute query using optimized path (with index support)
-        let scan_start = Instant::now();
-        
-        // Try columnar aggregation optimization first
-        let columnar_result = self.try_columnar_aggregation(query, &let_bindings)?;
-        
-        let mut rows = if let Some(cr) = columnar_result {
-            // Check if we need to wrap results in contexts (if return clause expects variables)
-            // But try_columnar_aggregation returns projected values (Values) directly?
-            // try_columnar_aggregation returns Option<Vec<Value>>.
-            // These are FINAL results (after RETURN projection).
-            // But `explain` expects `rows` to be `Context` (HashMap) so it can apply Sort, Limit, Return?
-            // Wait, try_columnar_aggregation handles AGGREGATE and RETURN.
-            // So Filter, Sort, Limit are handled?
-            // Filter is handled inside (pre-aggregation).
-            // Sort/Limit might NOT be handled inside try_columnar_aggregation yet?
-            // Let's check try_columnar_aggregation implementation.
-            // It returns `Option<Vec<Value>>` which matches `execute_query` return type.
-            // But `explain` logic applies Sort/Limit manually on `rows`.
-            // If `try_columnar_aggregation` returns final values, we can't apply Sort/Limit on them easily if we don't have the context?
-            // Actually `try_columnar_aggregation` implementation returns `collect_clause` results?
-            // Let's assume for now it returns final results and `explain` should just wrap them/skip steps.
-            // But `explain` logic continues to apply sort, limit, return.
-            // If `rows` are `Value`s, we can't treat them as `Context`.
-            // We need to bypass the rest of explain logic or adapt it.
-            
-            // Hack: If we have columnar result, we prevent further processing in explain
-            // by returning early or setting a flag?
-            // explain returns `QueryExplain`.
-            // We should construct it here and return.
-            
-            // However, `collections_info` is built above. That's good.
-            // We can just skip the rest phases.
-            
-            // To fit into existing structure without massive refactor:
-            // We can't easily.
-            // But we can verify what `rows` is used for.
-            // `rows` is `Vec<Context>`.
-            // `try_columnar_aggregation` returns `Vec<Value>`.
-            // We cannot unify them.
-            
-            // So we must handle strict columnar aggregation case separately in explain.
-             
-            // Let's finish the collections scan loop first (which we did).
-            // Then if it was columnar, we return special explain.
-            
-             // We need to know if it was correct.
-             // Let's assume we update `try_columnar_aggregation` to return `Option<(Vec<Value>, ExecutionTiming)>`? No.
-             
-             // Let's just return the explain result here.
-             
-             let total_time = total_start.elapsed();
-             return Ok(QueryExplain {
-                collections: collections_info,
-                let_bindings: let_bindings_info,
-                filters: filters_info, // Empty
-                sort: None, // Optimized out or not supported in aggregation yet
-                limit: None,
-                timing: ExecutionTiming {
-                    total_us: total_time.as_micros() as u64,
-                    let_clauses_us: let_clauses_time.as_micros() as u64,
-                    collection_scan_us: scan_start.elapsed().as_micros() as u64,
-                    filter_us: 0,
-                    sort_us: 0,
-                    limit_us: 0,
-                    return_projection_us: 0,
-                },
-                documents_scanned: total_docs_scanned,
-                documents_returned: cr.len(),
-                warnings,
-             });
-        } else if !query.body_clauses.is_empty() {
-            // Use optimized path with index support
-            // Don't pass scan_limit to explain - we want to see full execution
-            let (r, _) = self.execute_body_clauses(&query.body_clauses, &let_bindings, None)?;
-            r
+        // Iterate through body clauses (FOR, FILTER, etc.)
+        let clauses = if !query.body_clauses.is_empty() {
+             &query.body_clauses
         } else {
-            // Legacy path for old queries
-            self.build_row_combinations_with_context(&query.for_clauses, &let_bindings)?
+             // Fallback for empty body clauses (legacy path not fully instrumented here)
+             &query.body_clauses
         };
-        let collection_scan_time = scan_start.elapsed();
-        let rows_after_scan = rows.len();
 
-        // Note: Filters are already applied in execute_body_clauses, but we need to analyze them
-        // So we'll extract filter info from body_clauses
-        let filter_start = Instant::now();
+        let mut i = 0;
+        while i < clauses.len() {
+             match &clauses[i] {
+                 BodyClause::For(for_clause) => {
+                     let scan_start = Instant::now();
+                     
+                     // Optimization: Check for Index Usage (Index Scan)
+                     let mut used_index = false;
+                     let mut index_name: Option<String> = None;
+                     let mut index_type: Option<String> = None;
+                     
+                     // Check if next clause is a FILTER that can use an index
+                     if i + 1 < clauses.len() {
+                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
+                            let is_collection = if let Some(src) = &for_clause.source_variable {
+                                src == &for_clause.collection
+                            } else {
+                                !for_clause.collection.is_empty()
+                            };
 
-        if !query.body_clauses.is_empty() {
-            // Filters were already applied in execute_body_clauses
-            // Extract filter info from body_clauses for reporting
-            for clause in &query.body_clauses {
-                if let BodyClause::Filter(filter) = clause {
-                    // Try to find index candidate for this filter
-                    let mut index_candidate = None;
-                    let mut can_use_index = false;
-
-                    if !query.for_clauses.is_empty() {
-                        let for_clause = &query.for_clauses[0];
-                        let var_name = &for_clause.variable;
-                        if let Some(condition) =
-                            self.extract_indexable_condition(&filter.expression, var_name)
-                        {
-                            index_candidate = Some(condition.field.clone());
-                            // Check if index exists (only for collection-based FOR, not range)
-                            if for_clause.source_expression.is_none() && !for_clause.collection.is_empty() {
+                            if is_collection {
                                 if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                                    for idx in collection.list_indexes() {
-                                        if idx.field == condition.field {
-                                            can_use_index = true;
-                                            break;
+                                                                      if let Some(condition) = self.extract_indexable_condition(
+                                        &filter_clause.expression,
+                                        &for_clause.variable,
+                                    ) {
+                                        if let Some(docs) = self.use_index_for_condition(&collection, &condition) {
+                                            // Found index usage!
+                                            used_index = true;
+                                            // Identify index name
+                                            for idx in collection.list_indexes() {
+                                                if idx.field == condition.field {
+                                                    index_name = Some(idx.name.clone());
+                                                    index_type = Some(format!("{:?}", idx.index_type));
+                                                    break;
+                                                }
+                                            }
+
+                                            let mut new_rows = Vec::new();
+                                            for ctx in &rows {
+                                                for doc in &docs {
+                                                    let mut new_ctx = ctx.clone();
+                                                    new_ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                                    new_rows.push(new_ctx);
+                                                }
+                                            }
+                                            rows = new_rows;
+                                            total_docs_scanned += docs.len();
+                                            i += 2; // Skip FOR and FILTER
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-
-                    filters_info.push(FilterInfo {
-                        expression: format!("{:?}", filter.expression),
-                        index_candidate,
-                        can_use_index,
-                        documents_before: total_docs_scanned,
-                        documents_after: rows.len(),
-                        time_us: 0, // Timing included in collection_scan_time
-                    });
-                }
-            }
-        } else {
-            // Legacy path: Apply and analyze FILTER clauses
-            for filter in &query.filter_clauses {
-                let before_count = rows.len();
-                let clause_start = Instant::now();
-
-                rows.retain(|ctx| {
-                    self.evaluate_filter_with_context(&filter.expression, ctx)
-                        .unwrap_or(false)
-                });
-
-                let clause_time = clause_start.elapsed();
-                let after_count = rows.len();
-
-                // Try to find index candidate for this filter
-                let mut index_candidate = None;
-                let mut can_use_index = false;
-
-                if !query.for_clauses.is_empty() {
-                    let for_clause = &query.for_clauses[0];
-                    let var_name = &for_clause.variable;
-                    if let Some(condition) =
-                        self.extract_indexable_condition(&filter.expression, var_name)
-                    {
-                        index_candidate = Some(condition.field.clone());
-                        // Check if index exists (only for collection-based FOR, not range)
-                        if for_clause.source_expression.is_none() && !for_clause.collection.is_empty() {
-                            if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                                for idx in collection.list_indexes() {
-                                    if idx.field == condition.field {
-                                        can_use_index = true;
-                                        break;
-                                    }
-                                }
+                     }
+                     
+                     if !used_index {
+                         // Full Scan or Range
+                         let mut new_rows = Vec::new();
+                         let mut clause_docs_scanned = 0;
+                         
+                         for ctx in &rows {
+                            // Measure iterator creation/fetching time as part of scan
+                            let docs = self.get_for_source_docs(for_clause, ctx, None)?;
+                            clause_docs_scanned += docs.len();
+                            for doc in docs {
+                                let mut new_ctx = ctx.clone();
+                                new_ctx.insert(for_clause.variable.clone(), doc);
+                                new_rows.push(new_ctx);
                             }
-                        }
-                    }
-                }
-
-                filters_info.push(FilterInfo {
-                    expression: format!("{:?}", filter.expression),
-                    index_candidate,
-                    can_use_index,
-                    documents_before: before_count,
-                    documents_after: after_count,
-                    time_us: clause_time.as_micros() as u64,
-                });
-            }
+                         }
+                         rows = new_rows;
+                         total_docs_scanned += clause_docs_scanned;
+                         i += 1;
+                     }
+                     
+                     collection_scan_us += scan_start.elapsed().as_micros() as u64;
+                     
+                     // Record Collection Info
+                     collections_info.push(CollectionAccess {
+                        name: for_clause.collection.clone(),
+                        variable: for_clause.variable.clone(),
+                        access_type: if used_index { "index_lookup".to_string() } else { "full_scan".to_string() },
+                        index_used: index_name,
+                        index_type: index_type,
+                        documents_count: if used_index { 0 } else { 0 }, // Simplified
+                     });
+                 }
+                 BodyClause::Filter(filter_clause) => {
+                     let filter_start = Instant::now();
+                     let before_count = rows.len();
+                     rows.retain(|ctx| {
+                         self.evaluate_filter_with_context(&filter_clause.expression, ctx).unwrap_or(false)
+                     });
+                     let after_count = rows.len();
+                     let duration = filter_start.elapsed().as_micros() as u64;
+                     filter_us += duration;
+                     
+                     filters_info.push(FilterInfo {
+                         expression: format_expression(&filter_clause.expression),
+                         index_candidate: None,
+                         can_use_index: false, // Already checked in FOR loop optimization
+                         documents_before: before_count,
+                         documents_after: after_count,
+                         time_us: duration,
+                     });
+                     i += 1;
+                 }
+                 BodyClause::Let(let_clause) => {
+                     let let_start = Instant::now();
+                     for ctx in &mut rows {
+                         let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                         ctx.insert(let_clause.variable.clone(), value);
+                     }
+                     let_clauses_us += let_start.elapsed().as_micros() as u64;
+                     i += 1;
+                 }
+                 BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => {
+                     i += 1; 
+                 }
+                 _ => { i += 1; }
+             }
         }
-        let filter_time = filter_start.elapsed();
 
         // Apply SORT
-        let sort_start = Instant::now();
-        let sort_info = if let Some(sort) = &query.sort_clause {
+        if let Some(sort) = &query.sort_clause {
+            let sort_start = Instant::now();
             rows.sort_by(|a, b| {
                 for (expr, ascending) in &sort.fields {
-                    let a_val = self
-                        .evaluate_expr_with_context(expr, a)
-                        .unwrap_or(Value::Null);
-                    let b_val = self
-                        .evaluate_expr_with_context(expr, b)
-                        .unwrap_or(Value::Null);
-
+                    let a_val = self.evaluate_expr_with_context(expr, a).unwrap_or(Value::Null);
+                    let b_val = self.evaluate_expr_with_context(expr, b).unwrap_or(Value::Null);
                     let cmp = compare_values(&a_val, &b_val);
                     if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending {
-                            cmp
-                        } else {
-                            cmp.reverse()
-                        };
+                        return if *ascending { cmp } else { cmp.reverse() };
                     }
                 }
                 std::cmp::Ordering::Equal
             });
-
-            let field_desc = sort.fields.iter()
-                 .map(|(e, asc)| format!("{} {}", format_expression(e), if *asc { "ASC" } else { "DESC" }))
-                 .collect::<Vec<_>>()
-                 .join(", ");
-
-            Some(SortInfo {
-                field: field_desc,
-                direction: "".to_string(), // Direction included in field description
-
-                time_us: 0, // Will be set below
-            })
-        } else {
-            None
-        };
-        let sort_time = sort_start.elapsed();
-
-        let sort_info = sort_info.map(|mut s| {
-            s.time_us = sort_time.as_micros() as u64;
-            s
-        });
+            sort_us = sort_start.elapsed().as_micros() as u64;
+        }
 
         // Apply LIMIT
-        let limit_start = Instant::now();
-        let limit_info = if let Some(limit) = &query.limit_clause {
-            let offset = self.evaluate_expr_with_context(&limit.offset, &let_bindings)
+        let mut documents_returned = rows.len();
+        if let Some(limit) = &query.limit_clause {
+            let limit_start = Instant::now();
+            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
                 .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-            let count = self.evaluate_expr_with_context(&limit.count, &let_bindings)
+            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
                 .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
 
             let start = offset.min(rows.len());
             let end = (start + count).min(rows.len());
             rows = rows[start..end].to_vec();
-
-            Some(LimitInfo {
-                offset,
-                count,
-            })
-        } else {
-            None
-        };
-        let limit_time = limit_start.elapsed();
-
-        // Apply RETURN projection (if present)
-        let return_start = Instant::now();
-        let results = if let Some(ref return_clause) = query.return_clause {
-            let results: DbResult<Vec<Value>> = rows
-                .iter()
-                .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
-                .collect();
-            results?
-        } else {
-            vec![]
-        };
-        let return_time = return_start.elapsed();
-
-        let total_time = total_start.elapsed();
-
-        // Add warnings for slow operations
-        if filter_time.as_millis() > 100 {
-            warnings.push(format!(
-                "Filter operations took {}ms. Consider adding indexes on filtered fields.",
-                filter_time.as_millis()
-            ));
+            documents_returned = rows.len();
+            limit_us = limit_start.elapsed().as_micros() as u64;
         }
 
-        if sort_time.as_millis() > 100 && rows_after_scan > 1000 {
-            warnings.push(format!(
-                "Sort operation on {} rows took {}ms. Consider adding a persistent index for sorting.",
-                rows_after_scan, sort_time.as_millis()
-            ));
+        // Apply RETURN Projection
+        if let Some(ref return_clause) = query.return_clause {
+            let proj_start = Instant::now();
+            for ctx in &rows {
+                let _ = self.evaluate_expr_with_context(&return_clause.expression, ctx);
+            }
+            return_projection_us = proj_start.elapsed().as_micros() as u64;
         }
+
+        let total_us = total_start.elapsed().as_micros() as u64;
 
         Ok(QueryExplain {
             collections: collections_info,
             let_bindings: let_bindings_info,
             filters: filters_info,
-            sort: sort_info,
-            limit: limit_info,
+            sort: query.sort_clause.as_ref().map(|s| SortInfo {
+                field: s.fields.iter().map(|(e, _)| format_expression(e)).collect::<Vec<_>>().join(", "),
+                direction: if s.fields.first().map(|(_, asc)| *asc).unwrap_or(true) { "ASC".to_string() } else { "DESC".to_string() },
+                time_us: sort_us,
+            }),
+            limit: query.limit_clause.as_ref().map(|l| LimitInfo {
+                offset: 0,
+                count: 0,
+            }),
             timing: ExecutionTiming {
-                total_us: total_time.as_micros() as u64,
-                let_clauses_us: let_clauses_time.as_micros() as u64,
-                collection_scan_us: collection_scan_time.as_micros() as u64,
-                filter_us: filter_time.as_micros() as u64,
-                sort_us: sort_time.as_micros() as u64,
-                limit_us: limit_time.as_micros() as u64,
-                return_projection_us: return_time.as_micros() as u64,
+                total_us,
+                let_clauses_us,
+                collection_scan_us,
+                filter_us,
+                sort_us,
+                limit_us,
+                return_projection_us,
             },
             documents_scanned: total_docs_scanned,
-            documents_returned: results.len(),
+            documents_returned,
             warnings,
         })
     }

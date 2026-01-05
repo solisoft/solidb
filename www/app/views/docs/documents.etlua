@@ -1,0 +1,209 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+
+    <!-- Main Content -->
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-4 tracking-tight">Documents Storage</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            SoliDB's core storage engine. High-performance, transactional Key-Value storage for JSON documents.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              Overview
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Document collections are the default storage type in SoliDB. They provide flexible, schema-free storage for JSON documents while maintaining full ACID guarantees.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-400 font-bold mb-2 flex items-center"><i class="fas fa-bolt mr-2"></i> Fast Key-Value</h3>
+                <p class="text-sm text-gray-400">Optimized for point lookups and range scans using primary keys.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-400 font-bold mb-2 flex items-center"><i class="fas fa-file-code mr-2"></i> JSON Native</h3>
+                <p class="text-sm text-gray-400">Store arbitrary JSON structures. No rigid schemas required.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                 <h3 class="text-indigo-400 font-bold mb-2 flex items-center"><i class="fas fa-shield-alt mr-2"></i> Transactional</h3>
+                <p class="text-sm text-gray-400">Multi-document, multi-collection ACID transactions supported out of the box.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Section -->
+      <section id="creating" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Creating a Document Collection
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Create a collection with <code>type: "document"</code> (default).
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-4">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/database/:db/collection</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/_system/collection \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Content-Type: application/json"</span> \
+              </div>
+              <div class="pl-4">
+                -d <span class="text-yellow-300">'{
+  "name": "users",
+  "type": "document" 
+}'</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Schema Validation Section -->
+      <section id="validation" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              JSON Schema Validation
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Enforce data integrity by attaching a JSON Schema to your collection. SoliDB supports three validation modes:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                <div class="text-emerald-400 font-bold mb-1">Strict</div>
+                <div class="text-xs text-gray-400">Rejects any document that violates the schema.</div>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                <div class="text-yellow-400 font-bold mb-1">Lenient</div>
+                <div class="text-xs text-gray-400">Accepts invalid documents but logs a warning.</div>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                <div class="text-gray-400 font-bold mb-1">Off</div>
+                <div class="text-xs text-gray-500">Disables validation (default).</div>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-3">Create with Schema</h3>
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/database/:db/collection</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/_system/collection \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+              </div>
+              <div class="pl-4">
+                -d <span class="text-yellow-300">'{
+  "name": "products",
+  "schema": {
+    "type": "object",
+    "required": ["name", "price"],
+    "properties": {
+      "name": { "type": "string" },
+      "price": { "type": "number", "minimum": 0 }
+    }
+  },
+  "validationLevel": "strict"
+}'</span>
+              </div>
+            </div>
+
+            <div class="bg-red-900/10 border border-red-500/30 rounded-xl p-4 flex items-start">
+               <svg class="w-6 h-6 text-red-500 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               <div>
+                 <h4 class="text-red-400 font-bold text-sm mb-1">Validation Error</h4>
+                 <p class="text-red-200/80 text-sm leading-relaxed">
+                   Attempting to insert an invalid document in <code>strict</code> mode will return a <code>400 Bad Request</code> error with details about the schema violation.
+                 </p>
+               </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- Operations Section -->
+      <section id="operations" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+               Basic Operations
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            
+             <h3 class="text-lg font-semibold text-white mb-3">Insert Document</h3>
+             <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">POST /_api/document/:db/:collection</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/document/_system/users \
+              </div>
+              <div class="pl-4">
+                -d <span class="text-yellow-300">'{ "name": "Alice", "email": "alice@example.com" }'</span>
+              </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-3">Read Document</h3>
+             <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">GET /_api/document/:db/:collection/:key</span>
+              </div>
+              <div>
+                <span class="text-purple-400">curl</span> http://localhost:6745/_api/document/_system/users/123
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

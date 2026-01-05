@@ -1,0 +1,338 @@
+<%
+-- Default to empty list if nil
+local docs = documents or {}
+local collection_type = collection_type or "document"
+local is_blob = collection_type == "blob"
+local api_url = api_server or "http://localhost:6745"
+
+-- Helper to format file size
+local function format_size(bytes)
+  if not bytes or bytes == 0 then return "0 B" end
+  local units = {"B", "KB", "MB", "GB", "TB"}
+  local i = 1
+  while bytes >= 1024 and i < #units do
+    bytes = bytes / 1024
+    i = i + 1
+  end
+  if i == 1 then
+    return string.format("%d %s", bytes, units[i])
+  else
+    return string.format("%.1f %s", bytes, units[i])
+  end
+end
+
+-- Helper to get file icon based on content type
+local function get_file_icon(content_type)
+  if not content_type then return "fa-file" end
+  if content_type:match("^image/") then return "fa-file-image"
+  elseif content_type:match("^video/") then return "fa-file-video"
+  elseif content_type:match("^audio/") then return "fa-file-audio"
+  elseif content_type:match("^text/") then return "fa-file-alt"
+  elseif content_type:match("pdf") then return "fa-file-pdf"
+  elseif content_type:match("zip") or content_type:match("tar") or content_type:match("gzip") then return "fa-file-archive"
+  elseif content_type:match("json") or content_type:match("xml") then return "fa-file-code"
+  else return "fa-file"
+  end
+end
+%>
+
+<% if is_blob then %>
+<!-- Blob Drop Zone Wrapper -->
+<div id="blob-drop-zone" class="relative">
+  <!-- Drop Overlay (shown on drag) -->
+  <div id="drop-overlay" class="hidden absolute inset-0 z-10 bg-primary/20 border-2 border-dashed border-primary rounded-xl flex items-center justify-center backdrop-blur-sm">
+    <div class="text-center">
+      <i class="fas fa-cloud-upload-alt text-4xl text-primary-light mb-2"></i>
+      <p class="text-lg font-medium text-primary-light">Drop files to upload</p>
+    </div>
+  </div>
+<% end %>
+
+<% if #docs == 0 then %>
+<!-- Empty State -->
+<div class="p-12 text-center">
+  <% if is_blob then %>
+  <!-- Simple empty state for blobs - drag & drop works on the whole area -->
+  <div class="w-16 h-16 mx-auto mb-4 bg-warning/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-cube text-2xl text-warning"></i>
+  </div>
+  <h3 class="text-lg font-medium text-text mb-2">No files yet</h3>
+  <p class="text-text-muted mb-4">
+    Drag and drop files anywhere on this area, or use the Upload File button above
+  </p>
+  <% else %>
+  <div class="w-16 h-16 mx-auto mb-4 bg-bg-card border border-border rounded-full flex items-center justify-center">
+    <i class="fas fa-file-alt text-2xl text-text-muted"></i>
+  </div>
+  <h3 class="text-lg font-medium text-text mb-2">No documents found</h3>
+  <p class="text-text-muted mb-4">Try adjusting your search or create a new document</p>
+  <button type="button"
+          hx-get="/database/<%= db %>/documents/<%= collection %>/modal/create"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+    <i class="fas fa-plus"></i>
+    <span>New Document</span>
+  </button>
+  <% end %>
+</div>
+<% else %>
+<!-- Table -->
+<div class="overflow-x-auto">
+  <table class="w-full text-sm text-left">
+    <thead class="bg-bg/50 border-b border-border/30 text-text-muted uppercase text-xs">
+      <tr>
+        <% if is_blob then %>
+        <th class="px-6 py-3 font-semibold">File</th>
+        <th class="px-6 py-3 font-semibold">Type</th>
+        <th class="px-6 py-3 font-semibold text-right">Size</th>
+        <% else %>
+        <th class="px-6 py-3 font-semibold">Data</th>
+        <% end %>
+        <th class="px-6 py-3 font-semibold text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/20">
+      <% for _, doc in ipairs(docs) do
+        -- Filter out metadata fields
+        local user_data = {}
+        for k, v in pairs(doc) do
+          if k:sub(1, 1) ~= "_" then
+            user_data[k] = v
+          end
+        end
+
+        -- For blobs, get metadata
+        local filename = doc.filename or doc._key or "unknown"
+        local content_type = doc.content_type or "application/octet-stream"
+        local file_size = doc.size or doc.file_size or 0
+        local file_icon = get_file_icon(content_type)
+      %>
+      <tr class="hover:bg-white/5 transition-colors group">
+        <% if is_blob then %>
+        <!-- Blob: File name with icon -->
+        <td class="px-6 py-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <i class="fas <%= file_icon %> text-primary-light"></i>
+            </div>
+            <div class="min-w-0">
+              <p class="font-medium text-text truncate max-w-xs" title="<%= filename %>"><%= filename %></p>
+              <p class="text-xs text-text-dim font-mono"><%= doc._key %></p>
+            </div>
+          </div>
+        </td>
+        <!-- Blob: Content type -->
+        <td class="px-6 py-4 text-text-muted text-xs">
+          <span class="px-2 py-1 bg-bg-dark rounded"><%= content_type %></span>
+        </td>
+        <!-- Blob: File size -->
+        <td class="px-6 py-4 text-right text-text-muted">
+          <%= format_size(file_size) %>
+        </td>
+        <% else %>
+        <!-- Document: JSON data -->
+        <td class="px-6 py-4 max-w-lg truncate text-text-muted group-hover:text-text transition-colors font-mono text-xs">
+          <%= EncodeJson(user_data) %>
+        </td>
+        <% end %>
+        <td class="px-6 py-4 text-right">
+          <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <% if is_blob then %>
+            <!-- Download button for blobs -->
+            <a href="<%= api_url %>/_api/blob/<%= db %>/<%= collection %>/<%= doc._key %>"
+               download="<%= filename %>"
+               class="p-1.5 rounded hover:bg-success/10 text-text-muted hover:text-success transition-colors"
+               title="Download">
+              <i class="fas fa-download"></i>
+            </a>
+            <% else %>
+            <!-- Edit button for documents -->
+            <button type="button"
+                    hx-get="/database/<%= db %>/documents/<%= collection %>/<%= doc._key %>/edit"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="p-1.5 rounded hover:bg-primary/10 text-text-muted hover:text-primary-light transition-colors"
+                    title="Edit">
+              <i class="fas fa-pen"></i>
+            </button>
+            <% end %>
+            <button type="button"
+                    hx-delete="/database/<%= db %>/documents/<%= collection %>/<%= doc._key %>"
+                    hx-confirm="Delete <%= is_blob and 'file' or 'document' %>?"
+                    hx-target="#documents-table"
+                    hx-swap="innerHTML"
+                    class="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
+                    title="Delete">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>
+
+<% if is_blob then %>
+<!-- Hidden file input -->
+<input type="file" id="hidden-file-input" class="hidden" multiple>
+
+<!-- Upload progress indicator -->
+<div id="upload-progress" class="hidden fixed bottom-4 right-4 bg-bg-card border border-border/50 rounded-xl p-4 shadow-xl z-50 w-80">
+  <div class="flex items-center gap-3 mb-2">
+    <i class="fas fa-spinner fa-spin text-primary-light"></i>
+    <span class="text-sm font-medium text-text">Uploading...</span>
+  </div>
+  <div class="w-full bg-bg-dark rounded-full h-1.5">
+    <div id="upload-progress-bar" class="bg-primary h-1.5 rounded-full transition-all" style="width: 0%"></div>
+  </div>
+  <p class="text-xs text-text-muted mt-1" id="upload-progress-text">0%</p>
+</div>
+
+</div><!-- Close blob-drop-zone -->
+
+<script>
+(function() {
+  var db = '<%= db %>';
+  var collection = '<%= collection %>';
+  var apiServer = '<%= api_url %>';
+  var dropZone = document.getElementById('blob-drop-zone');
+  var dropOverlay = document.getElementById('drop-overlay');
+  var fileInput = document.getElementById('hidden-file-input');
+  var progressEl = document.getElementById('upload-progress');
+  var progressBar = document.getElementById('upload-progress-bar');
+  var progressText = document.getElementById('upload-progress-text');
+
+  if (!dropZone) return;
+
+  // File input change
+  fileInput.addEventListener('change', function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadFiles(Array.from(e.target.files));
+    }
+  });
+
+  // Drag events
+  var dragCounter = 0;
+
+  dropZone.addEventListener('dragenter', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter++;
+    dropOverlay.classList.remove('hidden');
+  });
+
+  dropZone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter === 0) {
+      dropOverlay.classList.add('hidden');
+    }
+  });
+
+  dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter = 0;
+    dropOverlay.classList.add('hidden');
+
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      uploadFiles(Array.from(e.dataTransfer.files));
+    }
+  });
+
+  function uploadFiles(files) {
+    if (files.length === 0) return;
+
+    var total = files.length;
+    var completed = 0;
+    var errors = [];
+
+    progressEl.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    progressText.textContent = '0 / ' + total + ' files';
+
+    // Get auth token from sdb_token cookie
+    var token = '';
+    var cookies = document.cookie.split(';');
+    for (var i = 0; i < cookies.length; i++) {
+      var cookie = cookies[i].trim();
+      if (cookie.startsWith('sdb_token=')) {
+        token = cookie.substring('sdb_token='.length);
+        break;
+      }
+    }
+
+    // Upload each file sequentially
+    function uploadNext(index) {
+      if (index >= files.length) {
+        // All done
+        progressEl.classList.add('hidden');
+        if (errors.length > 0) {
+          showToast('Some files failed to upload', 'error');
+        } else {
+          showToast(total + ' file(s) uploaded successfully', 'success');
+        }
+        // Refresh table
+        htmx.ajax('GET', '/database/' + db + '/documents/' + collection + '/table', '#documents-table');
+        return;
+      }
+
+      var file = files[index];
+      var formData = new FormData();
+      formData.append('file', file);
+
+      var xhr = new XMLHttpRequest();
+      // Use full API server URL for upload
+      xhr.open('POST', apiServer + '/_api/blob/' + db + '/' + collection, true);
+      if (token) {
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+      }
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          var fileProgress = (e.loaded / e.total);
+          var overallProgress = ((completed + fileProgress) / total) * 100;
+          progressBar.style.width = overallProgress + '%';
+        }
+      };
+
+      xhr.onload = function() {
+        completed++;
+        progressText.textContent = completed + ' / ' + total + ' files';
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          errors.push(file.name);
+        }
+
+        uploadNext(index + 1);
+      };
+
+      xhr.onerror = function() {
+        completed++;
+        errors.push(file.name);
+        uploadNext(index + 1);
+      };
+
+      xhr.send(formData);
+    }
+
+    uploadNext(0);
+  }
+
+  function showToast(message, type) {
+    document.body.dispatchEvent(new CustomEvent('showToast', {
+      detail: { message: message, type: type }
+    }));
+  }
+})();
+</script>
+<% end %>

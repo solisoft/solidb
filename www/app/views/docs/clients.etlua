@@ -9,9 +9,8 @@
   </div>
 
   <div class="grid grid-cols-12 gap-8 lg:gap-12">
-    <%- Partial("clients_sidebar") %>
 
-    <div class="col-span-12 lg:col-span-9 space-y-16">
+    <div class="col-span-12 lg:col-span-12 space-y-16">
       <!-- Header Section -->
       <div class="relative">
         <div class="absolute -inset-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-lg blur opacity-20"></div>

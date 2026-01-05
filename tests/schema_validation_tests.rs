@@ -174,8 +174,9 @@ fn test_schema_validation_on_update() {
         .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
         .unwrap();
 
-    // Insert valid document
+    // Insert valid document with explicit key
     let doc = json!({
+        "_key": "widget-1",
         "name": "Widget",
         "price": 10.99
     });
@@ -185,14 +186,14 @@ fn test_schema_validation_on_update() {
     let update = json!({
         "price": 15.99
     });
-    let result = collection.update("Widget", update);
+    let result = collection.update("widget-1", update);
     assert!(result.is_ok());
 
     // Update to invalid document should fail
     let invalid_update = json!({
         "price": "free" // Should be number
     });
-    let result = collection.update("Widget", invalid_update);
+    let result = collection.update("widget-1", invalid_update);
     assert!(result.is_err());
 }
 

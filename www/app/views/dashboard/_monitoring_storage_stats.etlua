@@ -1,0 +1,41 @@
+<div class="p-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div>
+      <p class="text-xs text-text-dim mb-1">SST Files Size</p>
+      <p class="text-lg font-semibold text-text"><%= format_bytes(total_sst_size) %></p>
+    </div>
+    <div>
+      <p class="text-xs text-text-dim mb-1">Memtable Size</p>
+      <p class="text-lg font-semibold text-text"><%= format_bytes(total_memtable_size) %></p>
+    </div>
+    <div>
+      <p class="text-xs text-text-dim mb-1">Live Data Size</p>
+      <p class="text-lg font-semibold text-text"><%= format_bytes(total_live_size) %></p>
+    </div>
+    <div>
+      <p class="text-xs text-text-dim mb-1">System Load</p>
+      <p class="text-lg font-semibold text-text"><%= string.format("%.2f", system_load_avg) %></p>
+    </div>
+  </div>
+
+  <div class="mt-4 pt-4 border-t border-border/30">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div>
+        <p class="text-xs text-text-dim mb-1">Total Files</p>
+        <p class="text-lg font-semibold text-text"><%= format_number(total_file_count) %></p>
+      </div>
+      <div>
+        <p class="text-xs text-text-dim mb-1">Total Chunks</p>
+        <p class="text-lg font-semibold text-text"><%= format_number(total_chunk_count) %></p>
+      </div>
+      <div>
+        <p class="text-xs text-text-dim mb-1">Network RX</p>
+        <p class="text-lg font-semibold text-text"><%= format_bytes(network_rx_bytes) %></p>
+      </div>
+      <div>
+        <p class="text-xs text-text-dim mb-1">Network TX</p>
+        <p class="text-lg font-semibold text-text"><%= format_bytes(network_tx_bytes) %></p>
+      </div>
+    </div>
+  </div>
+</div>

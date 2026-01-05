@@ -1,0 +1,17 @@
+<nav class="space-y-0.5">
+  <% for _, channel in ipairs(channels) do %>
+  <a href="/talks?channel=<%= channel.name %>"
+     hx-get="/talks?channel=<%= channel.name %>"
+     hx-target="main"
+     hx-push-url="true"
+     class="flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors <%= current_channel == channel.name and 'bg-white/10 text-text' or 'text-text-muted hover:text-text hover:bg-white/5' %>">
+    <span class="text-text-dim">#</span>
+    <span class="flex-1 truncate"><%= channel.name %></span>
+    <% if channel.unread and channel.unread > 0 then %>
+    <span class="min-w-[20px] h-5 flex items-center justify-center bg-error text-white text-xs font-bold rounded-full px-1.5">
+      <%= channel.unread > 99 and '99+' or channel.unread %>
+    </span>
+    <% end %>
+  </a>
+  <% end %>
+</nav>

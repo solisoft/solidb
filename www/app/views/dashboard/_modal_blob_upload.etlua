@@ -1,0 +1,273 @@
+<%
+local db = db or "_system"
+local collection = collection or ""
+local api_url = api_server or "http://localhost:6745"
+%>
+
+<div class="fixed inset-0 z-[150] overflow-y-auto" id="blob-upload-modal">
+  <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+    <!-- Backdrop -->
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+         onclick="document.getElementById('modal-container').innerHTML = ''"></div>
+
+    <!-- Modal Content -->
+    <div class="relative bg-bg-card border border-border/50 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all w-full max-w-xl">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-border/30 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-text">Upload File</h3>
+          <p class="text-sm text-text-muted">Add a new file to <span class="font-medium text-primary-light"><%= collection %></span></p>
+        </div>
+        <button type="button"
+                onclick="document.getElementById('modal-container').innerHTML = ''"
+                class="text-text-muted hover:text-text transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Error Banner -->
+      <div id="upload-error" class="hidden px-6 pt-6">
+        <div class="p-4 bg-error/10 border border-error/30 rounded-xl flex items-start gap-3">
+          <i class="fas fa-exclamation-triangle text-error flex-shrink-0 mt-0.5"></i>
+          <div class="text-sm text-error" id="upload-error-text"></div>
+        </div>
+      </div>
+
+      <!-- Form -->
+      <div class="p-6">
+        <!-- Drag & Drop Area -->
+        <div class="mb-6">
+          <label class="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">File Selection</label>
+          <div id="drop-zone"
+               class="relative group border-2 border-dashed border-border/50 hover:border-primary/50 rounded-xl transition-all duration-200 cursor-pointer overflow-hidden"
+               onclick="document.getElementById('file-input').click()">
+            <div class="px-6 py-10 flex flex-col items-center justify-center text-center">
+              <!-- Icon -->
+              <div id="upload-icon" class="mb-4 p-4 rounded-full bg-bg-dark text-text-dim group-hover:text-text-muted transition-colors">
+                <i class="fas fa-cloud-upload-alt text-2xl"></i>
+              </div>
+              <div id="file-icon" class="hidden mb-4 p-4 rounded-full bg-primary/10 text-primary-light">
+                <i class="fas fa-file text-2xl"></i>
+              </div>
+
+              <!-- Text Content -->
+              <div id="upload-text" class="space-y-1">
+                <p class="text-sm font-medium text-text">
+                  <span class="text-primary-light hover:text-primary">Click to upload</span> or drag and drop
+                </p>
+                <p class="text-xs text-text-dim">Any file type up to 1GB</p>
+              </div>
+
+              <div id="file-info" class="hidden space-y-1">
+                <p class="text-sm font-medium text-text break-all px-4" id="file-name"></p>
+                <p class="text-xs text-primary-light font-mono" id="file-size"></p>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="file-input" class="hidden">
+        </div>
+
+        <!-- Progress Bar -->
+        <div id="progress-container" class="hidden mb-6 space-y-2">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-primary-light">Uploading...</span>
+            <span class="text-text-muted" id="progress-percent">0%</span>
+          </div>
+          <div class="w-full bg-bg-dark rounded-full h-1.5 overflow-hidden">
+            <div id="progress-bar" class="bg-primary h-1.5 rounded-full transition-all duration-300 ease-out relative" style="width: 0%">
+              <div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button"
+                  onclick="document.getElementById('modal-container').innerHTML = ''"
+                  class="px-4 py-2 text-text-muted hover:text-text font-medium transition-colors">
+            Cancel
+          </button>
+          <button type="button"
+                  id="upload-btn"
+                  onclick="uploadFile()"
+                  disabled
+                  class="px-5 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+            <i class="fas fa-upload" id="upload-btn-icon"></i>
+            <i class="fas fa-spinner fa-spin hidden" id="upload-btn-spinner"></i>
+            <span id="upload-btn-text">Upload File</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var selectedFile = null;
+  var isUploading = false;
+  var db = '<%= db %>';
+  var collection = '<%= collection %>';
+  var apiServer = '<%= api_url %>';
+
+  var dropZone = document.getElementById('drop-zone');
+  var fileInput = document.getElementById('file-input');
+  var uploadBtn = document.getElementById('upload-btn');
+
+  // File input change
+  fileInput.addEventListener('change', function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      selectFile(e.target.files[0]);
+    }
+  });
+
+  // Drag and drop
+  dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add('border-primary', 'bg-primary/5');
+  });
+
+  dropZone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('border-primary', 'bg-primary/5');
+  });
+
+  dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('border-primary', 'bg-primary/5');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      selectFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  function selectFile(file) {
+    selectedFile = file;
+    hideError();
+
+    // Update UI
+    document.getElementById('upload-icon').classList.add('hidden');
+    document.getElementById('file-icon').classList.remove('hidden');
+    document.getElementById('upload-text').classList.add('hidden');
+    document.getElementById('file-info').classList.remove('hidden');
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-size').textContent = formatFileSize(file.size);
+
+    uploadBtn.disabled = false;
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    var k = 1024;
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function showError(msg) {
+    document.getElementById('upload-error').classList.remove('hidden');
+    document.getElementById('upload-error-text').textContent = msg;
+  }
+
+  function hideError() {
+    document.getElementById('upload-error').classList.add('hidden');
+  }
+
+  function setUploading(uploading) {
+    isUploading = uploading;
+    if (uploading) {
+      uploadBtn.disabled = true;
+      document.getElementById('upload-btn-icon').classList.add('hidden');
+      document.getElementById('upload-btn-spinner').classList.remove('hidden');
+      document.getElementById('upload-btn-text').textContent = 'Uploading...';
+      document.getElementById('progress-container').classList.remove('hidden');
+    } else {
+      uploadBtn.disabled = !selectedFile;
+      document.getElementById('upload-btn-icon').classList.remove('hidden');
+      document.getElementById('upload-btn-spinner').classList.add('hidden');
+      document.getElementById('upload-btn-text').textContent = 'Upload File';
+      document.getElementById('progress-container').classList.add('hidden');
+    }
+  }
+
+  function updateProgress(percent) {
+    document.getElementById('progress-bar').style.width = percent + '%';
+    document.getElementById('progress-percent').textContent = percent + '%';
+  }
+
+  window.uploadFile = function() {
+    if (!selectedFile || isUploading) return;
+
+    hideError();
+    setUploading(true);
+    updateProgress(0);
+
+    var formData = new FormData();
+    formData.append('file', selectedFile);
+
+    var xhr = new XMLHttpRequest();
+    // Use full API server URL for upload
+    xhr.open('POST', apiServer + '/_api/blob/' + db + '/' + collection, true);
+
+    // Get auth token from sdb_token cookie
+    var cookies = document.cookie.split(';');
+    for (var i = 0; i < cookies.length; i++) {
+      var cookie = cookies[i].trim();
+      if (cookie.startsWith('sdb_token=')) {
+        var token = cookie.substring('sdb_token='.length);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        break;
+      }
+    }
+
+    xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable) {
+        var percent = Math.round((e.loaded / e.total) * 100);
+        updateProgress(percent);
+      }
+    };
+
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        updateProgress(100);
+        // Close modal and refresh table
+        setTimeout(function() {
+          document.getElementById('modal-container').innerHTML = '';
+          // Trigger table refresh
+          htmx.trigger('#documents-table', 'htmx:load');
+          // Show success toast
+          document.body.dispatchEvent(new CustomEvent('showToast', {
+            detail: { message: 'File uploaded successfully', type: 'success' }
+          }));
+        }, 500);
+      } else {
+        setUploading(false);
+        try {
+          var error = JSON.parse(xhr.responseText);
+          showError(error.error || 'Upload failed');
+        } catch (e) {
+          showError('Upload failed with status ' + xhr.status);
+        }
+      }
+    };
+
+    xhr.onerror = function() {
+      setUploading(false);
+      showError('Network error during upload');
+    };
+
+    xhr.send(formData);
+  };
+
+  // Close on Escape
+  function handleEscape(e) {
+    if (e.key === 'Escape' && !isUploading) {
+      document.getElementById('modal-container').innerHTML = '';
+      document.removeEventListener('keydown', handleEscape);
+    }
+  }
+  document.addEventListener('keydown', handleEscape);
+})();
+</script>

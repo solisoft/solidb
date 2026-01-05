@@ -1,75 +1,31 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-6xl mx-auto">
   <!-- Header -->
-  <div class="md:flex md:items-center md:justify-between mb-8">
-    <div class="flex-1 min-w-0">
-      <h2
-        class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400"
-      >
-        Databases
-      </h2>
-      <p class="mt-2 text-sm text-gray-400">Manage system databases</p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Databases</h1>
+      <p class="text-text-muted text-sm">Manage SoliDB databases</p>
     </div>
-    <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
-      <button
-        id="createBtn"
-        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
-      >
-        <svg
-          class="-ml-1 mr-2 h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        Create Database
-      </button>
-    </div>
+
+    <button type="button"
+            hx-get="/database/_system/databases/modal/create"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
+            class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+      <i class="fas fa-plus"></i>
+      <span>Create Database</span>
+    </button>
   </div>
 
-  <!-- Databases Table Component -->
-  <databases-table></databases-table>
+  <!-- Databases Grid -->
+  <div id="databases-grid"
+       class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+       hx-get="/database/_system/databases/list"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <!-- Loading state -->
+    <div class="col-span-full p-8 text-center">
+      <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+      <p class="text-text-muted">Loading databases...</p>
+    </div>
+  </div>
 </div>
-
-<!-- Database Modal Component -->
-<database-modal id="databaseModal"></database-modal>
-
-<script type="module">
-  // import the component JavaScript output generated via @riotjs/compiler
-  import DatabasesTable from '<%= PublicPath("/app/components/databases-table.riot.js") %>';
-  import DatabaseModal from '<%= PublicPath("/app/components/database-modal.riot.js") %>';
-
-  // register the riot components
-  riot.register("databases-table", DatabasesTable);
-  riot.register("database-modal", DatabaseModal);
-
-  // Wait for DOM to be ready
-  document.addEventListener("DOMContentLoaded", () => {
-    // Mount the components
-    const tableComponent = riot.mount("databases-table", {
-      onCreateClick: () => {
-        modalComponent[0].show();
-      },
-    })[0];
-
-    const modalComponent = riot.mount("database-modal", {
-      onClose: () => {
-        modalComponent[0].hide();
-      },
-      onCreated: () => {
-        modalComponent[0].hide();
-        tableComponent.loadDatabases();
-      },
-    });
-
-    // Handle create button click
-    document.getElementById("createBtn").addEventListener("click", () => {
-      modalComponent[0].show();
-    });
-  });
-</script>

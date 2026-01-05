@@ -1,35 +1,107 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-6xl mx-auto">
   <!-- Header -->
-  <div class="md:flex md:items-center md:justify-between mb-8">
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center">
-        <a href="/database/<%= Params['db'] %>/collections" class="text-gray-400 hover:text-gray-300 mr-3">
-          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-          </svg>
-        </a>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Sharding</h1>
+      <p class="text-text-muted text-sm">Configure horizontal data partitioning</p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button hx-get="/database/_system/sharding/modal/configure"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-cog"></i>
+        <span>Configure</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sharding Overview -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <i class="fas fa-cubes text-primary-light"></i>
+        </div>
         <div>
-          <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-            Sharding Status
-          </h2>
-          <p class="mt-2 text-sm text-gray-400">Cluster-wide sharding and replication overview</p>
+          <p class="text-2xl font-bold text-text" id="total-shards">-</p>
+          <p class="text-xs text-text-muted">Total Shards</p>
+        </div>
+      </div>
+    </div>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+          <i class="fas fa-copy text-accent-light"></i>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-text" id="replication-factor">-</p>
+          <p class="text-xs text-text-muted">Replication Factor</p>
+        </div>
+      </div>
+    </div>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+          <i class="fas fa-balance-scale text-success"></i>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-text" id="balance-status">-</p>
+          <p class="text-xs text-text-muted">Balance Status</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Sharding Dashboard Component -->
-  <sharding-dashboard db="<%= Params['db'] %>"></sharding-dashboard>
-</div>
+  <!-- Shard Distribution -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden mb-6">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <h2 class="font-semibold text-text">Shard Distribution</h2>
+      <button hx-post="/database/_system/sharding/rebalance"
+              hx-confirm="Rebalance shards? This may temporarily affect performance."
+              class="text-sm text-primary-light hover:text-primary transition-colors">
+        <i class="fas fa-balance-scale mr-1"></i> Rebalance
+      </button>
+    </div>
+    <div id="shard-distribution"
+         hx-get="/database/_system/sharding/distribution"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading shard distribution...</p>
+      </div>
+    </div>
+  </div>
 
-<script type="module">
-  import ShardingDashboard from '<%= PublicPath("/app/components/sharding-dashboard.riot.js") %>'
-  
-  riot.register('sharding-dashboard', ShardingDashboard)
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    riot.mount('sharding-dashboard', {
-      db: "<%= Params['db'] %>"
-    })
-  })
-</script>
+  <!-- Sharded Collections -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4 py-3">
+      <h2 class="font-semibold text-text">Sharded Collections</h2>
+    </div>
+    <div id="sharded-collections"
+         hx-get="/database/_system/sharding/collections"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading sharded collections...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sharding Algorithm Info -->
+  <div class="mt-6 bg-bg-card/30 border border-border/30 rounded-xl p-4">
+    <h3 class="text-sm font-medium text-text mb-2">
+      <i class="fas fa-info-circle text-info mr-2"></i>
+      Sharding Algorithm
+    </h3>
+    <p class="text-sm text-text-muted">
+      SoliDB uses consistent hashing: <code class="bg-bg-dark px-1.5 py-0.5 rounded text-primary-light">ShardID = hash(key) % NumShards</code>
+    </p>
+    <p class="text-xs text-text-dim mt-2">
+      Data is automatically distributed based on document keys. Each shard is replicated according to the replication factor for fault tolerance.
+    </p>
+  </div>
+</div>

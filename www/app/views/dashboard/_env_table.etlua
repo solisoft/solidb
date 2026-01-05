@@ -1,0 +1,92 @@
+<%
+  local env_vars = env_vars or {}
+  local db = db or "_system"
+  local has_vars = false
+  for _ in pairs(env_vars) do has_vars = true; break end
+%>
+
+<% if not has_vars then %>
+<div class="p-8 text-center text-text-muted">
+  <i class="fas fa-cog text-3xl mb-3 opacity-50"></i>
+  <p>No environment variables set</p>
+  <p class="text-xs text-text-dim mt-1">Click "Add Variable" to create one</p>
+</div>
+<% else %>
+<table class="w-full">
+  <thead class="bg-bg-dark/50 border-b border-border/30">
+    <tr>
+      <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Name</th>
+      <th class="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Value</th>
+      <th class="px-4 py-3 text-right text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-border/20">
+    <%
+      -- Sort keys alphabetically
+      local keys = {}
+      for k in pairs(env_vars) do table.insert(keys, k) end
+      table.sort(keys)
+
+      for _, key in ipairs(keys) do
+        local value = env_vars[key]
+        local is_secret = key:lower():find("secret") or key:lower():find("password") or key:lower():find("key") or key:lower():find("token")
+    %>
+    <tr class="hover:bg-white/5 transition-colors">
+      <td class="px-4 py-3">
+        <code class="text-sm text-primary-light font-mono"><%= key %></code>
+      </td>
+      <td class="px-4 py-3">
+        <% if is_secret then %>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-text-muted font-mono" id="value-<%= key %>">********</span>
+          <button type="button"
+                  onclick="toggleSecret('<%= key %>', '<%= value:gsub("'", "\\'") %>')"
+                  class="text-xs text-text-dim hover:text-text transition-colors"
+                  title="Show/Hide">
+            <i class="fas fa-eye" id="eye-<%= key %>"></i>
+          </button>
+        </div>
+        <% else %>
+        <span class="text-sm text-text font-mono"><%= value %></span>
+        <% end %>
+      </td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-2">
+          <button type="button"
+                  hx-get="/database/<%= db %>/env/modal/edit/<%= key %>"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML"
+                  class="p-1.5 text-text-muted hover:text-info transition-colors"
+                  title="Edit">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button type="button"
+                  hx-delete="/database/<%= db %>/env/<%= key %>"
+                  hx-target="#env-table"
+                  hx-swap="innerHTML"
+                  hx-confirm="Delete environment variable '<%= key %>'?"
+                  class="p-1.5 text-text-muted hover:text-error transition-colors"
+                  title="Delete">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </td>
+    </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<script>
+function toggleSecret(key, value) {
+  var el = document.getElementById('value-' + key);
+  var eye = document.getElementById('eye-' + key);
+  if (el.textContent === '********') {
+    el.textContent = value;
+    eye.className = 'fas fa-eye-slash';
+  } else {
+    el.textContent = '********';
+    eye.className = 'fas fa-eye';
+  }
+}
+</script>
+<% end %>

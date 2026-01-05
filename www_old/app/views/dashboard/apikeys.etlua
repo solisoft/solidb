@@ -1,0 +1,448 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <!-- Header -->
+  <div class="md:flex md:items-center md:justify-between mb-8">
+    <div class="flex-1 min-w-0">
+      <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
+        API Keys
+      </h2>
+      <p class="mt-2 text-sm text-gray-400">Manage non-expiring API keys for server-to-server authentication</p>
+    </div>
+    <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+      <button id="createKeyBtn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+        </svg>
+        Create API Key
+      </button>
+    </div>
+  </div>
+
+  <!-- API Keys Table -->
+  <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 shadow-xl overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-700">
+      <thead class="bg-gray-900/50">
+        <tr>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Roles</th>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Databases</th>
+          <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Created</th>
+          <th class="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="apiKeysTableBody" class="divide-y divide-gray-700/50">
+        <!-- Loaded dynamically -->
+      </tbody>
+    </table>
+    <div id="emptyState" class="hidden py-12 text-center text-gray-400">
+      <svg class="mx-auto h-12 w-12 text-gray-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+      </svg>
+      <p>No API keys yet</p>
+      <p class="text-sm mt-1">Create your first API key to enable server-to-server authentication</p>
+    </div>
+  </div>
+
+  <!-- Create Key Modal -->
+  <div id="createKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
+    <!-- Backdrop overlay for click handling -->
+    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
+
+    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
+      
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center">
+        <h3 class="text-xl font-semibold text-white tracking-tight">Create API Key</h3>
+      </div>
+
+      <div class="p-6">
+        <form id="createKeyForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Key Name</label>
+            <input type="text" id="keyName" required placeholder="e.g., backend-service, ci-pipeline"
+              class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Role</label>
+            <div id="roleCheckboxes" class="space-y-2 max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <!-- Loaded dynamically -->
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-300 mb-2">Database Access</label>
+            <div id="databaseCheckboxes" class="space-y-2 max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+              <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" name="allDatabases" id="allDatabasesCheckbox" checked
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+                <span class="text-sm text-gray-300">All databases</span>
+                <span class="text-xs text-gray-500">(no restrictions)</span>
+              </label>
+              <div id="specificDatabases" class="hidden pl-4 space-y-2 border-l border-gray-700 ml-2">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-end gap-3 pt-2">
+            <button type="button" id="cancelCreate" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Create Key</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Show Key Modal (displays newly created key) -->
+  <div id="showKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
+    <!-- Backdrop overlay for click handling -->
+    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
+
+    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
+      
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10 flex justify-between items-center">
+        <h3 class="text-xl font-semibold text-white tracking-tight">API Key Created</h3>
+      </div>
+
+      <div class="p-6">
+        <div class="mb-4 px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-sm flex items-start">
+          <svg class="h-5 w-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div><strong>Important:</strong> Copy this key now. You won't be able to see it again!</div>
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-300 mb-2">Your API Key</label>
+          <div class="flex">
+            <input type="text" id="createdKeyValue" readonly 
+              class="flex-1 px-3 py-2 bg-gray-950 border border-gray-700 rounded-l-lg text-green-400 font-mono text-sm focus:outline-none">
+            <button type="button" id="copyKeyBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-r-lg border-t border-b border-r border-indigo-600 font-medium transition-colors">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button type="button" id="doneShowModal" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors border border-gray-600">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { getServerConfig, getAuthToken, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
+
+  const config = getServerConfig();
+  const baseUrl = config ? (config.port ? `${config.host}:${config.port}` : config.host) : '';
+
+  let availableRoles = [];
+  let availableDatabases = [];
+
+  async function loadDatabases() {
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/databases`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Databases response:', data);
+        availableDatabases = (data.databases || []).filter(db => db !== '_system');
+        console.log('Available databases (filtered):', availableDatabases);
+        renderDatabaseCheckboxes();
+      } else {
+        console.error('Failed to load databases:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading databases:', error);
+    }
+  }
+
+  function renderDatabaseCheckboxes() {
+    const container = document.getElementById('specificDatabases');
+    console.log('Rendering databases, container:', container, 'databases:', availableDatabases);
+    if (!container) {
+      console.error('specificDatabases container not found!');
+      return;
+    }
+
+    if (availableDatabases.length === 0) {
+      container.innerHTML = '<span class="text-xs text-gray-500">No databases available (only _system exists)</span>';
+      return;
+    }
+
+    const html = availableDatabases.map(db => `
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="checkbox" name="databases" value="${db}"
+          class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+        <span class="text-sm text-gray-300">${db}</span>
+      </label>
+    `).join('');
+    console.log('Generated HTML:', html);
+    container.innerHTML = html;
+  }
+
+  function getSelectedDatabases() {
+    const allDbCheckbox = document.getElementById('allDatabasesCheckbox');
+    if (allDbCheckbox && allDbCheckbox.checked) {
+      return null; // null means all databases
+    }
+    const checkboxes = document.querySelectorAll('input[name="databases"]:checked');
+    const selected = Array.from(checkboxes).map(cb => cb.value);
+    return selected.length > 0 ? selected : null;
+  }
+
+  async function loadRoles() {
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/auth/roles`);
+      if (response.ok) {
+        const data = await response.json();
+        // API returns array directly, not { roles: [...] }
+        availableRoles = Array.isArray(data) ? data : (data.roles || []);
+        renderRoleCheckboxes();
+      }
+    } catch (error) {
+      console.error('Error loading roles:', error);
+    }
+  }
+
+  function renderRoleCheckboxes() {
+    const container = document.getElementById('roleCheckboxes');
+    if (!container) return;
+
+    container.innerHTML = availableRoles.map(role => `
+      <label class="flex items-center space-x-2 cursor-pointer">
+        <input type="radio" name="role" value="${role.name}" ${role.name === 'admin' ? 'checked' : ''}
+          class="w-4 h-4 border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-900">
+        <span class="text-sm text-gray-300">${role.name}</span>
+        <span class="text-xs text-gray-500">${role.description || ''}</span>
+      </label>
+    `).join('');
+  }
+
+  function getSelectedRoles() {
+    const selected = document.querySelector('input[name="role"]:checked');
+    return selected ? [selected.value] : ['admin'];
+  }
+
+  // Modal Management
+  function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    
+    // Remove hidden class first
+    modal.classList.remove('hidden');
+
+    const content = modal.querySelector('.modal-content');
+    
+    // Animate in after a small delay to allow transition
+    setTimeout(() => {
+      modal.classList.remove('opacity-0');
+      if (content) {
+        content.classList.remove('scale-95', 'opacity-0');
+        content.classList.add('scale-100', 'opacity-100');
+      }
+    }, 10);
+  }
+
+  function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    const content = modal.querySelector('.modal-content');
+
+    // Animate out
+    modal.classList.add('opacity-0');
+    if (content) {
+      content.classList.remove('scale-100', 'opacity-100');
+      content.classList.add('scale-95', 'opacity-0');
+    }
+
+    // Hide after transition
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 300);
+  }
+
+  // Close modals on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (!document.getElementById('createKeyModal').classList.contains('hidden')) {
+        closeModal('createKeyModal');
+      }
+      if (!document.getElementById('showKeyModal').classList.contains('hidden')) {
+        closeModal('showKeyModal');
+      }
+    }
+  });
+
+  // Setup backdrop click handlers
+  document.querySelectorAll('.backdrop-click-handler').forEach(backdrop => {
+    backdrop.addEventListener('click', (e) => {
+      // Find parent modal
+      const modal = e.target.closest('[id$="Modal"]');
+      if (modal) closeModal(modal.id);
+    });
+  });
+
+  async function loadApiKeys() {
+    const tbody = document.getElementById('apiKeysTableBody');
+    const emptyState = document.getElementById('emptyState');
+    
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/auth/api-keys`);
+      if (!response.ok) throw new Error('Failed to load keys');
+      
+      const data = await response.json();
+      
+      if (data.keys.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+      
+      emptyState.classList.add('hidden');
+      tbody.innerHTML = data.keys.map(key => `
+        <tr class="hover:bg-gray-700/30 transition-colors">
+          <td class="px-6 py-4">
+            <div class="flex items-center">
+              <svg class="h-5 w-5 text-indigo-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+              </svg>
+              <span class="text-white font-medium">${key.name}</span>
+            </div>
+          </td>
+          <td class="px-6 py-4">
+            <div class="flex flex-wrap gap-1">
+              ${(key.roles || []).map(role => `
+                <span class="px-2 py-0.5 text-xs rounded-full ${
+                  role === 'admin' ? 'bg-red-500/20 text-red-400' :
+                  role === 'editor' ? 'bg-blue-500/20 text-blue-400' :
+                  'bg-gray-500/20 text-gray-400'
+                }">${role}</span>
+              `).join('')}
+            </div>
+          </td>
+          <td class="px-6 py-4">
+            ${key.scoped_databases && key.scoped_databases.length > 0
+              ? `<div class="flex flex-wrap gap-1">
+                  ${key.scoped_databases.map(db => `
+                    <span class="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">${db}</span>
+                  `).join('')}
+                </div>`
+              : `<span class="text-xs text-green-400">All databases</span>`
+            }
+          </td>
+          <td class="px-6 py-4 text-gray-400 text-sm">${new Date(key.created_at).toLocaleString()}</td>
+          <td class="px-6 py-4 text-right">
+            <button onclick="deleteKey('${key.id}', '${key.name}')"
+              class="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded">
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (error) {
+      console.error('Error loading API keys:', error);
+      tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-400">Failed to load API keys</td></tr>`;
+    }
+  }
+
+  window.deleteKey = async function(keyId, keyName) {
+    if (!confirm(`Delete API key "${keyName}"?\n\nThis action cannot be undone.`)) return;
+    
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/_api/auth/api-keys/${keyId}`, { method: 'DELETE' });
+      if (response.ok) {
+        loadApiKeys();
+      } else {
+        alert('Failed to delete API key');
+      }
+    } catch (error) {
+      console.error('Error deleting key:', error);
+      alert('Error deleting API key');
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadApiKeys();
+    loadRoles();
+    loadDatabases();
+
+    // Toggle specific databases visibility
+    document.getElementById('allDatabasesCheckbox').addEventListener('change', (e) => {
+      const specificDbs = document.getElementById('specificDatabases');
+      console.log('Toggle clicked, checked:', e.target.checked, 'specificDbs:', specificDbs);
+      if (e.target.checked) {
+        specificDbs.classList.add('hidden');
+      } else {
+        specificDbs.classList.remove('hidden');
+        console.log('Showing databases, innerHTML:', specificDbs.innerHTML);
+      }
+    });
+
+    document.getElementById('createKeyBtn').addEventListener('click', () => {
+      document.getElementById('keyName').value = '';
+      document.getElementById('allDatabasesCheckbox').checked = true;
+      document.getElementById('specificDatabases').classList.add('hidden');
+      renderRoleCheckboxes(); // Reset checkboxes
+      renderDatabaseCheckboxes(); // Reset database checkboxes
+      openModal('createKeyModal');
+      setTimeout(() => document.getElementById('keyName').focus(), 100);
+    });
+    
+    document.getElementById('cancelCreate').addEventListener('click', () => closeModal('createKeyModal'));
+    
+    document.getElementById('createKeyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('keyName').value.trim();
+      if (!name) return;
+
+      const roles = getSelectedRoles();
+      const scoped_databases = getSelectedDatabases();
+
+      try {
+        const response = await authenticatedFetch(`${baseUrl}/_api/auth/api-keys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, roles, scoped_databases })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          closeModal('createKeyModal');
+          
+          // Show the key
+          document.getElementById('createdKeyValue').value = data.key;
+          
+          // Allow modal to close before opening next
+          setTimeout(() => {
+            openModal('showKeyModal');
+            loadApiKeys();
+          }, 300);
+        } else {
+          alert('Failed to create API key');
+        }
+      } catch (error) {
+        console.error('Error creating key:', error);
+        alert('Error creating API key');
+      }
+    });
+    
+    document.getElementById('doneShowModal').addEventListener('click', () => closeModal('showKeyModal'));
+    
+    document.getElementById('copyKeyBtn').addEventListener('click', () => {
+      const input = document.getElementById('createdKeyValue');
+      input.select();
+      navigator.clipboard.writeText(input.value);
+      const btn = document.getElementById('copyKeyBtn');
+      const originalText = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('bg-green-600', 'border-green-600', 'hover:bg-green-500');
+      btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+      
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.classList.remove('bg-green-600', 'border-green-600', 'hover:bg-green-500');
+        btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+      }, 2000);
+    });
+  });
+</script>

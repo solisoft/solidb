@@ -1,0 +1,85 @@
+<%
+local nodes = nodes or {}
+
+-- Helper to format uptime
+local function format_uptime(seconds)
+  if not seconds then return "-" end
+  local s = tonumber(seconds)
+  if not s then return seconds end
+
+  if s < 60 then return s .. "s"
+  elseif s < 3600 then return math.floor(s / 60) .. "m"
+  elseif s < 86400 then return math.floor(s / 3600) .. "h " .. math.floor((s % 3600) / 60) .. "m"
+  else return math.floor(s / 86400) .. "d " .. math.floor((s % 86400) / 3600) .. "h"
+  end
+end
+
+-- Helper to get status color
+local function status_color(status)
+  if status == "online" or status == "active" or status == "healthy" then
+    return "bg-success/10 text-success", "bg-success"
+  elseif status == "syncing" or status == "recovering" then
+    return "bg-warning/10 text-warning", "bg-warning"
+  elseif status == "offline" or status == "down" or status == "unhealthy" then
+    return "bg-error/10 text-error", "bg-error"
+  else
+    return "bg-text-muted/10 text-text-muted", "bg-text-muted"
+  end
+end
+%>
+
+<% if #nodes == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-12 h-12 mx-auto mb-3 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-server text-info"></i>
+  </div>
+  <p class="text-text-muted">Running in standalone mode</p>
+  <p class="text-xs text-text-dim mt-1">No cluster nodes configured</p>
+</div>
+<% else %>
+<table class="w-full text-sm text-left">
+  <thead class="bg-bg/50 border-b border-border/30 text-text-muted uppercase">
+    <tr>
+      <th class="px-6 py-3 font-semibold">Node</th>
+      <th class="px-6 py-3 font-semibold">Address</th>
+      <th class="px-6 py-3 font-semibold">Role</th>
+      <th class="px-6 py-3 font-semibold">Status</th>
+      <th class="px-6 py-3 font-semibold text-right">Uptime</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-border/20">
+    <% for _, node in ipairs(nodes) do
+      local status = node.status or node.state or "unknown"
+      local badge_class, dot_class = status_color(status)
+    %>
+    <tr class="hover:bg-white/5 transition-colors">
+      <td class="px-6 py-4">
+        <div class="flex items-center gap-2">
+          <% if node.is_leader or node.role == "leader" then %>
+          <i class="fas fa-crown text-warning text-xs" title="Leader"></i>
+          <% end %>
+          <span class="font-mono text-primary-light"><%= node.id or node.node_id or "-" %></span>
+        </div>
+      </td>
+      <td class="px-6 py-4 text-text-muted font-mono text-xs">
+        <%= node.address or node.endpoint or "-" %>
+      </td>
+      <td class="px-6 py-4">
+        <span class="px-2 py-1 rounded bg-info/10 text-info text-xs capitalize">
+          <%= node.role or "member" %>
+        </span>
+      </td>
+      <td class="px-6 py-4">
+        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium <%= badge_class %>">
+          <span class="w-1.5 h-1.5 rounded-full <%= dot_class %>"></span>
+          <span class="capitalize"><%= status %></span>
+        </span>
+      </td>
+      <td class="px-6 py-4 text-right text-text-muted">
+        <%= format_uptime(node.uptime or node.uptime_seconds) %>
+      </td>
+    </tr>
+    <% end %>
+  </tbody>
+</table>
+<% end %>

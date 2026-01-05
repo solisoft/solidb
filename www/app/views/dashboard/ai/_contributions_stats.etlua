@@ -1,0 +1,44 @@
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+      <i class="fas fa-paper-plane text-warning"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= stats.submitted or 0 %></p>
+      <p class="text-xs text-text-muted">Submitted</p>
+    </div>
+  </div>
+</div>
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+      <i class="fas fa-robot text-info"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= stats.analyzing or 0 %></p>
+      <p class="text-xs text-text-muted">Analyzing</p>
+    </div>
+  </div>
+</div>
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+      <i class="fas fa-eye text-accent-light"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= stats.review or 0 %></p>
+      <p class="text-xs text-text-muted">In Review</p>
+    </div>
+  </div>
+</div>
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+      <i class="fas fa-check-circle text-success"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= stats.merged or 0 %></p>
+      <p class="text-xs text-text-muted">Merged</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,99 @@
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <nav class="flex items-center gap-2 text-sm mb-1">
+        <a href="/database/<%= db %>/collections" class="text-text-muted hover:text-text transition-colors">Collections</a>
+        <i class="fas fa-chevron-right text-text-dim text-xs"></i>
+        <a href="/database/<%= db %>/documents/<%= collection %>" class="text-text-muted hover:text-text transition-colors"><%= collection %></a>
+        <i class="fas fa-chevron-right text-text-dim text-xs"></i>
+        <span class="text-text font-medium">Indexes</span>
+      </nav>
+      <h1 class="text-2xl font-bold text-text">Indexes</h1>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <a href="/database/<%= db %>/documents/<%= collection %>"
+         class="inline-flex items-center gap-2 px-4 py-2 border border-border/50 hover:border-primary/50 text-text-muted hover:text-text font-medium rounded-lg transition-colors">
+        <i class="fas fa-arrow-left"></i>
+        <span>Documents</span>
+      </a>
+      <button type="button"
+              hx-get="/database/<%= db %>/indexes/<%= collection %>/modal/create"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-plus"></i>
+        <span>New Index</span>
+      </button>
+    </div>
+  </div>
+
+  <% if is_columnar then %>
+  <!-- Columnar Index Info -->
+  <div class="bg-bg-card/30 border border-border/30 rounded-lg p-4 mb-6">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-info/20 flex items-center justify-center">
+        <i class="fas fa-chart-bar text-info"></i>
+      </div>
+      <div>
+        <h3 class="text-sm font-medium text-text">Columnar Indexes</h3>
+        <p class="text-xs text-text-dim">Create indexes on specific columns to speed up analytical queries and aggregations</p>
+      </div>
+    </div>
+  </div>
+  <% else %>
+  <!-- Index Types Legend -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+    <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-primary"></span>
+        <span class="text-sm font-medium text-text">Hash</span>
+      </div>
+      <p class="text-xs text-text-dim">Exact match lookups</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-accent"></span>
+        <span class="text-sm font-medium text-text">Persistent</span>
+      </div>
+      <p class="text-xs text-text-dim">Range queries & sorting</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-info"></span>
+        <span class="text-sm font-medium text-text">Fulltext</span>
+      </div>
+      <p class="text-xs text-text-dim">Text search</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-success"></span>
+        <span class="text-sm font-medium text-text">Geo</span>
+      </div>
+      <p class="text-xs text-text-dim">Geospatial queries</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-warning"></span>
+        <span class="text-sm font-medium text-text">TTL</span>
+      </div>
+      <p class="text-xs text-text-dim">Auto-expire documents</p>
+    </div>
+  </div>
+  <% end %>
+
+  <!-- Indexes Table -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div id="indexes-table"
+         hx-get="/database/<%= db %>/indexes/<%= collection %>/table"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <!-- Loading state -->
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading indexes...</p>
+      </div>
+    </div>
+  </div>
+</div>

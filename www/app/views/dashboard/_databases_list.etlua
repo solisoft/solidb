@@ -1,0 +1,73 @@
+<% if #databases == 0 then %>
+<div class="col-span-full p-8 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-database text-2xl text-info"></i>
+  </div>
+  <p class="text-text-muted">No databases found</p>
+  <p class="text-xs text-text-dim mt-1">Create a new database to get started</p>
+</div>
+<% else %>
+  <% for _, db in ipairs(databases) do
+    local is_system = db.name == "_system" or db == "_system"
+    local db_name = db.name or db
+  %>
+  <div class="db-card bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 hover:border-primary/30 transition-colors group">
+    <div class="flex items-start justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg <%= is_system and 'bg-warning/10' or 'bg-primary/10' %> flex items-center justify-center">
+          <i class="fas fa-database <%= is_system and 'text-warning' or 'text-primary-light' %>"></i>
+        </div>
+        <div>
+          <h3 class="font-semibold text-text"><%= db_name %></h3>
+          <% if is_system then %>
+          <span class="text-xs text-warning">System Database</span>
+          <% end %>
+        </div>
+      </div>
+      <% if not is_system then %>
+      <button type="button"
+              hx-delete="/database/_system/databases/<%= db_name %>"
+              hx-target="closest .db-card"
+              hx-swap="outerHTML"
+              hx-confirm="Are you sure you want to delete database '<%= db_name %>'? This action cannot be undone."
+              class="opacity-0 group-hover:opacity-100 p-2 text-text-muted hover:text-error transition-all">
+        <i class="fas fa-trash-alt"></i>
+      </button>
+      <% end %>
+    </div>
+
+    <% if is_system and users_count then %>
+    <div class="mb-3 pb-3 border-b border-border/30">
+      <a href="/database/_system/users" class="flex items-center justify-between text-sm hover:bg-white/5 -mx-2 px-2 py-1 rounded transition-colors">
+        <span class="text-text-muted"><i class="fas fa-users mr-2"></i>Users</span>
+        <span class="text-text font-medium"><%= users_count %></span>
+      </a>
+    </div>
+    <% end %>
+
+    <div class="flex items-center gap-2">
+      <a href="/database/<%= db_name %>"
+         class="flex-1 text-center px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary-light text-sm font-medium rounded-lg transition-colors">
+        <i class="fas fa-folder-open mr-1"></i> Open
+      </a>
+      <a href="/database/<%= db_name %>/collections"
+         class="px-3 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-text text-sm rounded-lg transition-colors"
+         title="Collections">
+        <i class="fas fa-layer-group"></i>
+      </a>
+      <a href="/database/<%= db_name %>/query"
+         class="px-3 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-text text-sm rounded-lg transition-colors"
+         title="Query">
+        <i class="fas fa-terminal"></i>
+      </a>
+      <% if is_system then %>
+      <a href="/database/_system/users"
+         class="px-3 py-2 bg-white/5 hover:bg-white/10 text-text-muted hover:text-text text-sm rounded-lg transition-colors"
+         title="Users">
+        <i class="fas fa-users"></i>
+      </a>
+      <% end %>
+    </div>
+  </div>
+  <% end %>
+<% end %>

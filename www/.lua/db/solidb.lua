@@ -2,6 +2,25 @@
 SoliDB = {}
 SoliDB.__index = SoliDB
 
+-- Define table utility functions if not already defined globally
+if not table.append then
+  function table.append(t1, t2)
+    local result = {}
+    for i, v in ipairs(t1) do table.insert(result, v) end
+    for i, v in ipairs(t2) do table.insert(result, v) end
+    return result
+  end
+end
+
+if not table.merge then
+  function table.merge(t1, t2)
+    local result = {}
+    for k, v in pairs(t1) do result[k] = v end
+    for k, v in pairs(t2) do result[k] = v end
+    return result
+  end
+end
+
 function SoliDB.new(db_config)
   local self = setmetatable({}, SoliDB)
 
@@ -23,8 +42,8 @@ function SoliDB:Api_run(path, method, params, headers)
   headers = headers or {}
 
   -- Add Authorization header if we have a token
-  if self._token ~= "" then
-    headers = table.append({ ["Authorization"] = "Bearer " .. self._token }, headers)
+  if self._token and self._token ~= "" then
+    headers = table.merge({ ["Authorization"] = "Bearer " .. self._token }, headers)
   end
 
   headers["Content-Type"] = "application/json"
@@ -44,16 +63,22 @@ function SoliDB:Api_run(path, method, params, headers)
 end
 
 function SoliDB:Auth()
+  local auth_body = {
+    username = self._db_config.username,
+    password = self._db_config.password
+  }
+
   local ok, headers, body = Fetch(self._db_config.url .. "/auth/login", {
     method = "POST",
-    body = '{ "username": "' .. self._db_config.username .. '", "password": "' .. self._db_config.password .. '" }',
+    body = EncodeJson(auth_body),
     headers = { ["Content-Type"] = "application/json" }
   })
 
   if ok == 200 then
     local res = DecodeJson(body)
-    if res then
-      self._token = res["token"]
+    if res and res.token then
+      self._token = res.token
+      self._lastDBConnect = GetTime()
     end
   end
 
@@ -118,6 +143,7 @@ end
 function SoliDB:UpdateDocument(handle, params, options)
   -- handle should be "collection/key"
   local collection, key = handle:match("([^/]+)/([^/]+)")
+
   if not collection or not key then return nil, 400, "Invalid handle format (expected collection/key)" end
 
   -- PATCH /_api/database/{db}/document/{collection}/{key}

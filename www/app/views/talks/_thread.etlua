@@ -1,0 +1,48 @@
+<!-- Parent Message -->
+<div class="px-4 py-4 border-b border-border/30">
+  <div class="text-xs text-text-muted mb-2">Thread</div>
+  <div id="thread-parent">
+    <!-- Parent message loaded here -->
+  </div>
+</div>
+
+<!-- Thread Replies -->
+<div class="flex-1 overflow-y-auto chat-scrollbar px-4 py-4"
+     id="thread-messages"
+     hx-ext="ws"
+     ws-connect="/ws/talks/thread?parent=<%= parent_message_id %>">
+  <% if #messages == 0 then %>
+  <div class="text-center text-text-muted py-8">
+    <i class="fas fa-comments text-2xl mb-2 opacity-50"></i>
+    <p class="text-sm">No replies yet</p>
+    <p class="text-xs text-text-dim">Start the conversation</p>
+  </div>
+  <% else %>
+  <div class="space-y-1">
+    <% for _, msg in ipairs(messages) do %>
+    <%- partial("talks/_message", { message = msg }) %>
+    <% end %>
+  </div>
+  <% end %>
+</div>
+
+<!-- Thread Reply Input -->
+<div class="px-4 py-3 border-t border-border/30">
+  <form hx-post="/talks/thread/<%= parent_message_id %>/reply"
+        hx-target="#thread-messages"
+        hx-swap="beforeend"
+        hx-on::after-request="this.reset()"
+        class="relative">
+    <div class="flex items-end gap-2 bg-bg-dark/50 border border-border/30 rounded-xl p-2 focus-within:border-primary/50 transition-colors">
+      <textarea name="text"
+                rows="1"
+                class="flex-1 bg-transparent border-none text-text placeholder-text-dim resize-none focus:outline-none text-sm py-2"
+                placeholder="Reply..."
+                style="field-sizing: content;"></textarea>
+      <button type="submit"
+              class="w-8 h-8 flex items-center justify-center rounded-lg bg-primary hover:bg-primary-light text-white transition-colors">
+        <i class="fas fa-paper-plane text-sm"></i>
+      </button>
+    </div>
+  </form>
+</div>

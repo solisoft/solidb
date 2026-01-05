@@ -1,0 +1,35 @@
+<div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="text-indigo-600 hover:text-indigo-500 font-medium">&larr; Back to Documentation</a>
+  </div>
+
+  <div class="prose prose-indigo prose-lg text-gray-500 mx-auto">
+    <!-- This is a placeholder. In a real app, we might render markdown here or have specific templates for each page. -->
+    <!-- Since we are using etlua, we are likely rendering a specific template for each doc page if we want rich content, 
+         or we could pass content from the controller. 
+         For this 'show' action which dynamically loads a template based on the param, 
+         we actually need the specific page templates to exist (e.g., getting-started.etlua).
+         
+         However, the controller logic `Page("docs/" .. page, "app")` implies that we are looking for a view file named after the page param.
+         So this `show.etlua` might not actually be used if the controller renders the specific page directly.
+         
+         Wait, if the controller does `Page("docs/" .. page, "app")`, it expects `app/views/docs/getting-started.etlua` to exist.
+         It does NOT use `show.etlua` as a wrapper unless we change the controller logic.
+         
+         Let's adjust the plan slightly: I will create `getting-started.etlua` as a sample page instead of `show.etlua` 
+         OR I will change the controller to render `show` and pass the content/partial name.
+         
+         Given the `luaonbeans` pattern usually maps action to view, `docs#show` mapping to `docs/show.etlua` would be standard 
+         IF we weren't dynamically choosing the template.
+         
+         But my controller code:
+         `Page("docs/" .. page, "app")`
+         means it will look for `app/views/docs/<page>.etlua`.
+         
+         So I should create `app/views/docs/getting-started.etlua` instead of `show.etlua`.
+         I will creates `getting-started.etlua` now.
+    -->
+    <h1>Documentation Page</h1>
+    <p>Content for this page is not yet available.</p>
+  </div>
+</div>

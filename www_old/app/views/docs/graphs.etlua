@@ -1,0 +1,223 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+     <!-- Sidebar Partial -->
+    <%- Partial("graphs_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+       <!-- Header Section -->
+       <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-400 to-blue-400 mb-4 tracking-tight">Graph Queries</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Perform native graph traversals and pattern matching directly within SoliDB using simple SDBQL extensions.
+          </p>
+        </div>
+      </div>
+
+       <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Overview
+            </h2>
+          </div>
+          
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB treats every document relation as a graph edge. No special setup is required—just use standard collections and documents to model nodes and edges.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-purple-500/30 transition-colors">
+                <h3 class="text-purple-400 font-bold mb-2">Vertices</h3>
+                <p class="text-sm text-gray-400">Regular documents in any collection. Examples: Users, Products, Locations.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5 hover:border-purple-500/30 transition-colors">
+                <h3 class="text-purple-400 font-bold mb-2">Edges</h3>
+                 <p class="text-sm text-gray-400">Documents that connect two vertices via `_from` and `_to` fields.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collection Types Section -->
+      <section id="collection-types" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+              Collection Types
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">SoliDB supports two types of collections for graph modeling:</p>
+            <ul class="space-y-4">
+              <li class="bg-gray-800/30 p-4 rounded-lg flex items-start border border-white/5">
+                <span class="text-blue-400 font-mono min-w-[100px]">Document</span>
+                <span class="text-gray-400 text-sm">Standard collections used to store vertices (nodes). Contains your data objects.</span>
+              </li>
+              <li class="bg-gray-800/30 p-4 rounded-lg flex items-start border border-white/5">
+                <span class="text-purple-400 font-mono min-w-[100px]">Edge</span>
+                <span class="text-gray-400 text-sm">Special collections used to store edges (relationships). These documents MUST contain `_from` and `_to` fields.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Edge Collections Section -->
+      <section id="creating-edges" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Creating Edge Collections
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5 mb-6">
+              <div class="text-gray-500 mb-2">POST /_api/database/_system/collection</div>
+              <pre><code class="language-json text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"friendships"</span>,
+  <span class="text-purple-400">"type"</span>: 2  <span class="text-gray-500">// 2 for Edge Collection (default is 1 for Document)</span>
+}</code></pre>
+            </div>
+             <p class="text-sm text-gray-400">
+               Or use the "Create" button in the Collections dashboard and select "Edge Collection".
+             </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Edge Documents Section -->
+      <section id="edge-documents" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+              Edge Documents
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Edge documents are normal JSON documents but require two system fields:
+            </p>
+             <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5">
+              <pre><code class="language-json text-gray-300">{
+  <span class="text-purple-400">"_from"</span>: <span class="text-green-400">"users/alice"</span>,
+  <span class="text-purple-400">"_to"</span>: <span class="text-green-400">"users/bob"</span>,
+  <span class="text-purple-400">"type"</span>: <span class="text-green-400">"friend_request"</span>,
+  <span class="text-purple-400">"created_at"</span>: 123456789
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Graph Queries (Syntax) -->
+      <section id="graph-queries" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              SDBQL Graph Queries
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6">
+              Use the `TRAVERSE` keyword to walk the graph.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 font-mono text-sm border border-white/5 overflow-x-auto relative group">
+              <pre><code class="language-sql text-gray-300"><span class="text-purple-400">TRAVERSE</span> <span class="text-yellow-400">OUTBOUND</span> <span class="text-gray-500">|</span> <span class="text-yellow-400">INBOUND</span> <span class="text-gray-500">|</span> <span class="text-yellow-400">ANY</span>
+<span class="text-purple-400">FROM</span> start_vertex
+<span class="text-purple-400">VIA</span> edge_collection
+<span class="text-purple-400">DEPTH</span> <span class="text-yellow-300">1..3</span></code></pre>
+            </div>
+
+             <div class="mt-8 space-y-4">
+              <h3 class="text-white font-bold">Parameters</h3>
+               <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800/30 p-4 rounded-lg flex items-start border border-white/5">
+                   <div class="min-w-[120px] font-mono text-sm text-purple-400">Direction</div>
+                   <div class="text-sm text-gray-400">`OUTBOUND` (follows edges pointing away), `INBOUND` (points to), or `ANY` (both).</div>
+                </div>
+                 <div class="bg-gray-800/30 p-4 rounded-lg flex items-start border border-white/5">
+                   <div class="min-w-[120px] font-mono text-sm text-purple-400">start_vertex</div>
+                   <div class="text-sm text-gray-400">The `_id` of the document to start traversing from (e.g., `users/123`).</div>
+                </div>
+                 <div class="bg-gray-800/30 p-4 rounded-lg flex items-start border border-white/5">
+                   <div class="min-w-[120px] font-mono text-sm text-purple-400">edge_collection</div>
+                   <div class="text-sm text-gray-400">The collection containing the edge relationships.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Common Patterns (Examples) -->
+      <section id="patterns" class="scroll-mt-24">
+         <h2 class="text-2xl font-bold text-white mb-6">Common Patterns</h2>
+         
+         <div class="grid gap-8">
+           <!-- Example 1 -->
+           <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+             <div class="p-6 border-b border-white/5 bg-white/5 flex justify-between items-center">
+               <h3 class="text-lg font-bold text-white">Find Friends of Friends</h3>
+               <span class="px-3 py-1 bg-green-500/20 text-green-400 text-xs rounded-full font-mono">Social Network</span>
+             </div>
+             <div class="p-6">
+                <!-- Using Component for Code Block if available, otherwise raw HTML -->
+                <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 overflow-x-auto text-gray-300 mb-4">
+                  <pre><code><span class="text-purple-400">FOR</span> user <span class="text-purple-400">IN</span> users
+  <span class="text-purple-400">FILTER</span> user._key == <span class="text-green-400">'alice'</span>
+  <span class="text-purple-400">FOR</span> friend <span class="text-purple-400">IN</span> <span class="text-yellow-400">OUTBOUND</span> user 
+  <span class="text-purple-400">GRAPH</span> <span class="text-green-400">'friendships'</span>
+  <span class="text-purple-400">OPTIONS</span> { <span class="text-purple-400">bfs</span>: <span class="text-yellow-300">true</span>, <span class="text-purple-400">uniqueVertices</span>: <span class="text-green-400">'global'</span> }
+  <span class="text-purple-400">RETURN</span> friend.name</code></pre>
+                </div>
+                <p class="text-sm text-gray-400">
+                  This query starts at Alice, follows outgoing edges in the `friendships` graph for depth 1, and returns names of found vertices.
+                </p>
+             </div>
+           </div>
+
+           <!-- Example 2 -->
+           <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+             <div class="p-6 border-b border-white/5 bg-white/5 flex justify-between items-center">
+               <h3 class="text-lg font-bold text-white">Shortest Path</h3>
+               <span class="px-3 py-1 bg-blue-500/20 text-blue-400 text-xs rounded-full font-mono">Routing</span>
+             </div>
+             <div class="p-6">
+                <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 overflow-x-auto text-gray-300 mb-4">
+                  <pre><code><span class="text-purple-400">FOR</span> p <span class="text-purple-400">IN</span> <span class="text-yellow-400">OUTBOUND</span> <span class="text-purple-400">SHORTEST_PATH</span>
+  <span class="text-green-400">'cities/paris'</span> <span class="text-purple-400">TO</span> <span class="text-green-400">'cities/berlin'</span>
+  <span class="text-purple-400">GRAPH</span> <span class="text-green-400">'roads'</span>
+  <span class="text-purple-400">RETURN</span> p.name</code></pre>
+                </div>
+                <p class="text-sm text-gray-400">
+                  Finds the shortest sequence of vertices connecting Paris to Berlin using the logic defined in the `roads` graph.
+                </p>
+             </div>
+           </div>
+         </div>
+      </section>
+
+    </main>
+  </div>
+</div>

@@ -1,0 +1,67 @@
+<%
+  local stats = stats or { pending = 0, running = 0, completed = 0, failed = 0, queues = {} }
+%>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+        <i class="fas fa-hourglass-half text-warning"></i>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-text"><%= stats.pending %></p>
+        <p class="text-xs text-text-muted">Pending</p>
+      </div>
+    </div>
+  </div>
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+        <i class="fas fa-cog <%= stats.running > 0 and 'fa-spin' or '' %> text-info"></i>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-text"><%= stats.running %></p>
+        <p class="text-xs text-text-muted">Running</p>
+      </div>
+    </div>
+  </div>
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+        <i class="fas fa-check text-success"></i>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-text"><%= stats.completed %></p>
+        <p class="text-xs text-text-muted">Completed</p>
+      </div>
+    </div>
+  </div>
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center">
+        <i class="fas fa-times text-error"></i>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-text"><%= stats.failed %></p>
+        <p class="text-xs text-text-muted">Failed</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if #stats.queues > 1 then %>
+<!-- Queue breakdown -->
+<div class="mt-4 bg-bg-card/30 backdrop-blur-sm border border-border/30 rounded-lg p-3">
+  <p class="text-xs text-text-dim mb-2 font-medium">Queue Breakdown</p>
+  <div class="flex flex-wrap gap-2">
+    <% for _, queue in ipairs(stats.queues) do %>
+      <div class="flex items-center gap-2 bg-bg-dark/50 rounded-lg px-3 py-1.5 text-xs">
+        <span class="font-medium text-text"><%= queue.name %></span>
+        <span class="text-warning"><%= queue.pending %> pending</span>
+        <% if queue.running > 0 then %>
+          <span class="text-info"><%= queue.running %> running</span>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>
+<% end %>

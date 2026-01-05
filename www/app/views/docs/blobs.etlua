@@ -8,10 +8,9 @@
 
   <div class="lg:grid lg:grid-cols-12 lg:gap-12">
     <!-- Sidebar Partial -->
-    <%- Partial("blobs_sidebar") %>
 
     <!-- Main Content -->
-    <main class="lg:col-span-9 space-y-12">
+    <main class="lg:col-span-12 space-y-12">
       <!-- Header -->
       <div class="relative">
         <div class="absolute -inset-1 bg-gradient-to-r from-teal-500 to-emerald-600 rounded-lg blur opacity-25"></div>

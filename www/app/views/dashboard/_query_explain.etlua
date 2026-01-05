@@ -1,0 +1,296 @@
+<%
+  local explain = explain or {}
+  local timing = explain.timing or {}
+  local collections = explain.collections or {}
+  local let_bindings = explain.let_bindings or {}
+  local filters = explain.filters or {}
+  local sort = explain.sort
+  local limit = explain.limit
+  local warnings = explain.warnings or {}
+
+  -- Helper to format microseconds
+  local function format_time(us)
+    if not us then return "-" end
+    if us < 1000 then
+      return string.format("%.0fus", us)
+    elseif us < 1000000 then
+      return string.format("%.2fms", us / 1000)
+    else
+      return string.format("%.2fs", us / 1000000)
+    end
+  end
+
+  -- Calculate percentage of total time
+  local function time_percent(us)
+    if not us or not timing.total_us or timing.total_us == 0 then return 0 end
+    return math.floor((us / timing.total_us) * 100)
+  end
+
+  -- Get bar width class based on percentage
+  local function bar_width(percent)
+    if percent <= 0 then return "w-0"
+    elseif percent <= 5 then return "w-[5%]"
+    elseif percent <= 10 then return "w-[10%]"
+    elseif percent <= 20 then return "w-[20%]"
+    elseif percent <= 30 then return "w-[30%]"
+    elseif percent <= 40 then return "w-[40%]"
+    elseif percent <= 50 then return "w-[50%]"
+    elseif percent <= 60 then return "w-[60%]"
+    elseif percent <= 70 then return "w-[70%]"
+    elseif percent <= 80 then return "w-[80%]"
+    elseif percent <= 90 then return "w-[90%]"
+    else return "w-full"
+    end
+  end
+%>
+<div class="p-4 space-y-4">
+  <!-- Header -->
+  <div class="flex items-center gap-2">
+    <i class="fas fa-lightbulb text-info text-lg"></i>
+    <h3 class="text-sm font-semibold text-text">Query Execution Plan</h3>
+  </div>
+
+  <% if sdbql_query then %>
+    <div class="p-3 bg-bg-dark/50 rounded-lg border border-border/30">
+      <p class="text-xs text-text-dim mb-1">Translated SDBQL:</p>
+      <code class="text-xs text-primary-light font-mono"><%= sdbql_query %></code>
+    </div>
+  <% end %>
+
+  <!-- Summary Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-bg-dark/50 rounded-lg p-3 text-center">
+      <div class="text-lg font-bold text-text"><%= format_time(timing.total_us) %></div>
+      <div class="text-xs text-text-dim">Total Time</div>
+    </div>
+    <div class="bg-bg-dark/50 rounded-lg p-3 text-center">
+      <div class="text-lg font-bold text-info"><%= explain.documents_scanned or 0 %></div>
+      <div class="text-xs text-text-dim">Docs Scanned</div>
+    </div>
+    <div class="bg-bg-dark/50 rounded-lg p-3 text-center">
+      <div class="text-lg font-bold text-success"><%= explain.documents_returned or 0 %></div>
+      <div class="text-xs text-text-dim">Docs Returned</div>
+    </div>
+    <div class="bg-bg-dark/50 rounded-lg p-3 text-center">
+      <% local ratio = (explain.documents_scanned or 0) > 0 and math.floor(((explain.documents_returned or 0) / explain.documents_scanned) * 100) or 0 %>
+      <div class="text-lg font-bold <%= ratio > 50 and 'text-success' or (ratio > 10 and 'text-warning' or 'text-error') %>"><%= ratio %>%</div>
+      <div class="text-xs text-text-dim">Selectivity</div>
+    </div>
+  </div>
+
+  <!-- Warnings -->
+  <% if #warnings > 0 then %>
+    <div class="bg-warning/10 border border-warning/30 rounded-lg p-3">
+      <div class="flex items-center gap-2 mb-2">
+        <i class="fas fa-exclamation-triangle text-warning"></i>
+        <span class="text-sm font-medium text-warning">Optimization Suggestions</span>
+      </div>
+      <ul class="space-y-1">
+        <% for _, warning in ipairs(warnings) do %>
+          <li class="text-xs text-text flex items-start gap-2">
+            <i class="fas fa-arrow-right text-warning text-[10px] mt-1"></i>
+            <span><%= warning %></span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <!-- Execution Steps -->
+  <div class="bg-bg-dark/30 rounded-lg border border-border/30 overflow-hidden">
+    <div class="px-4 py-2 border-b border-border/30 bg-bg-dark/50">
+      <span class="text-xs font-medium text-text-muted uppercase tracking-wider">Execution Steps</span>
+    </div>
+
+    <div class="divide-y divide-border/20">
+      <!-- LET Clauses -->
+      <% if #let_bindings > 0 then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-6 h-6 rounded-full bg-accent/20 text-accent-light text-xs flex items-center justify-center font-bold">1</span>
+            <span class="text-sm font-medium text-text">LET Bindings</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.let_clauses_us) %></span>
+          </div>
+          <div class="ml-8 space-y-1">
+            <% for _, binding in ipairs(let_bindings) do %>
+              <div class="flex items-center gap-2 text-xs">
+                <code class="text-primary-light font-mono"><%= binding.variable %></code>
+                <% if binding.is_subquery then %>
+                  <span class="px-1.5 py-0.5 rounded bg-info/20 text-info text-[10px]">SUBQUERY</span>
+                <% end %>
+                <span class="text-text-dim ml-auto"><%= format_time(binding.time_us) %></span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Collection Scan -->
+      <% if #collections > 0 then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-6 h-6 rounded-full bg-primary/20 text-primary-light text-xs flex items-center justify-center font-bold"><%= #let_bindings > 0 and 2 or 1 %></span>
+            <span class="text-sm font-medium text-text">Collection Access</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.collection_scan_us) %></span>
+          </div>
+          <div class="ml-8 space-y-2">
+            <% for _, coll in ipairs(collections) do %>
+              <div class="bg-bg-dark/50 rounded p-2">
+                <div class="flex items-center gap-2 mb-1">
+                  <i class="fas fa-database text-primary-light text-xs"></i>
+                  <code class="text-sm text-text font-mono"><%= coll.name %></code>
+                  <span class="text-text-dim text-xs">as</span>
+                  <code class="text-accent-light font-mono text-sm"><%= coll.variable %></code>
+                </div>
+                <div class="flex items-center gap-3 text-xs">
+                  <% if coll.access_type == "index_lookup" then %>
+                    <span class="flex items-center gap-1 text-success">
+                      <i class="fas fa-bolt"></i>
+                      Index Lookup
+                    </span>
+                    <span class="text-text-dim">
+                      <i class="fas fa-key mr-1"></i><%= coll.index_used or "unknown" %> (<%= coll.index_type or "?" %>)
+                    </span>
+                  <% else %>
+                    <span class="flex items-center gap-1 text-warning">
+                      <i class="fas fa-search"></i>
+                      Full Scan
+                    </span>
+                  <% end %>
+                  <span class="text-text-dim ml-auto">
+                    <i class="fas fa-file-alt mr-1"></i><%= coll.documents_count or 0 %> docs
+                  </span>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Filters -->
+      <% if #filters > 0 then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-6 h-6 rounded-full bg-warning/20 text-warning text-xs flex items-center justify-center font-bold"><%= (#let_bindings > 0 and 1 or 0) + (#collections > 0 and 1 or 0) + 1 %></span>
+            <span class="text-sm font-medium text-text">Filters</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.filter_us) %></span>
+          </div>
+          <div class="ml-8 space-y-2">
+            <% for _, filter in ipairs(filters) do %>
+              <div class="bg-bg-dark/50 rounded p-2">
+                <code class="text-xs text-text font-mono block mb-2"><%= filter.expression %></code>
+                <div class="flex items-center gap-3 text-xs flex-wrap">
+                  <% if filter.can_use_index then %>
+                    <span class="text-success"><i class="fas fa-check mr-1"></i>Uses Index</span>
+                  <% else %>
+                    <span class="text-text-dim"><i class="fas fa-times mr-1"></i>No Index</span>
+                  <% end %>
+                  <span class="text-text-dim">
+                    <i class="fas fa-arrow-right mr-1"></i>
+                    <%= filter.documents_before or "?" %> &rarr; <%= filter.documents_after or "?" %> docs
+                  </span>
+                  <% local filter_ratio = (filter.documents_before or 0) > 0 and math.floor(((filter.documents_after or 0) / filter.documents_before) * 100) or 100 %>
+                  <span class="<%= filter_ratio < 50 and 'text-success' or 'text-warning' %>">
+                    (<%= 100 - filter_ratio %>% filtered)
+                  </span>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Sort -->
+      <% if sort then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-6 h-6 rounded-full bg-info/20 text-info text-xs flex items-center justify-center font-bold"><%= (#let_bindings > 0 and 1 or 0) + (#collections > 0 and 1 or 0) + (#filters > 0 and 1 or 0) + 1 %></span>
+            <span class="text-sm font-medium text-text">Sort</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.sort_us) %></span>
+          </div>
+          <div class="ml-8 flex items-center gap-2 text-xs">
+            <code class="text-primary-light font-mono"><%= sort.field %></code>
+            <span class="px-1.5 py-0.5 rounded bg-bg-dark text-text-muted">
+              <% if sort.direction == "ASC" or sort.direction == "asc" then %>
+                <i class="fas fa-arrow-up mr-1"></i>ASC
+              <% else %>
+                <i class="fas fa-arrow-down mr-1"></i>DESC
+              <% end %>
+            </span>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Limit -->
+      <% if limit then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-6 h-6 rounded-full bg-success/20 text-success text-xs flex items-center justify-center font-bold"><%= (#let_bindings > 0 and 1 or 0) + (#collections > 0 and 1 or 0) + (#filters > 0 and 1 or 0) + (sort and 1 or 0) + 1 %></span>
+            <span class="text-sm font-medium text-text">Limit</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.limit_us) %></span>
+          </div>
+          <div class="ml-8 flex items-center gap-2 text-xs">
+            <% if limit.offset and limit.offset > 0 then %>
+              <span class="text-text-dim">OFFSET</span>
+              <code class="text-warning font-mono"><%= limit.offset %></code>
+            <% end %>
+            <span class="text-text-dim">LIMIT</span>
+            <code class="text-success font-mono"><%= limit.count %></code>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Return Projection -->
+      <% if timing.return_projection_us and timing.return_projection_us > 0 then %>
+        <div class="p-3">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-text-dim/20 text-text-dim text-xs flex items-center justify-center font-bold"><%= (#let_bindings > 0 and 1 or 0) + (#collections > 0 and 1 or 0) + (#filters > 0 and 1 or 0) + (sort and 1 or 0) + (limit and 1 or 0) + 1 %></span>
+            <span class="text-sm font-medium text-text">Return Projection</span>
+            <span class="text-xs text-text-dim ml-auto"><%= format_time(timing.return_projection_us) %></span>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Timing Breakdown -->
+  <div class="bg-bg-dark/30 rounded-lg border border-border/30 overflow-hidden">
+    <div class="px-4 py-2 border-b border-border/30 bg-bg-dark/50">
+      <span class="text-xs font-medium text-text-muted uppercase tracking-wider">Timing Breakdown</span>
+    </div>
+    <div class="p-3 space-y-2">
+      <%
+        local timing_items = {
+          { name = "LET Clauses", time = timing.let_clauses_us, color = "bg-accent" },
+          { name = "Collection Scan", time = timing.collection_scan_us, color = "bg-primary" },
+          { name = "Filter", time = timing.filter_us, color = "bg-warning" },
+          { name = "Sort", time = timing.sort_us, color = "bg-info" },
+          { name = "Limit", time = timing.limit_us, color = "bg-success" },
+          { name = "Return", time = timing.return_projection_us, color = "bg-text-dim" },
+        }
+      %>
+      <% for _, item in ipairs(timing_items) do %>
+        <% if item.time and item.time > 0 then %>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-text-muted w-28 flex-shrink-0"><%= item.name %></span>
+            <div class="flex-1 h-4 bg-bg-dark rounded-full overflow-hidden">
+              <div class="h-full <%= item.color %> rounded-full transition-all" style="width: <%= time_percent(item.time) %>%"></div>
+            </div>
+            <span class="text-xs text-text w-16 text-right"><%= format_time(item.time) %></span>
+            <span class="text-xs text-text-dim w-10 text-right"><%= time_percent(item.time) %>%</span>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Raw JSON (collapsible) -->
+  <details class="bg-bg-dark/30 rounded-lg border border-border/30 overflow-hidden">
+    <summary class="px-4 py-2 cursor-pointer hover:bg-white/5 transition-colors text-xs text-text-muted">
+      <i class="fas fa-code mr-2"></i>View Raw JSON
+    </summary>
+    <div class="border-t border-border/30">
+      <pre class="p-4 text-xs font-mono text-text whitespace-pre-wrap overflow-x-auto max-h-64"><%- EncodeJson(explain) %></pre>
+    </div>
+  </details>
+</div>

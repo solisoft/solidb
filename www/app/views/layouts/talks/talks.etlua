@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title or "Talks" %> - SoliDB</title>
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx-ext-ws@2.0.1/ws.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+
+    /* Custom scrollbar for chat */
+    .chat-scrollbar::-webkit-scrollbar {
+      width: 8px;
+    }
+    .chat-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .chat-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    .chat-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Message hover effects */
+    .message-hover:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Typing animation */
+    @keyframes typing {
+      0%, 60%, 100% { opacity: 0.3; }
+      30% { opacity: 1; }
+    }
+    .typing-dot:nth-child(1) { animation: typing 1.4s infinite; }
+    .typing-dot:nth-child(2) { animation: typing 1.4s infinite 0.2s; }
+    .typing-dot:nth-child(3) { animation: typing 1.4s infinite 0.4s; }
+  </style>
+</head>
+<body class="h-screen bg-bg text-text overflow-hidden">
+  <!-- Main Chat Layout -->
+  <div class="h-full flex" x-data="talksApp()">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-bg-card/30 border-r border-border/30 flex flex-col shrink-0">
+      <!-- Workspace Header -->
+      <div class="h-14 px-4 flex items-center justify-between border-b border-border/30">
+        <button class="flex items-center gap-2 hover:bg-white/5 rounded-lg px-2 py-1.5 transition-colors">
+          <span class="font-bold text-text">SoliDB Talks</span>
+          <i class="fas fa-chevron-down text-xs text-text-muted"></i>
+        </button>
+        <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
+          <i class="fas fa-edit"></i>
+        </button>
+      </div>
+
+      <!-- Channels Section -->
+      <div class="flex-1 overflow-y-auto chat-scrollbar py-3">
+        <!-- Channels -->
+        <div class="px-3 mb-4">
+          <div class="flex items-center justify-between px-2 py-1.5">
+            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Channels</span>
+            <button hx-get="/talks/channels/modal/create"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text hover:bg-white/10 transition-colors">
+              <i class="fas fa-plus text-xs"></i>
+            </button>
+          </div>
+          <div id="channels-list"
+               hx-get="/talks/channels/list"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+            <div class="px-2 py-4 text-center">
+              <i class="fas fa-spinner fa-spin text-text-dim"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Direct Messages -->
+        <div class="px-3">
+          <div class="flex items-center justify-between px-2 py-1.5">
+            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Direct Messages</span>
+            <button class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text hover:bg-white/10 transition-colors">
+              <i class="fas fa-plus text-xs"></i>
+            </button>
+          </div>
+          <div id="dm-list"
+               hx-get="/talks/dm/list"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+            <div class="px-2 py-4 text-center">
+              <i class="fas fa-spinner fa-spin text-text-dim"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Section -->
+      <div class="h-14 px-3 flex items-center gap-3 border-t border-border/30 bg-bg-dark/50">
+        <div class="relative">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
+            <% if current_user then %><%= string.sub(current_user.firstname or current_user.email, 1, 1):upper() %><% else %>?<% end %>
+          </div>
+          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-bg-dark"></span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-text truncate">
+            <% if current_user then %><%= current_user.firstname or current_user.email %><% else %>Guest<% end %>
+          </p>
+          <p class="text-xs text-text-dim truncate">Online</p>
+        </div>
+        <div class="flex items-center gap-1">
+          <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Settings">
+            <i class="fas fa-cog"></i>
+          </button>
+          <a href="/talks/logout" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors" title="Logout">
+            <i class="fas fa-sign-out-alt"></i>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col min-w-0">
+      <%- yield() %>
+    </main>
+
+    <!-- Thread Panel (shown when viewing a thread) -->
+    <aside x-show="threadOpen" x-cloak
+           x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="translate-x-full"
+           x-transition:enter-end="translate-x-0"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="translate-x-0"
+           x-transition:leave-end="translate-x-full"
+           class="w-96 bg-bg-card/30 border-l border-border/30 flex flex-col shrink-0">
+      <div class="h-14 px-4 flex items-center justify-between border-b border-border/30">
+        <h3 class="font-semibold text-text">Thread</h3>
+        <button @click="threadOpen = false" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div id="thread-content" class="flex-1 overflow-y-auto chat-scrollbar">
+        <!-- Thread messages loaded here -->
+      </div>
+    </aside>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+  <script>
+    function talksApp() {
+      return {
+        threadOpen: false,
+        currentChannel: '<%= current_channel or "general" %>',
+
+        openThread(messageId) {
+          this.threadOpen = true;
+          htmx.ajax('GET', '/talks/thread/' + messageId, { target: '#thread-content' });
+        }
+      }
+    }
+
+    // HTMX configuration
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+      // Add any common headers here
+    });
+
+    // Auto-scroll messages on new content
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      if (evt.detail.target.id === 'messages-container') {
+        evt.detail.target.scrollTop = evt.detail.target.scrollHeight;
+      }
+      // Apply syntax highlighting
+      if (window.hljs) {
+        document.querySelectorAll('pre code').forEach((el) => {
+          hljs.highlightElement(el);
+        });
+      }
+    });
+  </script>
+  <%- RefreshPageForDevMode() %>
+</body>
+</html>

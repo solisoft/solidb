@@ -1,7 +1,7 @@
 use crate::error::DbResult;
 use super::parser::{
     SqlParser, SqlStatement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
-    SelectColumn, SqlExpr, BinaryOp, OrderByItem, JoinClause, JoinType,
+    SelectColumn, SqlExpr, BinaryOp, OrderByItem, JoinClause,
 };
 
 /// Translates SQL to SDBQL
@@ -162,6 +162,7 @@ fn translate_join_expr(expr: &SqlExpr, _doc_var: &str) -> String {
 }
 
 /// Translate HAVING clause expressions - aggregates work on "group" variable
+#[allow(dead_code)]
 fn translate_having_expr(expr: &SqlExpr) -> String {
     match expr {
         SqlExpr::Function { name, args } => {
@@ -509,7 +510,7 @@ fn translate_order_by_with_aliases(item: &OrderByItem, doc_var: &str, alias_map:
 }
 
 #[allow(dead_code)]
-fn translate_order_by(item: &OrderByItem, doc_var: &str) -> String {
+fn translate_order_by(item: &OrderByItem, _doc_var: &str) -> String {
     let direction = if item.descending { "DESC" } else { "ASC" };
     // Qualified columns (table.column) are kept as-is
     // Simple identifiers might be aliases, use as-is
@@ -629,7 +630,7 @@ fn translate_insert(stmt: &InsertStatement) -> String {
                     .collect();
                 format!("{{ {} }}", fields.join(", "))
             } else {
-                let values: Vec<String> = row.iter().map(|v| translate_expr(v, "doc")).collect();
+                let _values: Vec<String> = row.iter().map(|v| translate_expr(v, "doc")).collect();
                 format!("{{ row: {} }}", i)
             }
         }).collect();

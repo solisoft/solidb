@@ -1,0 +1,51 @@
+<!-- Active Nodes -->
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+      <i class="fas fa-server text-success"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= active_nodes %>/<%= total_nodes %></p>
+      <p class="text-xs text-text-muted">Active Nodes</p>
+    </div>
+  </div>
+</div>
+
+<!-- Cluster ID -->
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+      <i class="fas fa-fingerprint text-primary-light"></i>
+    </div>
+    <div class="min-w-0">
+      <p class="text-sm font-bold text-text truncate" title="<%= cluster_id %>"><%= cluster_id:sub(1, 12) %><% if #cluster_id > 12 then %>...<% end %></p>
+      <p class="text-xs text-text-muted">Cluster ID</p>
+    </div>
+  </div>
+</div>
+
+<!-- Node Role -->
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg <%= is_leader and 'bg-warning/10' or 'bg-accent/10' %> flex items-center justify-center">
+      <i class="fas <%= is_leader and 'fa-crown text-warning' or 'fa-user text-accent-light' %>"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= is_leader and "Leader" or "Follower" %></p>
+      <p class="text-xs text-text-muted">Node Role</p>
+    </div>
+  </div>
+</div>
+
+<!-- Sync Status -->
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+      <i class="fas fa-sync-alt text-info"></i>
+    </div>
+    <div>
+      <p class="text-lg font-bold text-text"><%= sync_status %></p>
+      <p class="text-xs text-text-muted">Sync Status</p>
+    </div>
+  </div>
+</div>

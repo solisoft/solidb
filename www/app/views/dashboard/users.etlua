@@ -1,633 +1,128 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-6xl mx-auto">
   <!-- Header -->
-  <div class="md:flex md:items-center md:justify-between mb-8">
-    <div class="flex-1 min-w-0">
-      <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-        Users & Roles
-      </h2>
-      <p class="mt-2 text-sm text-gray-400">Manage users, roles, and permissions (RBAC)</p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">Users & Roles</h1>
+      <p class="text-text-muted text-sm">Manage database access and permissions</p>
     </div>
-    <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
-      <button id="createUserBtn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
-        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-        </svg>
-        Create User
+
+    <div class="flex items-center gap-2">
+      <button type="button" id="add-user-btn"
+              hx-get="/database/_system/users/modal/create"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-user-plus"></i>
+        <span>Add User</span>
+      </button>
+      <button type="button" id="add-role-btn"
+              hx-get="/database/_system/roles/modal/create"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="hidden inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-shield-alt"></i>
+        <span>Add Role</span>
       </button>
     </div>
   </div>
 
   <!-- Tabs -->
-  <div class="border-b border-gray-700 mb-6">
-    <nav class="-mb-px flex space-x-8">
-      <button id="tabUsers" class="tab-btn border-indigo-500 text-indigo-400 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">
-        Users
-      </button>
-      <button id="tabRoles" class="tab-btn border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">
-        Roles
-      </button>
-    </nav>
-  </div>
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4">
+      <nav class="flex gap-4 -mb-px">
+        <button type="button" onclick="switchTab('users')" id="tab-users"
+                class="tab-btn py-3 px-1 border-b-2 border-primary-light text-text text-sm font-medium transition-colors">
+          <i class="fas fa-users mr-2"></i>
+          Users
+        </button>
+        <button type="button" onclick="switchTab('roles')" id="tab-roles"
+                class="tab-btn py-3 px-1 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
+          <i class="fas fa-shield-alt mr-2"></i>
+          Roles
+        </button>
+      </nav>
+    </div>
 
-  <!-- Users Tab Content -->
-  <div id="usersContent">
-    <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 shadow-xl overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-700">
-        <thead class="bg-gray-900/50">
-          <tr>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Username</th>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Roles</th>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Created</th>
-            <th class="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="usersTableBody" class="divide-y divide-gray-700/50">
-          <!-- Loaded dynamically -->
-        </tbody>
-      </table>
-      <div id="usersEmptyState" class="hidden py-12 text-center text-gray-400">
-        <svg class="mx-auto h-12 w-12 text-gray-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
-        </svg>
-        <p>No users found</p>
+    <!-- Users Tab -->
+    <div id="panel-users"
+         hx-get="/database/_system/users/table"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading users...</p>
       </div>
-      <div id="usersLoading" class="py-12 text-center text-gray-400">
-        <svg class="animate-spin mx-auto h-8 w-8 text-indigo-500 mb-4" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p>Loading users...</p>
+    </div>
+
+    <!-- Roles Tab -->
+    <div id="panel-roles" class="hidden">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading roles...</p>
       </div>
     </div>
   </div>
 
-  <!-- Roles Tab Content -->
-  <div id="rolesContent" class="hidden">
-    <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700/50 shadow-xl overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-700">
-        <thead class="bg-gray-900/50">
-          <tr>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role Name</th>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Description</th>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Permissions</th>
-            <th class="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
-            <th class="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="rolesTableBody" class="divide-y divide-gray-700/50">
-          <!-- Loaded dynamically -->
-        </tbody>
-      </table>
-      <div id="rolesLoading" class="py-12 text-center text-gray-400">
-        <svg class="animate-spin mx-auto h-8 w-8 text-indigo-500 mb-4" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p>Loading roles...</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create User Modal -->
-  <div id="createUserModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
-    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
-    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
-      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
-        <h3 class="text-xl font-semibold text-white tracking-tight">Create User</h3>
-      </div>
-      <div class="p-6">
-        <form id="createUserForm">
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-300 mb-2">Username</label>
-            <input type="text" id="newUsername" required placeholder="e.g., john.doe"
-              class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-          </div>
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-300 mb-2">Password</label>
-            <input type="password" id="newPassword" required placeholder="Enter password"
-              class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-          </div>
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
-            <input type="password" id="confirmPassword" required placeholder="Confirm password"
-              class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-          </div>
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-300 mb-2">Initial Role</label>
-            <select id="initialRole" class="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-              <option value="viewer">Viewer (Read-only)</option>
-              <option value="editor">Editor (Read/Write)</option>
-              <option value="admin">Admin (Full Access)</option>
-            </select>
-          </div>
-          <div class="flex justify-end gap-3 pt-2">
-            <button type="button" id="cancelCreateUser" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Cancel</button>
-            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all">Create User</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Manage User Roles Modal -->
-  <div id="manageRolesModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
-    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
-    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
-      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
-        <h3 class="text-xl font-semibold text-white tracking-tight">Manage Roles for <span id="manageRolesUsername" class="text-indigo-400"></span></h3>
-      </div>
-      <div class="p-6">
-        <div id="userRolesList" class="mb-6">
-          <!-- Current roles listed here -->
+  <!-- Permissions Reference -->
+  <div class="mt-6">
+    <h3 class="text-sm font-medium text-text-muted mb-3">Permission Levels</h3>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-text-dim"></span>
+          <span class="text-sm font-medium text-text">None</span>
         </div>
-        <div class="border-t border-gray-700 pt-4">
-          <h4 class="text-sm font-medium text-gray-300 mb-3">Assign New Role</h4>
-          <div class="space-y-3">
-            <div class="flex gap-3">
-              <select id="assignRoleSelect" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-                <option value="">Select a role...</option>
-              </select>
-            </div>
-            <div class="flex gap-3">
-              <select id="assignDatabaseSelect" class="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:bg-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors">
-                <option value="">Global (all databases)</option>
-              </select>
-              <button id="assignRoleBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
-                Assign
-              </button>
-            </div>
-            <p class="text-xs text-gray-500">Select a specific database to scope this role, or leave as "Global" for access to all databases.</p>
-          </div>
-        </div>
-        <div class="flex justify-end gap-3 pt-6">
-          <button type="button" id="closeManageRoles" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Close</button>
-        </div>
+        <p class="text-xs text-text-dim">No access</p>
       </div>
-    </div>
-  </div>
-
-  <!-- View Role Details Modal -->
-  <div id="viewRoleModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out opacity-0 hidden">
-    <div class="absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-click-handler"></div>
-    <div class="relative bg-gray-900/80 backdrop-blur-xl rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-white/10 overflow-hidden transform transition-all duration-300 ease-out scale-95 opacity-0 ring-1 ring-white/10 modal-content">
-      <div class="px-6 py-4 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md sticky top-0 z-10">
-        <h3 class="text-xl font-semibold text-white tracking-tight">Role: <span id="viewRoleName" class="text-indigo-400"></span></h3>
+      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-info"></span>
+          <span class="text-sm font-medium text-text">Read</span>
+        </div>
+        <p class="text-xs text-text-dim">Read documents</p>
       </div>
-      <div class="p-6">
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-400 mb-1">Description</label>
-          <p id="viewRoleDescription" class="text-gray-200"></p>
+      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-warning"></span>
+          <span class="text-sm font-medium text-text">Read/Write</span>
         </div>
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-400 mb-2">Permissions</label>
-          <div id="viewRolePermissions" class="space-y-2">
-            <!-- Permissions listed here -->
-          </div>
+        <p class="text-xs text-text-dim">Read and modify documents</p>
+      </div>
+      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-error"></span>
+          <span class="text-sm font-medium text-text">Admin</span>
         </div>
-        <div class="flex justify-end gap-3 pt-4">
-          <button type="button" id="closeViewRole" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors hover:bg-gray-800/50 rounded-lg">Close</button>
-        </div>
+        <p class="text-xs text-text-dim">Full database control</p>
       </div>
     </div>
   </div>
 </div>
 
-<script type="module">
-  import { getServerConfig, authenticatedFetch } from '<%= PublicPath("/api-config.js") %>';
-
-  const config = getServerConfig();
-  const baseUrl = config ? (config.port ? `${config.host}:${config.port}` : config.host) : '';
-
-  let allRoles = [];
-  let allDatabases = [];
-  let currentManageUser = null;
-
-  // Load databases for the database selector
-  async function loadDatabases() {
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/databases`);
-      if (response.ok) {
-        const data = await response.json();
-        allDatabases = data.databases || [];
-        updateDatabaseSelect();
-      }
-    } catch (error) {
-      console.error('Error loading databases:', error);
-    }
-  }
-
-  function updateDatabaseSelect() {
-    const select = document.getElementById('assignDatabaseSelect');
-    select.innerHTML = '<option value="">Global (all databases)</option>' +
-      allDatabases.map(db => `<option value="${escapeHtml(db)}">${escapeHtml(db)}</option>`).join('');
-  }
-
-  // Modal Management
-  function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    const content = modal.querySelector('.modal-content');
-    setTimeout(() => {
-      modal.classList.remove('opacity-0');
-      if (content) {
-        content.classList.remove('scale-95', 'opacity-0');
-        content.classList.add('scale-100', 'opacity-100');
-      }
-    }, 10);
-  }
-
-  function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-    const content = modal.querySelector('.modal-content');
-    modal.classList.add('opacity-0');
-    if (content) {
-      content.classList.remove('scale-100', 'opacity-100');
-      content.classList.add('scale-95', 'opacity-0');
-    }
-    setTimeout(() => modal.classList.add('hidden'), 300);
-  }
-
-  // Close modals on ESC
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      ['createUserModal', 'manageRolesModal', 'viewRoleModal'].forEach(id => {
-        if (!document.getElementById(id).classList.contains('hidden')) {
-          closeModal(id);
-        }
-      });
-    }
+<script>
+function switchTab(tab) {
+  // Update tab buttons
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.classList.remove('border-primary-light', 'text-text');
+    btn.classList.add('border-transparent', 'text-text-muted');
   });
+  document.getElementById('tab-' + tab).classList.remove('border-transparent', 'text-text-muted');
+  document.getElementById('tab-' + tab).classList.add('border-primary-light', 'text-text');
 
-  // Setup backdrop click handlers
-  document.querySelectorAll('.backdrop-click-handler').forEach(backdrop => {
-    backdrop.addEventListener('click', (e) => {
-      const modal = e.target.closest('[id$="Modal"]');
-      if (modal) closeModal(modal.id);
-    });
-  });
+  // Update panels
+  document.getElementById('panel-users').classList.add('hidden');
+  document.getElementById('panel-roles').classList.add('hidden');
+  document.getElementById('panel-' + tab).classList.remove('hidden');
 
-  // Tab switching
-  document.getElementById('tabUsers').addEventListener('click', () => {
-    document.getElementById('tabUsers').classList.add('border-indigo-500', 'text-indigo-400');
-    document.getElementById('tabUsers').classList.remove('border-transparent', 'text-gray-400');
-    document.getElementById('tabRoles').classList.remove('border-indigo-500', 'text-indigo-400');
-    document.getElementById('tabRoles').classList.add('border-transparent', 'text-gray-400');
-    document.getElementById('usersContent').classList.remove('hidden');
-    document.getElementById('rolesContent').classList.add('hidden');
-  });
+  // Update add buttons
+  document.getElementById('add-user-btn').classList.toggle('hidden', tab !== 'users');
+  document.getElementById('add-role-btn').classList.toggle('hidden', tab !== 'roles');
 
-  document.getElementById('tabRoles').addEventListener('click', () => {
-    document.getElementById('tabRoles').classList.add('border-indigo-500', 'text-indigo-400');
-    document.getElementById('tabRoles').classList.remove('border-transparent', 'text-gray-400');
-    document.getElementById('tabUsers').classList.remove('border-indigo-500', 'text-indigo-400');
-    document.getElementById('tabUsers').classList.add('border-transparent', 'text-gray-400');
-    document.getElementById('rolesContent').classList.remove('hidden');
-    document.getElementById('usersContent').classList.add('hidden');
-  });
-
-  // Load Users
-  async function loadUsers() {
-    const tbody = document.getElementById('usersTableBody');
-    const emptyState = document.getElementById('usersEmptyState');
-    const loading = document.getElementById('usersLoading');
-
-    loading.classList.remove('hidden');
-    emptyState.classList.add('hidden');
-    tbody.innerHTML = '';
-
-    try {
-      // Get users from dedicated auth API
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/users`);
-      if (!response.ok) throw new Error('Failed to load users');
-
-      const data = await response.json();
-      loading.classList.add('hidden');
-
-      if (!data.users || data.users.length === 0) {
-        emptyState.classList.remove('hidden');
-        return;
-      }
-
-      // Users already include their roles from the API
-      const usersWithRoles = data.users;
-
-      tbody.innerHTML = usersWithRoles.map(user => `
-        <tr class="hover:bg-gray-700/30 transition-colors">
-          <td class="px-6 py-4">
-            <div class="flex items-center">
-              <div class="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-3">
-                <span class="text-white font-semibold text-sm">${user.username.charAt(0).toUpperCase()}</span>
-              </div>
-              <span class="text-white font-medium">${escapeHtml(user.username)}</span>
-            </div>
-          </td>
-          <td class="px-6 py-4">
-            <div class="flex flex-wrap gap-1">
-              ${user.roles && user.roles.length > 0
-                ? user.roles.map(r => `<span class="px-2 py-0.5 text-xs rounded-full ${getRoleBadgeClass(r)}">${escapeHtml(r)}</span>`).join('')
-                : '<span class="text-gray-500 text-sm">No roles</span>'}
-            </div>
-          </td>
-          <td class="px-6 py-4 text-gray-400 text-sm">${user.created_at ? new Date(user.created_at).toLocaleString() : 'N/A'}</td>
-          <td class="px-6 py-4 text-right">
-            <div class="flex justify-end gap-2">
-              <button onclick="manageUserRoles('${escapeHtml(user.username)}')"
-                class="text-indigo-400 hover:text-indigo-300 transition-colors p-1 hover:bg-indigo-500/10 rounded" title="Manage Roles">
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
-                </svg>
-              </button>
-              ${user.username !== 'admin' ? `
-              <button onclick="deleteUser('${escapeHtml(user.username)}')"
-                class="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded" title="Delete User">
-                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-              </button>
-              ` : ''}
-            </div>
-          </td>
-        </tr>
-      `).join('');
-    } catch (error) {
-      console.error('Error loading users:', error);
-      loading.classList.add('hidden');
-      tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-red-400">Failed to load users: ${error.message}</td></tr>`;
-    }
+  // Load content if not already loaded
+  var panel = document.getElementById('panel-' + tab);
+  if (tab === 'roles' && !panel.dataset.loaded) {
+    panel.dataset.loaded = 'true';
+    htmx.ajax('GET', '/database/_system/roles/table', {target: '#panel-roles', swap: 'innerHTML'});
   }
-
-  // Load Roles
-  async function loadRoles() {
-    const tbody = document.getElementById('rolesTableBody');
-    const loading = document.getElementById('rolesLoading');
-
-    loading.classList.remove('hidden');
-    tbody.innerHTML = '';
-
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/roles`);
-      if (!response.ok) throw new Error('Failed to load roles');
-
-      allRoles = await response.json();
-      loading.classList.add('hidden');
-
-      tbody.innerHTML = allRoles.map(role => `
-        <tr class="hover:bg-gray-700/30 transition-colors">
-          <td class="px-6 py-4">
-            <span class="text-white font-medium">${escapeHtml(role.name)}</span>
-          </td>
-          <td class="px-6 py-4 text-gray-400 text-sm">${escapeHtml(role.description || 'No description')}</td>
-          <td class="px-6 py-4">
-            <div class="flex flex-wrap gap-1">
-              ${role.permissions.map(p => `
-                <span class="px-2 py-0.5 text-xs rounded-full ${getPermissionBadgeClass(p.action)}">
-                  ${escapeHtml(p.action)}${p.database ? ` (${escapeHtml(p.database)})` : ''}
-                </span>
-              `).join('')}
-            </div>
-          </td>
-          <td class="px-6 py-4">
-            ${role.is_builtin
-              ? '<span class="px-2 py-0.5 text-xs rounded-full bg-gray-700 text-gray-300">Built-in</span>'
-              : '<span class="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">Custom</span>'}
-          </td>
-          <td class="px-6 py-4 text-right">
-            <button onclick="viewRole('${escapeHtml(role.name)}')"
-              class="text-indigo-400 hover:text-indigo-300 transition-colors p-1 hover:bg-indigo-500/10 rounded" title="View Details">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-              </svg>
-            </button>
-          </td>
-        </tr>
-      `).join('');
-
-      // Update role select in manage modal
-      updateRoleSelect();
-    } catch (error) {
-      console.error('Error loading roles:', error);
-      loading.classList.add('hidden');
-      tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-400">Failed to load roles: ${error.message}</td></tr>`;
-    }
-  }
-
-  function updateRoleSelect() {
-    const select = document.getElementById('assignRoleSelect');
-    select.innerHTML = '<option value="">Select a role...</option>' +
-      allRoles.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
-  }
-
-  function getRoleBadgeClass(role) {
-    switch(role) {
-      case 'admin': return 'bg-red-500/20 text-red-400';
-      case 'editor': return 'bg-amber-500/20 text-amber-400';
-      case 'viewer': return 'bg-green-500/20 text-green-400';
-      default: return 'bg-purple-500/20 text-purple-400';
-    }
-  }
-
-  function getPermissionBadgeClass(action) {
-    switch(action) {
-      case 'admin': return 'bg-red-500/20 text-red-400';
-      case 'write': return 'bg-amber-500/20 text-amber-400';
-      case 'read': return 'bg-green-500/20 text-green-400';
-      default: return 'bg-gray-500/20 text-gray-400';
-    }
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  // Manage User Roles
-  window.manageUserRoles = async function(username) {
-    currentManageUser = username;
-    document.getElementById('manageRolesUsername').textContent = username;
-
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/users/${username}/roles`);
-      const roles = response.ok ? await response.json() : [];
-
-      const listEl = document.getElementById('userRolesList');
-      if (roles.length === 0) {
-        listEl.innerHTML = '<p class="text-gray-500 text-sm">No roles assigned</p>';
-      } else {
-        listEl.innerHTML = `
-          <div class="space-y-2">
-            ${roles.map(r => `
-              <div class="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 text-xs rounded-full ${getRoleBadgeClass(r.role)}">${escapeHtml(r.role)}</span>
-                  <span class="text-xs px-2 py-0.5 rounded ${r.database ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-600/50 text-gray-400'}">
-                    ${r.database ? escapeHtml(r.database) : 'Global'}
-                  </span>
-                </div>
-                <button onclick="revokeRole('${escapeHtml(username)}', '${escapeHtml(r.role)}', ${r.database ? `'${escapeHtml(r.database)}'` : 'null'})"
-                  class="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded" title="Revoke Role">
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </button>
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }
-
-      openModal('manageRolesModal');
-    } catch (error) {
-      console.error('Error loading user roles:', error);
-      alert('Failed to load user roles');
-    }
-  };
-
-  window.revokeRole = async function(username, role) {
-    if (!confirm(`Revoke role "${role}" from user "${username}"?`)) return;
-
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/users/${username}/roles/${role}`, { method: 'DELETE' });
-      if (response.ok) {
-        manageUserRoles(username); // Refresh
-        loadUsers(); // Refresh main list
-      } else {
-        const error = await response.json();
-        alert('Failed to revoke role: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error revoking role:', error);
-      alert('Error revoking role');
-    }
-  };
-
-  // Assign Role
-  document.getElementById('assignRoleBtn').addEventListener('click', async () => {
-    const role = document.getElementById('assignRoleSelect').value;
-    const database = document.getElementById('assignDatabaseSelect').value || undefined;
-    if (!role || !currentManageUser) return;
-
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/users/${currentManageUser}/roles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, database })
-      });
-
-      if (response.ok) {
-        document.getElementById('assignRoleSelect').value = '';
-        document.getElementById('assignDatabaseSelect').value = '';
-        manageUserRoles(currentManageUser); // Refresh
-        loadUsers(); // Refresh main list
-      } else {
-        const error = await response.json();
-        alert('Failed to assign role: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error assigning role:', error);
-      alert('Error assigning role');
-    }
-  });
-
-  // View Role Details
-  window.viewRole = function(roleName) {
-    const role = allRoles.find(r => r.name === roleName);
-    if (!role) return;
-
-    document.getElementById('viewRoleName').textContent = role.name;
-    document.getElementById('viewRoleDescription').textContent = role.description || 'No description';
-
-    document.getElementById('viewRolePermissions').innerHTML = role.permissions.map(p => `
-      <div class="flex items-center p-2 bg-gray-800/50 rounded">
-        <span class="px-2 py-0.5 text-xs rounded-full ${getPermissionBadgeClass(p.action)} mr-2">${escapeHtml(p.action)}</span>
-        <span class="text-gray-300">${escapeHtml(p.scope)}</span>
-        ${p.database ? `<span class="text-gray-500 ml-2">- ${escapeHtml(p.database)}</span>` : ''}
-      </div>
-    `).join('');
-
-    openModal('viewRoleModal');
-  };
-
-  // Delete User
-  window.deleteUser = async function(username) {
-    if (!confirm(`Delete user "${username}"?\n\nThis action cannot be undone.`)) return;
-
-    try {
-      const response = await authenticatedFetch(`${baseUrl}/_api/auth/users/${username}`, { method: 'DELETE' });
-      if (response.ok) {
-        loadUsers();
-      } else {
-        const error = await response.json();
-        alert('Failed to delete user: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      alert('Error deleting user');
-    }
-  };
-
-  // Create User Form
-  document.getElementById('createUserBtn').addEventListener('click', () => {
-    document.getElementById('createUserForm').reset();
-    openModal('createUserModal');
-    setTimeout(() => document.getElementById('newUsername').focus(), 100);
-  });
-
-  document.getElementById('cancelCreateUser').addEventListener('click', () => closeModal('createUserModal'));
-
-  document.getElementById('createUserForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const username = document.getElementById('newUsername').value.trim();
-    const password = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
-    const initialRole = document.getElementById('initialRole').value;
-
-    if (password !== confirmPassword) {
-      alert('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      // Create user via dedicated auth API (handles password hashing)
-      const createResponse = await authenticatedFetch(`${baseUrl}/_api/auth/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: username,
-          password: password,
-          initial_role: initialRole || undefined
-        })
-      });
-
-      if (!createResponse.ok) {
-        const error = await createResponse.json();
-        throw new Error(error.error || 'Failed to create user');
-      }
-
-      closeModal('createUserModal');
-      loadUsers();
-    } catch (error) {
-      console.error('Error creating user:', error);
-      alert('Error creating user: ' + error.message);
-    }
-  });
-
-  // Modal close buttons
-  document.getElementById('closeManageRoles').addEventListener('click', () => closeModal('manageRolesModal'));
-  document.getElementById('closeViewRole').addEventListener('click', () => closeModal('viewRoleModal'));
-
-  // Initialize
-  document.addEventListener('DOMContentLoaded', () => {
-    loadUsers();
-    loadRoles();
-    loadDatabases();
-  });
+}
 </script>

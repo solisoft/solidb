@@ -1,0 +1,320 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <div class="hidden lg:block lg:col-span-3">
+      <div class="sticky top-24">
+        <div class="bg-gray-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+          <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">On this page</h3>
+          <nav class="space-y-1">
+            <a href="#overview" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-3"></span> Overview
+            </a>
+            <a href="#dashboard" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-purple-500 mr-3"></span> Dashboard UI
+            </a>
+            <a href="#the-script" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-3"></span> The Script
+            </a>
+            <a href="#execution" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-3"></span> Execution
+            </a>
+            <a href="#models" class="group flex items-center px-2 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-teal-500 mr-3"></span> Supported Models
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+     <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-4xl font-extrabold text-white mb-4 tracking-tight">Building AI Agents</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Learn how to create, configure, and run autonomous AI agents using SoliDB's agent infrastructure.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white mb-4">How Agents Work</h2>
+            <p class="text-gray-300 leading-relaxed max-w-4xl">
+              AI Agents in SoliDB are external worker processes that connect to the database, claim tasks from a queue,
+              and process them using AI models (Claude, GPT, Ollama, etc.). SoliDB stores agent configurations and manages
+              the task queue, while the actual AI API calls are made by the external agent process.
+            </p>
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div class="bg-gray-800/50 p-4 rounded-xl border border-white/5">
+                <div class="text-indigo-400 font-bold mb-2">1. Configure</div>
+                <div class="text-sm text-gray-400">Create an agent in the dashboard with model, API URL, and API key.</div>
+              </div>
+              <div class="bg-gray-800/50 p-4 rounded-xl border border-white/5">
+                <div class="text-indigo-400 font-bold mb-2">2. Register</div>
+                <div class="text-sm text-gray-400">External agent connects and registers with SoliDB.</div>
+              </div>
+              <div class="bg-gray-800/50 p-4 rounded-xl border border-white/5">
+                <div class="text-indigo-400 font-bold mb-2">3. Poll</div>
+                <div class="text-sm text-gray-400">Agent checks for pending tasks that match its capabilities.</div>
+              </div>
+              <div class="bg-gray-800/50 p-4 rounded-xl border border-white/5">
+                <div class="text-indigo-400 font-bold mb-2">4. Execute</div>
+                <div class="text-sm text-gray-400">Agent calls AI API and submits results back to SoliDB.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard UI -->
+      <section id="dashboard" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-purple-900/20 to-indigo-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <span class="w-8 h-8 rounded bg-purple-500/20 flex items-center justify-center mr-3 text-sm text-purple-400 font-bold">UI</span>
+              Managing Agents via Dashboard
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+             <p class="text-gray-300">
+               The easiest way to configure AI agents is through the <strong>Dashboard UI</strong>. Navigate to
+               <code class="text-purple-300">AI &gt; Agents</code> to create and manage your agents.
+             </p>
+
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div class="bg-gray-800/50 p-5 rounded-xl border border-white/5">
+                 <h3 class="text-lg font-semibold text-white mb-3">Agent Configuration</h3>
+                 <ul class="space-y-2 text-sm text-gray-400">
+                   <li><strong class="text-gray-200">Name:</strong> Human-readable identifier</li>
+                   <li><strong class="text-gray-200">Model:</strong> AI model to use (Claude, GPT, Ollama)</li>
+                   <li><strong class="text-gray-200">API URL:</strong> Custom endpoint (optional)</li>
+                   <li><strong class="text-gray-200">API Key:</strong> Your provider API key</li>
+                   <li><strong class="text-gray-200">System Prompt:</strong> Instructions for the agent</li>
+                   <li><strong class="text-gray-200">Capabilities:</strong> Database, HTTP, Scripts, Notifications</li>
+                 </ul>
+               </div>
+               <div class="bg-gray-800/50 p-5 rounded-xl border border-white/5">
+                 <h3 class="text-lg font-semibold text-white mb-3">Retrieving Config via API</h3>
+                 <p class="text-sm text-gray-400 mb-3">External agents can fetch their configuration:</p>
+                 <div class="bg-gray-950 p-3 rounded text-gray-400 font-mono text-xs overflow-x-auto">
+                   GET /_api/database/{db}/ai/agents/{agent_id}
+                   <div class="text-green-300 mt-2">Response includes: model, config.api_url, config.api_key</div>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- The Script -->
+      <section id="the-script" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-blue-900/20 to-indigo-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <span class="w-8 h-8 rounded bg-blue-500/20 flex items-center justify-center mr-3 text-sm text-blue-400 font-bold">Lua</span>
+              Running Agents with Lua Scripts
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+             <p class="text-gray-300">
+               You can also run agents directly within SoliDB using <strong>Lua scripts</strong>. This approach uses
+               environment variables for configuration.
+             </p>
+
+             <div class="relative group">
+               <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-20 group-hover:opacity-40 transition duration-200"></div>
+               <pre class="relative bg-gray-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-gray-300 border border-white/10"><code>-- Agent Configuration
+local AGENT_NAME = "AI-Coder-Agent"
+local AGENT_TYPE = "coder"
+local AGENT_CAPS = {"rust", "lua", "general-coding"}
+
+-- Get API configuration from Environment Variables
+local LLM_API_URL = solidb.env.LLM_API_URL or "https://api.anthropic.com/v1/messages"
+local LLM_API_KEY = solidb.env.LLM_API_KEY
+if not LLM_API_KEY then
+    error("LLM_API_KEY not set in Environment Variables")
+end
+
+-- Helper to call Claude API
+function ask_claude(user_prompt)
+    local body = solidb.json_encode({
+        model = "claude-sonnet-4-20250514",  -- or claude-opus-4-5-20250514
+        max_tokens = 4096,
+        messages = {
+            { role = "user", content = user_prompt }
+        }
+    })
+
+    local response = solidb.fetch(LLM_API_URL, {
+        method = "POST",
+        headers = {
+            ["x-api-key"] = LLM_API_KEY,
+            ["anthropic-version"] = "2023-06-01",
+            ["content-type"] = "application/json"
+        },
+        body = body
+    })
+
+    if not response.ok then
+        return nil, "API Error " .. response.status
+    end
+
+    local data = solidb.json_decode(response.body)
+    return data.content[1].text
+end
+
+-- Main Agent Loop
+function run_agent_loop()
+    local agent = solidb.ai.register_agent(AGENT_NAME, AGENT_TYPE, AGENT_CAPS)
+    local agent_id = agent.id or agent._key
+    print("Agent active: " .. agent_id)
+
+    while true do
+        solidb.ai.heartbeat(agent_id)
+
+        local tasks = solidb.ai.get_pending_tasks({
+            limit = 1,
+            agent_type = AGENT_TYPE
+        })
+
+        if #tasks > 0 then
+            local task = tasks[1]
+
+            if solidb.ai.claim_task(task._key, agent_id) then
+                local prompt = task.data.description or "No description"
+                local result, err = ask_claude(prompt)
+
+                if result then
+                    solidb.ai.complete_task(task._key, { output = result })
+                else
+                    solidb.ai.fail_task(task._key, err)
+                end
+            end
+        else
+            solidb.sleep(5000)  -- Wait 5 seconds
+        end
+    end
+end</code></pre>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Execution -->
+      <section id="execution" class="scroll-mt-24">
+         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+              <div class="p-6 border-b border-white/5 bg-gradient-to-r from-teal-900/20 to-emerald-800/10">
+                <h2 class="text-xl font-bold text-white flex items-center">
+                  <span class="w-8 h-8 rounded bg-teal-500/20 flex items-center justify-center mr-3 text-sm text-teal-400 font-bold">1</span>
+                  Setup Environment
+                </h2>
+              </div>
+              <div class="p-6 space-y-4">
+                 <p class="text-gray-400 text-sm">
+                   1. Navigate to your Database Dashboard<br>
+                   2. Go to <strong>Environment Variables</strong><br>
+                   3. Add <code class="text-teal-300">LLM_API_KEY</code> with your API key<br>
+                   4. Optionally add <code class="text-teal-300">LLM_API_URL</code> for custom endpoints
+                 </p>
+                 <div class="bg-teal-900/20 p-4 rounded-lg border border-teal-500/20">
+                    <p class="text-xs text-teal-300">
+                      <strong>Security:</strong> API keys stored in environment variables are not exposed in script source code.
+                    </p>
+                 </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+              <div class="p-6 border-b border-white/5 bg-gradient-to-r from-green-900/20 to-lime-800/10">
+                 <h2 class="text-xl font-bold text-white flex items-center">
+                  <span class="w-8 h-8 rounded bg-green-500/20 flex items-center justify-center mr-3 text-sm text-green-400 font-bold">2</span>
+                  Run the Agent
+                </h2>
+              </div>
+              <div class="p-6 space-y-4">
+                 <p class="text-gray-400 text-sm">
+                   Save the script and execute via REPL or API:
+                 </p>
+
+                 <div class="space-y-2">
+                   <div class="text-xs font-bold text-gray-500 uppercase">Via REPL</div>
+                   <code class="block bg-gray-950 p-2 rounded text-green-300 font-mono text-sm">require("ai_worker"); run_agent_loop()</code>
+                 </div>
+
+                 <div class="space-y-2">
+                   <div class="text-xs font-bold text-gray-500 uppercase">Via API</div>
+                   <div class="bg-gray-950 p-3 rounded text-gray-400 font-mono text-xs overflow-x-auto">
+                     POST /_api/database/{db}/eval
+                     <div class="text-green-300 mt-1">"require('ai_worker'); return run_agent_loop()"</div>
+                   </div>
+                 </div>
+              </div>
+            </div>
+         </div>
+      </section>
+
+      <!-- Supported Models -->
+      <section id="models" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-teal-900/20 to-cyan-800/10">
+            <h2 class="text-2xl font-bold text-white">Supported AI Models</h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/50 p-5 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                  <h3 class="text-lg font-semibold text-white">Claude (Anthropic)</h3>
+                </div>
+                <ul class="space-y-1 text-sm text-gray-400">
+                  <li><code class="text-green-300">claude-opus-4-5</code> - Most capable</li>
+                  <li><code class="text-green-300">claude-sonnet-4</code> - Balanced</li>
+                  <li><code class="text-green-300">claude-3-5-haiku</code> - Fast</li>
+                </ul>
+                <p class="text-xs text-gray-500 mt-3">API: api.anthropic.com</p>
+              </div>
+              <div class="bg-gray-800/50 p-5 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                  <h3 class="text-lg font-semibold text-white">GPT (OpenAI)</h3>
+                </div>
+                <ul class="space-y-1 text-sm text-gray-400">
+                  <li><code class="text-blue-300">gpt-4o</code> - Latest multimodal</li>
+                  <li><code class="text-blue-300">gpt-4-turbo</code> - Fast GPT-4</li>
+                  <li><code class="text-blue-300">gpt-3.5-turbo</code> - Cost effective</li>
+                </ul>
+                <p class="text-xs text-gray-500 mt-3">API: api.openai.com</p>
+              </div>
+              <div class="bg-gray-800/50 p-5 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+                  <h3 class="text-lg font-semibold text-white">Ollama (Local)</h3>
+                </div>
+                <ul class="space-y-1 text-sm text-gray-400">
+                  <li><code class="text-purple-300">llama3</code> - Meta's Llama 3</li>
+                  <li><code class="text-purple-300">mistral</code> - Mistral AI</li>
+                  <li><code class="text-purple-300">codellama</code> - Code specialized</li>
+                </ul>
+                <p class="text-xs text-gray-500 mt-3">API: localhost:11434</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+     </main>
+  </div>
+</div>

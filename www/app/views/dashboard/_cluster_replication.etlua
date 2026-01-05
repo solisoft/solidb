@@ -1,0 +1,56 @@
+<%
+local repl = replication or {}
+local has_data = repl.last_sync or repl.pending_ops or repl.lag_ms
+%>
+
+<% if not has_data then %>
+<div class="p-8 text-center">
+  <div class="w-12 h-12 mx-auto mb-3 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-info-circle text-info"></i>
+  </div>
+  <p class="text-text-muted">No replication data available</p>
+  <p class="text-xs text-text-dim mt-1">This node may be running in standalone mode</p>
+</div>
+<% else %>
+<div class="p-4 space-y-4">
+  <!-- Replication Stats -->
+  <div class="grid grid-cols-3 gap-4">
+    <div class="text-center">
+      <p class="text-xl font-bold text-text"><%= repl.pending_ops or 0 %></p>
+      <p class="text-xs text-text-muted">Pending Ops</p>
+    </div>
+    <div class="text-center">
+      <p class="text-xl font-bold text-text"><%= repl.lag_ms or 0 %>ms</p>
+      <p class="text-xs text-text-muted">Replication Lag</p>
+    </div>
+    <div class="text-center">
+      <p class="text-xl font-bold text-text"><%= repl.synced_nodes or "-" %></p>
+      <p class="text-xs text-text-muted">Synced Nodes</p>
+    </div>
+  </div>
+
+  <% if repl.last_sync then %>
+  <div class="border-t border-border/30 pt-4">
+    <div class="flex items-center justify-between text-sm">
+      <span class="text-text-muted">Last Sync</span>
+      <span class="text-text font-mono"><%= repl.last_sync %></span>
+    </div>
+  </div>
+  <% end %>
+
+  <% if repl.events and #repl.events > 0 then %>
+  <div class="border-t border-border/30 pt-4">
+    <p class="text-sm font-medium text-text mb-2">Recent Events</p>
+    <div class="space-y-2 max-h-32 overflow-y-auto">
+      <% for _, event in ipairs(repl.events) do %>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="w-1.5 h-1.5 rounded-full <%= event.type == 'error' and 'bg-error' or 'bg-success' %>"></span>
+        <span class="text-text-muted"><%= event.time or "-" %></span>
+        <span class="text-text"><%= event.message or "-" %></span>
+      </div>
+      <% end %>
+    </div>
+  </div>
+  <% end %>
+</div>
+<% end %>

@@ -1,0 +1,85 @@
+<% if #users == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-info/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-users text-2xl text-info"></i>
+  </div>
+  <p class="text-text-muted">No users found</p>
+  <p class="text-xs text-text-dim mt-1">Create a new user to get started</p>
+</div>
+<% else %>
+<div class="overflow-x-auto">
+  <table class="w-full">
+    <thead>
+      <tr class="border-b border-border/30">
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Username</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Roles</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
+        <th class="text-right py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/20">
+      <% for _, user in ipairs(users) do
+        local is_root = user.username == "root"
+      %>
+      <tr class="user-row hover:bg-white/5 transition-colors">
+        <td class="py-3 px-4">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full <%= is_root and 'bg-warning/10' or 'bg-primary/10' %> flex items-center justify-center">
+              <i class="fas fa-user <%= is_root and 'text-warning' or 'text-primary-light' %> text-sm"></i>
+            </div>
+            <div>
+              <span class="font-medium text-text"><%= user.username %></span>
+              <% if is_root then %>
+              <span class="ml-2 text-xs text-warning">System</span>
+              <% end %>
+            </div>
+          </div>
+        </td>
+        <td class="py-3 px-4">
+          <div class="flex flex-wrap gap-1">
+            <% if #user.roles == 0 then %>
+            <span class="text-xs text-text-dim">No roles</span>
+            <% else %>
+              <% for _, role in ipairs(user.roles) do
+                local role_name = type(role) == "table" and (role.name or role.role) or role
+                local is_admin = role_name == "admin" or role_name == "root"
+              %>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs <%= is_admin and 'bg-error/10 text-error' or 'bg-secondary/50 text-text-muted' %>">
+                <%= role_name %>
+                <% if not is_root then %>
+                <button type="button"
+                        hx-delete="/database/_system/users/<%= user.username %>/roles/<%= role_name %>"
+                        hx-target="#panel-users"
+                        hx-swap="innerHTML"
+                        class="ml-1 hover:text-error">
+                  <i class="fas fa-times text-[10px]"></i>
+                </button>
+                <% end %>
+              </span>
+              <% end %>
+            <% end %>
+          </div>
+        </td>
+        <td class="py-3 px-4 text-sm text-text-muted" title="<%= user.created_at or '' %>">
+          <%= format_datetime(user.created_at, "short") %>
+        </td>
+        <td class="py-3 px-4 text-right">
+          <% if not is_root then %>
+          <button type="button"
+                  hx-delete="/database/_system/users/<%= user.username %>"
+                  hx-target="closest .user-row"
+                  hx-swap="outerHTML"
+                  hx-confirm="Are you sure you want to delete user '<%= user.username %>'?"
+                  class="p-2 text-text-muted hover:text-error transition-colors">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+          <% else %>
+          <span class="text-xs text-text-dim">Protected</span>
+          <% end %>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>

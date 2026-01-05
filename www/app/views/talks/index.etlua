@@ -1,40 +1,123 @@
-<div class="h-full">
-  <talks-app id="talks-app"></talks-app>
+<!-- Channel Header -->
+<div class="h-14 px-4 flex items-center justify-between border-b border-border/30 shrink-0">
+  <div class="flex items-center gap-3">
+    <span class="text-lg font-bold text-text">#<%= current_channel %></span>
+    <span class="text-text-dim">|</span>
+    <span class="text-sm text-text-muted truncate">Channel description goes here</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Members">
+      <i class="fas fa-users"></i>
+    </button>
+    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Search">
+      <i class="fas fa-search"></i>
+    </button>
+    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Pin">
+      <i class="fas fa-thumbtack"></i>
+    </button>
+  </div>
 </div>
 
-<!-- highlight.js is loaded in the global layout, just load rust/json language packs here -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/html.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+<!-- Messages Container with WebSocket -->
+<div id="messages-container"
+     class="flex-1 overflow-y-auto chat-scrollbar px-4 py-4"
+     hx-ext="ws"
+     ws-connect="/ws/talks?channel=<%= current_channel %>"
+     hx-swap="beforeend scroll:bottom">
 
-<script type="module">
-  import TalksApp from '<%= PublicPath("/app/components/talks-app.riot.js") %>';
+  <!-- Messages loaded via HTMX -->
+  <div hx-get="/talks/messages?channel=<%= current_channel %>"
+       hx-trigger="load"
+       hx-swap="outerHTML">
+    <div class="flex items-center justify-center h-32">
+      <i class="fas fa-spinner fa-spin text-2xl text-primary-light"></i>
+    </div>
+  </div>
+</div>
 
-  riot.register("talks-app", TalksApp);
+<!-- Message Input -->
+<div class="px-4 py-3 border-t border-border/30 shrink-0" x-data="messageComposer()">
+  <!-- Typing Indicator -->
+  <div x-show="typingUsers.length > 0" x-cloak class="text-xs text-text-muted mb-2 flex items-center gap-2">
+    <span class="flex gap-1">
+      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
+      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
+      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
+    </span>
+    <span x-text="typingUsers.join(', ') + ' is typing...'"></span>
+  </div>
 
-  document.addEventListener("DOMContentLoaded", () => {
-    riot.mount("#talks-app", {
-      channels: <%- Params.channels %>,
-      messages: <%- Params.messages %>,
-      currentChannel: "<%= Params.currentChannel %>",
-      channelId: "<%= Params.channelId %>",
-      currentChannelData: <%- Params.currentChannelData %>,
-      dbName: "<%= Params.db_name %>",
-      dbHost: "<%= ENV["DB_HOST"] or "localhost:6745" %>",
-      currentUser: <%- Params.currentUser %>,
-      users: <%- Params.users %>,
-      dmChannels: <%- Params.dmChannels %>,
-      livequeryToken: "<%= Params.livequery_token %>"
-    });
+  <!-- Input Form -->
+  <form hx-post="/talks/message"
+        hx-target="#messages-container"
+        hx-swap="beforeend"
+        hx-on::after-request="this.reset()"
+        class="relative">
+    <input type="hidden" name="channel" value="<%= current_channel %>">
 
-    // Apply syntax highlighting after component mounts
-    setTimeout(() => {
-      if (window.hljs) {
-        hljs.highlightAll();
+    <div class="flex items-end gap-2 bg-bg-dark/50 border border-border/30 rounded-xl p-2 focus-within:border-primary/50 transition-colors">
+      <!-- Attachment Button -->
+      <button type="button"
+              class="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors shrink-0">
+        <i class="fas fa-plus"></i>
+      </button>
+
+      <!-- Text Input -->
+      <div class="flex-1 min-w-0">
+        <textarea name="text"
+                  x-model="message"
+                  @keydown.enter.prevent="if(!$event.shiftKey) $el.form.requestSubmit()"
+                  @input="handleTyping()"
+                  rows="1"
+                  class="w-full bg-transparent border-none text-text placeholder-text-dim resize-none focus:outline-none text-sm py-2 max-h-32"
+                  placeholder="Message #<%= current_channel %>"
+                  style="field-sizing: content;"></textarea>
+      </div>
+
+      <!-- Emoji Button -->
+      <button type="button"
+              @click="showEmojiPicker = !showEmojiPicker"
+              class="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors shrink-0">
+        <i class="fas fa-smile"></i>
+      </button>
+
+      <!-- Send Button -->
+      <button type="submit"
+              :disabled="!message.trim()"
+              :class="message.trim() ? 'bg-primary hover:bg-primary-light text-white' : 'bg-bg-dark text-text-dim cursor-not-allowed'"
+              class="w-9 h-9 flex items-center justify-center rounded-lg transition-colors shrink-0">
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </div>
+  </form>
+
+  <!-- Formatting Hint -->
+  <p class="text-xs text-text-dim mt-2">
+    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted">Shift+Enter</kbd> for new line
+    <span class="mx-2">|</span>
+    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted">**bold**</kbd>
+    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted ml-1">_italic_</kbd>
+    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted ml-1">`code`</kbd>
+  </p>
+</div>
+
+<script>
+function messageComposer() {
+  return {
+    message: '',
+    showEmojiPicker: false,
+    typingUsers: [],
+    typingTimeout: null,
+
+    handleTyping() {
+      // TODO: Send typing indicator via WebSocket
+      if (this.typingTimeout) {
+        clearTimeout(this.typingTimeout);
       }
-    }, 100);
-  });
+      this.typingTimeout = setTimeout(() => {
+        // Stop typing indicator
+      }, 3000);
+    }
+  }
+}
 </script>

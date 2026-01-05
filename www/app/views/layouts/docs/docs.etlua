@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- title or "SoliDB Documentation" %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <%- head_content or "" %>
+</head>
+<body class="min-h-screen bg-gray-900 text-gray-100">
+  <header class="sticky top-0 z-[100] glass px-8 h-16 flex items-center">
+    <div class="max-w-[1400px] w-full mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <label for="docs-nav-toggle" class="lg:hidden cursor-pointer p-2 rounded-md hover:bg-white/10 transition-colors">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </label>
+        <a href="/" class="text-xl font-bold no-underline flex items-center gap-2 group transition-transform hover:scale-[1.02]">
+          <span class="text-2xl transition-transform group-hover:rotate-12"><i class="fas fa-database text-primary-light"></i></span>
+          <span class="text-gradient">SoliDB</span>
+          <span class="bg-bg-card text-text-muted px-2 py-0.5 rounded text-xs font-medium ml-2 border border-border/50">Docs</span>
+        </a>
+      </div>
+
+      <nav class="hidden md:block">
+        <ul class="flex gap-4">
+          <li><a href="/" class="text-text-muted hover:text-text transition-colors no-underline text-sm font-medium">Home</a></li>
+          <li><a href="/about" class="text-text-muted hover:text-text transition-colors no-underline text-sm font-medium">About</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <div class="max-w-[1400px] mx-auto flex min-h-[calc(100vh-64px)] relative">
+    <input type="checkbox" id="docs-nav-toggle" class="peer hidden">
+
+    <!-- Sidebar -->
+    <aside class="fixed inset-y-0 left-0 z-50 w-72 bg-bg-dark/95 backdrop-blur-xl transform -translate-x-full transition-transform duration-300 peer-checked:translate-x-0 lg:relative lg:translate-x-0 lg:bg-transparent lg:backdrop-blur-none lg:z-0">
+      <div class="sticky top-16 h-[calc(100vh-64px)] overflow-y-auto py-8 px-6">
+        <%- partial("docs/sidebar", { current_page = current_page }) %>
+      </div>
+    </aside>
+
+    <!-- Overlay -->
+    <label for="docs-nav-toggle" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity peer-checked:opacity-100 peer-checked:pointer-events-auto lg:hidden"></label>
+
+    <!-- Content -->
+    <main class="flex-1 min-w-0 px-6 py-10 md:px-12 lg:px-16 animate-in">
+      <div class="docs-prose">
+        <%- yield() %>
+      </div>
+    </main>
+  </div>
+
+  <!-- Highlight.js for syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script>
+    // Register SDBQL language for highlight.js
+    hljs.registerLanguage('sdbql', function(hljs) {
+      return {
+        name: 'SDBQL',
+        case_insensitive: true,
+        keywords: {
+          keyword: 'FOR IN FILTER RETURN SORT LIMIT INSERT UPDATE REMOVE UPSERT WITH INTO LET COLLECT AGGREGATE GRAPH OUTBOUND INBOUND ANY ALL NONE AND OR NOT LIKE DISTINCT ASC DESC NEW OLD MERGE DOCUMENT FIRST LAST LENGTH COUNT SUM AVG MIN MAX CONCAT SUBSTRING CONTAINS STARTS_WITH ENDS_WITH LOWER UPPER TRIM DATE_NOW DATE_FORMAT TO_NUMBER TO_STRING PUSH APPEND UNSHIFT POP SHIFT SLICE REVERSE UNIQUE FLATTEN MINUS INTERSECTION UNION',
+          literal: 'true false null'
+        },
+        contains: [
+          hljs.QUOTE_STRING_MODE,
+          hljs.NUMBER_MODE,
+          hljs.C_LINE_COMMENT_MODE,
+          hljs.C_BLOCK_COMMENT_MODE,
+          {
+            className: 'variable',
+            begin: /doc\.|u\.|o\.|p\.|j\d+\./
+          },
+          {
+            className: 'built_in',
+            begin: /@[a-zA-Z_][a-zA-Z0-9_]*/
+          },
+          {
+            className: 'symbol',
+            begin: /\{|\}|\[|\]/
+          }
+        ]
+      };
+    });
+  </script>
+  <script>
+    // Apply syntax highlighting to all code blocks and add copy buttons
+    var etluaOpen = '<' + '%';
+    var etluaClose = '%' + '>';
+
+    document.querySelectorAll('pre code').forEach(function(block) {
+      var text = block.textContent;
+
+      // Skip if language is already explicitly set (e.g., language-sql, language-sdbql)
+      var hasExplicitLang = block.className && block.className.match(/language-(sql|sdbql|json|bash|javascript|python|rust|go)/);
+      if (!hasExplicitLang) {
+        // Use XML for etlua templates, Lua for everything else
+        if (text.indexOf(etluaOpen) !== -1 || text.indexOf(etluaClose) !== -1) {
+          block.className = 'language-xml';
+        } else {
+          block.className = 'language-lua';
+        }
+      }
+
+      hljs.highlightElement(block);
+    });
+
+    // Add copy buttons to all pre blocks using Alpine.js
+    document.querySelectorAll('pre').forEach(function(pre) {
+      // Create wrapper div
+      var wrapper = document.createElement('div');
+      wrapper.className = 'relative group';
+      wrapper.setAttribute('x-data', '{ copied: false }');
+
+      // Insert wrapper before pre and move pre inside
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      // Create copy button
+      var btn = document.createElement('button');
+      btn.className = 'absolute top-2 right-2 p-2 rounded-lg bg-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-white/20 text-text-muted hover:text-text';
+      btn.setAttribute('@click', "navigator.clipboard.writeText($el.parentElement.querySelector('code').textContent); copied = true; setTimeout(() => copied = false, 2000)");
+      btn.innerHTML = '<i x-show="!copied" class="fas fa-copy text-sm"></i><i x-show="copied" x-cloak class="fas fa-check text-success text-sm"></i>';
+
+      wrapper.appendChild(btn);
+    });
+  </script>
+
+  <style>
+    /* Alpine.js cloak */
+    [x-cloak] { display: none !important; }
+
+    /* Docs specific prose styles that are hard to do with utility classes only */
+    .docs-prose h1 { @apply text-4xl md:text-5xl font-extrabold mb-8 text-gradient inline-block; }
+    .docs-prose h2 { @apply text-2xl font-bold mt-12 mb-6 pb-2 border-b border-border/30 text-text; }
+    .docs-prose h3 { @apply text-xl font-semibold mt-8 mb-4 text-text-secondary; }
+    .docs-prose p { @apply text-text-secondary mb-4 leading-relaxed; }
+    .docs-prose ul { @apply list-disc pl-6 mb-6 text-text-secondary space-y-2; }
+    .docs-prose ol { @apply list-decimal pl-6 mb-6 text-text-secondary space-y-2; }
+    .docs-prose code:not(pre code) { @apply bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-primary-light; }
+    .docs-prose a { @apply text-primary-light hover:text-accent-light transition-colors no-underline font-medium border-b border-primary/30 hover:border-accent/40; }
+
+    /* Highlight.js override */
+    .hljs { background: transparent !important; padding: 0 !important; }
+    pre code.hljs { color: #abb2bf; }
+    .hljs-keyword { @apply text-primary-light; }
+    .hljs-string { @apply text-success; }
+    .hljs-number { @apply text-accent; }
+    .hljs-function { @apply text-accent-light; }
+    .hljs-title { @apply text-accent-light; }
+    .hljs-params { color: #e06c75; }
+    .hljs-comment { @apply text-text-dim italic; }
+    .hljs-built_in { @apply text-yellow-500; }
+    .hljs-literal { @apply text-accent; }
+    .hljs-tag, .hljs-name { @apply text-primary-light; }
+    .hljs-attr { @apply text-accent-light; }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { @apply bg-white/10 rounded-full hover:bg-white/20; }
+  </style>
+  <%- RefreshPageForDevMode() %>
+</body>
+</html>

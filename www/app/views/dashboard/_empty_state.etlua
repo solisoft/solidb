@@ -1,0 +1,7 @@
+<div class="flex flex-col items-center justify-center py-12 text-center">
+  <div class="w-16 h-16 rounded-full bg-bg-card border border-border flex items-center justify-center mb-4">
+    <i class="fas fa-inbox text-2xl text-text-muted"></i>
+  </div>
+  <h3 class="text-lg font-medium text-text mb-1"><%= message or "No items found" %></h3>
+  <p class="text-sm text-text-muted">Check back later or try a different filter.</p>
+</div>

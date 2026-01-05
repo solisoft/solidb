@@ -1,0 +1,19 @@
+<% if #messages == 0 then %>
+<!-- Empty State -->
+<div class="flex flex-col items-center justify-center py-16 text-center">
+  <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+    <i class="fas fa-comments text-2xl text-primary-light"></i>
+  </div>
+  <h3 class="text-lg font-semibold text-text mb-2">Welcome to #<%= channel %></h3>
+  <p class="text-text-muted text-sm max-w-md">
+    This is the start of the channel. Send a message to start the conversation!
+  </p>
+</div>
+<% else %>
+<!-- Messages -->
+<div class="space-y-1">
+  <% for _, msg in ipairs(messages) do %>
+  <%- partial("talks/_message", { message = msg }) %>
+  <% end %>
+</div>
+<% end %>

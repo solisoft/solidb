@@ -1,0 +1,65 @@
+<%
+  local cpu_color = "text-success"
+  if cpu > 80 then cpu_color = "text-error"
+  elseif cpu > 60 then cpu_color = "text-warning"
+  end
+
+  local mem_percent = memory_total > 0 and (memory_used / memory_total * 100) or 0
+  local mem_color = "text-success"
+  if mem_percent > 80 then mem_color = "text-error"
+  elseif mem_percent > 60 then mem_color = "text-warning"
+  end
+%>
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+      <i class="fas fa-microchip text-primary-light"></i>
+    </div>
+    <div class="flex-1">
+      <p class="text-2xl font-bold <%= cpu_color %>"><%= string.format("%.1f", cpu) %>%</p>
+      <p class="text-xs text-text-muted">CPU Usage</p>
+    </div>
+  </div>
+  <div class="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
+    <div class="h-full <%= cpu > 80 and 'bg-error' or (cpu > 60 and 'bg-warning' or 'bg-success') %> transition-all" style="width: <%= math.min(cpu, 100) %>%"></div>
+  </div>
+</div>
+
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+      <i class="fas fa-memory text-accent-light"></i>
+    </div>
+    <div class="flex-1">
+      <p class="text-2xl font-bold <%= mem_color %>"><%= memory_used %> MB</p>
+      <p class="text-xs text-text-muted">Memory (<%= memory_total %> MB total)</p>
+    </div>
+  </div>
+  <div class="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
+    <div class="h-full <%= mem_percent > 80 and 'bg-error' or (mem_percent > 60 and 'bg-warning' or 'bg-accent') %> transition-all" style="width: <%= math.min(mem_percent, 100) %>%"></div>
+  </div>
+</div>
+
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+      <i class="fas fa-hdd text-success"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= format_bytes(storage_bytes) %></p>
+      <p class="text-xs text-text-muted">Storage Used</p>
+    </div>
+  </div>
+</div>
+
+<div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+      <i class="fas fa-exchange-alt text-info"></i>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-text"><%= format_number(request_count) %></p>
+      <p class="text-xs text-text-muted">Total Requests</p>
+    </div>
+  </div>
+</div>

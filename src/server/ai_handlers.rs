@@ -600,11 +600,28 @@ pub struct ListAgentsQuery {
 #[derive(Debug, Deserialize)]
 pub struct RegisterAgentRequest {
     pub name: String,
+    /// Agent type - defaults to Analyzer if not specified
+    #[serde(default = "default_agent_type")]
     pub agent_type: AgentType,
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default)]
     pub config: Option<serde_json::Value>,
+    /// Webhook URL for task notifications
+    pub url: Option<String>,
+    /// AI model (for www2 compatibility)
+    pub model: Option<String>,
+    /// System prompt (for www2 compatibility)
+    pub system_prompt: Option<String>,
+    /// Managed agent fields
+    #[serde(default)]
+    pub managed: bool,
+    pub llm_url: Option<String>,
+    pub llm_key: Option<String>,
+}
+
+fn default_agent_type() -> AgentType {
+    AgentType::Analyzer
 }
 
 /// GET /_api/ai/agents - List registered agents
@@ -678,8 +695,89 @@ pub async fn register_agent_handler(
         db.create_collection("_ai_agents".to_string(), None)?;
     }
 
-    let mut agent = Agent::new(request.name, request.agent_type, request.capabilities);
-    agent.config = request.config;
+    let mut agent = Agent::new(request.name.clone(), request.agent_type, request.capabilities.clone());
+    agent.url = request.url;
+
+    // Merge config with model and system_prompt if provided
+    let mut config = request.config.unwrap_or_else(|| serde_json::json!({}));
+    if let Some(model) = &request.model {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("model".to_string(), serde_json::Value::String(model.clone()));
+        }
+    }
+    if let Some(system_prompt) = &request.system_prompt {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("system_prompt".to_string(), serde_json::Value::String(system_prompt.clone()));
+        }
+    }
+    agent.config = if config.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+        None
+    } else {
+        Some(config)
+    };
+
+    // Handle Managed Agent Logic
+    if request.managed {
+        if let (Some(url), Some(key)) = (request.llm_url.as_ref(), request.llm_key.as_ref()) {
+            let agent_id = agent.id.clone();
+            
+            // 1. Store Credentials in _env
+            // Ensure _env collection exists
+            if db.get_collection("_env").is_err() {
+                db.create_collection("_env".to_string(), None)?;
+            }
+            let env_coll = db.get_collection("_env")?;
+
+            let env_url_key = format!("AGENT_{}_URL", agent_id.replace('-', "_").to_uppercase());
+            let env_api_key = format!("AGENT_{}_KEY", agent_id.replace('-', "_").to_uppercase());
+
+            env_coll.insert(serde_json::json!({ "_key": env_url_key, "value": url }))?;
+            env_coll.insert(serde_json::json!({ "_key": env_api_key, "value": key }))?;
+
+            // 2. Generate Script from Template
+            let caps_json = serde_json::to_string(&request.capabilities).unwrap_or_else(|_| "[]".to_string());
+            let script_code = crate::server::managed_agent_template::MANAGED_AGENT_TEMPLATE
+                .replace("{{AGENT_NAME}}", &request.name)
+                .replace("{{AGENT_TYPE}}", &request.agent_type.to_string())
+                .replace("{{AGENT_CAPS}}", &caps_json)
+                .replace("{{AGENT_KEY}}", &agent_id)
+                .replace("{{ENV_URL_KEY}}", &env_url_key)
+                .replace("{{ENV_API_KEY}}", &env_api_key);
+
+            // 3. Save Script to _scripts
+            // Ensure _scripts collection exists
+            if db.get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION).is_err() {
+                db.create_collection(crate::server::script_handlers::SCRIPTS_COLLECTION.to_string(), None)?;
+            }
+            let scripts_coll = db.get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION)?;
+
+            let script_path = format!("managed/{}", agent_id);
+            let script_key = format!("{}_{}", db_name, script_path.replace('/', "_"));
+
+            let script_doc = serde_json::json!({
+                "_key": script_key,
+                "name": format!("Worker: {}", request.name),
+                "path": script_path,
+                "methods": ["POST"], // Allow invoking via API
+                "database": db_name,
+                "code": script_code,
+                "created_at": chrono::Utc::now().to_rfc3339(),
+                "updated_at": chrono::Utc::now().to_rfc3339()
+            });
+
+            scripts_coll.insert(script_doc)?;
+
+            // Store ref in agent config
+            agent.config = Some(serde_json::json!({
+                "managed": true,
+                "script_path": script_path,
+                "env_url_key": env_url_key,
+                "env_api_key": env_api_key
+            }));
+        } else {
+             return Err(DbError::BadRequest("Managed agents require llm_url and llm_key".to_string()));
+        }
+    }
 
     let coll = db.get_collection("_ai_agents")?;
     let doc_value = serde_json::to_value(&agent)

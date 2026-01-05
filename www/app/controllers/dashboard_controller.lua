@@ -1,174 +1,107 @@
-local app = {
-  index = function()
-    Page("dashboard/index", "app")
-  end,
+-- Dashboard Controller for SoliDB Admin UI
+-- Main controller handling auth and index page
+-- Note: Protected routes use "dashboard_auth" middleware
 
-  collections = function()
-    -- In a real app, we would fetch collections here
-    -- local collections = DB:query("FOR c IN collections RETURN c")
-    Page("dashboard/collections", "app", { collections = {} })
-  end,
+local Controller = require("controller")
+local DashboardController = Controller:extend()
 
-  query = function()
-    Page("dashboard/query", "app")
-  end,
+-- Login page
+function DashboardController:login()
+  self.layout = "auth" -- Use a separate auth layout or none
+  self:render("dashboard/login", {
+    title = "Sign In - SoliDB",
+    error_message = GetFlashMessage("error")
+  })
+end
 
-  indexes = function()
-    Page("dashboard/indexes", "app")
-  end,
+-- Handle login POST
+function DashboardController:do_login()
+  local username = self.params.username
+  local password = self.params.password
+  local server_url = self.params.server_url or "http://localhost:6745"
 
-  databases = function()
-    Page("dashboard/databases", "app")
-  end,
-
-  documents = function(self)
-    Page("dashboard/documents", "app")
-  end,
-
-  live = function(self)
-    Page("dashboard/live", "app")
-  end,
-
-  live_query = function(self)
-    Page("dashboard/live_query", "app")
-  end,
-
-  cluster = function()
-    Page("dashboard/cluster", "app")
-  end,
-
-  scripts = function()
-    Page("dashboard/scripts", "app")
-  end,
-
-  repl = function()
-    Page("dashboard/repl", "app")
-  end,
-
-  queues = function()
-    Page("dashboard/queues", "app")
-  end,
-
-  sharding = function()
-    Page("dashboard/sharding", "app")
-  end,
-
-  apikeys = function()
-    Page("dashboard/apikeys", "app")
-  end,
-
-  monitoring = function()
-    Page("dashboard/monitoring", "app")
-  end,
-
-  users = function()
-    Page("dashboard/users", "app")
-  end,
-
-  env = function()
-    Page("dashboard/env", "app")
-  end,
-
-  columnar = function()
-    Page("dashboard/columnar", "app")
-  end,
-
-  ai_contributions = function()
-    Page("dashboard/ai/contributions", "app")
-  end,
-
-  ai_tasks = function()
-    Page("dashboard/ai/tasks", "app")
-  end,
-
-  ai_agents = function()
-    Page("dashboard/ai/agents", "app")
-  end,
-
-  create_ai_task = function()
-    local payload = GetBodyParams()
-    local db_name = Params['db']
-
-    -- Validation
-    if not payload.task_type or payload.task_type == "" then
-      SetStatus(400)
-      return WriteJSON({ error = "task_type is required" })
-    end
-
-    local db = SoliDB[db_name]
-    if not db then
-       SetStatus(404)
-       return WriteJSON({ error = "Database not found" })
-    end
-    
-    -- Ensure collection exists
-    if not db:HasCollection("_ai_tasks") then
-        db:Run("CREATE COLLECTION _ai_tasks")
-    end
-
-    local task = {
-       task_type = payload.task_type,
-       status = "pending",
-       priority = tonumber(payload.priority) or 0,
-       payload = payload.payload or {},
-       created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-       updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    }
-
-    local doc_key = db:ValidateAndInsert("_ai_tasks", task)
-    
-    if doc_key then
-       task._key = doc_key
-       WriteJSON(task)
-    else
-       SetStatus(500)
-       WriteJSON({ error = "Failed to create task" })
-    end
-  end,
-
-  create_ai_agent = function()
-    local payload = GetBodyParams()
-    local db_name = Params['db']
-
-    -- Validation
-    if not payload.name or payload.name == "" then
-      SetStatus(400)
-      return WriteJSON({ error = "name is required" })
-    end
-
-    local db = SoliDB[db_name]
-    if not db then
-       SetStatus(404)
-       return WriteJSON({ error = "Database not found" })
-    end
-    
-    -- Ensure collection exists
-    if not db:HasCollection("_ai_agents") then
-        db:Run("CREATE COLLECTION _ai_agents")
-    end
-
-    local agent = {
-       name = payload.name,
-       agent_type = payload.agent_type or "generic",
-       status = payload.status or "idle",
-       capabilities = payload.capabilities or {},
-       last_heartbeat = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-       tasks_completed = 0,
-       tasks_failed = 0,
-       created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-       updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    }
-
-    local doc_key = db:ValidateAndInsert("_ai_agents", agent)
-    
-    if doc_key then
-       agent._key = doc_key
-       WriteJSON(agent)
-    else
-       SetStatus(500)
-       WriteJSON({ error = "Failed to create agent" })
-    end
+  -- Ensure server_url has http/https
+  if not server_url:match("^https?://") then
+    server_url = "http://" .. server_url
   end
-}
 
-return BeansEnv == "development" and HandleController(app) or app
+  Log(kLogInfo, "Attempting login for user: " .. tostring(username) .. " at " .. server_url)
+
+  -- Call the SoliDB API
+  local status, headers, body = Fetch(server_url .. "/auth/login", {
+    method = "POST",
+    headers = { ["Content-Type"] = "application/json" },
+    body = EncodeJson({ username = username, password = password })
+  })
+
+  Log(kLogInfo, "Login API response status: " .. tostring(status))
+  Log(kLogInfo, "Login API response body: " .. tostring(body))
+
+  if status == 200 then
+     local ok, response = pcall(DecodeJson, body)
+     Log(kLogInfo, "JSON Decode status: " .. tostring(ok) .. ", result type: " .. type(response))
+
+     if ok and response and response.token then
+       Log(kLogInfo, "Login successful, token found. Setting cookies...")
+
+       -- Use client-side redirect to ensure cookies are set (bypassing potential 302 header issues)
+       local target_url = "/database/_system"
+
+       self:redirect(target_url)
+
+       self:set_cookie("sdb_token", response.token, {
+        path = "/",
+        http_only = true,
+        same_site = "Lax",
+        max_age = 3600 * 24 * 30 -- 30 days
+       })
+
+       self:set_cookie("sdb_server", server_url, {
+        path = "/",
+        http_only = true,
+        same_site = "Lax",
+        max_age = 3600 * 24 * 30 -- 30 days
+       })
+     else
+       Log(kLogWarn, "Login failed: Invalid response or missing token. Response: " .. EncodeJson(response or {}))
+       SetFlash("error", "Invalid response from server")
+       self:redirect("/dashboard/login")
+     end
+  else
+     Log(kLogWarn, "Login failed with status " .. tostring(status))
+     local error_msg = "Authentication failed"
+     if body and body ~= "" then
+       local ok, err_resp = pcall(DecodeJson, body)
+       if ok and err_resp.error then
+         error_msg = err_resp.error
+       end
+     end
+     SetFlash("error", error_msg)
+     self:redirect("/dashboard/login")
+  end
+end
+
+-- Logout
+function DashboardController:logout()
+  SetCookie("sdb_token", "", { MaxAge = 0, Path = "/" })
+  SetCookie("sdb_server", "", { MaxAge = 0, Path = "/" })
+  DestroySession()
+  self:redirect("/dashboard/login")
+end
+
+-- Helper to get database name from params
+function DashboardController:get_db()
+  return self.params.db or "_system"
+end
+
+-- Dashboard index (protected by middleware)
+function DashboardController:index()
+  self.layout = "dashboard"
+  self:render("dashboard/index", {
+    title = "Dashboard - " .. self:get_db(),
+    db = self:get_db(),
+    current_page = "index"
+  })
+end
+
+return DashboardController

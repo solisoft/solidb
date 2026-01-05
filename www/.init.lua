@@ -1,106 +1,243 @@
-package.path = package.path .. ";.lua/?.lua"
-package.path = package.path .. ";app/controllers/?.lua;/zip/app/controllers/?.lua"
-package.path = package.path .. ";app/models/?.lua;/zip/app/models/?.lua"
-package.path = package.path .. ";app/cronjobs/?.lua;/zip/app/cronjobs/?.lua"
-package.path = package.path .. ";config/?.lua;/zip/config/?.lua"
-package.path = package.path .. ";lib/?.lua;/zip/lib/?.lua"
+-- Luaonbeans MVC Framework
+-- Bootstrap file for redbean.dev
 
--- OTP = require("otp") -- OTP functions
-require("utilities")
-require("routes")
+-- Configure package path for app modules
+package.path = package.path .. ";.lua/?.lua;.lua/db/?.lua;app/?.lua;app/controllers/?.lua;app/models/?.lua;config/?.lua;config/locales/?.lua"
 
-local I18nClass = require("i18n")
-I18n = I18nClass.new("en")
+-- Environment (default to development)
+local BEANS_ENV = os.getenv("BEANS_ENV") or "development"
 
-ProgramMaxPayloadSize(10485760) -- 10 MB
-
--- DB connection
-local db_config = DecodeJson(LoadAsset("config/database.json"))
-InitDB(db_config)
-
-Views = {}
-IsApi = false -- set it to true to return json for 404 errors
-
--- Preload Font assets for PDF generation
-Resources = {
-	["fonts/TitilliumWeb-Regular.ttf"] = LoadAsset("fonts/TitilliumWeb-Regular.ttf"),
-	["fonts/TitilliumWeb-Regular.json"] = LoadAsset("fonts/TitilliumWeb-Regular.json"),
-	["fonts/TitilliumWeb-Bold.ttf"] = LoadAsset("fonts/TitilliumWeb-Bold.ttf"),
-	["fonts/TitilliumWeb-Bold.json"] = LoadAsset("fonts/TitilliumWeb-Bold.json")
-}
--- LastModifiedAt is used to cache the last modified time of the assets
--- so that we can use it to send the correct last modified time to the client
--- and avoid sending the whole file to the client
-LastModifiedAt = {}
-
-function OnServerStart()
-	LoadPublicAssetsRecursively("public")
-	if BeansEnv == "production" then
-		LoadViewsRecursively("app/views")
+function RefreshPageForDevMode()
+	if BEANS_ENV == "development" then
+		return [[<script src="/live_reload.js"></script>]]
+	else
+		return ""
 	end
 end
 
-function OnServerReload() end
+require("session")
+
+-- Load framework modules
+local router = require("router")
+local Controller = require("controller")
+local view = require("view")
+local helpers = require("helpers")
+local I18n = require("i18n")
+local Middleware = require("middleware")
+
+-- Global debug helper
+function P(...)
+  local f = io.open("/Users/olivier.bonnaure/workspace/solisoft/luaonbeans/debug.log", "a")
+  if f then
+    local args = {...}
+    local formatted = {}
+    for _, v in ipairs(args) do
+      if type(v) == "table" then
+        table.insert(formatted, EncodeJson(v))
+      else
+        table.insert(formatted, tostring(v))
+      end
+    end
+    f:write(string.format("[%s] %s\n", os.date(), table.concat(formatted, "\t")))
+    f:close()
+  end
+end
+
+-- Load database driver (optional - only if config exists)
+local db_config_ok, db_config = pcall(require, "database")
+if db_config_ok and db_config.solidb then
+  local SoliDB = require("solidb")
+  -- Global DB connection
+  _G.Sdb = SoliDB.new(db_config.solidb)
+
+  -- Ensure _luaonbeans system collection exists
+  local function ensure_luaonbeans_collection()
+    if not _G.Sdb then return end
+    -- Try to create the collection (will fail silently if it already exists)
+    pcall(function()
+      _G.Sdb:CreateCollection("_luaonbeans", { type = "document" })
+    end)
+  end
+  ensure_luaonbeans_collection()
+end
+
+-- Initialize I18n
+I18n:load_locale("en")
+I18n:load_locale("fr")
+I18n:make_global() -- Creates global t() function
+
+-- Controller cache
+local controllers = {}
+
+-- Load a controller by name (DB-first, then filesystem)
+local function load_controller(name)
+  if controllers[name] then
+    return controllers[name]
+  end
+
+  -- Try DB first
+  local DbLoader = require("dbloader")
+  local db_controller = DbLoader.load_controller(name)
+  if db_controller then
+    controllers[name] = db_controller
+    return db_controller
+  end
+
+  -- Fallback to filesystem
+  local ok, controller = pcall(require, name .. "_controller")
+  if ok then
+    controllers[name] = controller
+    return controller
+  end
+
+  return nil, "Controller not found: " .. name
+end
+
+-- Clear caches (useful for development)
+local function clear_caches()
+  controllers = {}
+  view.clear_cache()
+  Middleware.clear()
+  -- Clear DB loader cache
+  local DbLoader = require("dbloader")
+  DbLoader.clear_cache()
+  -- Clear loaded modules to allow reload
+  -- Note: We DON'T clear 'router' or 'middleware' because they are singletons that
+  -- framework.lua and other modules reference. routes.lua calls router.clear() itself.
+  for k, _ in pairs(package.loaded) do
+    if k:match("_controller$") or k:match("^middleware/") or k == "controller" or k == "view" or k == "helpers" or k == "framework" or k == "routes" or k == "middleware_config" then
+      package.loaded[k] = nil
+    end
+  end
+end
+
+-- Load routes (reloadable, DB-first then filesystem)
+local function load_routes()
+  package.loaded["routes"] = nil
+
+  -- Load DB routes first (they define routes that take priority)
+  local DbLoader = require("dbloader")
+  DbLoader.load_routes()
+
+  -- Then load filesystem routes (will add any routes not already defined)
+  require("routes")
+end
+
+-- Load middleware config (reloadable, DB-first then filesystem)
+local function load_middleware()
+  package.loaded["middleware_config"] = nil
+
+  -- Load DB middleware config first
+  local DbLoader = require("dbloader")
+  DbLoader.load_middleware_config()
+
+  -- Then load filesystem middleware config
+  local ok, err = pcall(require, "middleware_config")
+  if not ok then
+    -- Middleware config is optional
+    Log(kLogDebug, "Middleware config not found or error: " .. tostring(err))
+  end
+end
+
+-- ============================================
+-- LOAD ROUTES AND MIDDLEWARE
+-- ============================================
+load_middleware()  -- Register middleware names first
+load_routes()      -- Then routes can reference them
+
+-- ============================================
+-- REDBEAN HOOKS
+-- ============================================
+
+function OnServerStart()
+  Log(kLogInfo, "Luaonbeans MVC Framework started")
+end
+
+function OnServerReload()
+  Log(kLogInfo, "Reloading Luaonbeans...")
+  clear_caches()
+  load_routes()
+  load_middleware()
+end
 
 function OnServerHeartbeat()
-	-- It will run in daemon mode
-	LoadCronsJobs()
 end
 
 function OnWorkerStart()
-	-- Uncomment code if you use SQLite
-	-- HandleSqliteFork(db_config) -- you can remove it if you do not use SQLite
 end
 
--- OnError hook
 function OnError(status, message, details)
-	-- Define the error for an API
-	-- WriteJSON({ status = status, message = message })
+  SetStatus(status)
+  SetHeader("Content-Type", "text/html; charset=utf-8")
 
-	-- Define the error page via a page with a layout
-	Params.status = status
-	Params.message = message
-	Params.details = details
-	Params.env = BeansEnv
+  local content = view.render("errors/error", {
+    status = status,
+    message = message,
+    details = details and EscapeHtml(details) or nil
+  }, { layout = false })
 
-	SetStatus(status)
-	Page("errors/index", "app")
+  Write(content)
 end
 
--- OnHttpRequest hook
 function OnHttpRequest()
-	Blocks = {}
-	Session = GetSession()
-	-- local redis = require "db.redis"
-	-- Redis = redis.connect()
+  -- Hot reload routes and middleware in development mode
+  if BEANS_ENV == "development" then
+    clear_caches()
+    load_middleware()  -- Load middleware FIRST so names are registered
+    load_routes()      -- Then routes can reference middleware by name
+  end
 
-	Params = GetParams()
-	PrepareMultiPartParams() -- if you handle file uploads
+  SetHeader("X-Framework-Version", "2.0-reload-test")
+  -- 1. First, try to serve static files from public/ folder
+  local path = GetPath()
+  local public_path = "public" .. path
+  local file_content = nil
 
-	SetDevice() -- comment if you do not need this feature
+  -- Try zip asset if not found in filesystem
+  local file_content = LoadAsset("/public" .. path)
 
-	-- Uncomment code if you use ArangoDB
-	if SoliDB then
-	  SoliDB.primary:RefreshToken() -- reconnect to arangoDB if needed
-	end
+  if file_content then
+    -- Determine content type based on extension
+    local ext = path:match("%.([^%.]+)$")
+    local content_types = {
+      css = "text/css; charset=utf-8",
+      js = "application/javascript; charset=utf-8",
+      json = "application/json; charset=utf-8",
+      html = "text/html; charset=utf-8",
+      htm = "text/html; charset=utf-8",
+      xml = "application/xml; charset=utf-8",
+      txt = "text/plain; charset=utf-8",
+      png = "image/png",
+      jpg = "image/jpeg",
+      jpeg = "image/jpeg",
+      gif = "image/gif",
+      svg = "image/svg+xml",
+      ico = "image/x-icon",
+      webp = "image/webp",
+      woff = "font/woff",
+      woff2 = "font/woff2",
+      ttf = "font/ttf",
+      eot = "application/vnd.ms-fontobject",
+      otf = "font/otf",
+      mp4 = "video/mp4",
+      webm = "video/webm",
+      mp3 = "audio/mpeg",
+      wav = "audio/wav",
+      pdf = "application/pdf",
+      zip = "application/zip",
+      wasm = "application/wasm"
+    }
 
-	-- Uncomment code if you use surrealdb
-	-- if (db_config ~= nil and db_config["engine"] == "surrealdb") then
-	--  Surreal.refresh_token(db_config[BeansEnv]) -- reconnect to surrealdb if needed
-	-- end
+    local content_type = content_types[ext] or "application/octet-stream"
+    SetStatus(200)
+    SetHeader("Content-Type", content_type)
+    -- Cache static assets for 1 year
+    SetHeader("Cache-Control", "public, max-age=31536000, immutable")
+    Write(file_content)
+    return
+  end
 
-	DefineRoute(GetPath(), GetMethod())
-
-	HandleRequest()
-	-- Uncomment if you use redis
-	-- unix.close(Redis.network.socket)
-end
-
-function SetDevice()
-	--local user_agent = GetHeader("User-Agent")
-	Params.request = { variant = "" }
-	--local preg = assert(re.compile("iPhone"))
-	--if preg:search(user_agent) then
-	--	Params.request.variant = "iphone"
-	--end
+  -- 2. Handle the request via the reloadable framework module
+  local framework = require("framework")
+  framework.handle_request()
 end

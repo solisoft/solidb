@@ -1,0 +1,116 @@
+<%
+-- Documentation sidebar navigation
+local sections = {
+  {
+    title = "Getting Started",
+    items = {
+      { slug = "getting-started", label = "Quick Start", icon = "fa-rocket", color = "primary" },
+      { slug = "api", label = "API Reference", icon = "fa-code", color = "accent" },
+      { slug = "driver", label = "Native Driver", icon = "fa-plug", color = "info" },
+    }
+  },
+  {
+    title = "Query Languages",
+    items = {
+      { slug = "sdbql", label = "SDBQL Reference", icon = "fa-terminal", color = "primary" },
+      { slug = "sql", label = "SQL Compatibility", icon = "fa-database", color = "info" },
+    }
+  },
+  {
+    title = "Core Features",
+    items = {
+      { slug = "transactions", label = "ACID Transactions", icon = "fa-shield-alt", color = "warning" },
+      { slug = "indexes", label = "Indexes", icon = "fa-list-ol", color = "success" },
+      { slug = "graphs", label = "Graphs & Edges", icon = "fa-project-diagram", color = "accent" },
+      { slug = "scripting", label = "Lua Scripting", icon = "fa-scroll", color = "info" },
+      { slug = "queues", label = "Queues & Jobs", icon = "fa-tasks", color = "primary" },
+
+    }
+  },
+  {
+    title = "Real-Time",
+    items = {
+      { slug = "changefeeds", label = "Changefeeds", icon = "fa-bolt", color = "error" },
+      { slug = "live-queries", label = "Live Queries", icon = "fa-satellite-dish", color = "success" },
+    }
+  },
+  {
+    title = "Storage Engines",
+    items = {
+      { slug = "documents", label = "Documents Storage", icon = "fa-file-alt", color = "warning" },
+      { slug = "timeseries", label = "Time Series", icon = "fa-chart-line", color = "info" },
+      { slug = "columnar", label = "Columnar Storage", icon = "fa-chart-bar", color = "success" },
+      { slug = "blobs", label = "Blob Storage", icon = "fa-database", color = "success" },
+    }
+  },
+  {
+    title = "Distributed",
+    items = {
+      { slug = "cluster", label = "Clustering", icon = "fa-network-wired", color = "success" },
+      { slug = "sharding", label = "Sharding", icon = "fa-cubes", color = "info" },
+    }
+  },
+  {
+    title = "AI",
+    items = {
+      { slug = "ai_features", label = "AI Engine", icon = "fa-brain", color = "accent" },
+      { slug = "ai_agents", label = "Build AI Agents", icon = "fa-robot", color = "success" },
+    }
+  },
+  {
+    title = "Reference",
+    items = {
+      { slug = "architecture", label = "Architecture", icon = "fa-layer-group", color = "info" },
+      { slug = "security", label = "Security", icon = "fa-shield-alt", color = "error" },
+      { slug = "tooling", label = "CLI Tools", icon = "fa-wrench", color = "warning" },
+      { slug = "clients", label = "Official Clients", icon = "fa-laptop-code", color = "primary" },
+      { slug = "comparison", label = "DB Comparison", icon = "fa-balance-scale", color = "warning" },
+    }
+  },
+}
+
+-- Helper function to get color classes
+local function get_color_class(color, is_active)
+  local colors = {
+    primary = is_active and "text-primary-light bg-gradient-to-r from-primary/20 to-transparent border-primary-light" or "text-text-muted hover:text-primary-light hover:bg-white/5 border-transparent",
+    accent = is_active and "text-accent-light bg-gradient-to-r from-accent/20 to-transparent border-accent-light" or "text-text-muted hover:text-accent-light hover:bg-white/5 border-transparent",
+    success = is_active and "text-success bg-gradient-to-r from-success/20 to-transparent border-success" or "text-text-muted hover:text-success hover:bg-white/5 border-transparent",
+    warning = is_active and "text-warning bg-gradient-to-r from-warning/20 to-transparent border-warning" or "text-text-muted hover:text-warning hover:bg-white/5 border-transparent",
+    error = is_active and "text-error bg-gradient-to-r from-error/20 to-transparent border-error" or "text-text-muted hover:text-error hover:bg-white/5 border-transparent",
+    info = is_active and "text-info bg-gradient-to-r from-info/20 to-transparent border-info" or "text-text-muted hover:text-info hover:bg-white/5 border-transparent",
+  }
+  return colors[color] or colors.primary
+end
+%>
+
+<nav class="space-y-8 pb-10">
+  <!-- Home link -->
+  <a href="/docs"
+     class="flex items-center gap-3 px-4 py-3 rounded-r-xl border-l-[3px] transition-all duration-200 group <%= current_page == 'index' and 'bg-gradient-to-r from-white/10 to-transparent border-white text-white font-medium' or 'border-transparent text-text-muted hover:text-white hover:bg-white/5' %>">
+    <span class="flex items-center justify-center w-6 h-6 rounded-md bg-white/5 group-hover:bg-white/10 transition-colors">
+      <i class="fas fa-home text-sm opacity-80"></i>
+    </span>
+    <span class="text-sm tracking-wide">Documentation Home</span>
+  </a>
+
+  <% for _, section in ipairs(sections) do %>
+  <div class="relative">
+    <h3 class="px-4 text-[10px] font-extrabold text-text-dim uppercase tracking-[0.15em] mb-3 opacity-60 ml-1"><%= section.title %></h3>
+    <div class="space-y-0.5">
+      <% for _, item in ipairs(section.items) do %>
+      <% local is_active = current_page == item.slug %>
+      <a href="/docs/<%= item.slug %>"
+         class="flex items-center gap-3 px-4 py-2 text-[13px] rounded-r-xl border-l-[3px] transition-all duration-200 group <%= get_color_class(item.color, is_active) %> <%= is_active and 'font-medium shadow-[0_0_20px_rgba(0,0,0,0.2)]' or '' %>">
+        <span class="flex items-center justify-center w-6 h-6 rounded-md <%= is_active and 'bg-current/10' or 'bg-white/5 group-hover:bg-white/10' %> transition-colors">
+          <i class="fas <%= item.icon %> text-xs opacity-90 <%= is_active and 'text-current' or '' %>"></i>
+        </span>
+        <span class="tracking-wide"><%= item.label %></span>
+      </a>
+      <% end %>
+    </div>
+  </div>
+  <% end %>
+
+  <!-- Bottom fade -->
+  <div class="h-12"></div>
+</nav>

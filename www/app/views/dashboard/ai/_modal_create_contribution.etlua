@@ -1,0 +1,77 @@
+<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4"
+     onclick="if(event.target === this) closeModal()">
+  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between p-4 border-b border-border/30">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-lightbulb mr-2 text-warning"></i>
+        Submit Contribution
+      </h3>
+      <button type="button" onclick="closeModal()" class="p-2 text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <form hx-post="/database/<%= db %>/ai/contributions"
+          hx-target="#contributions-table"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) closeModal()">
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Contribution Type</label>
+          <select name="type" required
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary">
+            <option value="feature">Feature - New functionality</option>
+            <option value="bugfix">Bug Fix - Fix an issue</option>
+            <option value="refactor">Refactor - Improve code structure</option>
+            <option value="documentation">Documentation - Improve docs</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Description</label>
+          <textarea name="description" required rows="4"
+                    class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                    placeholder="Describe what you want to accomplish..."></textarea>
+          <p class="text-xs text-text-dim mt-1">Be specific about the goal and expected behavior</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Related Collections (optional)</label>
+          <input type="text" name="related_collections"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
+                 placeholder="users, orders, products">
+          <p class="text-xs text-text-dim mt-1">Comma-separated list of collections this affects</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Priority</label>
+          <select name="priority"
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary">
+            <option value="low">Low - Can wait</option>
+            <option value="medium" selected>Medium - Normal priority</option>
+            <option value="high">High - Important</option>
+          </select>
+        </div>
+
+        <div class="bg-info/10 border border-info/30 rounded-lg p-3">
+          <p class="text-xs text-info">
+            <i class="fas fa-robot mr-1"></i>
+            Your contribution will be analyzed by AI and put in review for approval.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 p-4 border-t border-border/30">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-paper-plane mr-1"></i>
+          Submit
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

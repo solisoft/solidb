@@ -1,0 +1,487 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("indexes_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+       <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-lime-500 to-green-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-lime-400 via-green-400 to-emerald-400 mb-4 tracking-tight">Indexes</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Optimize data retrieval strategies. Accelerate queries and enforce data integrity with high-performance indexes.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl p-8">
+        <p class="text-gray-300 leading-relaxed">
+          Indexes are essential for query performance in SoliDB. Without an index, SDBQL queries with <code>FILTER</code> conditions must perform a full collection scan, which becomes slower as the collection grows.
+        </p>
+      </div>
+
+      <!-- Primary Index -->
+      <section id="primary" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+              Primary Index
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Every collection in SoliDB automatically has a <strong>Primary Index</strong> on the <code>_key</code> attribute.
+            </p>
+            <ul class="space-y-3 text-gray-400 mb-6">
+                <li class="flex items-start">
+                    <svg class="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span><strong>Unique:</strong> The `_key` is guaranteed to be unique within a collection.</span>
+                </li>
+                <li class="flex items-start">
+                    <svg class="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span><strong>Automatic:</strong> Created automatically when the collection is created. Cannot be deleted.</span>
+                </li>
+                <li class="flex items-start">
+                    <svg class="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span><strong>Fastest Access:</strong> Retrieving a document by its `_key` is the most efficient operation (O(1)).</span>
+                </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Hash Index -->
+      <section id="hash" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
+              Hash Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Hash Index</strong> provides constant-time O(1) lookups for exact matches. It is the fastest index type but supports <strong>only equality</strong> comparisons (`==`).
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Best For</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Exact match lookups</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> High cardinality fields (e.g. UUIDs, email)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Uniqueness constraints</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                     <h4 class="text-white font-bold mb-3">Limitations</h4>
+                     <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-center"><svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg> No range queries (`&gt;`, `&lt;`)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg> No sorting</li>
+                     </ul>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bloom Filter Index -->
+      <section id="bloom" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+              Bloom Filter
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Bloom Filter</strong> is a space-efficient probabilistic data structure that is used to test whether an element is a member of a set. It may return false positives, but never false negatives.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Best For</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span>Determining if a document <em>might</em> exist before performing expensive lookups.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span>Large datasets where memory efficient membership testing is needed.</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                     <h4 class="text-white font-bold mb-3">Characteristics</h4>
+                     <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 
+                            <span><strong>No False Negatives:</strong> If it says "no", the element is definitely not in the set.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-4 h-4 text-yellow-500 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+                            <span><strong>False Positives:</strong> Might say "yes" when the element is not there.</span>
+                        </li>
+                     </ul>
+                </div>
+            </div>
+            
+            <div class="mt-6 bg-pink-900/10 border border-pink-500/20 rounded-xl p-4">
+                 <h4 class="text-pink-400 font-bold mb-2">Usage</h4>
+                 <pre><code class="language-json text-sm text-gray-300">{
+   "type": "bloom",
+   "field": "username",
+   "unique": true
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Persistent Index -->
+      <section id="persistent" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+              Persistent Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Persistent Index</strong> is a sorted index stored on disk (using RocksDB/SkipLists) that allows for fast lookups, range queries (`<`, `<=`, `>=`, `>`), and sorting.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5 mb-6">
+                <h4 class="text-sm font-bold text-emerald-400 uppercase tracking-widest mb-3">Capabilities</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-gray-800/50 p-3 rounded-lg border border-white/5">
+                        <span class="text-white font-semibold">Equality Lookups</span>
+                        <code class="block text-xs text-gray-400 mt-1">FILTER user.email == "alice@example.com"</code>
+                    </div>
+                    <div class="bg-gray-800/50 p-3 rounded-lg border border-white/5">
+                        <span class="text-white font-semibold">Range Queries</span>
+                        <code class="block text-xs text-gray-400 mt-1">FILTER user.age >= 21</code>
+                    </div>
+                    <div class="bg-gray-800/50 p-3 rounded-lg border border-white/5">
+                        <span class="text-white font-semibold">Sorting</span>
+                        <code class="block text-xs text-gray-400 mt-1">SORT user.createdAt DESC</code>
+                    </div>
+                     <div class="bg-gray-800/50 p-3 rounded-lg border border-white/5">
+                        <span class="text-white font-semibold">Unique Constraints</span>
+                        <span class="block text-xs text-gray-400 mt-1">Enforce unique values for fields.</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-4 bg-green-900/20 border border-green-500/20 rounded-lg p-4">
+                <p class="text-green-200 text-sm flex items-start">
+                    <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span><strong>Compound Indexes:</strong> SoliDB supports <strong>multi-field (compound) indexes</strong>. Use the <code>fields</code> array to specify multiple fields.</span>
+                </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Compound Index -->
+      <section id="compound" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Compound Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Compound Index</strong> spans multiple fields, enabling efficient queries that filter on field combinations. The order of fields matters for prefix-based lookups.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                 <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                    <h4 class="text-white font-bold mb-3">Best For</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Multi-field queries (e.g., user + date)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Composite unique constraints</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Prefix lookups on first field</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-cyan-900/10 border border-cyan-500/20 rounded-lg p-6">
+                     <h4 class="text-cyan-400 font-bold mb-3">Example</h4>
+                     <pre><code class="language-json text-xs text-gray-300">{
+  "name": "idx_user_date",
+  "type": "persistent",
+  "fields": ["user_id", "created_at"],
+  "unique": false
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5">
+                <h4 class="text-sm font-bold text-cyan-400 uppercase tracking-widest mb-3">Prefix Matching</h4>
+                <p class="text-sm text-gray-400 mb-2">
+                    A compound index on <code>["a", "b", "c"]</code> can accelerate queries filtering on:
+                </p>
+                <ul class="space-y-1 text-sm text-gray-400">
+                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> alone</li>
+                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code></li>
+                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code> AND <code>c</code></li>
+                    <li class="flex items-center"><svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg><code>b</code> or <code>c</code> alone (must include leading field)</li>
+                </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Geo Spatial Index -->
+      <section id="geo" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Geo Spatial Index
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A <strong>Geo Spatial Index</strong> accelerates queries involving geographic coordinates (latitude and longitude). It uses an R-Tree structure to efficiently find points within a radius or bounding box.
+            </p>
+
+            <div class="bg-teal-900/10 border border-teal-500/20 rounded-xl p-6 mb-6">
+                <h4 class="text-teal-400 font-bold mb-3">Field Format</h4>
+                <p class="text-sm text-gray-300 mb-2">
+                    The indexed field should contain an array with two numbers: <code>[latitude, longitude]</code>.
+                </p>
+                <code class="block text-xs bg-black/30 p-2 rounded font-mono text-gray-300">
+                  "location": [48.8566, 2.3522] // Paris
+                </code>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                <h4 class="text-white font-bold mb-3">Accelerated Queries</h4>
+                <p class="text-sm text-gray-400 mb-3">
+                    Queries using <code>DISTANCE</code> or <code>GEO_DISTANCE</code> will automatically utilize the index if available.
+                </p>
+                <div class="space-y-2">
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FOR place IN locations
+  FILTER DISTANCE(place.loc[0], place.loc[1], 48.85, 2.35) < 1000
+  RETURN place</code></pre>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TTL Index -->
+      <section id="ttl" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              TTL Index (Time-To-Live)
+            </h2>
+          </div>
+          
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              A <strong>TTL Index</strong> automatically removes documents from the collection after a certain amount of time. This is useful for caching, session management, or storing temporary logs.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div class="bg-orange-900/10 border border-orange-500/20 rounded-xl p-4">
+                    <h4 class="text-orange-400 font-bold mb-2">How it works</h4>
+                    <p class="text-sm text-orange-200/70">
+                        A background thread periodically checks the index and removes expired documents. The `expireAfter` value defines the time in seconds.
+                    </p>
+                </div>
+                <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
+                     <h4 class="text-white font-bold mb-2">Usage</h4>
+                     <code class="text-sm text-gray-400">expireAfter: 3600</code>
+                     <p class="text-xs text-gray-500 mt-1">Documents expire 1 hour after creation/update.</p>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sparse Behavior -->
+      <section id="sparse" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+              Sparse Behavior
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              All SoliDB indexes are <strong>implicitly sparse</strong>. Documents where the indexed field is <code>null</code> or missing are <strong>not added</strong> to the index.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                <h4 class="text-white font-bold mb-3">When Documents Are Indexed</h4>
+                <div class="space-y-2 text-sm">
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <span class="text-gray-400">Field exists with a value → <span class="text-green-400">Indexed</span></span>
+                  </div>
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span class="text-gray-400">Field is <code class="bg-white/10 px-1 rounded">null</code> → <span class="text-red-400">Not indexed</span></span>
+                  </div>
+                  <div class="flex items-center">
+                    <svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span class="text-gray-400">Field is missing → <span class="text-red-400">Not indexed</span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bg-violet-900/10 border border-violet-500/20 rounded-xl p-6">
+                <h4 class="text-violet-400 font-bold mb-3">Compound Indexes</h4>
+                <p class="text-sm text-gray-400">
+                  For compound indexes on multiple fields, a document is indexed if <strong>at least one field</strong> has a non-null value.
+                </p>
+                <code class="block text-xs bg-black/30 p-2 rounded font-mono text-gray-300 mt-3">
+                  {"user_id": "abc", "email": null} → Indexed (user_id exists)
+                </code>
+              </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5">
+              <h4 class="text-sm font-bold text-violet-400 uppercase tracking-widest mb-3">Benefits of Sparse Indexes</h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Storage Efficiency</div>
+                  <p class="text-xs text-gray-500">Documents without the field don't consume index space.</p>
+                </div>
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Unique Constraints</div>
+                  <p class="text-xs text-gray-500">Multiple docs can have <code>null</code> for a unique field (no conflict).</p>
+                </div>
+                <div class="bg-white/5 rounded-lg p-4">
+                  <div class="text-white font-semibold text-sm mb-1">Query Performance</div>
+                  <p class="text-xs text-gray-500">Smaller indexes = faster lookups and less memory.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Management API -->
+      <section id="management" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+           <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              Management API
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300">
+                Manage indexes via the HTTP API.
+            </p>
+
+            <!-- Create Standard Index -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-emerald-400 font-bold text-sm">Create Standard Index</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/index/:collection</span>
+                </div>
+                <div class="p-4">
+                  <p class="text-xs text-gray-500 mb-2">For Persistent, Hash, or Fulltext indexes. Use <code>field</code> for single-field or <code>fields</code> for compound indexes.</p>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p class="text-xs text-gray-500 mb-1">Single Field:</p>
+                      <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_email"</span>,
+  <span class="text-purple-400">"type"</span>: <span class="text-green-400">"persistent"</span>,
+  <span class="text-purple-400">"field"</span>: <span class="text-green-400">"email"</span>,
+  <span class="text-purple-400">"unique"</span>: <span class="text-yellow-300">true</span>
+}</code></pre>
+                    </div>
+                    <div>
+                      <p class="text-xs text-gray-500 mb-1">Compound Index:</p>
+                      <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_user_date"</span>,
+  <span class="text-purple-400">"type"</span>: <span class="text-green-400">"persistent"</span>,
+  <span class="text-purple-400">"fields"</span>: [<span class="text-green-400">"user_id"</span>, <span class="text-green-400">"created_at"</span>],
+  <span class="text-purple-400">"unique"</span>: <span class="text-yellow-300">false</span>
+}</code></pre>
+                    </div>
+                  </div>
+                </div>
+            </div>
+
+            <!-- Create Geo Index -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-emerald-400 font-bold text-sm">Create Geo Index</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/geo/:collection</span>
+                </div>
+                <div class="p-4">
+                  <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_location"</span>,
+  <span class="text-purple-400">"field"</span>: <span class="text-green-400">"location"</span>
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Create TTL Index -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-emerald-400 font-bold text-sm">Create TTL Index</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/ttl/:collection</span>
+                </div>
+                <div class="p-4">
+                  <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_expire"</span>,
+  <span class="text-purple-400">"field"</span>: <span class="text-green-400">"createdAt"</span>,
+  <span class="text-purple-400">"expire_after_seconds"</span>: <span class="text-yellow-300">3600</span>
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- List Indexes -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-blue-400 font-bold text-sm">List Indexes</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">GET /_api/index?collection=&lt;name&gt;</span>
+                </div>
+            </div>
+
+            <!-- Delete Index -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+                <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                    <span class="text-red-400 font-bold text-sm">Delete Index</span>
+                    <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">DELETE /_api/index/&lt;index-id&gt;</span>
+                </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

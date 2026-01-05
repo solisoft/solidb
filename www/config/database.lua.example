@@ -1,0 +1,12 @@
+-- Database configuration for Luaonbeans
+-- Copy this to config/database.lua and update with your settings
+
+return {
+  -- SoliDB configuration
+  solidb = {
+    url = "http://localhost:6745",
+    db_name = "luaonbeans",
+    username = "root",
+    password = "root"
+  }
+}

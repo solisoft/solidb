@@ -8,6 +8,7 @@ use axum::{
 #[derive(Debug, Deserialize)]
 pub struct AuthParams {
     pub token: String,
+    pub htmx: Option<String>,
 }
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -732,7 +733,7 @@ pub struct SetSchemaRequest {
     /// JSON Schema document
     pub schema: serde_json::Value,
     /// Validation mode: "off", "strict", or "lenient"
-    #[serde(rename = "validationMode")]
+    #[serde(rename = "validationMode", default = "default_validation_mode")]
     pub validation_mode: String,
 }
 
@@ -4087,6 +4088,7 @@ pub async fn create_index(
         "persistent" | "skiplist" | "btree" => IndexType::Persistent,
         "fulltext" => IndexType::Fulltext,
         "bloom" => IndexType::Bloom,
+        "cuckoo" => IndexType::Cuckoo,
         _ => {
             return Err(DbError::InvalidDocument(format!(
                 "Unknown index type: {}",
@@ -5180,10 +5182,13 @@ pub async fn ws_changefeed_handler(
         }
     }
 
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    // Check if HTMX mode is requested
+    let use_htmx = params.htmx.map(|s| s == "true").unwrap_or(false);
+
+    ws.on_upgrade(move |socket| handle_socket(socket, state, use_htmx))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState) {
+async fn handle_socket(mut socket: WebSocket, state: AppState, use_htmx: bool) {
     // Wait for subscription message
     if let Some(Ok(msg)) = socket.recv().await {
         if let Message::Text(text) = msg {
@@ -5194,12 +5199,40 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     let coll_name = match req.collection.clone() {
                         Some(c) => c,
                         None => {
-                            let _ = socket.send(Message::Text(serde_json::json!({
-                                "error": "Collection required for subscribe mode"
-                            }).to_string().into())).await;
-                            return;
+                            // Try to infer from SDBQL query
+                            if let Some(query_str) = &req.query {
+                                if let Ok(query_ast) = crate::sdbql::parser::parse(query_str) {
+                                    // Check explicit FOR clauses first
+                                    if let Some(first_for) = query_ast.for_clauses.first() {
+                                        first_for.collection.clone()
+                                    } else {
+                                        // Check body clauses
+                                        query_ast.body_clauses.iter().find_map(|c| {
+                                            if let crate::sdbql::ast::BodyClause::For(f) = c {
+                                                Some(f.collection.clone())
+                                            } else {
+                                                None
+                                            }
+                                        }).unwrap_or_else(|| {
+                                            // Fallback or error
+                                            "".to_string()
+                                        })
+                                    }
+                                } else {
+                                    "".to_string()
+                                }
+                            } else {
+                                "".to_string()
+                            }
                         }
                     };
+
+                    if coll_name.is_empty() {
+                        let _ = socket.send(Message::Text(serde_json::json!({
+                            "error": "Collection required for subscribe mode (could not infer from query)"
+                        }).to_string().into())).await;
+                        return;
+                    }
 
                     // Try to get collection from specific database or fallback
                     let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
@@ -5207,10 +5240,29 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     match collection_result {
                         Ok(collection) => {
                             // Send confirmation
-                            let _ = socket.send(Message::Text(serde_json::json!({
-                                "type": "subscribed",
-                                "collection": coll_name
-                            }).to_string().into())).await;
+                            let msg = if use_htmx {
+                                format!(r#"<div id="connection-status" hx-swap-oob="innerHTML" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-success/10 text-success">
+                                    <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                                    <span>Connected: {}</span>
+                                </div>
+                                <div id="no-subscriptions" hx-swap-oob="true" class="hidden"></div>
+                                <div id="subscriptions-list" hx-swap-oob="innerHTML">
+                                    <div class="px-4 py-3 border-b border-border/20 last:border-0 flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                        <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                                        <div>
+                                            <span class="font-medium text-text">{}</span>
+                                        </div>
+                                        </div>
+                                    </div>
+                                </div>"#, coll_name, coll_name)
+                            } else {
+                                serde_json::json!({
+                                    "type": "subscribed",
+                                    "collection": coll_name
+                                }).to_string()
+                            };
+                            let _ = socket.send(Message::Text(msg.into())).await;
 
                             // Set up streams vector for aggregation
                             // We use a channel to merge streams because SelectAll requires Unpin which can be tricky with async streams
@@ -5364,16 +5416,42 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                                         }
 
                                         // Optimized payload: send only metadata, not full data
-                                        let payload = serde_json::json!({
-                                            "type": event.type_,
-                                            "key": event.key,
-                                            "id": format!("{}/{}", coll_name, event.key)
-                                        });
+                                        let msg_text = if use_htmx {
+                                            use crate::storage::collection::ChangeType;
+                                            let op_type = match event.type_ {
+                                                ChangeType::Insert => "INSERT",
+                                                ChangeType::Update => "UPDATE",
+                                                ChangeType::Delete => "DELETE",
+                                            };
+                                            let status_class = match event.type_ {
+                                                ChangeType::Insert => "bg-success/10 text-success",
+                                                ChangeType::Update => "bg-warning/10 text-warning",
+                                                ChangeType::Delete => "bg-error/10 text-error",
+                                            };
+                                            let data_str = event.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
+                                            // Format as HTML for HTMX oob swap
+                                            format!(r#"<div hx-swap-oob="afterbegin:#events-container">
+                                                <div class="px-4 py-2 border-b border-border/10 last:border-0 font-mono text-sm hover:bg-white/5 transition-colors">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <span class="px-1.5 py-0.5 rounded text-xs {}">{}</span>
+                                                        <span class="text-text-dim text-xs">{}</span>
+                                                        <span class="text-text-dim text-xs ml-auto">{}</span>
+                                                    </div>
+                                                    <pre class="text-text-muted text-xs overflow-x-auto">{}</pre>
+                                                </div>
+                                            </div>"#,
+                                            status_class, op_type, coll_name, chrono::Local::now().format("%H:%M:%S"), data_str)
+                                        } else {
+                                            serde_json::json!({
+                                                "operation": event.type_, 
+                                                "collection": coll_name,
+                                                "key": event.key,
+                                                "data": event.data // Serialize Value directly
+                                            }).to_string()
+                                        };
 
-                                        if let Ok(json) = serde_json::to_string(&payload) {
-                                            if socket.send(Message::Text(json.into())).await.is_err() {
-                                                break;
-                                            }
+                                        if socket.send(Message::Text(msg_text.into())).await.is_err() {
+                                            break;
                                         }
                                     }
                                     // Handle incoming messages (e.g. close, pong)

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error <%- status %></title>
+  <style>
+    :root {
+      --bg: #0a0f1c;
+      --bg-card: #1f2937;
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
+      --primary: #6366f1;
+      --error: #ef4444;
+      --border: #374151;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .error-container {
+      text-align: center;
+      max-width: 500px;
+    }
+    .error-code {
+      font-size: 8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--error) 0%, var(--primary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+    .error-message {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+    .error-details {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      text-align: left;
+      overflow-x: auto;
+    }
+    .error-details pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+      color: var(--error);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="error-container">
+    <div class="error-code"><%- status %></div>
+    <p class="error-message"><%- message or "An unexpected error occurred" %></p>
+    <% if details then %>
+    <div class="error-details">
+      <pre><%- details %></pre>
+    </div>
+    <% end %>
+    <a href="/" class="btn">← Go back home</a>
+  </div>
+</body>
+</html>

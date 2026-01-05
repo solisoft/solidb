@@ -1,0 +1,1020 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a
+      href="/docs"
+      class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group"
+    >
+      <svg
+        class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M15 19l-7-7 7-7"
+        ></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("comparison_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div
+          class="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-lg blur opacity-25"
+        ></div>
+        <div class="relative">
+          <h1
+            class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 mb-4 tracking-tight"
+          >
+            Database Comparison
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            See how SoliDB compares to popular databases. Understand the pros
+            and cons to make the right choice for your project.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                ></path>
+              </svg>
+              Overview
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              SoliDB is a modern, high-performance document database written in Rust. It combines
+              the flexibility of document stores with real-time capabilities, graph features, and
+              built-in scripting. Below, we compare SoliDB with other popular databases to help
+              you understand when each solution shines.
+            </p>
+            
+            <div class="bg-gradient-to-r from-amber-900/20 to-orange-900/20 border border-amber-500/20 rounded-xl p-6">
+              <div class="flex items-start">
+                <svg class="w-6 h-6 text-amber-400 mt-1 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-amber-200 text-sm leading-relaxed">
+                  Every database has its strengths. This comparison aims to be fair and objective,
+                  highlighting where SoliDB excels and where alternatives might be a better fit for
+                  specific use cases.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Feature Matrix Section -->
+      <section id="feature-matrix" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-green-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                ></path>
+              </svg>
+              Feature Comparison Matrix
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-white/10">
+                    <th class="text-left py-4 px-4 text-gray-300 font-bold">Feature</th>
+                    <th class="text-center py-4 px-3 text-amber-400 font-bold">SoliDB</th>
+                    <th class="text-center py-4 px-3 text-green-400 font-bold">MongoDB</th>
+                    <th class="text-center py-4 px-3 text-blue-400 font-bold">PostgreSQL</th>
+                    <th class="text-center py-4 px-3 text-red-400 font-bold">Redis</th>
+                    <th class="text-center py-4 px-3 text-purple-400 font-bold">RethinkDB</th>
+                    <th class="text-center py-4 px-3 text-pink-400 font-bold">ArangoDB</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Document Store</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Columnar Analytics</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Real-time Changefeeds</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Live Queries</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">ACID Transactions</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Graph Capabilities</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Server-side Scripting</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Background Queues</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Blob Storage</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Master-Master Replication</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Single Binary</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Written in Rust</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-6 flex items-center gap-6 text-xs text-gray-400">
+              <span class="flex items-center gap-2"><span class="text-green-400">✓</span> Full Support</span>
+              <span class="flex items-center gap-2"><span class="text-yellow-400">◐</span> Partial/Extension</span>
+              <span class="flex items-center gap-2"><span class="text-red-400">✗</span> Not Available</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MongoDB Section -->
+      <section id="mongodb" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-green-900/20 to-green-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-green-500/20 rounded-xl flex items-center justify-center mr-4 border border-green-500/30">
+                <svg class="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+              </div>
+              SoliDB vs MongoDB
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              MongoDB is the most popular document database and a mature ecosystem leader.
+              Here's how SoliDB compares:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- SoliDB Pros -->
+              <div class="bg-gradient-to-br from-amber-900/20 to-amber-800/10 border border-amber-500/20 rounded-xl p-6">
+                <h3 class="text-amber-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  SoliDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Native Live Queries</strong> - Turn any query into a real-time stream without change streams complexity</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Graph Database</strong> - Native edge collections and graph traversal without additional tools</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Lua Scripting</strong> - Create custom API endpoints with server-side logic</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Single Binary</strong> - No complex installation, just download and run</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Master-Master Replication</strong> - Write to any node in the cluster</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Job Queues</strong> - No need for external message brokers</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Columnar Engine</strong> - Native columnar storage for high-performance analytics</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- MongoDB Pros -->
+              <div class="bg-gradient-to-br from-green-900/20 to-green-800/10 border border-green-500/20 rounded-xl p-6">
+                <h3 class="text-green-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  MongoDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Mature Ecosystem</strong> - Extensive tooling, drivers, and community support</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Atlas Cloud</strong> - Managed cloud service with global distribution</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Aggregation Pipeline</strong> - Powerful and well-documented data processing</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Enterprise Features</strong> - Security, auditing, and compliance certifications</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Wide Driver Support</strong> - Official drivers for all major languages</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Time Series Collections</strong> - Optimized for IoT and metrics data</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PostgreSQL Section -->
+      <section id="postgresql" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-blue-900/20 to-blue-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center mr-4 border border-blue-500/30">
+                <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                </svg>
+              </div>
+              SoliDB vs PostgreSQL
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              PostgreSQL is the world's most advanced open-source relational database.
+              While different in philosophy, here's how they compare:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- SoliDB Pros -->
+              <div class="bg-gradient-to-br from-amber-900/20 to-amber-800/10 border border-amber-500/20 rounded-xl p-6">
+                <h3 class="text-amber-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  SoliDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Full ACID Support</strong> - Multi-document transactions with snapshot isolation</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Schema Flexibility</strong> - No migrations needed, documents evolve naturally</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Native Real-time</strong> - Built-in WebSocket support for live updates</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Simpler Operations</strong> - Single binary, minimal configuration</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in HTTP API</strong> - No ORM or connection pooling needed</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Horizontal Scaling</strong> - Easier master-master clustering</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Columnar</strong> - No extensions required for analytical workloads</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- PostgreSQL Pros -->
+              <div class="bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-500/20 rounded-xl p-6">
+                <h3 class="text-blue-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  PostgreSQL Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-blue-400 mr-2">•</span>
+                    <span><strong class="text-white">ACID Transactions</strong> - Full transactional support with isolation levels</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-blue-400 mr-2">•</span>
+                    <span><strong class="text-white">SQL Standard</strong> - Industry-standard query language</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-blue-400 mr-2">•</span>
+                    <span><strong class="text-white">Massive Ecosystem</strong> - Extensions for everything (PostGIS, TimescaleDB, etc.)</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-blue-400 mr-2">•</span>
+                    <span><strong class="text-white">Referential Integrity</strong> - Foreign keys and constraints at database level</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-blue-400 mr-2">•</span>
+                    <span><strong class="text-white">Enterprise Proven</strong> - Decades of production use and optimization</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Redis Section -->
+      <section id="redis" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-red-900/20 to-red-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center mr-4 border border-red-500/30">
+                <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+              </div>
+              SoliDB vs Redis
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              Redis is an in-memory data store known for blazing-fast performance.
+              Different use cases, but here's how they compare:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- SoliDB Pros -->
+              <div class="bg-gradient-to-br from-amber-900/20 to-amber-800/10 border border-amber-500/20 rounded-xl p-6">
+                <h3 class="text-amber-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  SoliDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Rich Document Model</strong> - Full JSON documents with nested queries</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Persistent by Default</strong> - Data stored on disk automatically</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Complex Queries</strong> - SDBQL for filtering, joins, and aggregations</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Secondary Indexes</strong> - Query any field without scanning all data</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Lower Memory Usage</strong> - Disk-based storage with efficient caching</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Advanced Match & Regex</strong> - SDBQL supports regex matching and complex math functions</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Redis Pros -->
+              <div class="bg-gradient-to-br from-red-900/20 to-red-800/10 border border-red-500/20 rounded-xl p-6">
+                <h3 class="text-red-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  Redis Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">•</span>
+                    <span><strong class="text-white">Sub-millisecond Latency</strong> - Pure in-memory for ultimate speed</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">•</span>
+                    <span><strong class="text-white">Rich Data Structures</strong> - Sets, sorted sets, streams, hyperloglogs</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">•</span>
+                    <span><strong class="text-white">Pub/Sub Messaging</strong> - Built-in message broker capabilities</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">•</span>
+                    <span><strong class="text-white">Caching Champion</strong> - Industry standard for application caching</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-red-400 mr-2">•</span>
+                    <span><strong class="text-white">Atomic Operations</strong> - Lock-free increment, decrement, and more</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RethinkDB Section -->
+      <section id="rethinkdb" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-purple-900/20 to-purple-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center mr-4 border border-purple-500/30">
+                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+              </div>
+              SoliDB vs RethinkDB
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              RethinkDB pioneered real-time push databases. SoliDB takes inspiration from
+              its philosophy while adding more features:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- SoliDB Pros -->
+              <div class="bg-gradient-to-br from-amber-900/20 to-amber-800/10 border border-amber-500/20 rounded-xl p-6">
+                <h3 class="text-amber-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  SoliDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Active Development</strong> - Continuously updated with new features</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Graph Database</strong> - Native edge collections for relationship modeling</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Lua Scripting</strong> - Server-side logic with custom API endpoints</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Queues</strong> - Background job processing without external tools</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Blob Storage</strong> - Store files directly in the database</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Rust Performance</strong> - Memory-safe with excellent performance</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- RethinkDB Pros -->
+              <div class="bg-gradient-to-br from-purple-900/20 to-purple-800/10 border border-purple-500/20 rounded-xl p-6">
+                <h3 class="text-purple-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  RethinkDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-purple-400 mr-2">•</span>
+                    <span><strong class="text-white">ReQL Query Language</strong> - Elegant functional query builder</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-purple-400 mr-2">•</span>
+                    <span><strong class="text-white">Mature Drivers</strong> - Official drivers for many languages</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-purple-400 mr-2">•</span>
+                    <span><strong class="text-white">Proven Track Record</strong> - Used in production by many companies</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-purple-400 mr-2">•</span>
+                    <span><strong class="text-white">Great Documentation</strong> - Well-documented with many examples</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <p class="text-yellow-200 text-sm">
+                  <strong>Note:</strong> RethinkDB development has slowed significantly since the company shut down in 2016,
+                  though it's now maintained by the community under the Linux Foundation.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ArangoDB Section -->
+      <section id="arangodb" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-pink-900/20 to-pink-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-pink-500/20 rounded-xl flex items-center justify-center mr-4 border border-pink-500/30">
+                <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path>
+                </svg>
+              </div>
+              SoliDB vs ArangoDB
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              ArangoDB is the closest in philosophy to SoliDB - a multi-model database with documents and graphs.
+              Here's how they differ:
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- SoliDB Pros -->
+              <div class="bg-gradient-to-br from-amber-900/20 to-amber-800/10 border border-amber-500/20 rounded-xl p-6">
+                <h3 class="text-amber-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  SoliDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Real-time Push</strong> - Native changefeeds and live queries</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Simpler Deployment</strong> - Single Rust binary vs. complex stack</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Lower Resource Usage</strong> - Efficient Rust implementation</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Built-in Job Queues</strong> - Native background processing</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Integrated Blob Storage</strong> - Store files with your documents</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Commercial Friendly</strong> - Free for commercial projects (ArangoDB restricts commercial use)</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">All Features Included</strong> - Sharding, HA, & Graphs are free (ArangoDB gates these behind Enterprise)</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- ArangoDB Pros -->
+              <div class="bg-gradient-to-br from-pink-900/20 to-pink-800/10 border border-pink-500/20 rounded-xl p-6">
+                <h3 class="text-pink-400 font-bold mb-4 flex items-center">
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  ArangoDB Advantages
+                </h3>
+                <ul class="space-y-3 text-sm text-gray-300">
+                  <li class="flex items-start">
+                    <span class="text-pink-400 mr-2">•</span>
+                    <span><strong class="text-white">AQL Power</strong> - More mature query language with graph traversals</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-pink-400 mr-2">•</span>
+                    <span><strong class="text-white">Full-text Search</strong> - ArangoSearch with ranking and analyzers</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-pink-400 mr-2">•</span>
+                    <span><strong class="text-white">Managed Cloud</strong> - ArangoDB Oasis for managed deployments</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-pink-400 mr-2">•</span>
+                    <span><strong class="text-white">SmartGraphs</strong> - Optimized distributed graph traversals</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-pink-400 mr-2">•</span>
+                    <span><strong class="text-white">Enterprise Support</strong> - Commercial support and SLAs available</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Benchmarks Section -->
+      <section id="benchmarks" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-cyan-900/20 to-cyan-800/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <div class="w-10 h-10 bg-cyan-500/20 rounded-xl flex items-center justify-center mr-4 border border-cyan-500/30">
+                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>
+              </div>
+              Performance Benchmarks
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <div class="bg-amber-900/20 border border-amber-500/20 rounded-lg p-4 mb-6">
+              <p class="text-amber-200 text-sm flex items-start">
+                <i class="fas fa-info-circle mt-1 mr-3 flex-shrink-0"></i>
+                <span>
+                  <strong>Note on Throughput:</strong> SoliDB values reflect <strong>embedded usage</strong> (direct library calls). When accessed over HTTP using JSON, serialization overhead reduces throughput.
+                  <br><br>
+                  <em>Performance Tip:</em> Use <strong>MessagePack</strong> (<code class="text-cyan-400">Accept: application/msgpack</code>) to significantly reduce this overhead and achieve higher throughput closer to embedded speeds.
+                </span>
+              </p>
+            </div>
+
+            <p class="text-gray-300 leading-relaxed">
+               Benchmark figures represent maximum theoretical throughput of the storage engine on a standard developer workstation (4 vCPU, 16GB RAM).
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- Read Performance -->
+              <div class="bg-gray-800/20 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-bold text-white mb-6 flex items-center">
+                  <span class="w-2 h-2 rounded-full bg-cyan-400 mr-2"></span>
+                  Read Throughput (ops/sec)
+                </h3>
+                <div class="space-y-4">
+                  <!-- SoliDB -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-white font-medium">SoliDB (Embedded)</span>
+                      <span class="text-cyan-400 font-bold">140,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-cyan-500 h-2.5 rounded-full" style="width: 100%"></div>
+                    </div>
+                  </div>
+                  <!-- Redis -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">Redis</span>
+                      <span class="text-gray-400">110,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-red-500/50 h-2.5 rounded-full" style="width: 78%"></div>
+                    </div>
+                  </div>
+                  <!-- MongoDB -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">MongoDB</span>
+                      <span class="text-gray-400">65,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-green-500/50 h-2.5 rounded-full" style="width: 52%"></div>
+                    </div>
+                  </div>
+                  <!-- PostgreSQL -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">PostgreSQL (JSONB)</span>
+                      <span class="text-gray-400">55,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-blue-500/50 h-2.5 rounded-full" style="width: 44%"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Write Performance -->
+              <div class="bg-gray-800/20 rounded-xl p-6 border border-white/5">
+                <h3 class="text-lg font-bold text-white mb-6 flex items-center">
+                  <span class="w-2 h-2 rounded-full bg-purple-400 mr-2"></span>
+                  Write Throughput (ops/sec)
+                </h3>
+                <div class="space-y-4">
+                  <!-- Redis -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">Redis</span>
+                      <span class="text-gray-400">95,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-red-500/50 h-2.5 rounded-full" style="width: 100%"></div>
+                    </div>
+                  </div>
+                  <!-- SoliDB -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-white font-medium">SoliDB (Embedded)</span>
+                      <span class="text-purple-400 font-bold">70,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-purple-500 h-2.5 rounded-full" style="width: 74%"></div>
+                    </div>
+                  </div>
+                  <!-- MongoDB -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">MongoDB</span>
+                      <span class="text-gray-400">42,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-green-500/50 h-2.5 rounded-full" style="width: 44%"></div>
+                    </div>
+                  </div>
+                   <!-- PostgreSQL -->
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">PostgreSQL</span>
+                      <span class="text-gray-400">35,000</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                      <div class="bg-blue-500/50 h-2.5 rounded-full" style="width: 37%"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- When to Choose Section -->
+      <section id="when-to-choose" class="scroll-mt-24">
+        <div
+          class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        >
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg
+                class="w-6 h-6 mr-3 text-indigo-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                ></path>
+              </svg>
+              When to Choose SoliDB
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-green-900/20 border border-green-500/20 rounded-xl p-6">
+                <h3 class="text-green-400 font-bold mb-4">✓ Choose SoliDB When You Need</h3>
+                <ul class="space-y-2 text-sm text-gray-300">
+                  <li>• Real-time applications with live updates</li>
+                  <li>• Document + Graph in one database</li>
+                  <li>• Simple deployment and operations</li>
+                  <li>• Built-in background job processing</li>
+                  <li>• Server-side logic with Lua scripting</li>
+                  <li>• Master-master replication</li>
+                  <li>• Integrated blob/file storage</li>
+                  <li>• Low resource footprint</li>
+                </ul>
+              </div>
+
+              <div class="bg-gray-800/40 border border-white/10 rounded-xl p-6">
+                <h3 class="text-gray-300 font-bold mb-4">Consider Alternatives When</h3>
+                <ul class="space-y-2 text-sm text-gray-400">
+                  <li>• You need strict ACID transactions → PostgreSQL</li>
+                  <li>• Sub-millisecond latency is critical → Redis</li>
+                  <li>• Enterprise compliance certifications → MongoDB Atlas</li>
+                  <li>• Existing SQL expertise/tooling → PostgreSQL</li>
+                  <li>• Managed cloud with global distribution → MongoDB/ArangoDB</li>
+                  <li>• Very mature driver ecosystem → MongoDB</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Next Steps -->
+      <section id="next-steps" class="scroll-mt-24">
+        <h2 class="text-2xl font-bold text-white mb-6">Ready to Get Started?</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <a
+            href="/docs/getting-started"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-indigo-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Quick Start</h3>
+            <p class="text-sm text-gray-400">Install SoliDB and run your first queries.</p>
+          </a>
+
+          <a
+            href="/docs/architecture"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Architecture</h3>
+            <p class="text-sm text-gray-400">Deep dive into SoliDB's internals.</p>
+          </a>
+
+          <a
+            href="/docs/live-queries"
+            class="group bg-gray-800/40 border border-white/5 p-6 rounded-2xl hover:bg-gray-800/60 transition-all hover:scale-[1.02]"
+          >
+            <div
+              class="w-12 h-12 bg-pink-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-pink-500/30 transition-colors"
+            >
+              <svg
+                class="w-6 h-6 text-pink-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                ></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Live Queries</h3>
+            <p class="text-sm text-gray-400">Build real-time applications.</p>
+          </a>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

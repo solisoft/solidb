@@ -1,0 +1,496 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("columnar_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-9 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 mb-4 tracking-tight">Columnar Storage</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+             SoliDB includes a specialized columnar storage engine optimized for analytics, reporting, and read-heavy workloads. It features column-oriented storage, aggressive compression, and fast aggregations.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+              <i class="fas fa-chart-bar text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Unlike traditional row-oriented collections where data is stored document-by-document, columnar collections store data <strong>column-by-column</strong>. This architecture is vastly superior for analytical queries where you typically access only a few columns but scan millions of rows.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <div class="text-emerald-400 font-bold mb-1 flex items-center"><i class="fas fa-compress-alt mr-2"></i> Compression</div>
+              <p class="text-xs text-gray-400">LZ4 compression often achieves 2-4x better storage efficiency than row storage.</p>
+            </div>
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <div class="text-teal-400 font-bold mb-1 flex items-center"><i class="fas fa-filter mr-2"></i> Pruning</div>
+              <p class="text-xs text-gray-400">Read only the columns you need. IO is reduced proportionally to the number of columns skipped.</p>
+            </div>
+             <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <div class="text-cyan-400 font-bold mb-1 flex items-center"><i class="fas fa-layer-group mr-2"></i> Grouping</div>
+              <p class="text-xs text-gray-400">Efficient <code>GROUP BY</code> and aggregation operations (SUM, AVG, MIN, MAX).</p>
+            </div>
+            <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5">
+              <div class="text-blue-400 font-bold mb-1 flex items-center"><i class="fas fa-code mr-2"></i> Typed</div>
+              <p class="text-xs text-gray-400">Explicit schemas with supported types: Int64, Float64, String, Bool, Timestamp, Json.</p>
+            </div>
+          </div>
+
+          <!-- Columnar vs Time Series Explanation -->
+          <div class="mt-8 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-6">
+            <h3 class="text-lg font-bold text-indigo-300 mb-3 flex items-center">
+              <i class="fas fa-info-circle mr-2"></i> Columnar vs. Time Series
+            </h3>
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed">
+              <p>
+                You might wonder: <em class="text-white">"Is SoliDB a Time Series Database?"</em>
+              </p>
+              <p>
+                The answer is: <strong>SoliDB uses Columnar Storage to fulfill Time Series requirements.</strong>
+              </p>
+              <ul class="list-disc pl-5 space-y-2">
+                <li>
+                  <strong>Columnar Storage</strong> is the <em>architectural implementation</em>: it stores data by column, allowing for massive compression and fast vertical scans.
+                </li>
+                <li>
+                  <strong>Time Series</strong> is the <em>use case</em>: storing timestamped data (like metrics or logs).
+                </li>
+              </ul>
+              <p>
+                By using the <code>TIME_BUCKET</code> function and <code>TIMESTAMP</code> columns within a Columnar collection, you get the performance of a dedicated Time Series Database (TSDB) with the flexibility of a full database system.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Collections Section -->
+      <section id="creating" class="scroll-mt-24">
+         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+              <i class="fas fa-plus text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Creating Collections</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            Columnar collections require an explicit schema definition at creation time. This allows the engine to optimize storage layout.
+          </p>
+
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+             <div class="flex items-center gap-3 mb-4">
+               <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+               <code class="text-gray-300">/_api/database/:db/columnar</code>
+             </div>
+
+            <pre><code class="language-json text-sm">{
+  "name": "server_metrics",
+  "compression": "lz4",
+  "columns": [
+    { "name": "timestamp", "type": "TIMESTAMP" },
+    { "name": "host", "type": "STRING" },
+    { "name": "cpu_usage", "type": "FLOAT64" },
+    { "name": "requests", "type": "INT64" },
+    { "name": "metadata", "type": "JSON", "nullable": true }
+  ]
+}</code></pre>
+          </div>
+          
+           <div class="mt-6 flex flex-wrap gap-2">
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">INT64</span>
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">FLOAT64</span>
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">STRING</span>
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">BOOL</span>
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">TIMESTAMP</span>
+             <span class="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 border border-white/10">JSON</span>
+           </div>
+        </div>
+      </section>
+
+      <!-- Inserting Data Section -->
+      <section id="inserting" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+              <i class="fas fa-file-import text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Inserting Data</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            Insertions should ideally be batched for maximum performance. The engine automatically handles decomposition into columns and compression.
+          </p>
+
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+             <div class="flex items-center gap-3 mb-4">
+               <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+               <code class="text-gray-300">/_api/database/:db/columnar/:collection/insert</code>
+             </div>
+
+            <pre><code class="language-json text-sm">{
+  "rows": [
+    {
+      "timestamp": "2024-01-01T10:00:00Z",
+      "host": "us-east-1a",
+      "cpu_usage": 45.2,
+      "requests": 1024
+    },
+    {
+      "timestamp": "2024-01-01T10:00:01Z",
+      "host": "us-east-1a",
+      "cpu_usage": 48.1,
+      "requests": 1150
+    }
+  ]
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Aggregations Section -->
+      <section id="aggregations" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+              <i class="fas fa-calculator text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Aggregations</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            Perform fast aggregations on single columns or with grouping. The engine reads only the necessary columns and uses streaming processing for minimal memory footprint (O(1)).
+          </p>
+
+          <div class="space-y-8">
+            <!-- Simple Aggregate -->
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-purple-400 font-bold mb-4 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-calculator mr-2"></i> Simple Aggregate
+               </h4>
+               <p class="text-sm text-gray-400 mb-4">Calculate metrics across the entire collection.</p>
+               
+               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">SDBQL</div>
+                   <pre><code class="language-sql text-sm">FOR c IN cpu_logs
+  COLLECT AGGREGATE
+    avg_usage = AVG(c.usage)
+  RETURN { avg_usage }</code></pre>
+                 </div>
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">API</div>
+                   <pre><code class="language-json text-sm">{
+  "column": "usage",
+  "operation": "AVG"
+}</code></pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Group By -->
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-purple-400 font-bold mb-4 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-layer-group mr-2"></i> Group By
+               </h4>
+               <p class="text-sm text-gray-400 mb-4">Group results by one or more columns.</p>
+
+               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">SDBQL</div>
+                   <pre><code class="language-sql text-sm">FOR r IN requests
+  COLLECT
+    host = r.host
+  AGGREGATE
+    total = SUM(r.count)
+  RETURN { host, total }</code></pre>
+                 </div>
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">API</div>
+                   <pre><code class="language-json text-sm">{
+  "column": "count",
+  "operation": "SUM",
+  "group_by": ["host"]
+}</code></pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Time Bucket -->
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-purple-400 font-bold mb-4 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-clock mr-2"></i> Time Bucket
+               </h4>
+               <p class="text-sm text-gray-400 mb-4">Group by fixed time intervals (e.g., 1h, 5m). Optimized for time-series.</p>
+
+               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">SDBQL</div>
+                   <pre><code class="language-sql text-sm">FOR m IN metrics
+  COLLECT
+    time = TIME_BUCKET(m.ts, '1h'),
+    host = m.host
+  AGGREGATE
+    avg_cpu = AVG(m.cpu)
+  RETURN { time, host, avg_cpu }</code></pre>
+                 </div>
+                 <div>
+                   <div class="text-xs font-bold text-gray-500 uppercase mb-2">API</div>
+                   <pre><code class="language-json text-sm">{
+  "column": "cpu",
+  "operation": "AVG",
+  "group_by": ["TIME_BUCKET(ts, '1h')", "host"]
+}
+// Note: SDBQL is recommended for this</code></pre>
+                 </div>
+               </div>
+            </div>
+          </div>
+          
+          <div class="mt-6">
+            <h4 class="text-sm font-bold text-white mb-3">Supported Operations</h4>
+            <div class="flex flex-wrap gap-2">
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">SUM</span>
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">AVG</span>
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">COUNT</span>
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">MIN</span>
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">MAX</span>
+             <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">COUNT_DISTINCT</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filtering Section -->
+      <section id="filtering" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-pink-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+              <i class="fas fa-filter text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Filtering & Querying</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            Query raw data with column projection and filtering. Filters are applied <em>before</em> projection to minimize IO.
+          </p>
+
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+             <div class="flex items-center gap-3 mb-4">
+               <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+               <code class="text-gray-300">/_api/database/:db/columnar/:collection/query</code>
+             </div>
+
+            <pre><code class="language-json text-sm">{
+  "columns": ["timestamp", "cpu_usage"],
+  "filter": {
+    "column": "host",
+    "op": "EQ",
+    "value": "us-east-1a"
+  },
+  "limit": 100
+}</code></pre>
+          </div>
+          
+           <div class="mt-6">
+            <h4 class="text-sm font-bold text-white mb-3">Filter Operators</h4>
+            <div class="flex flex-wrap gap-2">
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">EQ (=)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">NE (!=)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">GT (>)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">GTE (>=)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">LT (<)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">LTE (<=)</span>
+             <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">IN</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Indexing Section -->
+      <section id="indexing" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-yellow-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(234,179,8,0.5)]">
+              <i class="fas fa-bolt text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Advanced Indexing</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            SoliDB supports advanced columnar index types to accelerate specific query patterns. Indexes are created independently of the data and can be added or removed at any time.
+          </p>
+
+          <div class="space-y-6">
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-layer-group mr-2"></i> Bitmap Index
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Best for <strong>low-cardinality</strong> columns (e.g., status, category, boolean flags). Uses highly compressed bitsets (LZ4) to perform blazing fast equality and <code>IN</code> lookups.
+               </p>
+               <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
+                 <span>Type: <code>"bitmap"</code></span>
+                 <span class="w-1 h-1 bg-gray-600 rounded-full"></span>
+                 <span>Ideal for: &lt; 100 distinct values</span>
+               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-sort-numeric-down mr-2"></i> Min/Max Index
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Best for <strong>range queries</strong> on sorted or semi-sorted data (e.g., timestamps, sequential IDs). Divides data into chunks and skips entire blocks that don't match the filter (Partition Pruning).
+               </p>
+               <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
+                 <span>Type: <code>"minmax"</code></span>
+                 <span class="w-1 h-1 bg-gray-600 rounded-full"></span>
+                 <span>Overhead: Ultra-low (~0.1%)</span>
+               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-hashtag mr-2"></i> Hash Index
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Best for <strong>exact match</strong> queries (equality) on high-cardinality columns (e.g., UUIDs, user IDs). O(1) lookups but does not support range queries.
+               </p>
+               <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
+                 <span>Type: <code>"hash"</code></span>
+                 <span class="w-1 h-1 bg-gray-600 rounded-full"></span>
+                 <span>Fastest for: Equality</span>
+               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-filter mr-2"></i> Bloom Filter Index
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Best for <strong>probabilistic membership</strong> testing. Checks if a value <em>might</em> exist in a chunk before scanning it. Useful for skipping chunks for equality checks on unique or semi-unique columns.
+               </p>
+               <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
+                 <span>Type: <code>"bloom"</code></span>
+                 <span class="w-1 h-1 bg-gray-600 rounded-full"></span>
+                 <span>No False Negatives</span>
+               </div>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <h4 class="text-yellow-400 font-bold mb-2 text-sm uppercase tracking-wider flex items-center">
+                 <i class="fas fa-list mr-2"></i> Sorted Index (Default)
+               </h4>
+               <p class="text-sm text-gray-400 mb-3">
+                 Standard index storing a sorted list of values pointing to list of Row IDs. Good general purpose performance for both equality and range queries on high-cardinality data.
+               </p>
+            </div>
+          </div>
+
+          <div class="mt-8 bg-gray-950/50 rounded-xl border border-white/5 p-6">
+             <div class="flex items-center gap-3 mb-4">
+               <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+               <code class="text-gray-300">/_api/database/:db/columnar/:collection/index</code>
+             </div>
+
+            <pre><code class="language-json text-sm">{
+  "column": "status",
+  "index_type": "bitmap"
+}</code></pre>
+          </div>
+        </div>
+
+      <!-- Use Cases Section -->
+      <section id="use-cases" class="scroll-mt-24">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <!-- IoT / Sensor Data -->
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-4">
+              <div class="p-3 bg-orange-500/10 rounded-lg text-orange-400 mr-4">
+                <i class="fas fa-microchip"></i>
+              </div>
+              <h3 class="text-xl font-bold text-white">IoT & Sensor Data</h3>
+            </div>
+            <p class="text-gray-400 text-sm mb-4">
+              Store high-frequency sensor readings from thousands of devices. Use Time Bucket aggregations to downsample data for visualization (e.g., convert 1-second resolution to 5-minute averages).
+            </p>
+            <div class="bg-gray-950/50 rounded p-4 border border-white/5">
+              <div class="text-xs font-bold text-gray-500 uppercase mb-2">SDBQL</div>
+              <pre><code class="language-sql text-xs">FOR s IN sensors
+  FILTER s.region == 'us-east-1'
+  COLLECT
+    bucket = TIME_BUCKET(s.ts, '5m'),
+    device = s.device_id
+  AGGREGATE
+    avg_temp = AVG(s.temperature),
+    max_temp = MAX(s.temperature),
+    avg_humidity = AVG(s.humidity)
+  RETURN { 
+    time: bucket, 
+    device, 
+    temp: avg_temp, 
+    max: max_temp, 
+    humidity: avg_humidity 
+  }</code></pre>
+            </div>
+          </div>
+
+          <!-- Financial / Trading -->
+          <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+            <div class="flex items-center mb-4">
+              <div class="p-3 bg-green-500/10 rounded-lg text-green-400 mr-4">
+                <i class="fas fa-chart-line"></i>
+              </div>
+              <h3 class="text-xl font-bold text-white">Financial Analytics</h3>
+            </div>
+            <p class="text-gray-400 text-sm mb-4">
+              Analyze trade data to produce OHLCV (Open, High, Low, Close, Volume) candles and VWAP (Volume Weighted Average Price) efficiently.
+            </p>
+            <div class="bg-gray-950/50 rounded p-4 border border-white/5">
+              <div class="text-xs font-bold text-gray-500 uppercase mb-2">SDBQL</div>
+              <pre><code class="language-sql text-xs">FOR t IN trades
+  COLLECT
+    bucket = TIME_BUCKET(t.ts, '1m'),
+    symbol = t.symbol
+  AGGREGATE
+    open = FIRST(t.price),
+    high = MAX(t.price),
+    low = MIN(t.price),
+    close = LAST(t.price),
+    volume = SUM(t.size),
+    vwap_num = SUM(t.price * t.size)
+  RETURN { 
+    time: bucket, 
+    symbol, 
+    open, high, low, close, volume,
+    vwap: vwap_num / volume 
+  }</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

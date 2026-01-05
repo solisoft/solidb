@@ -1,0 +1,270 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <%- Partial("cluster_sidebar") %>
+
+    <main class="col-span-12 lg:col-span-9 space-y-16">
+
+      <!-- HERO -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-pink-500 to-rose-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-rose-400 to-red-400 mb-6 tracking-tight">Distributed Cluster</h1>
+          <p class="text-xl text-gray-300 max-w-4xl leading-relaxed">
+            SoliDB is built for horizontal scale. Spin up a leaderless, shared-nothing cluster in seconds with zero configuration overhead, thanks to built-in port multiplexing.
+          </p>
+        </div>
+      </div>
+
+      <!-- ARCHITECTURE -->
+      <section id="architecture" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <span class="p-2 bg-teal-500/10 rounded-lg mr-3">
+                 <svg class="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+               </span>
+               Architecture
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+               <div class="space-y-4">
+                 <h3 class="text-lg font-semibold text-white">Sharding Strategy</h3>
+                 <p class="text-gray-400 leading-relaxed">
+                   Data is partitioned across nodes using <strong>Consistent Hashing</strong>. Each document is assigned to a specific shard based on its key, and shards are distributed evenly across the cluster.
+                 </p>
+               </div>
+               <div class="space-y-4">
+                 <h3 class="text-lg font-semibold text-white">Replication & Fault Tolerance</h3>
+                 <p class="text-gray-400 leading-relaxed">
+                   Every shard has a primary owner and <code class="text-sm bg-gray-800 px-1 py-0.5 rounded text-teal-300">N</code> replicas. Write operations are consistent, while read operations can be tuned for consistency or availability.
+                 </p>
+               </div>
+            </div>
+
+            <!-- ASCII / Visual Diagram Placeholder -->
+            <div class="bg-gray-950 rounded-xl border border-white/10 p-6 font-mono text-xs text-center text-gray-500 overflow-hidden select-none">
+              <div class="flex justify-center items-center space-x-8">
+                 <div class="w-24 h-24 border-2 border-teal-500/30 rounded-full flex flex-col items-center justify-center animate-pulse">
+                    <span class="text-teal-400 font-bold mb-1">Node A</span>
+                    <span class="text-[10px]">Shard 1,2</span>
+                 </div>
+                 <div class="h-px w-16 bg-gradient-to-r from-teal-500/30 to-purple-500/30"></div>
+                 <div class="w-24 h-24 border-2 border-purple-500/30 rounded-full flex flex-col items-center justify-center animate-pulse animation-delay-500">
+                    <span class="text-purple-400 font-bold mb-1">Node B</span>
+                     <span class="text-[10px]">Shard 2,3</span>
+                 </div>
+                 <div class="h-px w-16 bg-gradient-to-r from-purple-500/30 to-pink-500/30"></div>
+                  <div class="w-24 h-24 border-2 border-pink-500/30 rounded-full flex flex-col items-center justify-center animate-pulse animation-delay-1000">
+                    <span class="text-pink-400 font-bold mb-1">Node C</span>
+                     <span class="text-[10px]">Shard 3,1</span>
+                 </div>
+              </div>
+              <p class="mt-4 opacity-50">Automatic Mesh Topology</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RECOVERY / FAILOVER -->
+      <section id="recovery" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <span class="p-2 bg-red-500/10 rounded-lg mr-3">
+                 <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+               </span>
+               Failing Nodes & Recovery
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-8 leading-relaxed">
+              Clusters are dynamic environments. When a node fails, SoliDB automatically detects the outage and promotes replicas to maintain availability.
+            </p>
+
+            <!-- Diagram -->
+            <div class="bg-gray-950 rounded-xl border border-white/10 p-2 mb-8 overflow-hidden relative">
+              <div class="absolute inset-0 bg-gradient-to-tr from-blue-500/5 to-red-500/5 pointer-events-none"></div>
+              <img src="/images/cluster_failover.png" alt="Cluster Failover Process" class="w-full h-auto rounded-lg shadow-lg opacity-90 hover:opacity-100 transition-opacity">
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="space-y-2">
+                 <div class="text-red-400 text-xs font-bold uppercase tracking-widest border-l-2 border-red-500 pl-3">Phase 1</div>
+                 <h3 class="text-white font-bold">Failure Detected</h3>
+                 <p class="text-gray-400 text-sm">Members exchange heartbeats every 500ms. A node is marked <strong>Suspected</strong> then <strong>Dead</strong> after 3 missed beats.</p>
+              </div>
+              <div class="space-y-2">
+                 <div class="text-amber-400 text-xs font-bold uppercase tracking-widest border-l-2 border-amber-500 pl-3">Phase 2</div>
+                 <h3 class="text-white font-bold">Replica Promotion</h3>
+                 <p class="text-gray-400 text-sm">For affected shards, an available <strong>Replica</strong> is immediately promoted to <strong>Primary</strong> to accept writes.</p>
+              </div>
+              <div class="space-y-2">
+                 <div class="text-blue-400 text-xs font-bold uppercase tracking-widest border-l-2 border-blue-500 pl-3">Phase 3</div>
+                 <h3 class="text-white font-bold">Rebalancing</h3>
+                 <p class="text-gray-400 text-sm">New replicas are created on healthy nodes to restore the <code class="text-xs bg-gray-800 px-1 rounded">replicationFactor</code>.</p>
+              </div>
+            </div>
+
+            <div class="mt-8 bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start gap-4">
+              <div class="text-blue-400 mt-1">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              </div>
+              <div>
+                <h4 class="text-blue-400 font-bold text-sm mb-1">Manual Rebalancing</h4>
+                <p class="text-gray-300 text-sm mb-2">When a node rejoins or a new node is added, trigger a rebalance to distribute load evenly.</p>
+                <code class="text-xs bg-black/40 text-blue-300 px-2 py-1 rounded font-mono">POST /_api/cluster/rebalance</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- QUICK START -->
+      <section id="quick-start" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <span class="p-2 bg-purple-500/10 rounded-lg mr-3">
+                 <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+               </span>
+               3-Node Local Cluster
+            </h2>
+            <span class="bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1 rounded-full border border-purple-500/30 uppercase tracking-widest">Recommended</span>
+          </div>
+
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              Start a fully functional, fault-tolerant cluster on your local machine. SoliDB uses <strong>Single-Port Multiplexing</strong> by default, so you don't need to manage separate ports for replication.
+            </p>
+
+            <div class="grid gap-4">
+              <!-- Step 1 -->
+              <div class="relative group">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                <div class="relative bg-gray-950 rounded-xl border border-white/10 p-5 flex items-start space-x-4">
+                   <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/30 text-purple-400 font-bold font-mono">1</div>
+                   <div class="flex-1 overflow-x-auto">
+                      <p class="text-xs text-gray-500 font-bold uppercase mb-1">Bootstrap Node</p>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8081 --data-dir ./data1</code>
+                   </div>
+                </div>
+              </div>
+
+               <!-- Step 2 -->
+              <div class="relative group">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                <div class="relative bg-gray-950 rounded-xl border border-white/10 p-5 flex items-start space-x-4">
+                   <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 text-indigo-400 font-bold font-mono">2</div>
+                   <div class="flex-1 overflow-x-auto">
+                      <p class="text-xs text-gray-500 font-bold uppercase mb-1">Join Node 2</p>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8082 --data-dir ./data2 --peer 127.0.0.1:8081</code>
+                   </div>
+                </div>
+              </div>
+
+               <!-- Step 3 -->
+              <div class="relative group">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                <div class="relative bg-gray-950 rounded-xl border border-white/10 p-5 flex items-start space-x-4">
+                   <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30 text-blue-400 font-bold font-mono">3</div>
+                   <div class="flex-1 overflow-x-auto">
+                      <p class="text-xs text-gray-500 font-bold uppercase mb-1">Join Node 3</p>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8083 --data-dir ./data3 --peer 127.0.0.1:8081</code>
+                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Verification Tip -->
+            <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-4 border border-white/5 flex items-center justify-between">
+              <span class="text-sm text-gray-400">Verify cluster health:</span>
+              <code class="text-sm text-green-400 font-mono bg-black/30 px-3 py-1.5 rounded">curl http://localhost:8081/_api/health</code>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECURITY -->
+      <section id="security" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <span class="p-2 bg-yellow-500/10 rounded-lg mr-3">
+                 <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+               </span>
+               Production Security
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-8 leading-relaxed">
+              Never deploy a public cluster without authentication. SoliDB uses a shared-secret model with <strong>HMAC-SHA256</strong> challenge-response to prevent unauthorized node joins.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- Generate -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5 hover:border-yellow-500/30 transition-colors">
+                <h3 class="text-yellow-400 font-bold mb-3 flex items-center"><span class="w-6 h-6 rounded-full bg-yellow-500/20 text-center leading-6 text-xs mr-2">1</span> Generate Secret</h3>
+                <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-2 relative group">
+                  openssl rand -base64 756 > solidb.key
+                </div>
+                <p class="text-xs text-gray-500">Creates a high-entropy keyfile.</p>
+              </div>
+
+              <!-- Use -->
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5 hover:border-yellow-500/30 transition-colors">
+                 <h3 class="text-yellow-400 font-bold mb-3 flex items-center"><span class="w-6 h-6 rounded-full bg-yellow-500/20 text-center leading-6 text-xs mr-2">2</span> Start Node</h3>
+                <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-2">
+                  ./solidb ... --keyfile ./solidb.key
+                </div>
+                <p class="text-xs text-gray-500">Apply the same keyfile to all nodes.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADVANCED (CLI) -->
+      <section id="reference" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <span class="p-2 bg-blue-500/10 rounded-lg mr-3">
+                 <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+               </span>
+               CLI Reference
+            </h2>
+          </div>
+
+          <div class="p-8">
+             <div class="bg-gray-950 rounded-xl border border-white/10 p-6 overflow-x-auto">
+              <pre class="font-mono text-sm text-gray-300 leading-relaxed"><code>Usage: solidb [OPTIONS]
+
+Network & Cluster:
+  -p, --port <PORT>                 Listen port (API & Replication) [default: 6745]
+      --peer <PEERS>                Join cluster via peer (e.g. 10.0.0.5:6745)
+      --replication-port <PORT>     Override replication port (Disable Multiplexing)
+      --keyfile <PATH>              Path to auth secret file
+
+System:
+  -d, --daemon                      Run in background (Daemon mode)
+      --data-dir <PATH>             Database storage location [default: ./data]
+      --log-file <PATH>             Log output path
+      --pid-file <PATH>             PID lock file</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

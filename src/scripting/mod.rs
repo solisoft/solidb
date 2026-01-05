@@ -915,6 +915,22 @@ impl ScriptEngine {
         solidb.set("fetch", fetch_fn)
             .map_err(|e| DbError::InternalError(format!("Failed to set fetch: {}", e)))?;
 
+        // solidb.json_encode(value) -> string
+        let json_encode_fn = lua.create_function(|lua, val: LuaValue| {
+            let json_val = lua_to_json_value(lua, val)?;
+            serde_json::to_string(&json_val).map_err(mlua::Error::external)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create json_encode function: {}", e)))?;
+        solidb.set("json_encode", json_encode_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set json_encode: {}", e)))?;
+
+        // solidb.json_decode(string) -> value
+        let json_decode_fn = lua.create_function(|lua, s: String| {
+            let json_val: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
+            json_to_lua(lua, &json_val)
+        }).map_err(|e| DbError::InternalError(format!("Failed to create json_decode function: {}", e)))?;
+        solidb.set("json_decode", json_decode_fn)
+            .map_err(|e| DbError::InternalError(format!("Failed to set json_decode: {}", e)))?;
+
         // Add validation functions to solidb namespace
         let validate_fn = create_validate_function(lua)
             .map_err(|e| DbError::InternalError(format!("Failed to create validate function: {}", e)))?;

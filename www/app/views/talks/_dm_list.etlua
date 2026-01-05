@@ -1,0 +1,23 @@
+<nav class="space-y-0.5">
+  <% for _, dm in ipairs(dmChannels or {}) do %>
+  <a href="/talks?channel=dm_<%= dm.user.firstname:lower() %>"
+     class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
+    <div class="relative">
+      <div class="w-6 h-6 rounded-md bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white text-xs font-medium">
+        <%= string.sub(dm.user.firstname, 1, 1) %>
+      </div>
+      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-card <%= dm.user.online and 'bg-success' or 'bg-text-dim' %>"></span>
+    </div>
+    <span class="flex-1 truncate"><%= dm.user.firstname %> <%= dm.user.lastname %></span>
+    <% if dm.unread and dm.unread > 0 then %>
+    <span class="min-w-[20px] h-5 flex items-center justify-center bg-error text-white text-xs font-bold rounded-full px-1.5">
+      <%= dm.unread %>
+    </span>
+    <% end %>
+  </a>
+  <% end %>
+
+  <% if not dmChannels or #dmChannels == 0 then %>
+  <p class="px-2 py-4 text-xs text-text-dim text-center">No direct messages yet</p>
+  <% end %>
+</nav>

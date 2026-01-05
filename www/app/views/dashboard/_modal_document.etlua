@@ -1,0 +1,95 @@
+<!-- Document Modal with Monaco Editor -->
+<div class="fixed inset-0 z-[150] flex items-center justify-center px-4 sm:px-6"
+     role="dialog"
+     aria-modal="true">
+
+  <!-- Backdrop -->
+  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+
+  <!-- Modal Panel -->
+  <div class="relative w-full max-w-4xl">
+    <div class="bg-bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style="height: 80vh;">
+      <!-- Header -->
+      <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between bg-white/5 flex-shrink-0">
+        <h3 class="text-xl font-bold text-text flex items-center gap-2">
+          <% if mode == 'edit' then %>
+          <i class="fas fa-pen text-primary-light"></i>
+          Edit Document
+          <% else %>
+          <i class="fas fa-plus-circle text-primary-light"></i>
+          New Document
+          <% end %>
+        </h3>
+        <button type="button" onclick="closeModal()"
+                class="text-text-muted hover:text-text p-1 rounded-lg hover:bg-white/10 transition-colors">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+      </div>
+
+      <% if mode == 'edit' then %>
+      <form id="document-form"
+            hx-put="/database/<%= db %>/documents/<%= collection %>/<%= key %>"
+            hx-target="#documents-table"
+            hx-swap="innerHTML"
+            hx-on--after-request="if(event.detail.successful) closeModal()"
+            class="flex flex-col flex-1 min-h-0">
+      <% else %>
+      <form id="document-form"
+            hx-post="/database/<%= db %>/documents/<%= collection %>"
+            hx-target="#documents-table"
+            hx-swap="innerHTML"
+            hx-on--after-request="if(event.detail.successful) closeModal()"
+            class="flex flex-col flex-1 min-h-0">
+      <% end %>
+
+          <% if mode == 'edit' and meta_fields then %>
+        <!-- System Fields (read-only) -->
+        <div class="px-6 py-3 bg-white/5 border-b border-border/30 flex flex-wrap gap-4">
+          <% for k, v in pairs(meta_fields) do %>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-text-muted"><%= k %>:</span>
+            <span class="text-xs font-mono text-primary-light"><%= v %></span>
+          </div>
+          <% end %>
+        </div>
+        <% end %>
+
+        <!-- Editor Container -->
+        <div class="flex-1 p-4 min-h-0" style="min-height: 300px;">
+          <div id="monaco-editor-container" style="width: 100%; height: 100%; min-height: 280px;" class="rounded-lg border border-border/30 overflow-hidden"></div>
+          <input type="hidden" name="document" id="document-input">
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="p-4 bg-white/5 border-t border-border/30 flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center gap-2 text-sm text-text-muted">
+            <i class="fas fa-info-circle"></i>
+            <span>Enter valid JSON</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="button" onclick="formatDocument()"
+                    class="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">
+              <i class="fas fa-magic mr-1"></i>
+              Format
+            </button>
+            <button type="button" onclick="closeModal()"
+                    class="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">
+              Cancel
+            </button>
+            <button type="submit"
+                    id="document-submit-btn"
+                    class="px-5 py-2 bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white font-medium rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all">
+              <i class="fas fa-save mr-2"></i>
+              <% if mode == 'edit' then %>Update<% else %>Create<% end %>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  disposeDocumentEditor();
+  initDocumentEditor(<%- EncodeJson(document_json or '{}') %>);
+</script>

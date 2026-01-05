@@ -1,0 +1,103 @@
+<% if #contributions == 0 then %>
+<div class="p-8 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-lightbulb text-2xl text-primary-light"></i>
+  </div>
+  <p class="text-text-muted">No contributions yet</p>
+  <p class="text-xs text-text-dim mt-1">Submit a contribution to get started</p>
+</div>
+<% else %>
+<div class="overflow-x-auto">
+  <table class="w-full">
+    <thead>
+      <tr class="border-b border-border/30">
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Type</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Description</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Requester</th>
+        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
+        <th class="text-right py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/20">
+      <% for _, contrib in ipairs(contributions) do
+        local contrib_type = contrib.contribution_type or contrib.type or "feature"
+        local status = contrib.status or "submitted"
+
+        -- Type icons and colors
+        local type_icon = "fa-star"
+        local type_color = "text-primary-light"
+        if contrib_type == "bugfix" then
+          type_icon = "fa-bug"
+          type_color = "text-error"
+        elseif contrib_type == "refactor" then
+          type_icon = "fa-code"
+          type_color = "text-accent-light"
+        elseif contrib_type == "documentation" then
+          type_icon = "fa-book"
+          type_color = "text-info"
+        end
+
+        -- Status colors
+        local status_bg = "bg-text-dim/20"
+        local status_text = "text-text-dim"
+        if status == "submitted" then
+          status_bg = "bg-warning/20"
+          status_text = "text-warning"
+        elseif status == "analyzing" then
+          status_bg = "bg-info/20"
+          status_text = "text-info"
+        elseif status == "review" then
+          status_bg = "bg-accent/20"
+          status_text = "text-accent-light"
+        elseif status == "approved" or status == "merged" then
+          status_bg = "bg-success/20"
+          status_text = "text-success"
+        elseif status == "rejected" or status == "cancelled" then
+          status_bg = "bg-error/20"
+          status_text = "text-error"
+        end
+
+        -- Can cancel if submitted or analyzing
+        local can_cancel = status == "submitted" or status == "analyzing"
+      %>
+      <tr class="hover:bg-white/5 transition-colors">
+        <td class="py-3 px-4">
+          <div class="flex items-center gap-2">
+            <i class="fas <%= type_icon %> <%= type_color %>"></i>
+            <span class="text-sm text-text capitalize"><%= contrib_type %></span>
+          </div>
+        </td>
+        <td class="py-3 px-4">
+          <p class="text-sm text-text line-clamp-2 max-w-md"><%= contrib.description or "-" %></p>
+        </td>
+        <td class="py-3 px-4">
+          <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium <%= status_bg %> <%= status_text %>">
+            <%= status %>
+          </span>
+        </td>
+        <td class="py-3 px-4 text-sm text-text-muted">
+          <%= contrib.requester or "-" %>
+        </td>
+        <td class="py-3 px-4 text-sm text-text-muted">
+          <%= format_datetime(contrib.created_at, "short") %>
+        </td>
+        <td class="py-3 px-4 text-right">
+          <% if can_cancel then %>
+          <button type="button"
+                  hx-post="/database/<%= db %>/ai/contributions/<%= contrib.id %>/cancel"
+                  hx-target="closest tr"
+                  hx-swap="outerHTML"
+                  hx-confirm="Cancel this contribution?"
+                  class="p-1.5 text-error/70 hover:text-error hover:bg-error/10 rounded transition-colors"
+                  title="Cancel">
+            <i class="fas fa-times"></i>
+          </button>
+          <% end %>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>

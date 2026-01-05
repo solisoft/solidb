@@ -1,0 +1,40 @@
+<div class="h-full">
+  <talks-app id="talks-app"></talks-app>
+</div>
+
+<!-- highlight.js is loaded in the global layout, just load rust/json language packs here -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/html.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+
+<script type="module">
+  import TalksApp from '<%= PublicPath("/app/components/talks-app.riot.js") %>';
+
+  riot.register("talks-app", TalksApp);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    riot.mount("#talks-app", {
+      channels: <%- Params.channels %>,
+      messages: <%- Params.messages %>,
+      currentChannel: "<%= Params.currentChannel %>",
+      channelId: "<%= Params.channelId %>",
+      currentChannelData: <%- Params.currentChannelData %>,
+      dbName: "<%= Params.db_name %>",
+      dbHost: "<%= ENV["DB_HOST"] or "localhost:6745" %>",
+      currentUser: <%- Params.currentUser %>,
+      users: <%- Params.users %>,
+      dmChannels: <%- Params.dmChannels %>,
+      livequeryToken: "<%= Params.livequery_token %>"
+    });
+
+    // Apply syntax highlighting after component mounts
+    setTimeout(() => {
+      if (window.hljs) {
+        hljs.highlightAll();
+      }
+    }, 100);
+  });
+</script>

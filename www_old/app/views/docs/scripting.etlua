@@ -1,0 +1,1950 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <!-- Sidebar Partial -->
+    <%- Partial("scripting_sidebar") %>
+
+    <!-- Main Content -->
+    <main class="lg:col-span-9 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 mb-4 tracking-tight">Lua Scripting</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Extend SoliDB with custom API endpoints written in Lua. Execute logic directly on the database server for maximum performance.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Overview
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB allows you to embed Lua scripts that act as custom API endpoints. These scripts have direct access to internal database objects, allowing you to perform complex data manipulations, validations, or multi-step transactions in a single HTTP request.
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-bolt mr-2"></i> Performance</h3>
+                <p class="text-sm text-gray-400">Zero network latency between your logic and your data. Ideal for complex aggregates.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-code mr-2"></i> Simplicity</h3>
+                <p class="text-sm text-gray-400">Write clean, synchronous Lua code. No async/await hell.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                 <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-globe mr-2"></i> Custom APIs</h3>
+                <p class="text-sm text-gray-400">Expose exactly the endpoints your frontend needs, hiding complex queries.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security Section -->
+      <section id="security" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              Security Sandbox
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Scripts run in a <strong>strictly sandboxed isolation environment</strong> to ensure server stability and security.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-5">
+                 <h3 class="text-green-400 font-bold mb-3 flex items-center"><i class="fas fa-check-circle mr-2"></i> Allowed Modules</h3>
+                 <ul class="space-y-2 text-sm text-gray-300 font-mono">
+                   <li>string</li>
+                   <li>table</li>
+                   <li>math</li>
+                   <li>utf8</li>
+                   <li>bit</li>
+                 </ul>
+               </div>
+
+               <div class="bg-red-900/10 border border-red-500/20 rounded-xl p-5">
+                 <h3 class="text-red-400 font-bold mb-3 flex items-center"><i class="fas fa-ban mr-2"></i> Disabled Modules</h3>
+                 <ul class="space-y-2 text-sm text-gray-300 font-mono">
+                   <li>os <span class="text-gray-500 text-xs">(Access system commands)</span></li>
+                   <li>io <span class="text-gray-500 text-xs">(File system access)</span></li>
+                   <li>debug <span class="text-gray-500 text-xs">(Reflection tools)</span></li>
+                   <li>package <span class="text-gray-500 text-xs">(Module loading)</span></li>
+                 </ul>
+               </div>
+            </div>
+            
+             <p class="mt-6 text-sm text-gray-400">
+               <i class="fas fa-info-circle text-blue-400 mr-1"></i> Attempts to access disabled modules or perform unauthorized system calls will result in a runtime error.
+             </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Management API -->
+      <section id="management" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+              Management API
+            </h2>
+          </div>
+          
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Before you can execute a script, you must register it via the management API.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5 mb-6">
+               <div class="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
+                 <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Example Request</span>
+                 <span class="text-xs text-indigo-400">POST /_api/database/:db/scripts</span>
+               </div>
+               
+               <div class="overflow-x-auto text-gray-300">
+                  <div>
+                    <span class="text-purple-400">curl</span> -X POST http://localhost:6745/_api/database/my_app/scripts \
+                  </div>
+                  <div class="pl-4">
+                    -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+                  </div>
+                  <div class="pl-4">
+                    -d <span class="text-yellow-300">'{
+  "name": "Greeting API",
+  "path": "greet",             # Result: /api/custom/my_app/greet
+  "methods": ["GET"],
+  "code": "return { greeting = \"Hello!\" }"
+}'</span>
+                  </div>
+               </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-white mb-4">Endpoints</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3 rounded-vl-lg">Method</th>
+                    <th class="px-4 py-3">Endpoint</th>
+                    <th class="px-4 py-3 rounded-vr-lg">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">WS</td>
+                    <td class="px-4 py-3 font-mono">/api/custom/...</td>
+                    <td class="px-4 py-3">WebSocket-only script <span class="text-gray-500 text-xs">(starts as GET)</span></td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-green-400 font-bold">POST</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts</td>
+                    <td class="px-4 py-3">Create a new script</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-blue-400 font-bold">GET</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts</td>
+                    <td class="px-4 py-3">List all scripts</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-yellow-400 font-bold">PUT</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts/:id</td>
+                    <td class="px-4 py-3">Update a script</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 text-red-400 font-bold">DELETE</td>
+                    <td class="px-4 py-3 font-mono">/_api/scripts/:id</td>
+                    <td class="px-4 py-3">Delete a script</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lua Reference -->
+      <section id="reference" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+               Lua API Reference
+            </h2>
+          </div>
+          
+          <div class="p-8 space-y-8">
+            <!-- solidb Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">solidb</h3>
+              <p class="text-gray-400 text-sm mb-4">The main entry point for database operations.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db</span>
+                  <div class="text-xs text-gray-500 mt-1">The current database object.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local db_name = db._name
+local users = db:collection("users")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.log(message)</span>
+                  <div class="text-xs text-gray-500 mt-1">Log a message. Tables/objects are automatically converted to JSON strings. Visible in <span class="text-white">Scripts > Logs</span>.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.log("Processing started")
+solidb.log({ user_id = 123, action = "login" })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.fetch(url, options)</span> <span class="text-gray-500">-&gt; Response</span>
+                  <div class="text-xs text-gray-500 mt-1">Make an HTTP request. Options: <code>{ method="GET", headers={}, body="" }</code>. Returns <code>{ status, body, headers, ok }</code>.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local res = solidb.fetch("https://api.example.com/data", {
+  method = "POST",
+  body = '{"foo":"bar"}',
+  headers = { ["Content-Type"] = "application/json" }
+})
+if res.ok then solidb.log(res.body) end</pre>
+                </li>
+              <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.stats()</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Get runtime statistics: <code>{ active_scripts, active_ws, total_scripts_executed, total_ws_connections }</code>.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local stats = solidb.stats()
+solidb.log("Active scripts: " .. stats.active_scripts)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.env</span>
+                  <div class="text-xs text-gray-500 mt-1">Access per-database environment variables.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local api_key = solidb.env.API_KEY
+if not api_key then solidb.error("Missing config", 500) end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.stats()</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Get script execution statistics. Returns <code>{ active_scripts, active_ws, total_scripts_executed, total_ws_connections }</code>.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.now()</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Get current Unix timestamp in seconds.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">print(...)</span>
+                  <div class="text-xs text-gray-500 mt-1">Print values to console output. Multiple arguments are separated by tabs.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- solidb.ws Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">solidb.ws</h3>
+              <p class="text-gray-400 text-sm mb-4">WebSocket API for bidirectional communication (only available in long-lived WebSocket contexts).</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.recv()</span> <span class="text-gray-500">-&gt; string | nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Wait for and receive the next message. Returns <code>nil</code> if the connection is closed.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local msg = solidb.ws.recv()
+if not msg then return end -- Connection closed</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.send(data)</span>
+                  <div class="text-xs text-gray-500 mt-1">Send a text message to the client.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.ws.send("Hello from server!")
+solidb.ws.send(json.encode({ type="update", data=123 }))</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.ws.close()</span>
+                  <div class="text-xs text-gray-500 mt-1">Gracefully close the WebSocket connection.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">if error_detected then
+  solidb.ws.close()
+  return
+end</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Validation Functions -->
+            <div id="validation">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-teal-500 mr-2"></span>
+                Validation Functions
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">JSON schema validation and data sanitization utilities.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.validate(data, schema)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">Validate data against a JSON schema. Returns <code>true</code> if valid.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local is_valid = solidb.validate(request.body, {
+  type = "object",
+  required = {"username", "email"},
+  properties = {
+    username = { type = "string" },
+    email = { type = "string", format = "email" }
+  }
+})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.validate_detailed(data, schema)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Detailed validation. Returns <code>{ valid, errors, error_count }</code> with error paths and messages.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local res = solidb.validate_detailed(request.body, schema)
+if not res.valid then
+  return { error = "Validation failed", details = res.errors }
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.sanitize(data, operations)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Sanitize data with operations: <code>{ trim=true, lowercase=true, strip_html=true, normalize_whitespace=true }</code>
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local clean_data = solidb.sanitize(request.body, {
+  trim = true,
+  strip_html = true
+})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.typeof(value)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Get the type of a value: "string", "number", "integer", "boolean", "table", "function", "nil".</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">if solidb.typeof(request.body.age) == "integer" then
+  -- process integer
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.validate_input(input, rules)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Validate input fields with rules: <code>{ field = { required=true, type="string", min=0, max=100 } }</code>
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.validate_input(request.body, {
+  email = { required=true, type="string", pattern="^[^@]+@[^@]+$" },
+  age = { required=false, type="number", min=18 }
+}) -- Throws error if invalid</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.validate_condition(cond, msg, code)</span> <span class="text-gray-500">-&gt; boolean | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Assert a condition, throwing an HTTP error with code (default 400) if false.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.validate_condition(user_bal >= amount, "Insufficient funds", 402)</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- File & Image Handling -->
+            <div id="file-handling">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-pink-500 mr-2"></span>
+                File &amp; Image Handling
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Utilities for managing uploaded files and processing images.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.upload(data, options)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Upload a file (base64 or bytes). Options: <code>{ filename, directory, overwrite }</code>.
+                    <br>Returns <code>{ path, filename, size, mime_type, width?, height? }</code>.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local file = solidb.upload(req.body.data, {
+  filename = "avatar.png",
+  directory = "avatars"
+})
+solidb.log(file.path)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_info(key)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Get file metadata. Returns: <code>{ _key, path, filename, size, mime_type, created_at, directory, chunks, width?, height? }</code>.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local info = solidb.file_info("file-uuid-key")
+if info.width and info.width > 2000 then
+  return { error = "Image too wide" }
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_read(key)</span> <span class="text-gray-500">-&gt; string (base64)</span>
+                  <div class="text-xs text-gray-500 mt-1">Read file content as base64 string by key.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local content = solidb.file_read("file-uuid-key")
+local data = json.decode(crypto.base64_decode(content))</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Delete a file by key. Returns true if deleted or didn't exist.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.file_delete("file-uuid-key")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_list(directory?)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">List files in a directory.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local files = solidb.file_list("avatars")
+for _, f in ipairs(files) do
+  solidb.log(f.filename)
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.image_process(data, ops)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Process image (base64 or path). Ops: <code>{ resize={w,h}, crop={x,y,w,h}, rotate=90, flip="h"|"v", format="webp" }</code>.
+                    <br>Returns <code>{ data (base64), size, width, height, format, mime_type }</code>.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local processed = solidb.image_process(req.body.img, {
+  resize = { width = 800 },
+  format = "webp",
+  quality = 80
+})</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- HTTP Helpers -->
+            <div id="http-helpers">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-sky-500 mr-2"></span>
+                HTTP Helpers
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Utilities for HTTP responses, cookies, and caching.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.redirect(url)</span>
+                  <div class="text-xs text-gray-500 mt-1">Trigger an HTTP redirect to the specified URL.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">if not user then
+  solidb.redirect("/login") -- Stops execution immediately
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.set_cookie(name, value, options)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Set a cookie. Options: <code>{ expires, path, domain, secure, httpOnly, sameSite }</code>
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.set_cookie("session_id", "xyz123", {
+  httpOnly = true,
+  secure = true,
+  max_age = 3600
+})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.cache(key, value, ttl_seconds)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">Store a value in the in-memory cache with optional TTL (default 1 hour).</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.cache("daily_stats", stats_table, 3600)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.cache_get(key)</span> <span class="text-gray-500">-&gt; value | nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Retrieve a value from cache. Returns <code>nil</code> if expired or not found.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local cached = solidb.cache_get("daily_stats")
+if cached then return cached end</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Error Handling -->
+            <div id="error-handling">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-rose-500 mr-2"></span>
+                Error Handling
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Standardized error handling, assertions, and resilience patterns.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.error(message, code)</span>
+                  <div class="text-xs text-gray-500 mt-1">Throw an HTTP error with status code (default 500). Never returns.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.error("Payment failed", 402)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.assert(condition, message)</span> <span class="text-gray-500">-&gt; boolean | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Assert a condition is true, throwing an error with message if false.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.assert(amount > 0, "Amount must be positive")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.try(fn, catch_fn)</span> <span class="text-gray-500">-&gt; any</span>
+                  <div class="text-xs text-gray-500 mt-1">Try-catch pattern. Executes <code>fn</code>, calls <code>catch_fn(error)</code> on failure. (Async)</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.try(function()
+  -- risky operation
+  return db:insert("logs", { action="test" })
+end, function(err)
+  solidb.log("Failed: " .. tostring(err))
+  return nil
+end)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.check_permissions(user, required)</span> <span class="text-gray-500">-&gt; boolean | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Verify user has all required permissions. User table must have <code>permissions</code> array.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local user = solidb.auth.user()
+solidb.check_permissions(user, {"read:posts", "write:posts"})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.rate_limit(identifier, max, window_sec)</span> <span class="text-gray-500">-&gt; boolean | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Rate limit by identifier (e.g., user ID, IP). Throws 429 error if limit exceeded.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">-- Allow 10 requests per minute per IP
+solidb.rate_limit(request.ip, 10, 60)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.timeout(ms, fn)</span> <span class="text-gray-500">-&gt; any | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Execute function with timeout. Throws error if timeout exceeded. (Async)</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">solidb.timeout(5000, function()
+  return solidb.fetch("https://slow-api.com")
+end)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.retry(max_attempts, delay_ms, fn)</span> <span class="text-gray-500">-&gt; any | error</span>
+                  <div class="text-xs text-gray-500 mt-1">Retry a function up to N times with delay between attempts. (Async)</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local res = solidb.retry(3, 1000, function()
+  local r = solidb.fetch("https://flaky-api.com")
+  if not r.ok then error("Request failed") end
+  return r
+end)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">solidb.fallback(primary_fn, fallback_fn)</span> <span class="text-gray-500">-&gt; any</span>
+                  <div class="text-xs text-gray-500 mt-1">Try primary function, use fallback on error. (Async)</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local data = solidb.fallback(
+  function() return solidb.fetch("https://primary.com").body end,
+  function() return solidb.fetch("https://backup.com").body end
+)</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Database Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Database</h3>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:collection(name)</span> <span class="text-gray-500">-&gt; Collection</span>
+                  <div class="text-xs text-gray-500 mt-1">Get a handle to a collection.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local users = db:collection("users")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:query(query, params)</span> <span class="text-gray-500">-&gt; list&lt;document&gt;</span>
+                  <div class="text-xs text-gray-500 mt-1">Execute an SDBQL query.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local results = db:query("FOR u IN users FILTER u.active == @active RETURN u", { active = true })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:transaction(callback)</span> <span class="text-gray-500">-&gt; any</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Execute operations atomically within a transaction. The callback receives a <code>tx</code> context.
+                    <strong class="text-green-400">Auto-commits</strong> on success, <strong class="text-red-400">auto-rollbacks</strong> on error.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">db:transaction(function(tx)
+  local tx_users = tx:collection("users")
+  tx_users:update("123", { active = true })
+  -- if code fails here, changes are rolled back
+end)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:enqueue(queue, script, params, options)</span> <span class="text-gray-500">-&gt; string (job_id)</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Queue a background job. Options: <code>{ priority=0, max_retries=20, run_at=timestamp }</code>.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local job_id = db:enqueue("emails", "send_welcome", { user_id = "123" }, {
+  priority = 10,
+  max_retries = 3
+})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">db:enqueue(queue, script, params, options)</span> <span class="text-gray-500">-&gt; job_id</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Enqueue a background job. Options: <code>{ delay_ms = 0 }</code>.
+                    <br><span class="text-gray-600">Example:</span> <code>db:enqueue("emails", "send_email", { to = "user@example.com" }, { delay_ms = 5000 })</code>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Transactions -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Transactions</h3>
+              <p class="text-gray-400 text-sm mb-4">Inside a <code>db:transaction()</code> callback, use the <code>tx</code> object for atomic operations.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">tx:collection(name)</span> <span class="text-gray-500">-&gt; TxCollection</span>
+                  <div class="text-xs text-gray-500 mt-1">Get a transactional collection handle.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local col = tx:collection("users")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local new_doc = txCol:insert({ name = "Alice" })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local updated = txCol:update("user_123", { active = false })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">txCol:delete("user_123")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">txCol:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local doc = txCol:get("user_123")</pre>
+                </li>
+              </ul>
+            </div>
+
+
+            <!-- Collection Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Collection</h3>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:get(key)</span> <span class="text-gray-500">-&gt; document | nil</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local user = users:get("123")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:insert(doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local created = users:insert({ name = "Bob", age = 30 })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:update(key, doc)</span> <span class="text-gray-500">-&gt; document</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local updated = users:update("123", { age = 31 })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:delete(key)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">users:delete("123")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">col:count()</span> <span class="text-gray-500">-&gt; int</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local total = users:count()</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- String Extensions -->
+            <div id="string-utils">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-amber-500 mr-2"></span>
+                String Utilities
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Extended string manipulation functions.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.regex(subject, pattern)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Check if a string matches a regex pattern.
+                  </div>
+                   <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">if string.regex("user_123", "^user_%d+$") then
+  -- Valid user ID format
+end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.regex_replace(subject, pattern, replacement)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Replace all occurrences of a regex pattern.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local safe = string.regex_replace("a-b-c", "-", "_")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.slugify(text)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Convert text to URL-friendly slug.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local slug = string.slugify("Hello World & Good Morning")
+-- "hello-world-good-morning"</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.truncate(text, length, suffix?)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Truncate text to length with optional suffix (default "...").
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local short = string.truncate("This is a very long description", 10)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.template(template, vars)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    String interpolation with <code>{{var}}</code> syntax.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local msg = string.template("Hello {{name}}!", { name = "Alice" })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.split(text, delimiter?)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">Split string by delimiter (default space).</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local parts = string.split("a,b,c", ",")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.trim(text)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Remove leading and trailing whitespace.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local clean = string.trim("  hello  ")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.pad_left(text, length, char?)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Left-pad string to length with character (default space).</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.pad_right(text, length, char?)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Right-pad string to length with character (default space).</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.capitalize(text)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Capitalize first letter of string.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">string.title_case(text)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Capitalize first letter of each word.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Table Utilities -->
+            <div id="table-utils">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+                Table Utilities
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Extended table manipulation functions.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.deep_merge(t1, t2)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Recursively merge t2 into t1.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local merged = table.deep_merge({a=1}, {b=2})</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.keys(t)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">Get an array of all keys in the table.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local keys = table.keys({ name="Alice", age=30 })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.values(t)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">Get an array of all values in the table.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local vals = table.values({ a=1, b=2 })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.contains(t, value)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Check if table contains a value.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">if table.contains(roles, "admin") then ... end</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.filter(t, fn)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Filter table by predicate.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local adults = table.filter(users, function(u) return u.age >= 18 end)</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">table.map(t, fn)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Transform table values.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local names = table.map(users, function(u) return u.name end)</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Crypto Functions -->
+            <div id="crypto-functions">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span>
+                Crypto Functions
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Cryptographic utilities exposed via the <code>crypto</code> global.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.md5(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local hash = crypto.md5("secret")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.sha256(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.sha512(data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local hash = crypto.sha512("data")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hmac_sha256(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hmac_sha512(key, data)</span> <span class="text-gray-500">-&gt; string (hex)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base64_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                   <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local b64 = crypto.base64_encode("hello")</pre>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base64_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base32_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.base32_decode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hex_encode(data)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Encode binary data as hexadecimal string.</div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hex_decode(hex)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                  <div class="text-xs text-gray-500 mt-1">Decode hexadecimal string to binary data.</div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.uuid()</span> <span class="text-gray-500">-&gt; string (v4)</span>
+                   <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local id = crypto.uuid()</pre>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.uuid_v7()</span> <span class="text-gray-500">-&gt; string (v7)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.random_bytes(len)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.curve25519(secret, public)</span> <span class="text-gray-500">-&gt; string (bytes)</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Calculate X25519 shared secret or public key.
+                    <br><code>crypto.curve25519(secret, "\9")</code> -> public key
+                  </div>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_encode(claims, secret)</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.jwt_decode(token, secret)</span> <span class="text-gray-500">-&gt; table</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.hash_password(pwd)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Hash password using Argon2 (Async/Non-blocking).</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">crypto.verify_password(hash, pwd)</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Verify password (Async/Non-blocking).</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Time Functions -->
+            <div id="time-functions" class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span>
+                Time Functions
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Time utilities via <code>time</code> global.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.now()</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local ts = time.now() -- 1678900000.123</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.now_ms()</span> <span class="text-gray-500">-&gt; int (milliseconds)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.iso()</span> <span class="text-gray-500">-&gt; string (ISO 8601)</span>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">local iso = time.iso() -- "2023-03-15T12:00:00Z"</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.sleep(ms)</span> <span class="text-gray-500">-&gt; nil</span>
+                  <div class="text-xs text-gray-500 mt-1">Suspend execution for N ms (Non-blocking).</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">time.sleep(100) -- Sleep 100ms</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.format(ts, format)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Format timestamp (e.g. "%Y-%m-%d %H:%M:%S").</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.parse(iso)</span> <span class="text-gray-500">-&gt; float (seconds)</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.add(ts, val, unit)</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Add unit ("ms", "s", "m", "h", "d") to timestamp.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">time.subtract(ts, val, unit)</span> <span class="text-gray-500">-&gt; float</span>
+                  <div class="text-xs text-gray-500 mt-1">Subtract unit from timestamp.</div>
+                </li>
+              </ul>
+            </div>
+
+
+
+            <!-- Response Helpers -->
+            <div id="response-helpers">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono flex items-center">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>
+                Response Helpers
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Enhanced response utilities for different content types.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">response.json(data)</span> <span class="text-gray-500">-&gt; response</span>
+                  <div class="text-xs text-gray-500 mt-1">Return a JSON response (default behavior when returning a table).</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">return response.json({ message = "OK" })</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">response.html(content)</span> <span class="text-gray-500">-&gt; response</span>
+                  <div class="text-xs text-gray-500 mt-1">Return an HTML response with Content-Type: text/html.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">return response.html("<h1>Hello</h1>")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">response.file(path)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Prepare a file download.</div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">return response.file("uploads/report.pdf")</pre>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">response.stream(data)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">Return a streaming response marker for large data.</div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-purple-400">response.cors(options)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Configure CORS headers.
+                  </div>
+                  <pre class="w-full block mt-2 text-xs bg-black/40 p-2 rounded text-gray-300 border border-white/5 overflow-x-auto">return response.cors({
+  origins = {"*"},
+  methods = {"GET", "POST"}
+})</pre>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Request Object -->
+             <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">request</h3>
+              <p class="text-gray-400 text-sm mb-4">Contains information about the incoming HTTP request.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.method</span> <span class="text-gray-500">-&gt; string</span> ("GET", "POST", etc.)
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.path</span> <span class="text-gray-500">-&gt; string</span>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.query</span> <span class="text-gray-500">-&gt; table</span> (URL query parameters)
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.params</span> <span class="text-gray-500">-&gt; table</span> (URL path parameters, e.g. :id)
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.body</span> <span class="text-gray-500">-&gt; table | nil</span> (Parsed JSON body)
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.headers</span> <span class="text-gray-500">-&gt; table</span>
+                </li>
+                 <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">request.is_websocket</span> <span class="text-gray-500">-&gt; bool</span>
+                  <div class="text-xs text-gray-500 mt-1">Whether this is a WebSocket upgrade request.</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Response Object -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">response</h3>
+              <p class="text-gray-400 text-sm mb-4">Response utilities for formatting output.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-red-400">response.json(data)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">Convert a Lua table to a JSON string.</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Authentication Section -->
+      <section id="authentication" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              Authentication &amp; Authorization
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Scripts have access to the current authenticated user via the <code class="text-yellow-400">solidb.auth</code> namespace. Use these functions to implement role-based access control in your custom endpoints.
+            </p>
+
+            <!-- Auth Functions -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Auth Functions</h3>
+              <p class="text-gray-400 text-sm mb-4">Access user info and perform authorization checks.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.user()</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Returns current user info: <code>{ username, roles, authenticated, scoped_databases, exp }</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.is_authenticated()</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Returns <code>true</code> if the request has valid authentication.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.has_role(role)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Check if user has a specific role. Admin role has all permissions.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.require_role(role)</span> <span class="text-gray-500">-&gt; true | error</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Guard that throws 401/403 error if user doesn't have the role.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.require_auth()</span> <span class="text-gray-500">-&gt; true | error</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Guard that throws 401 error if user is not authenticated.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-yellow-400">solidb.auth.has_database_access(db_name)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Check if user has access to a specific database (for scoped API keys).
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Authenticating Custom Scripts</h3>
+              <p class="text-gray-400 text-sm mb-4">
+                Custom script endpoints (<code>/api/custom/...</code>) support permissive authentication. 
+                You can pass credentials to populate the user session, or omit them for anonymous access.
+              </p>
+              
+              <div class="bg-black/20 p-4 rounded border border-white/5 space-y-4">
+                <div>
+                  <h4 class="text-sm font-bold text-gray-300 font-mono mb-1">Using JWT (User Token)</h4>
+                  <code class="text-xs bg-gray-900 border border-white/10 p-1.5 rounded text-green-400 block w-full">Authorization: Bearer &lt;your-jwt-token&gt;</code>
+                </div>
+                
+                <div>
+                  <h4 class="text-sm font-bold text-gray-300 font-mono mb-1">Using API Key</h4>
+                  <code class="text-xs bg-gray-900 border border-white/10 p-1.5 rounded text-green-400 block w-full">X-API-Key: &lt;your-api-key&gt;</code>
+                  <div class="text-xs text-gray-500 mt-1">Or via header: <code>Authorization: ApiKey &lt;your-api-key&gt;</code></div>
+                </div>
+
+                <div class="text-xs text-gray-400 border-l-2 border-pink-400 pl-3 italic">
+                  <strong>Note:</strong> If authentication fails (e.g., invalid token), the request will return <span class="text-red-400">401 UNAUTHORIZED</span>. 
+                  If no credentials are provided, <code>solidb.auth.user()</code> returns an anonymous user.
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-4 font-mono border-b border-white/10 pb-2">Authentication Scopes</h3>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- DB Scope -->
+                <div class="bg-black/20 p-4 rounded border border-blue-500/20">
+                  <h4 class="text-blue-400 font-bold mb-2">1. Database Scope (Admin Use)</h4>
+                  <p class="text-gray-400 text-xs mb-3">
+                    Users managed by SoliDB (stored in <code>_system</code> database). 
+                    Best for admins, internal services, and dashboard access.
+                  </p>
+                  <ul class="text-xs text-gray-500 list-disc list-inside space-y-1">
+                    <li>Managed via <code>/_api/auth/users</code></li>
+                    <li>Global or per-database permissions</li>
+                    <li>Access via <code>Authorization: Bearer &lt;token&gt;</code></li>
+                    <li>Access via <code>X-API-Key</code> header</li>
+                    <li>Checked using <code>solidb.auth.user()</code></li>
+                  </ul>
+                </div>
+
+                <!-- App Scope -->
+                <div class="bg-black/20 p-4 rounded border border-green-500/20">
+                  <h4 class="text-green-400 font-bold mb-2">2. App Scope (Custom Users)</h4>
+                  <p class="text-gray-400 text-xs mb-3">
+                    Your application's users (e.g., "customers") stored in your own collections.
+                    Best for public-facing apps (SaaS, e-commerce, social).
+                  </p>
+                  <ul class="text-xs text-gray-500 list-disc list-inside space-y-1">
+                    <li>Stored in your collection (e.g. <code>users</code>)</li>
+                    <li>Custom fields (email, phone, profile)</li>
+                    <li>You handle login/signup via scripts</li>
+                    <li>You issue and verify standard JWTs</li>
+                    <li>Verified using <code>crypto.jwt_encode/decode</code></li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Auth Examples Tab-like split -->
+              <div class="space-y-8">
+                
+                <!-- DB Auth Example -->
+                <div>
+                  <h3 class="text-lg font-bold text-white mb-3">Example: DB Scope (Admin Protected Endpoint)</h3>
+                  <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                    <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Protected Admin Endpoint</span>
+<span class="text-gray-500">-- Automatic validation via Middleware (Bearer Token or API Key)</span>
+
+<span class="text-gray-500">-- 1. Ensure caller is authenticated as a DB User</span>
+<span class="text-yellow-400">solidb.auth.require_auth</span>() 
+
+<span class="text-gray-500">-- 2. Check for specific role</span>
+<span class="text-yellow-400">solidb.auth.require_role</span>(<span class="text-green-400">"editor"</span>)
+
+<span class="text-blue-400">local</span> user = <span class="text-yellow-400">solidb.auth.user</span>()
+
+<span class="text-gray-500">-- 3. Perform admin action</span>
+db:insert(<span class="text-green-400">"system_logs"</span>, {
+  action = <span class="text-green-400">"config_update"</span>,
+  admin = user.username,
+  time = <span class="text-purple-400">solidb.now</span>()
+})
+
+<span class="text-blue-400">return</span> { success = <span class="text-purple-400">true</span>, admin = user.username }</pre>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- App Auth Example -->
+                <div>
+                  <h3 class="text-lg font-bold text-white mb-3">Example: App Scope (Custom User Authentication)</h3>
+                  <p class="text-gray-400 text-sm mb-3">
+                    Implement your own authentication flow using <code>crypto</code> functions.
+                  </p>
+                  
+                  <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                    <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Secret for signing JWTs (store safely or use env var)</span>
+<span class="text-blue-400">local</span> JWT_SECRET = <span class="text-green-400">"your-application-secret-key-12345"</span>
+
+<span class="text-gray-500">-- Helper: Verify JWT from header</span>
+<span class="text-blue-400">local function</span> <span class="text-yellow-400">get_current_user</span>()
+    <span class="text-blue-400">local</span> auth = request.headers[<span class="text-green-400">"authorization"</span>]
+    <span class="text-blue-400">if not</span> auth <span class="text-blue-400">then return nil end</span>
+    
+    <span class="text-blue-400">local</span> token = auth:match(<span class="text-green-400">"Bearer%s+(.+)"</span>)
+    <span class="text-blue-400">if not</span> token <span class="text-blue-400">then return nil end</span>
+
+    <span class="text-gray-500">-- Verify and decode (throws error if invalid)</span>
+    <span class="text-blue-400">local</span> ok, payload = <span class="text-blue-400">pcall</span>(crypto.jwt_decode, token, JWT_SECRET)
+    <span class="text-blue-400">if not</span> ok <span class="text-blue-400">then return nil end</span>
+    
+    <span class="text-blue-400">return</span> payload <span class="text-gray-500">-- Returns table: { sub="user_id", ... }</span>
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- Main Logic</span>
+<span class="text-blue-400">local</span> user = <span class="text-yellow-400">get_current_user</span>()
+
+<span class="text-blue-400">if not</span> user <span class="text-blue-400">then</span>
+    <span class="text-blue-400">return</span> { error = <span class="text-green-400">"Unauthorized: Please login"</span> }, <span class="text-purple-400">401</span>
+<span class="text-blue-400">end</span>
+
+<span class="text-gray-500">-- User is authenticated, proceed</span>
+<span class="text-blue-400">return</span> { 
+    message = <span class="text-green-400">"Welcome back!"</span>, 
+    user_id = user.sub 
+}</pre>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                     <div class="border-b border-white/5 bg-white/5 px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                       Login Script Example (Issue Token)
+                     </div>
+                    <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-blue-400">local</span> users = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"app_users"</span>)
+<span class="text-blue-400">local</span> email = request.body.email
+<span class="text-blue-400">local</span> password = request.body.password
+
+<span class="text-gray-500">-- Find user (using hypothetical find_one or query)</span>
+<span class="text-blue-400">local</span> result = db:<span class="text-blue-400">query</span>(<span class="text-green-400">"FOR u IN app_users FILTER u.email == @e RETURN u"</span>, {e=email})
+<span class="text-blue-400">local</span> user = result[<span class="text-purple-400">1</span>]
+
+<span class="text-blue-400">if</span> user <span class="text-blue-400">and</span> crypto.verify_password(user.password_hash, password) <span class="text-blue-400">then</span>
+    <span class="text-gray-500">-- Issue JWT</span>
+    <span class="text-blue-400">local</span> token = crypto.jwt_encode({
+        sub = user._key,
+        email = user.email,
+        exp = os.time() + <span class="text-purple-400">86400</span> <span class="text-gray-500">-- 24h</span>
+    }, <span class="text-green-400">"your-application-secret-key-12345"</span>)
+    
+    <span class="text-blue-400">return</span> { token = token }
+<span class="text-blue-400">end</span>
+
+<span class="text-blue-400">return</span> { error = <span class="text-green-400">"Invalid credentials"</span> }, <span class="text-purple-400">401</span></pre>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Example: Conditional Logic Based on Role</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Different behavior based on role</span>
+<span class="text-blue-400">if</span> <span class="text-yellow-400">solidb.auth.has_role</span>(<span class="text-green-400">"admin"</span>) <span class="text-blue-400">then</span>
+  <span class="text-gray-500">-- Admin can see all users</span>
+  <span class="text-blue-400">return</span> db:query(<span class="text-green-400">"SELECT * FROM users"</span>)
+<span class="text-blue-400">elseif</span> <span class="text-yellow-400">solidb.auth.is_authenticated</span>() <span class="text-blue-400">then</span>
+  <span class="text-gray-500">-- Regular users see only their own data</span>
+  <span class="text-blue-400">local</span> user = <span class="text-yellow-400">solidb.auth.user</span>()
+  <span class="text-blue-400">return</span> db:query(<span class="text-green-400">"SELECT * FROM users WHERE _key == @id"</span>, { id = user.username })
+<span class="text-blue-400">else</span>
+  <span class="text-gray-500">-- Anonymous users get public data only</span>
+  <span class="text-blue-400">return</span> db:query(<span class="text-green-400">"SELECT name FROM users WHERE public == true"</span>)
+<span class="text-blue-400">end</span></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- File & Media Section -->
+      <section id="file-media" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              File &amp; Media Handling
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Upload, manage, and process files directly from your Lua scripts. Files are stored using SoliDB's <strong class="text-pink-400">blob storage</strong> in the <code class="text-pink-400">_files</code> collection, providing durability, replication, and easy backup.
+            </p>
+
+            <!-- File Functions -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">File Operations</h3>
+              <p class="text-gray-400 text-sm mb-4">Upload, read, and manage files. Files are identified by their unique key (UUID).</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.upload(data, options?)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Upload file from base64 data. Options: <code>{ filename, directory }</code><br>
+                    Returns: <code>{ key, path, filename, size, mime_type, chunks, width?, height? }</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_info(key)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Get file metadata by key: <code>{ _key, _id, path, size, filename, mime_type, created_at, chunks, width?, height? }</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_read(key)</span> <span class="text-gray-500">-&gt; string (base64)</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Read file contents as base64-encoded string by file key.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_delete(key)</span> <span class="text-gray-500">-&gt; boolean</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Delete a file and its blob chunks. Returns <code>true</code> if deleted, <code>false</code> if not found.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.file_list(options?)</span> <span class="text-gray-500">-&gt; array</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    List files. Options: <code>{ directory, limit, offset }</code><br>
+                    Returns array of <code>{ _key, _id, path, filename, size, mime_type, chunks, directory? }</code>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Image Processing -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Image Processing</h3>
+              <p class="text-gray-400 text-sm mb-4">Transform images with resize, crop, rotate, and more.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-3 rounded border border-white/5">
+                  <span class="text-pink-400">solidb.image_process(data, operations)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-2">
+                    Process an image with the specified operations. Input can be base64 string or file key (UUID).<br><br>
+                    <strong class="text-gray-400">Operations:</strong>
+                    <ul class="mt-1 ml-4 space-y-1">
+                      <li><code>resize: { width, height }</code> - Resize image (aspect ratio preserved if only one dimension)</li>
+                      <li><code>thumbnail: { width, height }</code> - Create thumbnail fitting within bounds</li>
+                      <li><code>crop: { x, y, width, height }</code> - Crop region</li>
+                      <li><code>rotate: 90 | 180 | 270</code> - Rotate clockwise</li>
+                      <li><code>flip: "horizontal" | "vertical"</code> - Flip image</li>
+                      <li><code>grayscale: true</code> - Convert to grayscale</li>
+                      <li><code>blur: float</code> - Apply Gaussian blur (sigma value)</li>
+                      <li><code>brightness: -100 to 100</code> - Adjust brightness</li>
+                      <li><code>contrast: -100 to 100</code> - Adjust contrast</li>
+                      <li><code>format: "jpeg" | "png" | "webp"</code> - Output format</li>
+                      <li><code>quality: 1-100</code> - JPEG quality (default: 85)</li>
+                    </ul>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2">
+                    Returns: <code>{ data (base64), size, width, height, format, mime_type }</code>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- File Upload Example -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-3">Example: File Upload Endpoint</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Upload file from request body (stored in _files blob collection)</span>
+<span class="text-blue-400">local</span> file_data = request.body.file <span class="text-gray-500">-- base64 encoded</span>
+<span class="text-blue-400">local</span> filename = request.body.filename
+
+<span class="text-blue-400">local</span> result = <span class="text-pink-400">solidb.upload</span>(file_data, {
+  filename = filename,
+  directory = <span class="text-green-400">"user_uploads"</span>
+})
+
+<span class="text-gray-500">-- Store file reference in your collection (key is stored in _files)</span>
+db:insert(<span class="text-green-400">"user_files"</span>, {
+  file_key = result.key, <span class="text-gray-500">-- UUID key for blob storage</span>
+  path = result.path,
+  size = result.size,
+  mime_type = result.mime_type,
+  uploaded_at = <span class="text-purple-400">solidb.now</span>()
+})
+
+<span class="text-blue-400">return</span> result</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Example: Image Thumbnail Generation</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Create thumbnail from uploaded image</span>
+<span class="text-blue-400">local</span> image_data = request.body.image
+
+<span class="text-blue-400">local</span> thumb = <span class="text-pink-400">solidb.image_process</span>(image_data, {
+  thumbnail = { width = <span class="text-purple-400">200</span>, height = <span class="text-purple-400">200</span> },
+  format = <span class="text-green-400">"webp"</span>,
+  quality = <span class="text-purple-400">80</span>
+})
+
+<span class="text-gray-500">-- Save thumbnail</span>
+<span class="text-blue-400">local</span> saved = <span class="text-pink-400">solidb.upload</span>(thumb.data, {
+  filename = <span class="text-green-400">"thumb_"</span> .. request.body.name .. <span class="text-green-400">".webp"</span>,
+  directory = <span class="text-green-400">"thumbnails"</span>
+})
+
+<span class="text-blue-400">return</span> {
+  thumbnail = saved.path,
+  width = thumb.width,
+  height = thumb.height,
+  size = thumb.size
+}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Example: Process Existing File by Key</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Process image by file key (UUID)</span>
+<span class="text-blue-400">local</span> file_key = request.params.file_key
+
+<span class="text-gray-500">-- Get file info</span>
+<span class="text-blue-400">local</span> info = <span class="text-pink-400">solidb.file_info</span>(file_key)
+
+<span class="text-gray-500">-- Process the image directly by key</span>
+<span class="text-blue-400">local</span> processed = <span class="text-pink-400">solidb.image_process</span>(file_key, {
+  resize = { width = <span class="text-purple-400">1200</span> }, <span class="text-gray-500">-- height auto</span>
+  format = <span class="text-green-400">"jpeg"</span>,
+  quality = <span class="text-purple-400">85</span>
+})
+
+<span class="text-blue-400">return</span> {
+  original = info,
+  processed = processed
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Development Tools Section -->
+      <section id="dev-tools" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Development Tools
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Debugging, profiling, and testing utilities to help you develop and optimize your Lua scripts.
+            </p>
+
+            <!-- Debug & Inspect -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Debugging</h3>
+              <p class="text-gray-400 text-sm mb-4">Inspect and debug values during development.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.debug(data)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Pretty-prints any value with formatting. Also logs to server tracing.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.inspect(value)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Returns detailed type info: <code>{ type, length?, value?, count?, is_array?, keys? }</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.dump(value)</span> <span class="text-gray-500">-&gt; string</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Returns JSON-like string representation of any value.
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Profiling -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Profiling</h3>
+              <p class="text-gray-400 text-sm mb-4">Measure and optimize performance.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.profile(fn, args?)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Executes function and returns: <code>{ result, duration_ms, duration_us }</code>
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.benchmark(fn, iterations?)</span> <span class="text-gray-500">-&gt; table</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Runs function N times (default: 100). Returns: <code>{ iterations, total_ms, avg_ms, min_ms, max_ms, std_dev_ms }</code>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Testing -->
+            <div class="mb-8">
+              <h3 class="text-lg font-bold text-white mb-2 font-mono">Testing</h3>
+              <p class="text-gray-400 text-sm mb-4">Assertions and mocking for unit tests.</p>
+              <ul class="space-y-3 font-mono text-sm text-gray-300">
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.assert(condition, message?)</span> <span class="text-gray-500">-&gt; true</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Throws error if condition is false.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-2 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.assert_eq(a, b, message?)</span> <span class="text-gray-500">-&gt; true</span>
+                  <div class="text-xs text-gray-500 mt-1">
+                    Throws error if values are not equal. Supports deep comparison for tables.
+                  </div>
+                </li>
+                <li class="bg-black/20 p-3 rounded border border-white/5">
+                  <span class="text-cyan-400">solidb.mock(name, initial_data?)</span> <span class="text-gray-500">-&gt; mock</span>
+                  <div class="text-xs text-gray-500 mt-2">
+                    Creates a mock collection for testing without touching real data.<br><br>
+                    <strong class="text-gray-400">Mock methods:</strong>
+                    <ul class="mt-1 ml-4 space-y-1">
+                      <li><code>mock:get(key)</code> - Get document by key</li>
+                      <li><code>mock:insert(doc)</code> - Insert document (auto-generates _key)</li>
+                      <li><code>mock:update(key, updates)</code> - Update document</li>
+                      <li><code>mock:delete(key)</code> - Delete document</li>
+                      <li><code>mock:all()</code> - Get all documents as array</li>
+                      <li><code>mock:count()</code> - Get document count</li>
+                      <li><code>mock:reset()</code> - Clear all data</li>
+                    </ul>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Examples -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-3">Example: Profiling a Query</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Profile a database query</span>
+<span class="text-blue-400">local</span> result = <span class="text-cyan-400">solidb.profile</span>(<span class="text-blue-400">function</span>()
+  <span class="text-blue-400">return</span> db:query(<span class="text-green-400">"FOR u IN users FILTER u.active == true RETURN u"</span>)
+<span class="text-blue-400">end</span>)
+
+<span class="text-cyan-400">solidb.debug</span>({
+  query_time = result.duration_ms .. <span class="text-green-400">"ms"</span>,
+  records = #result.result
+})
+
+<span class="text-blue-400">return</span> result.result</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Example: Unit Testing with Mocks</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Create a mock collection</span>
+<span class="text-blue-400">local</span> users = <span class="text-cyan-400">solidb.mock</span>(<span class="text-green-400">"users"</span>)
+
+<span class="text-gray-500">-- Insert test data</span>
+<span class="text-blue-400">local</span> alice = users:insert({ name = <span class="text-green-400">"Alice"</span>, email = <span class="text-green-400">"alice@test.com"</span> })
+<span class="text-blue-400">local</span> bob = users:insert({ name = <span class="text-green-400">"Bob"</span>, email = <span class="text-green-400">"bob@test.com"</span> })
+
+<span class="text-gray-500">-- Assertions</span>
+<span class="text-cyan-400">solidb.assert_eq</span>(users:count(), <span class="text-purple-400">2</span>, <span class="text-green-400">"Should have 2 users"</span>)
+<span class="text-cyan-400">solidb.assert</span>(alice._key ~= <span class="text-purple-400">nil</span>, <span class="text-green-400">"Should have auto-generated key"</span>)
+
+<span class="text-gray-500">-- Update and verify</span>
+users:update(alice._key, { verified = <span class="text-purple-400">true</span> })
+<span class="text-blue-400">local</span> updated = users:get(alice._key)
+<span class="text-cyan-400">solidb.assert_eq</span>(updated.verified, <span class="text-purple-400">true</span>)
+
+<span class="text-gray-500">-- Clean up</span>
+users:reset()
+<span class="text-cyan-400">solidb.assert_eq</span>(users:count(), <span class="text-purple-400">0</span>)
+
+<span class="text-blue-400">return</span> { tests_passed = <span class="text-purple-400">true</span> }</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6">
+              <h3 class="text-lg font-bold text-white mb-3">Example: Benchmarking Functions</h3>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Benchmark a function 1000 times</span>
+<span class="text-blue-400">local</span> stats = <span class="text-cyan-400">solidb.benchmark</span>(<span class="text-blue-400">function</span>()
+  <span class="text-blue-400">local</span> sum = <span class="text-purple-400">0</span>
+  <span class="text-blue-400">for</span> i = <span class="text-purple-400">1</span>, <span class="text-purple-400">1000</span> <span class="text-blue-400">do</span>
+    sum = sum + i
+  <span class="text-blue-400">end</span>
+  <span class="text-blue-400">return</span> sum
+<span class="text-blue-400">end</span>, <span class="text-purple-400">1000</span>)
+
+<span class="text-blue-400">return</span> {
+  iterations = stats.iterations,
+  avg_ms = stats.avg_ms,
+  min_ms = stats.min_ms,
+  max_ms = stats.max_ms,
+  std_dev = stats.std_dev_ms
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Examples Section -->
+      <section id="examples" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+               <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+               Examples
+            </h2>
+          </div>
+
+          <div class="p-8 space-y-8">
+            
+            <!-- Example 1 -->
+            <div>
+               <h3 class="text-lg font-bold text-white mb-3">1. Hello World with Query Params</h3>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Returns: { "greeting": "Hello, Alice!" }</span>
+<span class="text-purple-400">local</span> name = request.query.name <span class="text-purple-400">or</span> <span class="text-green-400">"World"</span>
+<span class="text-purple-400">return</span> {
+    greeting = <span class="text-green-400">"Hello, "</span> .. name .. <span class="text-green-400">"!"</span>
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 2 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">2. CRUD API for "Users"</h3>
+               <p class="text-gray-400 text-sm mb-3">Handle both GET (list) and POST (create) in a single script.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Global 'db' object is pre-connected to your database</span>
+<span class="text-purple-400">local</span> users = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"users"</span>)
+
+<span class="text-purple-400">if</span> request.method == <span class="text-green-400">"POST"</span> <span class="text-purple-400">then</span>
+    <span class="text-gray-500">-- Validate input</span>
+    <span class="text-purple-400">if</span> <span class="text-purple-400">not</span> request.body.email <span class="text-purple-400">then</span>
+        <span class="text-purple-400">return</span> { error = <span class="text-green-400">"Email required"</span> }
+    <span class="text-purple-400">end</span>
+
+    <span class="text-gray-500">-- Create user</span>
+    <span class="text-purple-400">local</span> doc = users:<span class="text-blue-400">insert</span>(request.body)
+    <span class="text-purple-400">return</span> { status = <span class="text-green-400">"created"</span>, user = doc }
+
+<span class="text-purple-400">else</span>
+    <span class="text-gray-500">-- List users (supports simple pagination via query params)</span>
+    <span class="text-purple-400">local</span> limit = <span class="text-blue-400">tonumber</span>(request.query.limit) <span class="text-purple-400">or</span> <span class="text-yellow-300">10</span>
+    
+    <span class="text-gray-500">-- Execute SDBQL query for better performance</span>
+    <span class="text-purple-400">local</span> all_users = db:<span class="text-blue-400">query</span>(<span class="text-green-400">"FOR u IN users RETURN u"</span>)
+    
+    <span class="text-purple-400">return</span> { 
+        data = all_users,
+        count = users:<span class="text-blue-400">count</span>() 
+    }
+<span class="text-purple-400">end</span></pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 3 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">3. SDBQL Query with Parameters</h3>
+               <p class="text-gray-400 text-sm mb-3">Execute complex queries safely using bind parameters.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Get users older than 'min_age' query parameter</span>
+<span class="text-purple-400">local</span> min_age = <span class="text-blue-400">tonumber</span>(request.query.age) <span class="text-purple-400">or</span> <span class="text-yellow-300">18</span>
+
+<span class="text-gray-500">-- Execute SDBQL query with bind variables (safe against injection)</span>
+<span class="text-purple-400">local</span> results = db:<span class="text-blue-400">query</span>(
+    <span class="text-green-400">"FOR u IN users FILTER u.age >= @age RETURN u"</span>,
+    { age = min_age }
+)
+
+<span class="text-purple-400">return</span> {
+    count = #results,
+    users = results
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+            <!-- Example 4 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">4. URL Path Parameters</h3>
+               <p class="text-gray-400 text-sm mb-3">Handle dynamic paths like <code class="bg-gray-800 px-1 rounded text-gray-300">customers/:id</code>.</p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Script path defined as: customers/:id</span>
+<span class="text-purple-400">local</span> id = request.params.id
+
+<span class="text-purple-400">if</span> <span class="text-purple-400">not</span> id <span class="text-purple-400">then</span>
+    <span class="text-purple-400">return</span> { error = <span class="text-green-400">"ID required"</span> }
+<span class="text-purple-400">end</span>
+
+<span class="text-gray-500">-- Look up customer by ID</span>
+<span class="text-purple-400">local</span> customers = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"customers"</span>)
+<span class="text-purple-400">local</span> customer = customers:<span class="text-blue-400">get</span>(id)
+
+<span class="text-purple-400">return</span> customer <span class="text-purple-400">or</span> { error = <span class="text-green-400">"Customer not found"</span> }</pre>
+                 </div>
+               </div>
+             </div>
+
+            <!-- Example 5 -->
+             <div>
+               <h3 class="text-lg font-bold text-white mb-3">5. HTTP Request (Webhook)</h3>
+               <p class="text-gray-400 text-sm mb-3">
+                 Send data to an external service using <code>solidb.fetch</code>. 
+                 This function is <strong class="text-purple-400">asynchronous and non-blocking</strong> — execution suspends until the response arrives, freeing up server resources.
+               </p>
+               <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                 <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Post data to an external API</span>
+<span class="text-purple-400">local</span> res = solidb.fetch(<span class="text-green-400">"https://api.example.com/webhook"</span>, {
+    method = <span class="text-green-400">"POST"</span>,
+    headers = {
+        [<span class="text-green-400">"Content-Type"</span>] = <span class="text-green-400">"application/json"</span>,
+        [<span class="text-green-400">"Authorization"</span>] = <span class="text-green-400">"Bearer secret"</span>
+    },
+    body = <span class="text-green-400">'{ "event": "user_created" }'</span>
+})
+
+<span class="text-purple-400">return</span> {
+    status = res.status,
+    upstream_response = res.body
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+             <!-- Example 6 -->
+              <div>
+                <h3 class="text-lg font-bold text-white mb-3">6. End-to-End Encryption with Curve25519</h3>
+                <p class="text-gray-400 text-sm mb-3">Establish a shared secret between two parties using Elliptic Curve Diffie-Hellman.</p>
+                <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+ <pre class="language-lua"><span class="text-gray-500">-- 1. Alice generates her keypair</span>
+ <span class="text-purple-400">local</span> alice_secret = crypto.random_bytes(32)
+ <span class="text-purple-400">local</span> alice_public = crypto.curve25519(alice_secret, <span class="text-green-400">"\9"</span>) <span class="text-gray-500">-- Generate public key</span>
+ 
+ <span class="text-gray-500">-- 2. Bob generates his keypair</span>
+ <span class="text-purple-400">local</span> bob_secret = crypto.random_bytes(32)
+ <span class="text-purple-400">local</span> bob_public = crypto.curve25519(bob_secret, <span class="text-green-400">"\9"</span>)
+ 
+ <span class="text-gray-500">-- 3. Calculate shared secret (Alice uses Bob's public key, Bob uses Alice's)</span>
+ <span class="text-purple-400">local</span> shared_secret_alice = crypto.curve25519(alice_secret, bob_public)
+ <span class="text-purple-400">local</span> shared_secret_bob = crypto.curve25519(bob_secret, alice_public)
+ 
+ <span class="text-gray-500">-- The shared secrets are identical</span>
+ <span class="text-purple-400">local</span> keys_match = (shared_secret_alice == shared_secret_bob)
+ 
+ <span class="text-gray-500">-- Derive a session key (e.g. for HMAC or encryption)</span>
+ <span class="text-purple-400">local</span> session_key = crypto.sha256(shared_secret_alice)
+ 
+ <span class="text-purple-400">return</span> {
+     alice_public_hex = crypto.hex_encode(alice_public),
+     bob_public_hex = crypto.hex_encode(bob_public),
+     keys_match = keys_match,
+     session_key_hex = session_key
+ }</pre>
+                  </div>
+                </div>
+             </div>
+
+             <!-- Example 7 -->
+              <div>
+                <h3 class="text-lg font-bold text-white mb-3">7. Atomic Transactions</h3>
+                <p class="text-gray-400 text-sm mb-3">Perform multiple operations atomically with <strong class="text-green-400">auto-commit</strong> on success or <strong class="text-red-400">auto-rollback</strong> on error.</p>
+                <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                  <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Transfer credits between two accounts atomically</span>
+db:<span class="text-blue-400">transaction</span>(<span class="text-purple-400">function</span>(tx)
+    <span class="text-purple-400">local</span> accounts = tx:<span class="text-blue-400">collection</span>(<span class="text-green-400">"accounts"</span>)
+    
+    <span class="text-gray-500">-- Debit source account</span>
+    <span class="text-purple-400">local</span> source = accounts:<span class="text-blue-400">get</span>(<span class="text-green-400">"alice"</span>)
+    accounts:<span class="text-blue-400">update</span>(<span class="text-green-400">"alice"</span>, { balance = source.balance - <span class="text-yellow-300">100</span> })
+    
+    <span class="text-gray-500">-- Credit destination account</span>
+    <span class="text-purple-400">local</span> dest = accounts:<span class="text-blue-400">get</span>(<span class="text-green-400">"bob"</span>)
+    accounts:<span class="text-blue-400">update</span>(<span class="text-green-400">"bob"</span>, { balance = dest.balance + <span class="text-yellow-300">100</span> })
+    
+    <span class="text-gray-500">-- If any error occurs, all changes are rolled back</span>
+<span class="text-purple-400">end</span>)
+
+<span class="text-purple-400">return</span> { status = <span class="text-green-400">"Transfer complete!"</span> }</pre>
+                  </div>
+                </div>
+             </div>
+
+            <!-- Example 8 -->
+            <div>
+              <h3 class="text-lg font-bold text-white mb-3">8. WebSocket Echo Server</h3>
+              <p class="text-gray-400 text-sm mb-3">
+                Handle real-time bidirectional communication using <code>solidb.ws</code>.
+                This script runs a message loop, echoing back any received text with an added prefix.
+              </p>
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Simple echo server with logging</span>
+solidb.log(<span class="text-green-400">"WebSocket connection established!"</span>)
+
+<span class="text-purple-400">while true do</span>
+    <span class="text-gray-500">-- Wait for the next message (Non-blocking at server level)</span>
+    <span class="text-purple-400">local</span> msg = solidb.ws.recv()
+    <span class="text-purple-400">if not</span> msg <span class="text-purple-400">then</span> 
+        solidb.log(<span class="text-green-400">"WebSocket connection closed"</span>)
+        <span class="text-purple-400">break</span> 
+    <span class="text-purple-400">end</span>
+    
+    solidb.log(<span class="text-green-400">"Received: "</span> .. msg)
+    
+    <span class="text-gray-500">-- Echo back to client</span>
+    solidb.ws.send(<span class="text-green-400">"SoliDB echo: "</span> .. msg)
+    
+    <span class="text-gray-500">-- You can still interact with the DB as usual</span>
+    <span class="text-purple-400">local</span> count = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"logs"</span>):<span class="text-blue-400">count</span>()
+    solidb.ws.send(<span class="text-green-400">"Total logs in DB: "</span> .. count)
+<span class="text-purple-400">end</span></pre>
+                </div>
+              </div>
+           </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- REPL Section -->
+      <section id="repl" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              Interactive REPL
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              SoliDB includes an interactive Lua REPL (Read-Eval-Print Loop) for testing and debugging scripts. Use the CLI or web interface.
+            </p>
+
+            <!-- CLI REPL -->
+            <div class="mb-8">
+              <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+                <i class="fas fa-terminal text-green-400 mr-2"></i> CLI REPL
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">A command-line REPL similar to <code>irb</code> or <code>lua -i</code>.</p>
+
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden mb-4">
+                <div class="bg-gray-800/50 px-4 py-2 border-b border-white/5">
+                  <span class="text-sm text-gray-400">Installation & Usage</span>
+                </div>
+                <div class="p-4 font-mono text-sm">
+<pre class="text-gray-300"><span class="text-gray-500"># Run with defaults (localhost:6745, _system database)</span>
+<span class="text-green-400">solidb-repl</span>
+
+<span class="text-gray-500"># Connect to a different server/database</span>
+<span class="text-green-400">solidb-repl</span> <span class="text-blue-400">-s</span> http://myserver:6745 <span class="text-blue-400">-d</span> mydb
+
+<span class="text-gray-500"># With API key authentication</span>
+<span class="text-green-400">solidb-repl</span> <span class="text-blue-400">-k</span> your-api-key</pre>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                  <h4 class="text-green-400 font-bold mb-2 text-sm">Features</h4>
+                  <ul class="space-y-1 text-xs text-gray-300">
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Tab completion for APIs</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Command history (~/.solidb_history)</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Multiline input (end with \)</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Session state persistence</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Colored output</li>
+                  </ul>
+                </div>
+                <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                  <h4 class="text-green-400 font-bold mb-2 text-sm">Commands</h4>
+                  <ul class="space-y-1 text-xs text-gray-300 font-mono">
+                    <li><span class="text-yellow-400">.help</span> - Show help</li>
+                    <li><span class="text-yellow-400">.exit</span> - Quit the REPL</li>
+                    <li><span class="text-yellow-400">.clear</span> - Clear screen</li>
+                    <li><span class="text-yellow-400">.db &lt;name&gt;</span> - Switch database</li>
+                    <li><span class="text-yellow-400">.status</span> - Show connection info</li>
+                    <li><span class="text-yellow-400">.reset</span> - Reset session state</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden">
+                <div class="bg-gray-800/50 px-4 py-2 border-b border-white/5">
+                  <span class="text-sm text-gray-400">Example CLI Session</span>
+                </div>
+                <div class="p-4 font-mono text-sm">
+<pre class="text-gray-300"><span class="text-cyan-400">_system</span><span class="text-white">&gt;</span> x = 42
+  <span class="text-gray-500">(0.15ms)</span>
+<span class="text-cyan-400">_system</span><span class="text-white">&gt;</span> x + 1
+<span class="text-yellow-400">43</span>
+  <span class="text-gray-500">(0.12ms)</span>
+<span class="text-cyan-400">_system</span><span class="text-white">&gt;</span> db:collection("users"):count()
+<span class="text-yellow-400">1234</span>
+  <span class="text-gray-500">(0.45ms)</span>
+<span class="text-cyan-400">_system</span><span class="text-white">&gt;</span> crypto.uuid()
+<span class="text-green-400">"f47ac10b-58cc-4372-a567-0e02b2c3d479"</span>
+  <span class="text-gray-500">(0.08ms)</span>
+<span class="text-cyan-400">_system</span><span class="text-white">&gt;</span> .db myapp
+  <span class="text-gray-500">Switched to database: myapp</span>
+<span class="text-cyan-400">myapp</span><span class="text-white">&gt;</span> _</pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Web REPL -->
+            <div class="mb-8">
+              <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+                <i class="fas fa-globe text-blue-400 mr-2"></i> Web REPL
+              </h3>
+              <p class="text-gray-400 text-sm mb-4">Access from the dashboard sidebar under "Lua REPL".</p>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                  <h4 class="text-blue-400 font-bold mb-2 text-sm">Features</h4>
+                  <ul class="space-y-1 text-xs text-gray-300">
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Monaco editor with Lua syntax</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Full access to database APIs</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Session state persistence</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Console output capture</li>
+                    <li class="flex items-center"><i class="fas fa-check text-green-400 mr-2 text-xs"></i> Command history modal</li>
+                  </ul>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                  <h4 class="text-blue-400 font-bold mb-2 text-sm">API Endpoint</h4>
+                  <p class="text-xs text-gray-400 mb-2">Use the REPL programmatically:</p>
+                  <div class="bg-gray-950 rounded-lg p-2 font-mono text-xs">
+                    <div class="text-gray-500">POST /_api/database/{db}/repl</div>
+                    <pre class="text-green-300 mt-1">{
+  "code": "return 1 + 1",
+  "session_id": "optional"
+}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+              <div class="bg-gray-800/50 px-4 py-2 border-b border-white/5">
+                <span class="text-sm text-gray-400">Example REPL Session</span>
+              </div>
+              <div class="p-4 font-mono text-sm text-gray-300">
+<pre class="language-lua"><span class="text-gray-500">-- Test database access</span>
+<span class="text-purple-400">local</span> users = db:<span class="text-blue-400">collection</span>(<span class="text-green-400">"users"</span>)
+<span class="text-blue-400">print</span>(<span class="text-green-400">"User count: "</span> .. users:<span class="text-blue-400">count</span>())
+
+<span class="text-gray-500">-- Run a query</span>
+<span class="text-purple-400">local</span> results = db:<span class="text-blue-400">query</span>(<span class="text-green-400">"FOR u IN users LIMIT 3 RETURN u.name"</span>)
+<span class="text-purple-400">return</span> results</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VSCode Extension Section -->
+      <section id="vscode" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"></path></svg>
+              VSCode Extension
+            </h2>
+          </div>
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              A VSCode extension is available for enhanced Lua development with SoliDB. Get autocomplete, snippets, and deploy scripts directly from your editor.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-magic mr-2"></i> Autocomplete</h3>
+                <p class="text-sm text-gray-400">IntelliSense for solidb, db, request, crypto, and time APIs</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-puzzle-piece mr-2"></i> Snippets</h3>
+                <p class="text-sm text-gray-400">30+ code snippets for common patterns</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-blue-400 font-bold mb-2 flex items-center"><i class="fas fa-upload mr-2"></i> Deploy</h3>
+                <p class="text-sm text-gray-400">Deploy scripts to SoliDB with one command</p>
+              </div>
+            </div>
+
+            <div class="bg-gray-950 rounded-xl border border-white/10 p-4">
+              <h4 class="text-gray-300 font-semibold mb-2">Installation</h4>
+              <div class="font-mono text-sm">
+                <p class="text-gray-400 mb-2">From the vscode-solidb directory:</p>
+                <pre class="text-green-300">npm install
+npm run compile
+# Then install from VSIX or development mode</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

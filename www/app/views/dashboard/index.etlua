@@ -1,104 +1,176 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  <h1 class="text-3xl font-bold leading-tight text-gray-100">Dashboard Overview</h1>
-  
-  <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-    <!-- Card 1 -->
-    <div class="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
-      <div class="p-5">
-        <div class="flex items-center">
-          <div class="flex-shrink-0 bg-indigo-900/50 rounded-md p-3 border border-indigo-500/30">
-            <!-- Heroicon name: outline/server -->
-            <svg class="h-6 w-6 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-            </svg>
+<div class="max-w-7xl mx-auto space-y-8">
+  <!-- Header -->
+  <div class="flex items-end justify-between">
+    <div>
+      <h1 class="text-3xl font-bold text-text mb-1">Dashboard</h1>
+      <p class="text-text-muted">Overview of <span class="font-medium text-primary-light"><%= db %></span></p>
+    </div>
+    <div class="flex items-center gap-3">
+       <!-- System Status Pill -->
+       <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-border/50 text-sm">
+         <span class="relative flex h-2.5 w-2.5">
+           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+           <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
+         </span>
+         <span class="text-text-muted font-medium">System Online</span>
+       </div>
+    </div>
+  </div>
+
+  <!-- Main Activity Chart -->
+  <%- partial("dashboard/activity_chart") %>
+
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <!-- Collections Card -->
+    <a href="/database/<%= db %>/collections" class="group bg-bg-card/40 backdrop-blur-md border border-border/50 rounded-xl p-5 hover:bg-bg-card/60 hover:border-primary/30 transition-all duration-300 relative overflow-hidden">
+      <!-- Decor -->
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-colors"></div>
+      
+      <div class="flex flex-col h-full relative z-10">
+        <div class="flex items-center justify-between mb-4">
+           <div class="p-2.5 bg-primary/10 rounded-lg text-primary-light group-hover:scale-110 transition-transform duration-300">
+             <i class="fas fa-folder text-lg"></i>
+           </div>
+           <span class="text-xs font-mono text-primary-light/70 bg-primary/5 px-2 py-0.5 rounded">+2 new</span>
+        </div>
+        
+        <div class="mt-auto">
+          <div class="text-3xl font-bold text-text mb-1 tracking-tight"
+               hx-get="/database/<%= db %>/stats/collections"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+             <span class="animate-pulse bg-white/10 h-8 w-16 rounded inline-block"></span>
           </div>
-          <div class="ml-5 w-0 flex-1">
-            <dl>
-              <dt class="text-sm font-medium text-gray-400 truncate">
-                Total Collections
-              </dt>
-              <dd>
-                <div class="text-lg font-medium text-gray-100">
-                  12
-                </div>
-              </dd>
-            </dl>
-          </div>
+          <div class="text-sm text-text-muted font-medium">Collections</div>
         </div>
       </div>
-      <div class="bg-gray-900/50 px-5 py-3 border-t border-gray-700">
-        <div class="text-sm">
-          <a href="/database/_system/collections" class="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
-            View all
-          </a>
+    </a>
+
+    <!-- Documents Card -->
+    <div class="group bg-bg-card/40 backdrop-blur-md border border-border/50 rounded-xl p-5 hover:bg-bg-card/60 hover:border-info/30 transition-all duration-300 relative overflow-hidden">
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-info/10 rounded-full blur-2xl group-hover:bg-info/20 transition-colors"></div>
+      
+      <div class="flex flex-col h-full relative z-10">
+        <div class="flex items-center justify-between mb-4">
+           <div class="p-2.5 bg-info/10 rounded-lg text-info group-hover:scale-110 transition-transform duration-300">
+             <i class="fas fa-file-alt text-lg"></i>
+           </div>
+        </div>
+        
+        <div class="mt-auto">
+          <div class="text-3xl font-bold text-text mb-1 tracking-tight"
+               hx-get="/database/<%= db %>/stats/documents"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+             <span class="animate-pulse bg-white/10 h-8 w-16 rounded inline-block"></span>
+          </div>
+          <div class="text-sm text-text-muted font-medium">Total Documents</div>
         </div>
       </div>
     </div>
 
-    <!-- Card 2 -->
-    <div class="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
-      <div class="p-5">
-        <div class="flex items-center">
-          <div class="flex-shrink-0 bg-green-900/50 rounded-md p-3 border border-green-500/30">
-            <!-- Heroicon name: outline/database -->
-            <svg class="h-6 w-6 text-green-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-            </svg>
-          </div>
-          <div class="ml-5 w-0 flex-1">
-            <dl>
-              <dt class="text-sm font-medium text-gray-400 truncate">
-                Total Documents
-              </dt>
-              <dd>
-                <div class="text-lg font-medium text-gray-100">
-                  24.5k
-                </div>
-              </dd>
-            </dl>
-          </div>
+    <!-- Indexes Card -->
+    <div class="group bg-bg-card/40 backdrop-blur-md border border-border/50 rounded-xl p-5 hover:bg-bg-card/60 hover:border-success/30 transition-all duration-300 relative overflow-hidden">
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-success/10 rounded-full blur-2xl group-hover:bg-success/20 transition-colors"></div>
+      
+      <div class="flex flex-col h-full relative z-10">
+        <div class="flex items-center justify-between mb-4">
+           <div class="p-2.5 bg-success/10 rounded-lg text-success group-hover:scale-110 transition-transform duration-300">
+             <i class="fas fa-list-ol text-lg"></i>
+           </div>
         </div>
-      </div>
-      <div class="bg-gray-900/50 px-5 py-3 border-t border-gray-700">
-        <div class="text-sm">
-          <a href="#" class="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
-            View details
-          </a>
+        
+        <div class="mt-auto">
+          <div class="text-3xl font-bold text-text mb-1 tracking-tight"
+               hx-get="/database/<%= db %>/stats/indexes"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+             <span class="animate-pulse bg-white/10 h-8 w-16 rounded inline-block"></span>
+          </div>
+          <div class="text-sm text-text-muted font-medium">Indexes</div>
         </div>
       </div>
     </div>
 
-    <!-- Card 3 -->
-    <div class="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
-      <div class="p-5">
-        <div class="flex items-center">
-          <div class="flex-shrink-0 bg-yellow-900/50 rounded-md p-3 border border-yellow-500/30">
-             <!-- Heroicon name: outline/lightning-bolt -->
-            <svg class="h-6 w-6 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+    <!-- Size Card -->
+    <div class="group bg-bg-card/40 backdrop-blur-md border border-border/50 rounded-xl p-5 hover:bg-bg-card/60 hover:border-warning/30 transition-all duration-300 relative overflow-hidden">
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-warning/10 rounded-full blur-2xl group-hover:bg-warning/20 transition-colors"></div>
+      
+      <div class="flex flex-col h-full relative z-10">
+        <div class="flex items-center justify-between mb-4">
+           <div class="p-2.5 bg-warning/10 rounded-lg text-warning group-hover:scale-110 transition-transform duration-300">
+             <i class="fas fa-hdd text-lg"></i>
+           </div>
+           <div class="h-1.5 w-16 bg-bg/50 rounded-full overflow-hidden">
+             <div class="h-full bg-warning w-[65%] rounded-full"></div>
+           </div>
+        </div>
+        
+        <div class="mt-auto">
+          <div class="text-3xl font-bold text-text mb-1 tracking-tight"
+               hx-get="/database/<%= db %>/stats/size"
+               hx-trigger="load"
+               hx-swap="innerHTML">
+             <span class="animate-pulse bg-white/10 h-8 w-16 rounded inline-block"></span>
           </div>
-          <div class="ml-5 w-0 flex-1">
-            <dl>
-              <dt class="text-sm font-medium text-gray-400 truncate">
-                Uptime
-              </dt>
-              <dd>
-                <div class="text-lg font-medium text-gray-100">
-                  99.9%
-                </div>
-              </dd>
-            </dl>
-          </div>
+          <div class="text-sm text-text-muted font-medium">DB Size</div>
         </div>
       </div>
-      <div class="bg-gray-900/50 px-5 py-3 border-t border-gray-700">
-        <div class="text-sm">
-          <a href="#" class="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
-            View stats
-          </a>
-        </div>
-      </div>
+    </div>
+  </div>
+
+  <!-- Quick Actions Section -->
+  <div>
+    <h2 class="text-lg font-bold text-text mb-4">Quick Actions</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Query Data -->
+        <a href="/database/<%= db %>/query" class="group relative p-1 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-info/10">
+          <div class="absolute inset-0 bg-gradient-to-br from-info/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg p-5 group-hover:border-info/30 transition-colors">
+            <div class="flex items-start gap-4">
+              <div class="p-3 bg-info/10 rounded-xl text-info group-hover:bg-info group-hover:text-white transition-all duration-300">
+                <i class="fas fa-terminal text-xl"></i>
+              </div>
+              <div>
+                <h3 class="font-semibold text-text group-hover:text-info transition-colors">Query Data</h3>
+                <p class="text-sm text-text-muted mt-1 leading-relaxed">Run SQL queries, manage records, and analyze data.</p>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- Live Query -->
+        <a href="/database/<%= db %>/live-query" class="group relative p-1 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-accent/10">
+          <div class="absolute inset-0 bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg p-5 group-hover:border-accent/30 transition-colors">
+            <div class="flex items-start gap-4">
+              <div class="p-3 bg-accent/10 rounded-xl text-accent-light group-hover:bg-accent group-hover:text-white transition-all duration-300">
+                <i class="fas fa-bolt text-xl"></i>
+              </div>
+              <div>
+                <h3 class="font-semibold text-text group-hover:text-accent-light transition-colors">Live Query</h3>
+                <p class="text-sm text-text-muted mt-1 leading-relaxed">Watch database changes in real-time updates.</p>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- AI Agents -->
+        <a href="/database/<%= db %>/ai/agents" class="group relative p-1 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-success/10">
+          <div class="absolute inset-0 bg-gradient-to-br from-success/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg p-5 group-hover:border-success/30 transition-colors">
+            <div class="flex items-start gap-4">
+              <div class="p-3 bg-success/10 rounded-xl text-success group-hover:bg-success group-hover:text-white transition-all duration-300">
+                <i class="fas fa-robot text-xl"></i>
+              </div>
+              <div>
+                <h3 class="font-semibold text-text group-hover:text-success transition-colors">AI Agents</h3>
+                <p class="text-sm text-text-muted mt-1 leading-relaxed">Manage autonomous agents and tasks.</p>
+              </div>
+            </div>
+          </div>
+        </a>
     </div>
   </div>
 </div>

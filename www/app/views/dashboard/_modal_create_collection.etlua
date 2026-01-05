@@ -1,0 +1,360 @@
+<!-- Modal Wrapper with Overlay -->
+<div class="fixed inset-0 z-[150] flex items-center justify-center px-4 sm:px-6"
+     role="dialog"
+     aria-modal="true">
+
+  <!-- Backdrop -->
+  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+
+  <!-- Modal Panel -->
+  <div class="relative w-full max-w-lg">
+    <div class="bg-bg-card/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <!-- Header -->
+      <div class="border-b border-border/30 px-6 py-4 flex items-center justify-between bg-white/5 flex-shrink-0">
+        <h3 class="text-xl font-bold text-text flex items-center gap-2">
+          <i class="fas fa-plus-circle text-primary-light"></i>
+          New Collection
+        </h3>
+        <button type="button" onclick="closeModal()"
+                class="text-text-muted hover:text-text p-1 rounded-lg hover:bg-white/10 transition-colors">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+      </div>
+
+      <form id="create-collection-form"
+            hx-post="/database/<%= db %>/collections"
+            hx-target="#collections-table"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closeModal()"
+            class="flex flex-col flex-1 min-h-0">
+
+        <!-- Scrollable Content -->
+        <div class="p-6 space-y-6 overflow-y-auto">
+          <!-- Name Input -->
+          <div>
+            <label class="block text-sm font-semibold text-text-muted mb-2">Collection Name</label>
+            <div class="relative">
+              <input type="text" name="name" required autofocus
+                     class="w-full pl-10 pr-4 py-3 bg-bg-dark/50 border border-border/50 rounded-xl text-text placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all font-medium"
+                     placeholder="e.g., users, transactions, logs" autocomplete="off">
+              <i class="fas fa-database absolute left-3.5 top-3.5 text-text-muted"></i>
+            </div>
+            <p class="text-xs text-text-dim mt-2 pl-1">Must be unique within the database.</p>
+          </div>
+
+          <!-- Type Selection -->
+          <div>
+            <label class="block text-sm font-semibold text-text-muted mb-3">Collection Type</label>
+            <input type="hidden" name="type" id="collection-type" value="<%= params.type or 'document' %>">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+              <!-- Document Type -->
+              <button type="button" onclick="selectCollectionType('document')" id="type-btn-document"
+                      class="type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-primary/10 border-primary ring-1 ring-primary/50">
+                <div id="type-icon-document" class="w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-primary text-white shadow-lg shadow-primary/30">
+                  <i class="fas fa-file-alt text-lg"></i>
+                </div>
+                <div>
+                  <div id="type-label-document" class="font-bold text-text mb-0.5 text-primary-light">Document</div>
+                  <div class="text-xs text-text-muted leading-relaxed">Standard JSON documents. Best for general data.</div>
+                </div>
+              </button>
+
+              <!-- Edge Type -->
+              <button type="button" onclick="selectCollectionType('edge')" id="type-btn-edge"
+                      class="type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-bg-dark/30 border-border/50 hover:border-accent/30 hover:bg-bg-dark/50">
+                <div id="type-icon-edge" class="w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-bg-dark border border-border/30 text-text-muted group-hover:text-accent-light">
+                  <i class="fas fa-share-nodes text-lg"></i>
+                </div>
+                <div>
+                  <div id="type-label-edge" class="font-bold text-text mb-0.5">Edge</div>
+                  <div class="text-xs text-text-muted leading-relaxed">Stores relationships between documents (graph).</div>
+                </div>
+              </button>
+
+              <!-- Timeseries Type -->
+              <button type="button" onclick="selectCollectionType('timeseries')" id="type-btn-timeseries"
+                      class="type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-bg-dark/30 border-border/50 hover:border-success/30 hover:bg-bg-dark/50">
+                <div id="type-icon-timeseries" class="w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-bg-dark border border-border/30 text-text-muted group-hover:text-success">
+                  <i class="fas fa-clock text-lg"></i>
+                </div>
+                <div>
+                  <div id="type-label-timeseries" class="font-bold text-text mb-0.5">Timeseries</div>
+                  <div class="text-xs text-text-muted leading-relaxed">Time-stamped data &amp; telemetry.</div>
+                </div>
+              </button>
+
+              <!-- Columnar Type -->
+              <button type="button" onclick="selectCollectionType('columnar')" id="type-btn-columnar"
+                      class="type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-bg-dark/30 border-border/50 hover:border-info/30 hover:bg-bg-dark/50">
+                <div id="type-icon-columnar" class="w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-bg-dark border border-border/30 text-text-muted group-hover:text-info">
+                  <i class="fas fa-chart-bar text-lg"></i>
+                </div>
+                <div>
+                  <div id="type-label-columnar" class="font-bold text-text mb-0.5">Columnar</div>
+                  <div class="text-xs text-text-muted leading-relaxed">For high-speed analytics.</div>
+                </div>
+              </button>
+
+              <!-- Blob Type -->
+              <button type="button" onclick="selectCollectionType('blob')" id="type-btn-blob"
+                      class="type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group sm:col-span-2 bg-bg-dark/30 border-border/50 hover:border-warning/30 hover:bg-bg-dark/50">
+                <div id="type-icon-blob" class="w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-bg-dark border border-border/30 text-text-muted group-hover:text-warning">
+                  <i class="fas fa-cube text-lg"></i>
+                </div>
+                <div>
+                  <div id="type-label-blob" class="font-bold text-text mb-0.5">Blob Store</div>
+                  <div class="text-xs text-text-muted leading-relaxed">Binary data &amp; large objects.</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Columnar Columns Definition (shown only for columnar type) -->
+          <div id="columnar-columns-container" class="hidden">
+            <label class="block text-sm font-semibold text-text-muted mb-3">Column Definitions</label>
+            <div id="columns-list" class="space-y-3">
+              <!-- Column rows will be added here -->
+            </div>
+            <button type="button" onclick="addColumn()"
+                    class="mt-3 flex items-center gap-2 text-sm font-medium text-primary-light hover:text-primary transition-colors">
+              <i class="fas fa-plus"></i>
+              Add Column
+            </button>
+            <input type="hidden" name="columns" id="columns-json" value="[]">
+          </div>
+
+          <!-- Advanced Options Toggle -->
+          <div id="advanced-toggle-container">
+            <button type="button" onclick="toggleAdvanced()"
+                    class="flex items-center gap-2 text-sm font-medium text-text-muted hover:text-primary-light transition-colors group">
+              <i id="advanced-chevron" class="fas fa-chevron-right text-xs transition-transform duration-200"></i>
+              Advanced Configuration
+              <span class="text-xs font-normal text-text-dim group-hover:text-text-muted">(Sharding &amp; Replication)</span>
+            </button>
+          </div>
+
+          <!-- Advanced Configuration Panel -->
+          <div id="advanced-panel" class="hidden mt-4 pt-4 border-t border-border/30 pb-2">
+            <div class="grid grid-cols-2 gap-4">
+              <!-- Shards -->
+              <div>
+                <label class="block text-xs font-medium text-text-muted mb-1.5">Shards</label>
+                <div class="relative">
+                  <input type="number" name="shards" value="1" min="1" max="1024"
+                         class="w-full pl-9 pr-3 py-2 bg-bg-dark/50 border border-border/50 rounded-lg text-text text-sm focus:outline-none focus:border-primary/50 transition-all font-mono">
+                  <i class="fas fa-layer-group absolute left-3 top-2.5 text-text-muted text-xs"></i>
+                </div>
+                <p class="text-[10px] text-text-dim mt-1">Data partitions</p>
+              </div>
+
+              <!-- Replication Factor -->
+              <div>
+                <label class="block text-xs font-medium text-text-muted mb-1.5">Replicas</label>
+                <div class="relative">
+                  <input type="number" name="replication_factor" value="1" min="1" max="5"
+                         class="w-full pl-9 pr-3 py-2 bg-bg-dark/50 border border-border/50 rounded-lg text-text text-sm focus:outline-none focus:border-primary/50 transition-all font-mono">
+                  <i class="fas fa-copy absolute left-3 top-2.5 text-text-muted text-xs"></i>
+                </div>
+                <p class="text-[10px] text-text-dim mt-1">Copies per shard</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="p-6 bg-white/5 border-t border-border/30 flex items-center justify-end gap-3 flex-shrink-0">
+          <button type="button" onclick="closeModal()"
+                  class="px-5 py-2.5 text-sm font-medium text-text-muted hover:text-text transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+                  id="create-collection-submit"
+                  class="px-5 py-2.5 bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white font-medium rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all transform hover:-translate-y-0.5">
+            <i class="fas fa-plus mr-2"></i>
+            Create Collection
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Type selection styling
+  var typeStyles = {
+    document: { color: 'primary', lightColor: 'primary-light' },
+    edge: { color: 'accent', lightColor: 'accent-light' },
+    timeseries: { color: 'success', lightColor: 'success' },
+    columnar: { color: 'info', lightColor: 'info' },
+    blob: { color: 'warning', lightColor: 'warning' }
+  };
+
+  function selectCollectionType(type) {
+    // Update hidden input
+    document.getElementById('collection-type').value = type;
+
+    // Reset all buttons
+    document.querySelectorAll('.type-selector').forEach(function(btn) {
+      var btnType = btn.id.replace('type-btn-', '');
+      var style = typeStyles[btnType];
+      btn.className = 'type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-bg-dark/30 border-border/50 hover:border-' + style.color + '/30 hover:bg-bg-dark/50';
+      if (btnType === 'blob') btn.className += ' sm:col-span-2';
+
+      var icon = document.getElementById('type-icon-' + btnType);
+      icon.className = 'w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-bg-dark border border-border/30 text-text-muted group-hover:text-' + style.lightColor;
+
+      var label = document.getElementById('type-label-' + btnType);
+      label.className = 'font-bold text-text mb-0.5';
+    });
+
+    // Highlight selected button
+    var selectedBtn = document.getElementById('type-btn-' + type);
+    var style = typeStyles[type];
+    selectedBtn.className = 'type-selector flex items-start gap-4 p-4 border rounded-xl transition-all text-left group bg-' + style.color + '/10 border-' + style.color + ' ring-1 ring-' + style.color + '/50';
+    if (type === 'blob') selectedBtn.className += ' sm:col-span-2';
+
+    var selectedIcon = document.getElementById('type-icon-' + type);
+    selectedIcon.className = 'w-10 h-10 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 mt-0.5 bg-' + style.color + ' text-white shadow-lg shadow-' + style.color + '/30';
+
+    var selectedLabel = document.getElementById('type-label-' + type);
+    selectedLabel.className = 'font-bold text-text mb-0.5 text-' + style.lightColor;
+
+    // Show/hide advanced options based on type
+    var advancedContainer = document.getElementById('advanced-toggle-container');
+    var advancedPanel = document.getElementById('advanced-panel');
+    var columnarContainer = document.getElementById('columnar-columns-container');
+
+    if (type === 'document' || type === 'edge') {
+      advancedContainer.style.display = 'block';
+      columnarContainer.classList.add('hidden');
+      updateSubmitButton();
+    } else if (type === 'columnar') {
+      advancedContainer.style.display = 'none';
+      advancedPanel.classList.add('hidden');
+      columnarContainer.classList.remove('hidden');
+      // Add initial column if empty
+      if (document.getElementById('columns-list').children.length === 0) {
+        addColumn();
+      }
+      updateSubmitButton();
+    } else {
+      advancedContainer.style.display = 'none';
+      advancedPanel.classList.add('hidden');
+      columnarContainer.classList.add('hidden');
+      updateSubmitButton();
+    }
+  }
+
+  function toggleAdvanced() {
+    var panel = document.getElementById('advanced-panel');
+    var chevron = document.getElementById('advanced-chevron');
+    if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      chevron.style.transform = 'rotate(90deg)';
+    } else {
+      panel.classList.add('hidden');
+      chevron.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  // Column management for columnar collections
+  var columnCounter = 0;
+
+  function addColumn() {
+    var list = document.getElementById('columns-list');
+    var div = document.createElement('div');
+    div.className = 'column-row flex items-start gap-2 p-3 bg-bg-dark/30 rounded-lg border border-border/30';
+    div.dataset.idx = columnCounter;
+    div.innerHTML = '\
+      <div class="flex-1 grid grid-cols-2 gap-2">\
+        <input type="text" placeholder="Column name" data-field="name" required\
+               class="col-name px-3 py-2 bg-bg border border-border/50 rounded-lg text-text text-sm placeholder-text-dim focus:outline-none focus:border-primary/50">\
+        <select data-field="type" class="col-type px-3 py-2 bg-bg border border-border/50 rounded-lg text-text text-sm focus:outline-none focus:border-primary/50">\
+          <option value="STRING">String</option>\
+          <option value="INT64">Integer</option>\
+          <option value="FLOAT64">Float</option>\
+          <option value="BOOL">Boolean</option>\
+          <option value="TIMESTAMP">Timestamp</option>\
+          <option value="JSON">JSON</option>\
+        </select>\
+      </div>\
+      <div class="flex items-center gap-3 pt-2">\
+        <label class="flex items-center gap-1.5 cursor-pointer">\
+          <input type="checkbox" data-field="nullable" class="col-nullable w-3.5 h-3.5 rounded border-border/50 text-primary focus:ring-primary/50 bg-bg">\
+          <span class="text-xs text-text-muted">Null</span>\
+        </label>\
+        <label class="flex items-center gap-1.5 cursor-pointer">\
+          <input type="checkbox" data-field="indexed" class="col-indexed w-3.5 h-3.5 rounded border-border/50 text-primary focus:ring-primary/50 bg-bg">\
+          <span class="text-xs text-text-muted">Index</span>\
+        </label>\
+      </div>\
+      <button type="button" onclick="removeColumn(this)" class="p-2 text-text-muted hover:text-error transition-colors">\
+        <i class="fas fa-trash text-sm"></i>\
+      </button>\
+    ';
+    list.appendChild(div);
+    columnCounter++;
+    updateColumnsJson();
+
+    // Add change listeners
+    div.querySelectorAll('input, select').forEach(function(el) {
+      el.addEventListener('change', updateColumnsJson);
+      el.addEventListener('input', updateColumnsJson);
+    });
+  }
+
+  function removeColumn(btn) {
+    var row = btn.closest('.column-row');
+    row.remove();
+    updateColumnsJson();
+  }
+
+  function updateColumnsJson() {
+    var columns = [];
+    document.querySelectorAll('.column-row').forEach(function(row) {
+      var name = row.querySelector('[data-field="name"]').value.trim();
+      if (name) {
+        columns.push({
+          name: name,
+          type: row.querySelector('[data-field="type"]').value,
+          nullable: row.querySelector('[data-field="nullable"]').checked,
+          indexed: row.querySelector('[data-field="indexed"]').checked
+        });
+      }
+    });
+    document.getElementById('columns-json').value = JSON.stringify(columns);
+    updateSubmitButton();
+  }
+
+  function updateSubmitButton() {
+    var submitBtn = document.getElementById('create-collection-submit');
+    var collectionType = document.getElementById('collection-type').value;
+
+    if (collectionType === 'columnar') {
+      var columns = [];
+      try {
+        columns = JSON.parse(document.getElementById('columns-json').value || '[]');
+      } catch(e) {}
+
+      if (columns.length === 0) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+    } else {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+  }
+
+  // Initialize based on params
+  (function() {
+    var initialType = '<%= params.type or "document" %>';
+    if (initialType !== 'document') {
+      selectCollectionType(initialType);
+    }
+  })();
+</script>

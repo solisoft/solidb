@@ -1,15 +1,285 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text">System Monitoring</h1>
+      <p class="text-text-muted text-sm">Real-time performance metrics</p>
+    </div>
 
+    <div class="flex items-center gap-3">
+      <span id="connection-status" class="flex items-center gap-2 text-xs">
+        <span class="w-2 h-2 rounded-full bg-text-dim animate-pulse"></span>
+        <span class="text-text-dim">Connecting...</span>
+      </span>
+      <button type="button" onclick="toggleAutoRefresh(this)"
+              class="flex items-center gap-2 px-3 py-1.5 bg-bg-dark border border-border/50 rounded-lg text-sm text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-sync-alt"></i>
+        <span>Auto-refresh</span>
+      </button>
+    </div>
+  </div>
 
-  <system-monitor></system-monitor>
+  <!-- Key Metrics (loaded via HTMX, updated via WebSocket) -->
+  <div id="metrics-container"
+       class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
+       hx-get="/database/_system/monitoring/metrics"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <!-- Loading placeholders -->
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-primary/10"></div>
+        <div>
+          <div class="h-6 w-16 bg-bg-dark rounded mb-1"></div>
+          <div class="h-3 w-12 bg-bg-dark rounded"></div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-accent/10"></div>
+        <div>
+          <div class="h-6 w-16 bg-bg-dark rounded mb-1"></div>
+          <div class="h-3 w-12 bg-bg-dark rounded"></div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-success/10"></div>
+        <div>
+          <div class="h-6 w-16 bg-bg-dark rounded mb-1"></div>
+          <div class="h-3 w-12 bg-bg-dark rounded"></div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 animate-pulse">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-info/10"></div>
+        <div>
+          <div class="h-6 w-16 bg-bg-dark rounded mb-1"></div>
+          <div class="h-3 w-12 bg-bg-dark rounded"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Extended Stats Row -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
+       id="extended-stats"
+       hx-get="/database/_system/monitoring/extended-stats"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
+      <p class="text-xs text-text-dim mb-1">Databases</p>
+      <p class="text-xl font-bold text-text" id="stat-databases">-</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
+      <p class="text-xs text-text-dim mb-1">Collections</p>
+      <p class="text-xl font-bold text-text" id="stat-collections">-</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
+      <p class="text-xs text-text-dim mb-1">Documents</p>
+      <p class="text-xl font-bold text-text" id="stat-documents">-</p>
+    </div>
+    <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
+      <p class="text-xs text-text-dim mb-1">Uptime</p>
+      <p class="text-xl font-bold text-text" id="stat-uptime">-</p>
+    </div>
+  </div>
+
+  <!-- Storage Stats -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden mb-6">
+    <div class="border-b border-border/30 px-4 py-3">
+      <h2 class="font-semibold text-text">Storage Details</h2>
+    </div>
+    <div id="storage-stats"
+         hx-get="/database/_system/monitoring/storage-stats"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading storage details...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operations Stats -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden mb-6">
+    <div class="border-b border-border/30 px-4 py-3">
+      <h2 class="font-semibold text-text">Operation Statistics</h2>
+    </div>
+    <div id="operations-stats"
+         hx-get="/database/_system/monitoring/operations"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading statistics...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slow Queries -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+    <div class="border-b border-border/30 px-4 py-3 flex items-center justify-between">
+      <h2 class="font-semibold text-text">Slow Queries</h2>
+      <span class="text-xs text-text-dim">&gt; 100ms</span>
+    </div>
+    <div id="slow-queries"
+         hx-get="/database/_system/monitoring/slow-queries"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="p-8 text-center">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
+        <p class="text-text-muted">Loading slow queries...</p>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- Load Chart.js from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+var monitoringWs = null;
+var autoRefreshEnabled = true;
+var refreshInterval = null;
 
-<script type="module">
-  import SystemMonitor from '<%= PublicPath("/app/components/system-monitor.riot.js") %>';
-  
-  riot.register('system-monitor', SystemMonitor);
-  riot.mount('system-monitor');
+function connectWebSocket() {
+  var token = getCookie('sdb_token');
+  var serverUrl = getCookie('sdb_server') || 'http://localhost:6745';
+  var wsUrl = serverUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+  wsUrl += '/_api/cluster/status/ws?token=' + encodeURIComponent(token);
+
+  monitoringWs = new WebSocket(wsUrl);
+
+  monitoringWs.onopen = function() {
+    updateConnectionStatus('connected');
+  };
+
+  monitoringWs.onmessage = function(event) {
+    try {
+      var data = JSON.parse(event.data);
+      updateMetrics(data);
+    } catch (e) {
+      console.error('Failed to parse WebSocket message:', e);
+    }
+  };
+
+  monitoringWs.onclose = function() {
+    updateConnectionStatus('disconnected');
+    // Reconnect after 5 seconds if auto-refresh is enabled
+    if (autoRefreshEnabled) {
+      setTimeout(connectWebSocket, 5000);
+    }
+  };
+
+  monitoringWs.onerror = function() {
+    updateConnectionStatus('error');
+  };
+}
+
+function updateConnectionStatus(status) {
+  var el = document.getElementById('connection-status');
+  if (!el) return;
+
+  if (status === 'connected') {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-success"></span><span class="text-success">Live</span>';
+  } else if (status === 'disconnected') {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-warning"></span><span class="text-warning">Reconnecting...</span>';
+  } else {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-error"></span><span class="text-error">Disconnected</span>';
+  }
+}
+
+function updateMetrics(data) {
+  if (!data.stats) return;
+  var stats = data.stats;
+
+  // Update main metrics via HTMX trigger
+  htmx.ajax('GET', '/database/_system/monitoring/metrics', {target: '#metrics-container', swap: 'innerHTML'});
+
+  // Update extended stats
+  var dbEl = document.getElementById('stat-databases');
+  var collEl = document.getElementById('stat-collections');
+  var docEl = document.getElementById('stat-documents');
+  var uptimeEl = document.getElementById('stat-uptime');
+
+  if (dbEl) dbEl.textContent = stats.database_count || '-';
+  if (collEl) collEl.textContent = stats.collection_count || '-';
+  if (docEl) docEl.textContent = formatNumber(stats.document_count || 0);
+  if (uptimeEl) uptimeEl.textContent = formatUptime(stats.uptime_secs || 0);
+}
+
+function formatNumber(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+  return num.toString();
+}
+
+function formatUptime(secs) {
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  return Math.floor(secs / 86400) + 'd ' + Math.floor((secs % 86400) / 3600) + 'h';
+}
+
+function formatBytes(bytes) {
+  if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
+  return bytes + ' B';
+}
+
+function toggleAutoRefresh(btn) {
+  autoRefreshEnabled = !autoRefreshEnabled;
+  if (autoRefreshEnabled) {
+    btn.classList.remove('text-text-dim');
+    btn.classList.add('text-success');
+    if (!monitoringWs || monitoringWs.readyState !== WebSocket.OPEN) {
+      connectWebSocket();
+    }
+    startPolling();
+  } else {
+    btn.classList.remove('text-success');
+    btn.classList.add('text-text-dim');
+    if (monitoringWs) {
+      monitoringWs.close();
+    }
+    stopPolling();
+  }
+}
+
+function startPolling() {
+  if (refreshInterval) return;
+  refreshInterval = setInterval(function() {
+    htmx.ajax('GET', '/database/_system/monitoring/metrics', {target: '#metrics-container', swap: 'innerHTML'});
+  }, 5000);
+}
+
+function stopPolling() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+}
+
+function getCookie(name) {
+  var value = '; ' + document.cookie;
+  var parts = value.split('; ' + name + '=');
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return '';
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+  connectWebSocket();
+  startPolling();
+});
+
+// Cleanup on page leave
+window.addEventListener('beforeunload', function() {
+  if (monitoringWs) {
+    monitoringWs.close();
+  }
+  stopPolling();
+});
 </script>

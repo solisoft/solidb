@@ -1,0 +1,70 @@
+<% if #agents == 0 then %>
+<div class="col-span-full p-8 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-accent/10 rounded-full flex items-center justify-center">
+    <i class="fas fa-robot text-2xl text-accent-light"></i>
+  </div>
+  <p class="text-text-muted">No agents configured</p>
+  <p class="text-xs text-text-dim mt-1">Create an agent to start using AI features</p>
+</div>
+<% else %>
+  <% for _, agent in ipairs(agents) do
+    local model_color = "text-text-muted"
+    if agent.model and agent.model:find("claude") then
+      model_color = "text-success"
+    elseif agent.model and agent.model:find("gpt") then
+      model_color = "text-info"
+    elseif agent.model and agent.model:find("llama") then
+      model_color = "text-accent"
+    end
+  %>
+  <div class="agent-card bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4 hover:border-primary/30 transition-colors group">
+    <div class="flex items-start justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+          <i class="fas fa-robot text-accent-light"></i>
+        </div>
+        <div>
+          <h3 class="font-semibold text-text"><%= agent.name %></h3>
+          <span class="text-xs <%= model_color %>"><%= agent.model or "Not set" %></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button type="button"
+                hx-get="/database/<%= db %>/ai/agents/<%= agent.id %>/edit"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="p-1.5 text-text-muted hover:text-info transition-colors"
+                title="Edit">
+          <i class="fas fa-edit"></i>
+        </button>
+        <button type="button"
+                hx-delete="/database/<%= db %>/ai/agents/<%= agent.id %>"
+                hx-target="closest .agent-card"
+                hx-swap="outerHTML"
+                hx-confirm="Delete agent '<%= agent.name %>'?"
+                class="p-1.5 text-text-muted hover:text-error transition-colors"
+                title="Delete">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+    </div>
+
+    <% if agent.system_prompt and agent.system_prompt ~= "" then %>
+    <p class="text-xs text-text-dim mb-3 line-clamp-2"><%= agent.system_prompt %></p>
+    <% end %>
+
+    <% if agent.capabilities and #agent.capabilities > 0 then %>
+    <div class="flex flex-wrap gap-1 mb-3">
+      <% for _, cap in ipairs(agent.capabilities) do %>
+      <span class="px-2 py-0.5 rounded text-xs bg-primary/10 text-primary-light"><%= cap %></span>
+      <% end %>
+    </div>
+    <% end %>
+
+    <div class="flex items-center justify-between text-xs text-text-dim pt-3 border-t border-border/30">
+      <span><i class="fas fa-tasks mr-1"></i><%= agent.tasks_count or 0 %> tasks</span>
+      <span><i class="fas fa-clock mr-1"></i><%= format_datetime(agent.created_at, "short") %></span>
+    </div>
+  </div>
+  <% end %>
+<% end %>

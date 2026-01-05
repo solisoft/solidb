@@ -1,0 +1,155 @@
+<%
+-- Dashboard sidebar navigation
+local function is_active(page)
+  return current_page == page
+end
+
+local function nav_class(page)
+  if is_active(page) then
+    return "bg-white/10 text-text font-medium"
+  else
+    return "text-text-muted hover:text-text hover:bg-white/5"
+  end
+end
+%>
+
+<nav class="px-3 space-y-1">
+  <% if db == "_system" then %>
+  <!-- System database specific links -->
+  <a href="/database/_system/cluster"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('cluster') %>">
+    <i class="fas fa-server w-5 text-center text-warning"></i>
+    <span class="text-sm">Cluster</span>
+  </a>
+
+  <a href="/database/_system/databases"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('databases') %>">
+    <i class="fas fa-database w-5 text-center text-primary-light"></i>
+    <span class="text-sm">Databases</span>
+  </a>
+
+  <a href="/database/_system/apikeys"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('apikeys') %>">
+    <i class="fas fa-key w-5 text-center text-accent-light"></i>
+    <span class="text-sm">API Keys</span>
+  </a>
+
+  <a href="/database/_system/users"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('users') %>">
+    <i class="fas fa-users w-5 text-center text-info"></i>
+    <span class="text-sm">Users & Roles</span>
+  </a>
+
+  <a href="/database/_system/monitoring"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('monitoring') %>">
+    <i class="fas fa-chart-line w-5 text-center text-success"></i>
+    <span class="text-sm">System Monitor</span>
+  </a>
+
+  <div class="my-3 border-t border-border/30"></div>
+  <% end %>
+
+  <!-- Data section -->
+  <div class="px-3 pt-2 pb-1">
+    <h3 class="text-xs font-semibold text-text-dim uppercase tracking-wider">Data</h3>
+  </div>
+
+  <a href="/database/<%= db %>/collections"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('collections') %>">
+    <i class="fas fa-folder w-5 text-center text-primary-light"></i>
+    <span class="text-sm">Collections</span>
+  </a>
+
+  <a href="/database/<%= db %>/query"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('query') %>">
+    <i class="fas fa-terminal w-5 text-center text-info"></i>
+    <span class="text-sm">Query Data</span>
+  </a>
+
+  <a href="/database/<%= db %>/live-query"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('live_query') %>">
+    <i class="fas fa-bolt w-5 text-center text-accent-light"></i>
+    <span class="text-sm">Live Query</span>
+  </a>
+
+  <!-- Development section -->
+  <div class="px-3 pt-4 pb-1">
+    <h3 class="text-xs font-semibold text-text-dim uppercase tracking-wider">Development</h3>
+  </div>
+
+  <a href="/database/<%= db %>/scripts"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('scripts') %>">
+    <i class="fas fa-code w-5 text-center text-primary-light"></i>
+    <span class="text-sm">Scripts</span>
+  </a>
+
+  <a href="/database/<%= db %>/repl"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('repl') %>">
+    <i class="fas fa-play w-5 text-center text-warning"></i>
+    <span class="text-sm">Lua REPL</span>
+  </a>
+
+  <a href="/database/<%= db %>/queues"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('queues') %>">
+    <i class="fas fa-list-check w-5 text-center text-info"></i>
+    <span class="text-sm">Queues</span>
+  </a>
+
+  <a href="/database/<%= db %>/env"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('env') %>">
+    <i class="fas fa-cog w-5 text-center text-text-muted"></i>
+    <span class="text-sm">Environment</span>
+  </a>
+
+  <!-- AI section -->
+  <div class="px-3 pt-4 pb-1">
+    <h3 class="text-xs font-semibold text-text-dim uppercase tracking-wider">AI Admin</h3>
+  </div>
+
+  <a href="/database/<%= db %>/ai/contributions"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_contributions') %>">
+    <i class="fas fa-flask w-5 text-center text-accent-light"></i>
+    <span class="text-sm">Contributions</span>
+  </a>
+
+  <a href="/database/<%= db %>/ai/tasks"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_tasks') %>">
+    <i class="fas fa-clipboard-list w-5 text-center text-info"></i>
+    <span class="text-sm">Tasks</span>
+  </a>
+
+  <a href="/database/<%= db %>/ai/agents"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_agents') %>">
+    <i class="fas fa-robot w-5 text-center text-success"></i>
+    <span class="text-sm">Agents</span>
+  </a>
+
+  <!-- Distributed section -->
+  <% if db == "_system" then %>
+  <div class="px-3 pt-4 pb-1">
+    <h3 class="text-xs font-semibold text-text-dim uppercase tracking-wider">Distributed</h3>
+  </div>
+
+  <a href="/database/_system/sharding"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('sharding') %>">
+    <i class="fas fa-cubes w-5 text-center text-info"></i>
+    <span class="text-sm">Sharding</span>
+  </a>
+  <% end %>
+
+  <!-- External links -->
+  <div class="my-3 border-t border-border/30"></div>
+
+  <a href="https://github.com/solisoft/solidb" target="_blank" rel="noopener"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-text-muted hover:text-text hover:bg-white/5">
+    <i class="fab fa-github w-5 text-center"></i>
+    <span class="text-sm">GitHub</span>
+    <i class="fas fa-external-link-alt text-xs ml-auto opacity-50"></i>
+  </a>
+
+  <a href="/docs"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-text-muted hover:text-text hover:bg-white/5">
+    <i class="fas fa-book w-5 text-center"></i>
+    <span class="text-sm">Documentation</span>
+  </a>
+</nav>

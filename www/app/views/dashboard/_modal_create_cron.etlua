@@ -1,0 +1,176 @@
+<%
+  local db = db or "_system"
+  local queues = queues or {}
+  local scripts = scripts or {}
+%>
+<div class="fixed inset-0 z-[150] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="relative bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border/30 sticky top-0 bg-bg-card">
+      <h3 class="text-lg font-semibold text-text">
+        <i class="fas fa-calendar-plus mr-2 text-accent-light"></i>Schedule Cron Job
+      </h3>
+      <button type="button" onclick="closeModal()" class="text-text-muted hover:text-text transition-colors">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-post="/database/<%= db %>/queues/cron"
+          hx-target="#jobs-content"
+          hx-swap="innerHTML"
+          class="p-6 space-y-4">
+
+      <!-- Name -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Name <span class="text-error">*</span></label>
+        <input type="text" name="name" required placeholder="daily-cleanup"
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <p class="text-xs text-text-dim mt-1">Unique name for this cron job</p>
+      </div>
+
+      <!-- Cron Expression -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Cron Expression <span class="text-error">*</span></label>
+        <input type="text" name="cron_expression" required placeholder="0 */5 * * * * *" id="cron-input"
+               oninput="updateCronPreview()"
+               class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text font-mono placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <p class="text-xs text-text-dim mt-1">Format: <code class="text-accent-light">sec min hour day month day_of_week year</code></p>
+        <div id="cron-preview" class="mt-2 text-xs text-info"></div>
+      </div>
+
+      <!-- Common Presets -->
+      <div>
+        <label class="block text-xs font-medium text-text-muted mb-2">Quick Presets</label>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="setCron('0 */1 * * * * *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Every minute</button>
+          <button type="button" onclick="setCron('0 */5 * * * * *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Every 5 min</button>
+          <button type="button" onclick="setCron('0 */15 * * * * *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Every 15 min</button>
+          <button type="button" onclick="setCron('0 0 * * * * *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Every hour</button>
+          <button type="button" onclick="setCron('0 0 0 * * * *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Daily midnight</button>
+          <button type="button" onclick="setCron('0 0 9 * * 1 *')" class="px-2 py-1 text-xs bg-bg-dark hover:bg-white/5 border border-border/30 rounded text-text-muted hover:text-text transition-colors">Mon 9AM</button>
+        </div>
+      </div>
+
+      <!-- Queue -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Queue</label>
+        <% if #queues > 0 then %>
+          <select name="queue" class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+            <% for _, queue in ipairs(queues) do %>
+              <% local q_name = type(queue) == "table" and queue.name or queue %>
+              <option value="<%= q_name %>" <%= q_name == "default" and 'selected' or '' %>><%= q_name %></option>
+            <% end %>
+          </select>
+        <% else %>
+          <input type="text" name="queue" value="default"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <% end %>
+      </div>
+
+      <!-- Script Path -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Script Path <span class="text-error">*</span></label>
+        <% if #scripts > 0 then %>
+          <select name="script" required class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+            <option value="">Select a script...</option>
+            <% for _, script in ipairs(scripts) do %>
+              <option value="<%= script.path or script %>"><%= script.name or script.path or script %></option>
+            <% end %>
+          </select>
+        <% else %>
+          <input type="text" name="script" required placeholder="scripts/cleanup.lua"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary/50">
+        <% end %>
+      </div>
+
+      <!-- Parameters -->
+      <div>
+        <label class="block text-sm font-medium text-text mb-1">Parameters (JSON)</label>
+        <textarea name="params" rows="2" placeholder='{"key": "value"}'
+                  class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text font-mono text-sm placeholder-text-dim focus:outline-none focus:border-primary/50"></textarea>
+      </div>
+
+      <!-- Priority & Retries -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Priority</label>
+          <input type="number" name="priority" value="0" min="-100" max="100"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-text mb-1">Max Retries</label>
+          <input type="number" name="max_retries" value="3" min="0" max="100"
+                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text focus:outline-none focus:border-primary/50">
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-3 pt-4 border-t border-border/30">
+        <button type="button" onclick="closeModal()"
+                class="px-4 py-2 bg-bg-dark border border-border/50 rounded-lg text-text-muted hover:text-text transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-accent hover:bg-accent-light text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-calendar-plus mr-2"></i>Create Cron Job
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function closeModal() {
+  document.getElementById('modal-container').innerHTML = '';
+}
+
+function setCron(expr) {
+  document.getElementById('cron-input').value = expr;
+  updateCronPreview();
+}
+
+function updateCronPreview() {
+  var expr = document.getElementById('cron-input').value;
+  var preview = document.getElementById('cron-preview');
+  if (!expr) {
+    preview.innerHTML = '';
+    return;
+  }
+
+  var parts = expr.trim().split(/\s+/);
+  if (parts.length < 6) {
+    preview.innerHTML = '<span class="text-warning">Need at least 6 fields (sec min hour day month dow)</span>';
+    return;
+  }
+
+  var sec = parts[0], min = parts[1], hour = parts[2], day = parts[3], month = parts[4], dow = parts[5];
+  var desc = '';
+
+  // Simple descriptions
+  if (sec === '0' && min === '0' && hour === '0' && day === '*' && month === '*') {
+    desc = 'Runs daily at midnight';
+  } else if (sec === '0' && min === '0' && hour === '*' && day === '*') {
+    desc = 'Runs every hour at :00';
+  } else if (sec === '0' && min.match(/^\*\/(\d+)$/)) {
+    desc = 'Runs every ' + min.match(/^\*\/(\d+)$/)[1] + ' minutes';
+  } else if (sec.match(/^\*\/(\d+)$/)) {
+    desc = 'Runs every ' + sec.match(/^\*\/(\d+)$/)[1] + ' seconds';
+  } else {
+    desc = 'Custom schedule';
+  }
+
+  preview.innerHTML = '<i class="fas fa-info-circle mr-1"></i>' + desc;
+}
+
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+
+// Listen for closeModal event from HTMX
+document.body.addEventListener('closeModal', function() {
+  closeModal();
+});
+</script>

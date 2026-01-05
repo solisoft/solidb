@@ -1,0 +1,15 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+
+  <system-monitor></system-monitor>
+</div>
+
+<!-- Load Chart.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+<script type="module">
+  import SystemMonitor from '<%= PublicPath("/app/components/system-monitor.riot.js") %>';
+  
+  riot.register('system-monitor', SystemMonitor);
+  riot.mount('system-monitor');
+</script>

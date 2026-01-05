@@ -1,0 +1,115 @@
+<%
+local idxs = indexes or {}
+
+-- Helper to get type color
+local function type_color(t)
+  if t == "hash" then return "bg-primary"
+  elseif t == "persistent" then return "bg-accent"
+  elseif t == "fulltext" then return "bg-info"
+  elseif t == "geo" then return "bg-success"
+  elseif t == "ttl" then return "bg-warning"
+  elseif t == "columnar" then return "bg-info"
+  else return "bg-text-muted"
+  end
+end
+
+-- Helper to format fields
+local function format_fields(idx)
+  if idx.column then
+    return idx.column
+  elseif idx.fields then
+    if type(idx.fields) == "table" then
+      return table.concat(idx.fields, ", ")
+    else
+      return tostring(idx.fields)
+    end
+  elseif idx.field then
+    return idx.field
+  else
+    return "-"
+  end
+end
+
+-- Helper to get index name (columnar uses column name)
+local function get_index_name(idx)
+  if idx.name then return idx.name
+  elseif idx.column then return idx.column
+  else return "-"
+  end
+end
+%>
+
+<% if #idxs == 0 then %>
+<!-- Empty State -->
+<div class="p-12 text-center">
+  <div class="w-16 h-16 mx-auto mb-4 bg-bg-card border border-border rounded-full flex items-center justify-center">
+    <i class="fas fa-list-ol text-2xl text-text-muted"></i>
+  </div>
+  <h3 class="text-lg font-medium text-text mb-2">No indexes found</h3>
+  <p class="text-text-muted mb-4">Create an index to speed up queries on this collection</p>
+  <button type="button"
+          hx-get="/database/<%= db %>/indexes/<%= collection %>/modal/create"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+    <i class="fas fa-plus"></i>
+    <span>New Index</span>
+  </button>
+</div>
+<% else %>
+<!-- Table -->
+<div class="overflow-x-auto">
+  <table class="w-full text-sm text-left">
+    <thead class="bg-bg/50 border-b border-border/30 text-text-muted uppercase">
+      <tr>
+        <th class="px-6 py-3 font-semibold">Type</th>
+        <th class="px-6 py-3 font-semibold">Name</th>
+        <th class="px-6 py-3 font-semibold">Fields</th>
+        <th class="px-6 py-3 font-semibold">Options</th>
+        <th class="px-6 py-3 font-semibold text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border/20">
+      <% for _, idx in ipairs(idxs) do %>
+      <tr class="hover:bg-white/5 transition-colors group">
+        <td class="px-6 py-4">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full <%= type_color(idx.index_type) %>"></span>
+            <span class="text-text font-medium capitalize"><%= idx.index_type %></span>
+          </div>
+        </td>
+        <td class="px-6 py-4 font-mono text-primary-light">
+          <%= get_index_name(idx) %>
+        </td>
+        <td class="px-6 py-4 font-mono text-text-muted">
+          <%= format_fields(idx) %>
+        </td>
+        <td class="px-6 py-4 text-text-muted">
+          <div class="flex items-center gap-2">
+            <% if idx.unique then %>
+            <span class="px-2 py-0.5 bg-primary/20 text-primary-light rounded text-xs">unique</span>
+            <% end %>
+            <% if idx.ttl then %>
+            <span class="px-2 py-0.5 bg-warning/20 text-warning rounded text-xs">ttl: <%= idx.ttl %>s</span>
+            <% end %>
+          </div>
+        </td>
+        <td class="px-6 py-4 text-right">
+          <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button type="button"
+                    hx-delete="/database/<%= db %>/indexes/<%= collection %>/<%= get_index_name(idx) %>?type=<%= idx.index_type %>"
+                    hx-confirm="Delete index '<%= get_index_name(idx) %>'?"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    class="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
+                    title="Delete">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+<% end %>

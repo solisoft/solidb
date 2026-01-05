@@ -1,0 +1,108 @@
+<%
+  local cron_jobs = cron_jobs or {}
+  local db = db or "_system"
+
+  -- Helper to format timestamp
+  local function format_datetime(ts)
+    if not ts then return "-" end
+    local t = os.date("*t", ts)
+    return string.format("%d-%02d-%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.min)
+  end
+
+  -- Helper to explain cron expression
+  local function explain_cron(expr)
+    if not expr then return "Invalid" end
+    -- Basic explanation for common patterns
+    local parts = {}
+    for part in expr:gmatch("%S+") do
+      table.insert(parts, part)
+    end
+    if #parts < 6 then return expr end
+
+    local sec, min, hour, day, month, dow = parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
+
+    -- Simple explanations
+    if sec == "0" and min == "0" and hour == "0" and day == "*" and month == "*" then
+      return "Daily at midnight"
+    elseif sec == "0" and min == "0" and hour == "*" and day == "*" then
+      return "Every hour"
+    elseif sec == "0" and min:match("^%*/(%d+)$") then
+      local interval = min:match("^%*/(%d+)$")
+      return "Every " .. interval .. " minutes"
+    elseif sec:match("^%*/(%d+)$") then
+      local interval = sec:match("^%*/(%d+)$")
+      return "Every " .. interval .. " seconds"
+    end
+
+    return expr
+  end
+%>
+
+<% if #cron_jobs == 0 then %>
+  <div class="p-8 text-center text-text-muted">
+    <i class="fas fa-calendar-alt text-4xl mb-4 opacity-30"></i>
+    <p class="text-sm">No scheduled cron jobs</p>
+    <p class="text-xs mt-2">Create a cron job to run scripts on a schedule</p>
+  </div>
+<% else %>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-bg-dark/50 text-left">
+        <tr>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Name</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Schedule</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Script</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Queue</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Next Run</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Last Run</th>
+          <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-border/20">
+        <% for _, cron in ipairs(cron_jobs) do %>
+          <tr class="hover:bg-white/5 transition-colors" id="cron-<%= cron._key or cron.id %>">
+            <td class="px-4 py-3">
+              <span class="font-medium text-text"><%= cron.name or "-" %></span>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-col gap-1">
+                <code class="text-xs font-mono text-accent-light"><%= cron.cron_expression or "-" %></code>
+                <span class="text-[10px] text-text-dim"><%= explain_cron(cron.cron_expression) %></span>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <code class="text-xs font-mono text-primary-light"><%= cron.script_path or cron.script or "-" %></code>
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-1 rounded bg-bg-dark text-xs text-text-muted"><%= cron.queue or "default" %></span>
+            </td>
+            <td class="px-4 py-3 text-xs">
+              <% if cron.next_run then %>
+                <span class="text-success"><i class="fas fa-clock mr-1"></i><%= format_datetime(cron.next_run) %></span>
+              <% else %>
+                <span class="text-text-dim">-</span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-xs text-text-muted">
+              <%= format_datetime(cron.last_run) %>
+            </td>
+            <td class="px-4 py-3">
+              <button type="button"
+                      hx-delete="/database/<%= db %>/queues/cron/<%= cron._key or cron.id %>"
+                      hx-target="#cron-<%= cron._key or cron.id %>"
+                      hx-swap="outerHTML"
+                      hx-confirm="Delete this cron job?"
+                      class="text-xs text-text-muted hover:text-error transition-colors">
+                <i class="fas fa-trash-alt mr-1"></i>Delete
+              </button>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="px-4 py-3 border-t border-border/30 text-xs text-text-dim">
+    <%= #cron_jobs %> scheduled job<%= #cron_jobs ~= 1 and 's' or '' %>
+  </div>
+<% end %>

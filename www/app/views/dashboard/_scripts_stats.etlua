@@ -1,0 +1,53 @@
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <!-- Total Scripts -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+        <i class="fas fa-code text-primary-light"></i>
+      </div>
+      <div>
+        <div class="text-2xl font-bold text-text"><%= scripts_count %></div>
+        <div class="text-xs text-text-muted">Total Scripts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Scripts -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-success/20 flex items-center justify-center">
+        <i class="fas fa-play text-success"></i>
+      </div>
+      <div>
+        <div class="text-2xl font-bold text-text"><%= stats.active_scripts %></div>
+        <div class="text-xs text-text-muted">Active Now</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WebSocket Connections -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-info/20 flex items-center justify-center">
+        <i class="fas fa-plug text-info"></i>
+      </div>
+      <div>
+        <div class="text-2xl font-bold text-text"><%= stats.active_ws %></div>
+        <div class="text-xs text-text-muted">WebSockets</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Total Executions -->
+  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+        <i class="fas fa-bolt text-accent-light"></i>
+      </div>
+      <div>
+        <div class="text-2xl font-bold text-text"><%= stats.total_scripts_executed %></div>
+        <div class="text-xs text-text-muted">Executions</div>
+      </div>
+    </div>
+  </div>
+</div>

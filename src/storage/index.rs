@@ -15,6 +15,8 @@ pub enum IndexType {
     TTL,
     /// Bloom Filter index - probabilistic existence check
     Bloom,
+    /// Cuckoo Filter index - probabilistic existence check with deletion support
+    Cuckoo,
 }
 
 // ==================== N-gram Utilities ====================
