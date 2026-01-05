@@ -16,7 +16,7 @@
   <%- head_content or "" %>
 </head>
 <body class="min-h-screen bg-gray-900 text-gray-100">
-  <header class="sticky top-0 z-[100] glass px-8 h-16 flex items-center">
+  <header class="sticky top-0 z-[100] bg-gray-900/50 backdrop-blur-xl border-b border-white/5 px-8 h-16 flex items-center">
     <div class="max-w-[1400px] w-full mx-auto flex items-center justify-between">
       <div class="flex items-center gap-4">
         <label for="docs-nav-toggle" class="lg:hidden cursor-pointer p-2 rounded-md hover:bg-white/10 transition-colors">
