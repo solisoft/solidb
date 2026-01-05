@@ -53,6 +53,7 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   -- Schema routes
   router.get("/documents/:collection/modal/schema", "dashboard/collections#schema_modal")
   router.post("/documents/:collection/schema", "dashboard/collections#update_schema")
+  router.post("/documents/:collection/schema/delete", "dashboard/collections#delete_schema")
 
   -- Collection indexes routes
   router.get("/indexes/:collection", "dashboard/indexes#collection_indexes")

@@ -545,5 +545,30 @@ function CollectionsController:update_schema()
     return self:schema_modal()
   end
 end
+  
+-- Delete Schema Action
+function CollectionsController:delete_schema()
+  local db = self:get_db()
+  local collection = self.params.collection
+  
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/collection/" .. collection .. "/schema", {
+    method = "DELETE"
+  })
+  
+  if status == 200 then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Schema removed successfully", "type": "success"}, "closeModal": true}')
+    self:html("")
+  else
+    local err_msg = "Failed to remove schema"
+    local ok_err, err_data = pcall(DecodeJson, body)
+    if ok_err and err_data and err_data.error then
+      err_msg = err_data.error
+    end
+    
+    SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+    -- Re-render modal to keep it open
+    return self:schema_modal()
+  end
+end
 
 return CollectionsController
