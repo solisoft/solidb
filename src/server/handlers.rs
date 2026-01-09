@@ -96,6 +96,16 @@ pub struct AppState {
     pub repl_sessions: crate::server::repl_session::ReplSessionStore,
 }
 
+impl AppState {
+    /// Get the cluster secret from the keyfile for inter-node HTTP authentication
+    pub fn cluster_secret(&self) -> String {
+        self.storage
+            .cluster_config()
+            .and_then(|c| c.keyfile.clone())
+            .unwrap_or_default()
+    }
+}
+
 // ==================== Auth Types ====================
 
 #[derive(Debug, Deserialize)]
@@ -1194,7 +1204,7 @@ pub async fn list_collections(
                                             let mut nodes_to_try = vec![assignment.primary_node.clone()];
                                             nodes_to_try.extend(assignment.replica_nodes.clone());
 
-                                            let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                                            let secret = state.cluster_secret();
                                             let client = reqwest::Client::new();
 
                                             for node_id in &nodes_to_try {
@@ -1281,7 +1291,7 @@ pub async fn list_collections(
                     };
 
                     let client = reqwest::Client::new();
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = state.cluster_secret();
 
                     for shard_id in 0..config.num_shards {
                         let physical_name = format!("{}_s{}", name, shard_id);
@@ -1436,7 +1446,7 @@ pub async fn delete_collection(
                 // Delete physical shards on remote nodes
                 if !remote_nodes.is_empty() {
                     let client = reqwest::Client::new();
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = state.cluster_secret();
 
                     for shard_id in 0..shard_config.num_shards {
                         let physical_name = format!("{}_s{}", coll_name, shard_id);
@@ -1532,7 +1542,7 @@ pub async fn truncate_collection(
             // Truncate physical shards on remote nodes
             if !remote_nodes.is_empty() {
                 let client = reqwest::Client::new();
-                let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                let secret = state.cluster_secret();
                 let auth_header = headers.get("authorization")
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("")
@@ -1934,7 +1944,7 @@ pub async fn get_sharding_details(
     // Query each physical shard for actual stats
     // Use scatter-gather to query remote nodes when shard isn't local
     let client = reqwest::Client::new();
-    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    let secret = state.cluster_secret();
 
     // Get auth token from request headers to forward to remote nodes
     let auth_header = headers.get("authorization")
@@ -2413,7 +2423,7 @@ pub async fn update_collection_properties(
     if propagate {
         if let Some(ref manager) = state.cluster_manager {
             let my_node_id = manager.local_node_id();
-            let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+            let secret = state.cluster_secret();
             let client = reqwest::Client::new();
 
             // Clone payload and set propagate = false
@@ -2480,7 +2490,7 @@ pub async fn export_collection(
     // Prepare coordinator reference and secret for remote calls
     let coordinator_opt = state.shard_coordinator.clone();
     let cluster_manager_opt = state.cluster_manager.clone();
-    let secret_env = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    let secret_env = state.cluster_secret();
     
     // Capture necessary variables for the async stream
     let db_name_clone = db_name.clone();
@@ -3204,7 +3214,7 @@ pub async fn insert_documents_batch(
                             if !assignment.replica_nodes.is_empty() {
                                 // Forward to replicas in parallel
                                 let client = reqwest::Client::new();
-                                let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                                let secret = state.cluster_secret();
 
                                 if let Some(ref cluster_manager) = state.cluster_manager {
                                     let mut futures = Vec::new();
@@ -3342,7 +3352,7 @@ pub async fn copy_shard_data(
     tracing::info!("COPY_SHARD: Copying {}/{} from {}", db_name, coll_name, request.source_address);
 
     // Step 1: Check Source Count using Metadata API
-    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    let secret = state.cluster_secret();
     let client = reqwest::Client::new();
 
     // Get doc count first to avoid massive transfer if already in sync
@@ -3398,7 +3408,7 @@ pub async fn copy_shard_data(
     let url = format!("http://{}/_api/database/{}/cursor", request.source_address, db_name);
     let query = format!("FOR doc IN {} RETURN doc", coll_name);
     // Reuse secret from above or fetch again
-    // let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    // let secret = state.cluster_secret();
     // We already have 'secret' and 'client' in scope from earlier meta check block
 
     let res = client.post(&url)
@@ -4977,7 +4987,7 @@ pub async fn cluster_cleanup(
     body: Option<Json<Vec<crate::sharding::coordinator::ShardTable>>>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     // Verify cluster secret
-    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    let secret = state.cluster_secret();
     let request_secret = headers
         .get("X-Cluster-Secret")
         .and_then(|v| v.to_str().ok())
@@ -5023,7 +5033,7 @@ pub async fn cluster_reshard(
     Json(request): Json<ReshardRequest>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     // Verify cluster secret
-    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+    let secret = state.cluster_secret();
     let request_secret = headers
         .get("X-Cluster-Secret")
         .and_then(|v| v.to_str().ok())
@@ -5160,7 +5170,7 @@ pub async fn ws_changefeed_handler(
 ) -> impl IntoResponse {
     // Check for cluster-internal authentication (bypasses normal JWT validation)
     let is_cluster_internal = {
-        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let cluster_secret = state.cluster_secret();
         let provided_secret = headers
             .get("X-Cluster-Secret")
             .and_then(|h| h.to_str().ok())
@@ -5406,6 +5416,7 @@ async fn handle_subscribe_request(
                     if let Some(coordinator) = &state.shard_coordinator {
                         let my_addr = coordinator.my_address();
                         let all_nodes = coordinator.get_collection_nodes(&shard_config);
+                        let cluster_secret = state.cluster_secret();
 
                         let mut remote_nodes = std::collections::HashSet::new();
                         for node_addr in all_nodes {
@@ -5419,6 +5430,7 @@ async fn handle_subscribe_request(
                             let db_name_remote = db_name.clone();
                             let coll_name_remote = coll_name.clone();
                             let node_addr_clone = node_addr.clone();
+                            let secret_clone = cluster_secret.clone();
 
                             tokio::spawn(async move {
                                 use crate::cluster::ClusterWebsocketClient;
@@ -5426,7 +5438,8 @@ async fn handle_subscribe_request(
                                     &node_addr_clone,
                                     &db_name_remote,
                                     &coll_name_remote,
-                                    true 
+                                    true,
+                                    &secret_clone,
                                 ).await {
                                     Ok(stream) => {
                                         tokio::pin!(stream);
@@ -5597,6 +5610,7 @@ async fn handle_live_query_request(
                                 if let Some(coordinator) = &state.shard_coordinator {
                                     let my_addr = coordinator.my_address();
                                     let all_nodes = coordinator.get_collection_nodes(&shard_config);
+                                    let cluster_secret = state.cluster_secret();
                                     let mut remote_nodes = std::collections::HashSet::new();
                                     for node_addr in all_nodes {
                                         if node_addr != my_addr { remote_nodes.insert(node_addr); }
@@ -5607,10 +5621,11 @@ async fn handle_live_query_request(
                                         let db_remote = db_name.clone();
                                         let c_remote = coll_name.clone();
                                         let n_addr = node_addr.clone();
-                                        
+                                        let secret_clone = cluster_secret.clone();
+
                                         tokio::spawn(async move {
                                             use crate::cluster::ClusterWebsocketClient;
-                                            match ClusterWebsocketClient::connect(&n_addr, &db_remote, &c_remote, true).await {
+                                            match ClusterWebsocketClient::connect(&n_addr, &db_remote, &c_remote, true, &secret_clone).await {
                                                 Ok(stream) => {
                                                     tokio::pin!(stream);
                                                     while let Some(result) = stream.next().await {
@@ -5806,11 +5821,11 @@ async fn fetch_blob_chunk_from_cluster(
         };
 
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = coordinator.cluster_secret();
 
         match client
             .get(&url)
-            .header("X-Cluster-Secret", secret)
+            .header("X-Cluster-Secret", &secret)
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await

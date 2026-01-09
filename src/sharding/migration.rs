@@ -88,7 +88,10 @@ async fn verify_migrated_documents(
     // Verify remote keys via HTTP endpoint
     if let Some(mgr) = cluster_manager {
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = storage
+            .cluster_config()
+            .and_then(|c| c.keyfile.clone())
+            .unwrap_or_default();
 
         for (node_id, node_keys) in keys_by_node {
             if let Some(addr) = mgr.get_node_api_address(&node_id) {

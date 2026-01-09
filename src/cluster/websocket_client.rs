@@ -8,18 +8,24 @@ pub struct ClusterWebsocketClient;
 
 impl ClusterWebsocketClient {
     /// Connect to a remote node's changefeed and return a stream of ChangeEvents
+    ///
+    /// # Arguments
+    /// * `node_addr` - Address of the remote node
+    /// * `database` - Database name
+    /// * `collection` - Collection name
+    /// * `local_only` - Whether to get only local changes
+    /// * `cluster_secret` - Cluster secret from keyfile for authentication
     pub async fn connect(
         node_addr: &str,
         database: &str,
         collection: &str,
         local_only: bool,
+        cluster_secret: &str,
     ) -> anyhow::Result<impl futures::Stream<Item =  anyhow::Result<ChangeEvent>>> {
         // Construct WebSocket URL with cluster-internal authentication
 
-        // Get cluster secret for authentication
-        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
         if cluster_secret.is_empty() {
-            return Err(anyhow::anyhow!("SOLIDB_CLUSTER_SECRET not set - cannot connect to cluster WebSocket"));
+            return Err(anyhow::anyhow!("Cluster secret not configured - cannot connect to cluster WebSocket"));
         }
 
         let url_str = format!(

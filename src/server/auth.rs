@@ -641,6 +641,14 @@ impl AuthService {
         }
 
         if roles.is_empty() {
+            // TEMPORARY: If there's only one admin user and no roles assigned,
+            // automatically grant admin role. This will be removed later.
+            if let Ok(admins_coll) = db.get_collection(ADMIN_COLL) {
+                if admins_coll.count() == 1 {
+                    tracing::info!("Single admin user '{}' detected - auto-granting admin role", username);
+                    return Some(vec!["admin".to_string()]);
+                }
+            }
             None
         } else {
             Some(roles)
@@ -665,12 +673,17 @@ pub async fn auth_middleware(
 ) -> Result<Response, StatusCode> {
     // Allow internal cluster shard forwarding without auth
     // SECURITY: Requires BOTH X-Shard-Direct/X-Scatter-Gather header AND valid X-Cluster-Secret
-    // The secret must match SOLIDB_CLUSTER_SECRET env var (generated at startup if not set)
+    // The secret must match the keyfile content configured at startup
     let is_internal_cluster_request = req.headers().contains_key("X-Shard-Direct")
         || req.headers().contains_key("X-Scatter-Gather");
 
     if is_internal_cluster_request {
-        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        // Get cluster secret from keyfile via storage config
+        let cluster_secret = state.storage
+            .cluster_config()
+            .and_then(|c| c.keyfile.clone())
+            .unwrap_or_default();
+
         let provided_secret = req.headers()
             .get("X-Cluster-Secret")
             .and_then(|h| h.to_str().ok())
@@ -688,7 +701,7 @@ pub async fn auth_middleware(
             req.extensions_mut().insert(claims);
             return Ok(next.run(req).await);
         } else {
-            tracing::warn!("CLUSTER AUTH FAILURE: Secret mismatch for internal request. Check SOLIDB_CLUSTER_SECRET env var on all nodes.");
+            tracing::warn!("CLUSTER AUTH FAILURE: Secret mismatch for internal request. Ensure all nodes use the same keyfile.");
         }
         // If secret doesn't match, fall through to normal auth
         // This prevents external attackers from using X-Shard-Direct to bypass auth

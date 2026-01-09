@@ -243,16 +243,6 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         mgr_clone2.start().await;
     });
 
-    // Generate cluster secret if not set (for inter-node auth)
-    if std::env::var("SOLIDB_CLUSTER_SECRET").is_err() {
-        let mut secret_bytes = [0u8; 32];
-        use rand::RngCore;
-        rand::thread_rng().fill_bytes(&mut secret_bytes);
-        let secret = hex::encode(secret_bytes);
-        std::env::set_var("SOLIDB_CLUSTER_SECRET", &secret);
-        tracing::info!("Generated cluster secret for inter-node communication");
-    }
-
     // Create ONE shared ShardCoordinator for ALL consumers to share the same shard table cache.
     // This is used by: stats collector, heal task, sync worker rebalancing, AND HTTP handlers (via routes).
     let shared_coordinator = Arc::new(solidb::sharding::coordinator::ShardCoordinator::new(

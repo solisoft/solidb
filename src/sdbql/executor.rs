@@ -1832,7 +1832,7 @@ impl<'a> QueryExecutor<'a> {
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .unwrap_or_else(|_| reqwest::blocking::Client::new());
-        let cluster_secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let cluster_secret = coordinator.cluster_secret();
         
         // Query each shard's primary node
         for shard_id in 0..table.num_shards {

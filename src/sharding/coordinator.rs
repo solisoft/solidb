@@ -94,6 +94,14 @@ impl ShardCoordinator {
         }
     }
 
+    /// Get the cluster secret from the keyfile for inter-node HTTP authentication
+    pub fn cluster_secret(&self) -> String {
+        self.storage
+            .cluster_config()
+            .and_then(|c| c.keyfile.clone())
+            .unwrap_or_default()
+    }
+
     /// Get shard configuration for a collection
     pub fn get_shard_config(&self, database: &str, collection: &str) -> Option<CollectionShardConfig> {
         if let Ok(db) = self.storage.get_database(database) {
@@ -684,7 +692,7 @@ impl ShardCoordinator {
 
         let _my_node_id = mgr.local_node_id();
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         // For each removed shard, broadcast reshard request to all nodes
         for removed_shard_id in new_shards..old_shards {
@@ -1155,7 +1163,7 @@ impl ShardCoordinator {
                                 "http://{}/_api/database/{}/collection/{}/_copy_shard",
                                 target_addr, database, physical_coll
                             );
-                            let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                            let secret = self.cluster_secret();
 
                             let source_addr = mgr.get_node_api_address(&source_node).unwrap_or_default();
 
@@ -1257,7 +1265,7 @@ impl ShardCoordinator {
                 let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node) {
                     let url = format!("http://{}/_api/database/{}/collection/{}/count",
                         source_addr, database, &physical_coll);
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = self.cluster_secret();
                     let client = reqwest::Client::new();
 
                     match client.get(&url)
@@ -1437,7 +1445,7 @@ impl ShardCoordinator {
 
         let my_node_id = mgr.local_node_id();
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         // Collect all shard tables to broadcast
         let tables: Vec<ShardTable> = {
@@ -1494,7 +1502,7 @@ impl ShardCoordinator {
             .ok_or_else(|| crate::error::DbError::InternalError("Source node address not found".to_string()))?;
 
         // Step 1: Check Source Count using Metadata API
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
         let client = reqwest::Client::new();
 
         // Use standard Collection API to get metadata (count)
@@ -1693,7 +1701,7 @@ impl ShardCoordinator {
         let mut total_success = 0usize;
         let mut total_fail = 0usize;
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         // Collect futures for parallel processing
         let mut local_batches = Vec::new();
@@ -1933,7 +1941,7 @@ impl ShardCoordinator {
                         }
 
                         let url = format!("http://{}/_api/database/{}/document/{}/_batch", addr, database, physical_coll);
-                        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                        let secret = self.cluster_secret();
                         let client = reqwest::Client::new();
 
                         // Extract just values for the remote call
@@ -2128,7 +2136,7 @@ impl ShardCoordinator {
                     let url = format!("http://{}/_api/database/{}/document/{}", addr, database, physical_coll);
 
                     // Get Cluster Secret
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = self.cluster_secret();
 
                     let res = client.post(&url)
                         .header("X-Shard-Direct", "true")
@@ -2284,7 +2292,7 @@ impl ShardCoordinator {
                     }
 
                     // Get Cluster Secret
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = self.cluster_secret();
 
                     let res = client.post(&url)
                         .header("X-Shard-Direct", "true")
@@ -2425,7 +2433,7 @@ impl ShardCoordinator {
                     let url = format!("http://{}/_api/blob/{}/{}/{}", addr, database, physical_coll, key);
 
                     // Get Cluster Secret
-                    let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                    let secret = self.cluster_secret();
 
                     let res = client.get(&url)
                         .header("X-Cluster-Secret", &secret)
@@ -2518,7 +2526,7 @@ impl ShardCoordinator {
 
             // Try nodes in order until one succeeds
             let client = reqwest::Client::new();
-            let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+            let secret = self.cluster_secret();
 
             for node_id in &nodes_to_try {
                 if let Some(mgr) = &self.cluster_manager {
@@ -2632,7 +2640,7 @@ impl ShardCoordinator {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                      let client = reqwest::Client::new();
                      let url = format!("http://{}/_api/database/{}/document/{}/{}", addr, database, physical_coll, key);
-                     let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                     let secret = self.cluster_secret();
 
                      let res = client.put(&url)
                         .header("X-Shard-Direct", "true")
@@ -2706,7 +2714,7 @@ impl ShardCoordinator {
                  if let Some(addr) = mgr.get_node_api_address(primary_node) {
                      let client = reqwest::Client::new();
                      let url = format!("http://{}/_api/database/{}/document/{}/{}", addr, database, physical_coll, key);
-                     let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+                     let secret = self.cluster_secret();
 
                      let res = client.delete(&url)
                         .header("X-Shard-Direct", "true")
@@ -2816,7 +2824,7 @@ impl ShardCoordinator {
         };
 
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         // Track created shards to avoid duplicates
         let mut created_shards = std::collections::HashSet::new();
@@ -2938,7 +2946,7 @@ impl ShardCoordinator {
 
         let my_id = self.my_node_id();
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         let mut total_count = 0usize;
 
@@ -3049,7 +3057,7 @@ impl ShardCoordinator {
 
         let my_id = self.my_node_id();
         let client = reqwest::Client::new();
-        let secret = std::env::var("SOLIDB_CLUSTER_SECRET").unwrap_or_default();
+        let secret = self.cluster_secret();
 
         let mut total_docs = 0u64;
         let mut total_chunks = 0u64;
