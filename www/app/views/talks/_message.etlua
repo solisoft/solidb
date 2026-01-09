@@ -130,9 +130,16 @@ local is_continuous = is_continuous or false
         <i class="fas fa-comment-dots text-sm"></i>
       </button>
 
-      <!-- Delete -->
+      <!-- Edit & Delete -->
       <% if is_own then %>
       <div class="w-px h-4 bg-[#404040] mx-1"></div>
+      <button hx-get="/talks/message/<%= msg._key %>/edit"
+              hx-target="#msg-<%= msg._key %>"
+              hx-swap="outerHTML"
+              class="w-8 h-8 flex items-center justify-center rounded hover:bg-[#303030] text-[#A0A0A0] hover:text-white transition-colors"
+              title="Edit">
+        <i class="fas fa-pencil-alt text-sm"></i>
+      </button>
       <button hx-delete="/talks/message/<%= msg._key %>"
               hx-confirm="Delete this message?"
               hx-target="#msg-<%= msg._key %>"

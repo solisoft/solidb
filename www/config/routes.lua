@@ -203,6 +203,8 @@ router.scope("/database/_system", { middleware = { "dashboard_admin_auth" } }, f
   router.get("/users/modal/create", "dashboard/admin#users_modal_create")
   router.post("/users", "dashboard/admin#create_user")
   router.delete("/users/:username", "dashboard/admin#delete_user")
+  router.get("/users/:username/modal/edit", "dashboard/admin#users_modal_edit")
+  router.put("/users/:username", "dashboard/admin#update_user")
   router.get("/roles/table", "dashboard/admin#roles_table")
   router.get("/roles/modal/create", "dashboard/admin#roles_modal_create")
   router.post("/roles", "dashboard/admin#create_role")
@@ -242,7 +244,9 @@ router.scope("/talks", { middleware = { "session_auth" } }, function()
   -- Messages
   router.get("/messages/:channel", "talks#messages")
   router.get("/message/:key", "talks#show_message")
+  router.get("/message/:key/edit", "talks#edit_message")
   router.post("/message", "talks#send_message")
+  router.put("/message/:key", "talks#update_message")
   router.delete("/message/:key", "talks#delete_message")
 
   -- Reactions

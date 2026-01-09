@@ -142,9 +142,8 @@
         <textarea id="message-text" name="text"
                   rows="1"
                   placeholder="Message <% if dm_user_name then %>@<%= dm_user_name %><% else %>#<%= channel and channel.name or 'general' %><% end %>..."
-                  class="flex-1 bg-transparent border-none text-text placeholder-text-dim text-sm py-2 px-2 focus:ring-0 focus:outline-none outline-none resize-none leading-relaxed"
-                  style="max-height: 50vh;"
-                  oninput="this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, window.innerHeight * 0.5) + 'px';"
+                  class="flex-1 bg-transparent border-none text-text placeholder-text-dim text-sm py-2 px-2 focus:ring-0 focus:outline-none outline-none resize-none leading-relaxed chat-scrollbar"
+                  oninput="autoGrow(this)"
                   onkeydown="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); handleSubmit(event); }"></textarea>
 
         <!-- Emoji Button -->
@@ -249,6 +248,18 @@
     renderFilePreview();
   };
 
+  window.autoGrow = function(el) {
+    el.style.height = 'auto';
+    const maxHeight = window.innerHeight / 2;
+    if (el.scrollHeight > maxHeight) {
+      el.style.height = maxHeight + 'px';
+      el.style.overflowY = 'auto';
+    } else {
+      el.style.height = (el.scrollHeight) + 'px';
+      el.style.overflowY = 'hidden';
+    }
+  };
+
   window.clearFiles = function() {
     pendingFiles = [];
     renderFilePreview();
@@ -332,7 +343,7 @@
       await fetch('/talks/message', { method: 'POST', body: formData });
 
       textarea.value = '';
-      textarea.style.height = 'auto';
+      autoGrow(textarea);
       pendingFiles = [];
       renderFilePreview();
       if (window.clearQuote) window.clearQuote();

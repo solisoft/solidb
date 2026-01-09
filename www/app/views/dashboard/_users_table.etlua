@@ -1,85 +1,125 @@
 <% if #users == 0 then %>
-<div class="p-8 text-center">
-  <div class="w-16 h-16 mx-auto mb-4 bg-info/10 rounded-full flex items-center justify-center">
-    <i class="fas fa-users text-2xl text-info"></i>
+<div class="p-20 text-center">
+  <div class="relative w-24 h-24 mx-auto mb-8">
+    <div class="absolute inset-0 rounded-3xl bg-primary/10 blur-xl animate-pulse"></div>
+    <div class="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center">
+      <i class="fas fa-user-plus text-4xl text-primary"></i>
+    </div>
   </div>
-  <p class="text-text-muted">No users found</p>
-  <p class="text-xs text-text-dim mt-1">Create a new user to get started</p>
+  <h3 class="text-2xl font-bold text-text mb-3">No users yet</h3>
+  <p class="text-text-muted text-base max-w-md mx-auto leading-relaxed">Create your first user to start managing database access and permissions.</p>
 </div>
 <% else %>
-<div class="overflow-x-auto">
-  <table class="w-full">
-    <thead>
-      <tr class="border-b border-border/30">
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Username</th>
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Roles</th>
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
-        <th class="text-right py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-border/20">
-      <% for _, user in ipairs(users) do
-        local is_root = user.username == "root"
-      %>
-      <tr class="user-row hover:bg-white/5 transition-colors">
-        <td class="py-3 px-4">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full <%= is_root and 'bg-warning/10' or 'bg-primary/10' %> flex items-center justify-center">
-              <i class="fas fa-user <%= is_root and 'text-warning' or 'text-primary-light' %> text-sm"></i>
-            </div>
-            <div>
-              <span class="font-medium text-text"><%= user.username %></span>
+<div class="p-6">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <% for _, user in ipairs(users) do
+      local is_root = user.username == "root"
+      local is_admin = user.username == "admin"
+      local is_protected = is_root or is_admin
+      local initials = string.upper(string.sub(user.username, 1, 2))
+    %>
+    <div class="user-card glass-card relative group overflow-hidden p-6 rounded-2xl border border-white/5 hover:border-white/15 transition-all duration-500 <%= is_root and 'ring-1 ring-warning/30 bg-warning/[0.02]' or 'hover:shadow-2xl hover:shadow-primary/5' %>">
+      <!-- Premium Decor -->
+      <div class="absolute -top-24 -right-24 w-48 h-48 blur-3xl rounded-full <%= is_root and 'bg-warning/10' or 'bg-primary/10' %> opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+
+      <div class="relative flex items-start justify-between">
+        <div class="flex items-center gap-5">
+          <!-- Avatar Stack -->
+          <div class="relative">
+            <div class="w-16 h-16 rounded-2xl <%= is_root and 'bg-gradient-to-br from-warning to-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.3)]' or 'bg-gradient-to-br from-primary to-primary-light shadow-[0_0_20px_rgba(139,92,246,0.3)]' %> flex items-center justify-center ring-4 <%= is_root and 'ring-warning/10' or 'ring-primary/10' %> transition-transform duration-500 group-hover:scale-105">
               <% if is_root then %>
-              <span class="ml-2 text-xs text-warning">System</span>
+              <i class="fas fa-crown text-white text-2xl"></i>
+              <% else %>
+              <span class="text-white font-bold text-xl tracking-tighter"><%= initials %></span>
               <% end %>
             </div>
+            <!-- Status Indicator -->
+            <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-4 border-bg-card bg-success flex items-center justify-center">
+              <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+            </div>
           </div>
-        </td>
-        <td class="py-3 px-4">
-          <div class="flex flex-wrap gap-1">
-            <% if #user.roles == 0 then %>
-            <span class="text-xs text-text-dim">No roles</span>
-            <% else %>
-              <% for _, role in ipairs(user.roles) do
-                local role_name = type(role) == "table" and (role.name or role.role) or role
-                local is_admin = role_name == "admin" or role_name == "root"
-              %>
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs <%= is_admin and 'bg-error/10 text-error' or 'bg-secondary/50 text-text-muted' %>">
-                <%= role_name %>
-                <% if not is_root then %>
-                <button type="button"
-                        hx-delete="/database/_system/users/<%= user.username %>/roles/<%= role_name %>"
-                        hx-target="#panel-users"
-                        hx-swap="innerHTML"
-                        class="ml-1 hover:text-error">
-                  <i class="fas fa-times text-[10px]"></i>
-                </button>
-                <% end %>
-              </span>
+
+          <!-- User Info -->
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="text-xl font-bold text-text tracking-tight group-hover:text-primary-light transition-colors duration-300"><%= user.username %></h3>
+              <% if is_root then %>
+              <span class="p-1 bg-warning/20 text-warning rounded-md text-[10px] animate-pulse"><i class="fas fa-shield-check"></i></span>
               <% end %>
-            <% end %>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-text-dim/80 font-medium flex items-center gap-1.5">
+                <i class="far fa-calendar-plus opacity-50"></i>
+                <%= format_datetime(user.created_at, "short") %>
+              </span>
+            </div>
           </div>
-        </td>
-        <td class="py-3 px-4 text-sm text-text-muted" title="<%= user.created_at or '' %>">
-          <%= format_datetime(user.created_at, "short") %>
-        </td>
-        <td class="py-3 px-4 text-right">
-          <% if not is_root then %>
+        </div>
+
+        <!-- Actions Reveal -->
+        <div class="flex items-center gap-2 opacity-0 translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 ease-out">
+          <button type="button"
+                  hx-get="/database/_system/users/<%= user.username %>/modal/edit"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML"
+                  class="w-10 h-10 flex items-center justify-center text-text-muted hover:text-white <%= is_protected and 'hover:bg-warning' or 'hover:bg-primary' %> rounded-xl transition-all shadow-lg <%= is_protected and 'hover:shadow-warning/20' or 'hover:shadow-primary/20' %>">
+            <i class="fas fa-pen text-sm"></i>
+          </button>
+          <% if not is_protected then %>
           <button type="button"
                   hx-delete="/database/_system/users/<%= user.username %>"
-                  hx-target="closest .user-row"
-                  hx-swap="outerHTML"
-                  hx-confirm="Are you sure you want to delete user '<%= user.username %>'?"
-                  class="p-2 text-text-muted hover:text-error transition-colors">
-            <i class="fas fa-trash-alt"></i>
+                  hx-target="closest .user-card"
+                  hx-swap="outerHTML swap:300ms"
+                  hx-confirm="Delete user '<%= user.username %>'? This action cannot be undone."
+                  class="w-10 h-10 flex items-center justify-center text-text-muted hover:text-white hover:bg-error rounded-xl transition-all shadow-lg hover:shadow-error/20">
+            <i class="fas fa-trash-alt text-sm"></i>
           </button>
           <% else %>
-          <span class="text-xs text-text-dim">Protected</span>
+          <div class="px-3 py-1.5 bg-warning/10 border border-warning/20 rounded-xl">
+            <span class="text-[10px] text-warning font-black uppercase tracking-widest flex items-center gap-2">
+              <i class="fas fa-lock"></i> Protected
+            </span>
+          </div>
           <% end %>
-        </td>
-      </tr>
-      <% end %>
-    </tbody>
-  </table>
+        </div>
+      </div>
+
+      <!-- Roles Section -->
+      <div class="mt-6 pt-5 border-t border-white/5">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-[10px] font-bold text-text-dim uppercase tracking-widest opacity-60">Permissions</span>
+          <div class="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent"></div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <% if #user.roles > 0 then %>
+            <% for _, role in ipairs(user.roles) do
+              local role_name = type(role) == "table" and (role.name or role.role) or role
+              local is_admin = role_name == "admin" or role_name == "root"
+            %>
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-300 <%= is_admin and 'bg-error/10 text-error border-error/20 hover:bg-error/20' or 'bg-primary/10 text-primary-light border-primary/20 hover:bg-primary/20' %>">
+              <i class="fas <%= is_admin and 'fa-bolt-lightning' or 'fa-shield-halved' %> text-[10px]"></i>
+              <%= role_name %>
+              <% if not is_root then %>
+              <button type="button"
+                      hx-delete="/database/_system/users/<%= user.username %>/roles/<%= role_name %>"
+                      hx-target="#panel-users"
+                      hx-swap="innerHTML"
+                      class="ml-1 text-current/40 hover:text-current transition-colors">
+                <i class="fas fa-times-circle"></i>
+              </button>
+              <% end %>
+            </div>
+            <% end %>
+          <% else %>
+            <div class="flex items-center gap-2 text-xs text-text-dim/40 italic py-1">
+              <i class="fas fa-info-circle"></i>
+              No permissions assigned
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    <% end %>
+  </div>
 </div>
 <% end %>

@@ -25,7 +25,7 @@ function InvitationToken.create_invitation(created_by, email, expires_in_days)
   local token = InvitationToken.generate_token()
   local expires_at = os.time() + (expires_in_days * 24 * 60 * 60)
 
-  return InvitationToken:create({
+  local invitation = InvitationToken:create({
     token = token,
     email = email or nil,
     expires_at = expires_at,
@@ -33,6 +33,13 @@ function InvitationToken.create_invitation(created_by, email, expires_in_days)
     created_by = created_by,
     created_at = os.time()
   })
+
+  -- Ensure token is accessible on the returned object
+  if invitation then
+    invitation.token = token
+  end
+
+  return invitation
 end
 
 -- Find a valid token (not expired, not used)

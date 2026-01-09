@@ -1,0 +1,48 @@
+<!-- Toggle Button for Right Sidebar -->
+<button id="right-sidebar-toggle" onclick="toggleRightSidebar()" class="hidden absolute top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-lg bg-bg-card/90 backdrop-blur-xl border border-white/10 text-text-muted hover:text-white hover:bg-white/10 shadow-lg transition-all" title="Show Sidebar">
+  <i class="fas fa-columns text-xs"></i>
+</button>
+
+<script>
+  function toggleRightSidebar() {
+    const sidebar = document.getElementById('right-sidebar');
+    const btn = document.getElementById('right-sidebar-toggle');
+    if (sidebar) {
+      // Check if currently hidden (either via style or class)
+      const isHidden = sidebar.style.display === 'none' || (window.getComputedStyle(sidebar).display === 'none' && !sidebar.style.display);
+      
+      if (isHidden) {
+        // Show it
+        sidebar.style.display = 'flex';
+        // Remove 'hidden' class if present to override Tailwind
+        sidebar.classList.remove('hidden');
+        if(btn) btn.classList.add('hidden');
+        localStorage.setItem('right-sidebar-visible', 'true');
+      } else {
+        // Hide it
+        sidebar.style.display = 'none';
+        if(btn) btn.classList.remove('hidden');
+        localStorage.setItem('right-sidebar-visible', 'false');
+      }
+    }
+  }
+  
+  // Init based on preference
+  (function() {
+     const visible = localStorage.getItem('right-sidebar-visible');
+     const sidebar = document.getElementById('right-sidebar');
+     const btn = document.getElementById('right-sidebar-toggle');
+     
+     if (sidebar) {
+         if (visible === 'false') {
+            sidebar.style.display = 'none';
+            if(btn) btn.classList.remove('hidden');
+         } else if (visible === 'true') {
+            // Force show if explicitly enabled
+            sidebar.style.display = 'flex';
+            sidebar.classList.remove('hidden');
+            if(btn) btn.classList.add('hidden');
+         }
+     }
+  })();
+</script>

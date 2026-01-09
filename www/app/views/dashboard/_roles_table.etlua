@@ -1,83 +1,137 @@
 <% if #roles == 0 then %>
-<div class="p-8 text-center">
-  <div class="w-16 h-16 mx-auto mb-4 bg-info/10 rounded-full flex items-center justify-center">
-    <i class="fas fa-shield-alt text-2xl text-info"></i>
+<div class="p-16 text-center">
+  <div class="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-warning/20 to-warning/5 rounded-2xl flex items-center justify-center">
+    <i class="fas fa-shield-alt text-3xl text-warning"></i>
   </div>
-  <p class="text-text-muted">No roles defined</p>
-  <p class="text-xs text-text-dim mt-1">Create a new role to define permissions</p>
+  <h3 class="text-lg font-semibold text-text mb-2">No roles defined</h3>
+  <p class="text-text-muted text-sm max-w-sm mx-auto">Create custom roles to define permission sets for your users.</p>
 </div>
 <% else %>
-<div class="overflow-x-auto">
-  <table class="w-full">
-    <thead>
-      <tr class="border-b border-border/30">
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Role Name</th>
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Permissions</th>
-        <th class="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
-        <th class="text-right py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-border/20">
-      <% for _, role in ipairs(roles) do
-        local role_name = role.name or role
-        local is_builtin = role.is_builtin or false
-        local permissions = role.permissions or {}
-        local description = role.description or ""
-      %>
-      <tr class="role-row hover:bg-white/5 transition-colors">
-        <td class="py-3 px-4">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg <%= is_builtin and 'bg-error/10' or 'bg-warning/10' %> flex items-center justify-center">
-              <i class="fas fa-shield-alt <%= is_builtin and 'text-error' or 'text-warning' %> text-sm"></i>
+<div class="p-4">
+  <div class="grid gap-3">
+    <% for _, role in ipairs(roles) do
+      local role_name = role.name or role
+      local is_builtin = role.is_builtin or false
+      local permissions = role.permissions or {}
+      local description = role.description or ""
+
+      -- Check permission types
+      local has_read = false
+      local has_write = false
+      local has_delete = false
+      local has_admin = false
+      for _, perm in ipairs(permissions) do
+        local action = perm.action or ""
+        if action == "read" then has_read = true end
+        if action == "write" then has_write = true end
+        if action == "delete" then has_delete = true end
+        if action == "admin" then has_admin = true end
+      end
+    %>
+    <div class="role-card group relative bg-gradient-to-r <%= is_builtin and 'from-error/5 to-transparent border-error/20' or 'from-warning/5 to-transparent border-warning/20' %> border rounded-xl p-4 hover:border-opacity-60 transition-all duration-300">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <!-- Icon -->
+          <div class="relative">
+            <div class="w-12 h-12 rounded-xl <%= is_builtin and 'bg-gradient-to-br from-error to-error/70' or 'bg-gradient-to-br from-warning to-warning/70' %> flex items-center justify-center shadow-lg <%= is_builtin and 'shadow-error/20' or 'shadow-warning/20' %>">
+              <i class="fas <%= is_builtin and 'fa-lock' or 'fa-shield-alt' %> text-white text-lg"></i>
             </div>
-            <div>
-              <span class="font-medium text-text"><%= role_name %></span>
+            <% if is_builtin then %>
+            <div class="absolute -top-1 -right-1 w-5 h-5 bg-error rounded-full flex items-center justify-center border-2 border-bg-card">
+              <i class="fas fa-check text-[8px] text-white"></i>
+            </div>
+            <% end %>
+          </div>
+
+          <!-- Role Info -->
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-text text-lg"><%= role_name %></span>
               <% if is_builtin then %>
-              <span class="ml-2 text-xs text-error">Built-in</span>
-              <% end %>
-              <% if description ~= "" then %>
-              <p class="text-xs text-text-dim"><%= description %></p>
+              <span class="px-2 py-0.5 bg-error/10 text-error text-xs font-medium rounded-full">Built-in</span>
               <% end %>
             </div>
+            <% if description ~= "" then %>
+            <p class="text-sm text-text-dim mt-0.5"><%= description %></p>
+            <% end %>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-xs text-text-dim">
+                <i class="fas fa-calendar-alt mr-1"></i>
+                <%= format_datetime(role.created_at, "short") %>
+              </span>
+            </div>
           </div>
-        </td>
-        <td class="py-3 px-4">
-          <div class="flex flex-wrap gap-1">
-            <% if #permissions == 0 then %>
-            <span class="text-xs text-text-dim">No permissions</span>
-            <% else
-              for _, perm in ipairs(permissions) do
-                local action = perm.action or ""
-                local scope = perm.scope or ""
-                local is_admin = action == "admin"
-            %>
-            <span class="px-2 py-0.5 rounded text-xs <%= is_admin and 'bg-error/10 text-error' or 'bg-info/10 text-info' %>">
-              <%= action %><% if scope ~= "" and scope ~= "global" then %>:<%= scope %><% end %>
-            </span>
-            <%  end
-            end %>
-          </div>
-        </td>
-        <td class="py-3 px-4 text-sm text-text-muted" title="<%= role.created_at or '' %>">
-          <%= format_datetime(role.created_at, "short") %>
-        </td>
-        <td class="py-3 px-4 text-right">
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-2">
           <% if not is_builtin then %>
           <button type="button"
                   hx-delete="/database/_system/roles/<%= role_name %>"
-                  hx-target="closest .role-row"
-                  hx-swap="outerHTML"
-                  hx-confirm="Are you sure you want to delete role '<%= role_name %>'?"
-                  class="p-2 text-text-muted hover:text-error transition-colors">
+                  hx-target="closest .role-card"
+                  hx-swap="outerHTML swap:300ms"
+                  hx-confirm="Are you sure you want to delete role '<%= role_name %>'? Users with this role will lose these permissions."
+                  class="opacity-0 group-hover:opacity-100 p-2.5 text-text-muted hover:text-error hover:bg-error/10 rounded-lg transition-all duration-200">
             <i class="fas fa-trash-alt"></i>
           </button>
           <% else %>
-          <span class="text-xs text-text-dim">Protected</span>
+          <div class="px-3 py-1.5 bg-error/5 border border-error/20 rounded-lg">
+            <span class="text-xs text-error font-medium"><i class="fas fa-lock mr-1"></i>Protected</span>
+          </div>
           <% end %>
-        </td>
-      </tr>
-      <% end %>
-    </tbody>
-  </table>
+        </div>
+      </div>
+
+      <!-- Permissions Grid -->
+      <div class="mt-4 pt-4 border-t border-border/20">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <!-- Read -->
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg <%= has_read and 'bg-info/10 border border-info/20' or 'bg-bg-dark/30 border border-border/20' %>">
+            <div class="w-6 h-6 rounded flex items-center justify-center <%= has_read and 'bg-info/20' or 'bg-border/30' %>">
+              <i class="fas fa-eye text-xs <%= has_read and 'text-info' or 'text-text-dim' %>"></i>
+            </div>
+            <span class="text-xs font-medium <%= has_read and 'text-info' or 'text-text-dim' %>">Read</span>
+            <% if has_read then %>
+            <i class="fas fa-check text-[10px] text-info ml-auto"></i>
+            <% end %>
+          </div>
+
+          <!-- Write -->
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg <%= has_write and 'bg-success/10 border border-success/20' or 'bg-bg-dark/30 border border-border/20' %>">
+            <div class="w-6 h-6 rounded flex items-center justify-center <%= has_write and 'bg-success/20' or 'bg-border/30' %>">
+              <i class="fas fa-pen text-xs <%= has_write and 'text-success' or 'text-text-dim' %>"></i>
+            </div>
+            <span class="text-xs font-medium <%= has_write and 'text-success' or 'text-text-dim' %>">Write</span>
+            <% if has_write then %>
+            <i class="fas fa-check text-[10px] text-success ml-auto"></i>
+            <% end %>
+          </div>
+
+          <!-- Delete -->
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg <%= has_delete and 'bg-warning/10 border border-warning/20' or 'bg-bg-dark/30 border border-border/20' %>">
+            <div class="w-6 h-6 rounded flex items-center justify-center <%= has_delete and 'bg-warning/20' or 'bg-border/30' %>">
+              <i class="fas fa-trash text-xs <%= has_delete and 'text-warning' or 'text-text-dim' %>"></i>
+            </div>
+            <span class="text-xs font-medium <%= has_delete and 'text-warning' or 'text-text-dim' %>">Delete</span>
+            <% if has_delete then %>
+            <i class="fas fa-check text-[10px] text-warning ml-auto"></i>
+            <% end %>
+          </div>
+
+          <!-- Admin -->
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg <%= has_admin and 'bg-error/10 border border-error/20' or 'bg-bg-dark/30 border border-border/20' %>">
+            <div class="w-6 h-6 rounded flex items-center justify-center <%= has_admin and 'bg-error/20' or 'bg-border/30' %>">
+              <i class="fas fa-crown text-xs <%= has_admin and 'text-error' or 'text-text-dim' %>"></i>
+            </div>
+            <span class="text-xs font-medium <%= has_admin and 'text-error' or 'text-text-dim' %>">Admin</span>
+            <% if has_admin then %>
+            <i class="fas fa-check text-[10px] text-error ml-auto"></i>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </div>
+    <% end %>
+  </div>
 </div>
 <% end %>

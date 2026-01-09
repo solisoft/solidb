@@ -34,9 +34,11 @@ function M.format_message(text)
   if not text then return "" end
   local escaped = M.escape_html(text)
   
-  -- Code blocks with language support
-  -- Matches ```lang ... ```
-  local formatted = escaped:gsub("```(%w*)%s*[\n\r]?([%s%S]-)%s*```", function(lang, code)
+  -- Mask code blocks to protect them from other formatting
+  local code_blocks = {}
+  local code_block_placeholder = "_{{CODE_BLOCK_%d}}_"
+  local masked_text = escaped:gsub("```(%w*)%s*[\n\r]?([%s%S]-)%s*```", function(lang, code)
+    local index = #code_blocks + 1
     local lang_class = ""
     if lang and lang ~= "" then
       lang_class = " language-" .. lang:lower()
@@ -44,9 +46,27 @@ function M.format_message(text)
     -- Using theme classes matching talks app (bg-bg-dark, border-border/30)
     local pre_class = ' class="bg-bg-dark/50 border border-border/30 rounded-lg p-3 overflow-x-auto my-2 text-sm font-mono"'
     local code_class = ' class="font-mono text-sm' .. lang_class .. '"'
-    return '<pre' .. pre_class .. '><code' .. code_class .. '>' .. code .. '</code></pre>'
+    -- Preserve newlines inside code block by encoding them temporarily if needed, 
+    -- but since we restore the whole block at the end, standard newlines are fine 
+    -- provided the intermediate steps don't strip them.
+    -- However, the blockquote processor splits by \n.
+    -- So we should probably keep the placeholder on a single line or ensure it handles it.
+    -- Best to replacing the whole block with a placeholder string.
+    table.insert(code_blocks, '<pre' .. pre_class .. '><code' .. code_class .. '>' .. code .. '</code></pre>')
+    return string.format(code_block_placeholder, index)
   end)
   
+  -- Mask inline code as well
+  local inline_code_blocks = {}
+  local inline_code_placeholder = "_{{INLINE_CODE_%d}}_"
+  masked_text = masked_text:gsub("`([^`]+)`", function(code)
+      local index = #inline_code_blocks + 1
+      table.insert(inline_code_blocks, "<code class='bg-bg-dark px-1.5 py-0.5 rounded text-sm font-mono text-primary-light'>" .. code .. "</code>")
+      return string.format(inline_code_placeholder, index)
+  end)
+  
+  local formatted = masked_text
+
   -- Gallery Grid: :::gallery ... :::
   -- Wraps multiple images in a responsive grid layout
   formatted = formatted:gsub(":::gallery%s*([%s%S]-)%s*:::", function(content)
@@ -91,17 +111,6 @@ function M.format_message(text)
   -- Links: [text](url)
   formatted = formatted:gsub("%[([^%]]+)%]%(([^%)]+)%)", '<a href="%2" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary-light hover:underline">%1</a>')
   
-  -- Auto-link URLs (that are not already part of an anchor or image tag)
-  -- This regex is a bit simplistic but works for common cases. 
-  -- We avoid matching inside existing tags by doing this BEFORE or carefully.
-  -- But since we just did markdown links which create tags, simple global replace might break them.
-  -- Strategy: We'll stick to Markdown links for now as the primary method. 
-  -- If we really need auto-linking, we should do it on text parts that aren't inside () or [].
-  -- For now, let's keep it simple to avoid breaking the markdown links we just made.
-  
-  -- Inline code
-  formatted = formatted:gsub("`([^`]+)`", "<code class='bg-bg-dark px-1.5 py-0.5 rounded text-sm font-mono text-primary-light'>%1</code>")
-
   -- Bold: **text**
   formatted = formatted:gsub("%*%*([^%*]+)%*%*", "<strong class='font-semibold'>%1</strong>")
 
@@ -166,15 +175,15 @@ function M.format_message(text)
 
   formatted = table.concat(result_parts, "")
 
-  -- Basic newlines to <br> (but preserve newlines inside <pre> tags)
-  -- First, temporarily replace newlines in pre blocks
-  formatted = formatted:gsub("(<pre[^>]*>.-</pre>)", function(pre_block)
-      return pre_block:gsub("\n", "{{NEWLINE}}")
+  -- Restore inline code blocks
+  formatted = formatted:gsub("_{{INLINE_CODE_(%d+)}}_", function(i)
+    return inline_code_blocks[tonumber(i)]
   end)
-  -- Convert remaining newlines to br
-  formatted = formatted:gsub("\n", "<br>")
-  -- Restore newlines in pre blocks
-  formatted = formatted:gsub("{{NEWLINE}}", "\n")
+
+  -- Restore main code blocks (replaces <br>s that might have been added around placeholders if any, but since placeholders are one line, they are safe)
+  formatted = formatted:gsub("_{{CODE_BLOCK_(%d+)}}_", function(i)
+    return code_blocks[tonumber(i)]
+  end)
   
   return formatted
 end

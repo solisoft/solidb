@@ -1,64 +1,141 @@
-<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4"
+<div class="fixed inset-0 bg-black/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200"
      onclick="if(event.target === this) this.remove()">
-  <div class="bg-bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-md" onclick="event.stopPropagation()">
-    <div class="flex items-center justify-between p-4 border-b border-border/30">
-      <h3 class="text-lg font-semibold text-text">Create Role</h3>
-      <button type="button" onclick="this.closest('.fixed').remove()" class="p-2 text-text-muted hover:text-text transition-colors">
-        <i class="fas fa-times"></i>
-      </button>
+  <div class="bg-bg-card border border-border/40 rounded-2xl shadow-2xl w-full max-w-lg transform animate-in zoom-in-95 duration-200" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="relative p-6 pb-4">
+      <div class="absolute top-4 right-4">
+        <button type="button" onclick="this.closest('.fixed').remove()" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/10 transition-all">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-warning to-warning/70 flex items-center justify-center shadow-lg shadow-warning/20">
+          <i class="fas fa-shield-alt text-white text-lg"></i>
+        </div>
+        <div>
+          <h3 class="text-xl font-bold text-text">Create Role</h3>
+          <p class="text-sm text-text-muted">Define a new permission set</p>
+        </div>
+      </div>
     </div>
 
     <form hx-post="/database/_system/roles"
           hx-target="#panel-roles"
           hx-swap="innerHTML"
           hx-on::after-request="if(event.detail.successful) this.closest('.fixed').remove()">
-      <div class="p-4 space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-text mb-1">Role Name</label>
-          <input type="text" name="name" required
-                 class="w-full px-3 py-2 bg-bg-dark border border-border/50 rounded-lg text-text placeholder-text-dim focus:outline-none focus:border-primary"
-                 placeholder="e.g., editor, viewer, moderator">
-          <p class="text-xs text-text-dim mt-1">Use lowercase letters, numbers, and underscores</p>
+      <div class="px-6 pb-4 space-y-5">
+        <!-- Role Name Field -->
+        <div class="space-y-2">
+          <label class="flex items-center gap-2 text-sm font-medium text-text">
+            <i class="fas fa-tag text-text-dim text-xs"></i>
+            Role Name
+          </label>
+          <div class="relative">
+            <input type="text" name="name" required autocomplete="off" pattern="[a-z0-9_]+"
+                   class="w-full px-4 py-3 bg-bg-dark/70 border border-border/40 rounded-xl text-text placeholder-text-dim focus:outline-none focus:border-warning focus:ring-2 focus:ring-warning/20 transition-all"
+                   placeholder="e.g., editor, viewer, moderator">
+          </div>
+          <p class="text-xs text-text-dim flex items-center gap-1">
+            <i class="fas fa-info-circle"></i>
+            Use lowercase letters, numbers, and underscores only
+          </p>
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-text mb-2">Default Permissions</label>
-          <div class="space-y-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="permissions" value="read"
-                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
-              <span class="text-sm text-text">Read</span>
-              <span class="text-xs text-text-dim">- View documents</span>
+        <!-- Permissions Section -->
+        <div class="space-y-3">
+          <label class="flex items-center gap-2 text-sm font-medium text-text">
+            <i class="fas fa-key text-text-dim text-xs"></i>
+            Permissions
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <!-- Read Permission -->
+            <label class="group relative cursor-pointer">
+              <input type="checkbox" name="permissions" value="read" class="peer sr-only">
+              <div class="p-4 bg-bg-dark/40 border-2 border-border/30 rounded-xl transition-all duration-200 peer-checked:border-info peer-checked:bg-info/10 hover:border-info/50 hover:bg-info/5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-10 h-10 rounded-lg bg-info/10 peer-checked:bg-info/20 flex items-center justify-center transition-colors">
+                    <i class="fas fa-eye text-info"></i>
+                  </div>
+                  <div class="flex-1">
+                    <span class="font-semibold text-text block">Read</span>
+                  </div>
+                  <div class="w-5 h-5 rounded-full border-2 border-border/50 peer-checked:border-info peer-checked:bg-info flex items-center justify-center transition-all opacity-0 peer-checked:opacity-100">
+                    <i class="fas fa-check text-white text-xs"></i>
+                  </div>
+                </div>
+                <p class="text-xs text-text-dim">View and query documents</p>
+              </div>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="permissions" value="write"
-                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
-              <span class="text-sm text-text">Write</span>
-              <span class="text-xs text-text-dim">- Create/update documents</span>
+
+            <!-- Write Permission -->
+            <label class="group relative cursor-pointer">
+              <input type="checkbox" name="permissions" value="write" class="peer sr-only">
+              <div class="p-4 bg-bg-dark/40 border-2 border-border/30 rounded-xl transition-all duration-200 peer-checked:border-success peer-checked:bg-success/10 hover:border-success/50 hover:bg-success/5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-10 h-10 rounded-lg bg-success/10 peer-checked:bg-success/20 flex items-center justify-center transition-colors">
+                    <i class="fas fa-pen text-success"></i>
+                  </div>
+                  <div class="flex-1">
+                    <span class="font-semibold text-text block">Write</span>
+                  </div>
+                  <div class="w-5 h-5 rounded-full border-2 border-border/50 peer-checked:border-success peer-checked:bg-success flex items-center justify-center transition-all opacity-0 peer-checked:opacity-100">
+                    <i class="fas fa-check text-white text-xs"></i>
+                  </div>
+                </div>
+                <p class="text-xs text-text-dim">Create and update documents</p>
+              </div>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="permissions" value="delete"
-                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
-              <span class="text-sm text-text">Delete</span>
-              <span class="text-xs text-text-dim">- Remove documents</span>
+
+            <!-- Delete Permission -->
+            <label class="group relative cursor-pointer">
+              <input type="checkbox" name="permissions" value="delete" class="peer sr-only">
+              <div class="p-4 bg-bg-dark/40 border-2 border-border/30 rounded-xl transition-all duration-200 peer-checked:border-warning peer-checked:bg-warning/10 hover:border-warning/50 hover:bg-warning/5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-10 h-10 rounded-lg bg-warning/10 peer-checked:bg-warning/20 flex items-center justify-center transition-colors">
+                    <i class="fas fa-trash text-warning"></i>
+                  </div>
+                  <div class="flex-1">
+                    <span class="font-semibold text-text block">Delete</span>
+                  </div>
+                  <div class="w-5 h-5 rounded-full border-2 border-border/50 peer-checked:border-warning peer-checked:bg-warning flex items-center justify-center transition-all opacity-0 peer-checked:opacity-100">
+                    <i class="fas fa-check text-white text-xs"></i>
+                  </div>
+                </div>
+                <p class="text-xs text-text-dim">Remove documents</p>
+              </div>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" name="permissions" value="admin"
-                     class="w-4 h-4 rounded border-border/50 bg-bg-dark text-primary focus:ring-primary">
-              <span class="text-sm text-text">Admin</span>
-              <span class="text-xs text-text-dim">- Full database control</span>
+
+            <!-- Admin Permission -->
+            <label class="group relative cursor-pointer">
+              <input type="checkbox" name="permissions" value="admin" class="peer sr-only">
+              <div class="p-4 bg-bg-dark/40 border-2 border-border/30 rounded-xl transition-all duration-200 peer-checked:border-error peer-checked:bg-error/10 hover:border-error/50 hover:bg-error/5">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-10 h-10 rounded-lg bg-error/10 peer-checked:bg-error/20 flex items-center justify-center transition-colors">
+                    <i class="fas fa-crown text-error"></i>
+                  </div>
+                  <div class="flex-1">
+                    <span class="font-semibold text-text block">Admin</span>
+                  </div>
+                  <div class="w-5 h-5 rounded-full border-2 border-border/50 peer-checked:border-error peer-checked:bg-error flex items-center justify-center transition-all opacity-0 peer-checked:opacity-100">
+                    <i class="fas fa-check text-white text-xs"></i>
+                  </div>
+                </div>
+                <p class="text-xs text-text-dim">Full database control</p>
+              </div>
             </label>
           </div>
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 p-4 border-t border-border/30">
+      <!-- Footer -->
+      <div class="flex items-center justify-end gap-3 p-6 pt-4 border-t border-border/30">
         <button type="button" onclick="this.closest('.fixed').remove()"
-                class="px-4 py-2 text-text-muted hover:text-text transition-colors">
+                class="px-5 py-2.5 text-text-muted hover:text-text font-medium rounded-xl hover:bg-white/5 transition-all">
           Cancel
         </button>
         <button type="submit"
-                class="px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
+                class="px-6 py-2.5 bg-gradient-to-r from-warning to-warning/80 hover:from-warning/80 hover:to-warning text-white font-semibold rounded-xl shadow-lg shadow-warning/25 hover:shadow-warning/40 transition-all duration-300 hover:scale-[1.02]">
+          <i class="fas fa-plus mr-2"></i>
           Create Role
         </button>
       </div>

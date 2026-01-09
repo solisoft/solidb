@@ -216,19 +216,25 @@ function UsersController:create_invitation()
   if self:is_htmx_request() then
     self:set_header("HX-Trigger", "invitationCreated")
     -- Return the new invitation details for display
-    local token = invitation.token or (invitation.data and invitation.data.token)
+    local token = invitation.token or (invitation.data and invitation.data.token) or (invitation.attributes and invitation.attributes.token)
+    if not token then
+      return self:html([[
+        <div class="bg-success/10 border border-success/20 rounded-lg p-3 mb-3">
+          <p class="text-success text-sm font-medium"><i class="fas fa-check mr-2"></i>Invitation created! Refresh to see it.</p>
+        </div>
+      ]])
+    end
     local signup_url = "/auth/signup?token=" .. token
     return self:html([[
-      <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-4">
-        <div class="flex items-start gap-3">
-          <i class="fas fa-check-circle text-green-500 mt-1"></i>
-          <div class="flex-1">
-            <p class="text-green-400 font-medium mb-2">Invitation created!</p>
-            <p class="text-sm text-text-dim mb-3">Share this link with the user:</p>
-            <div class="bg-black/30 rounded-lg p-3 font-mono text-sm text-white break-all select-all cursor-text">
-              ]] .. signup_url .. [[
-            </div>
-          </div>
+      <div class="bg-success/10 border border-success/20 rounded-lg p-3 mb-3">
+        <p class="text-success text-sm font-medium mb-2"><i class="fas fa-check mr-2"></i>Invitation created!</p>
+        <p class="text-[11px] text-text-dim mb-2">Share this link:</p>
+        <div class="flex items-center gap-2">
+          <code class="flex-1 bg-black/30 rounded px-2 py-1.5 text-xs text-white font-mono truncate">]] .. signup_url .. [[</code>
+          <button onclick="navigator.clipboard.writeText(window.location.origin + ']] .. signup_url .. [['); this.innerHTML='<i class=\\'fas fa-check\\'></i>'"
+                  class="px-2 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded transition-colors">
+            <i class="fas fa-copy"></i>
+          </button>
         </div>
       </div>
     ]])

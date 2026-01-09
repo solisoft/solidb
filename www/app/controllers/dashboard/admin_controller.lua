@@ -205,8 +205,8 @@ end
 function AdminController:delete_user()
   local username = self.params.username
 
-  if username == "root" then
-    SetHeader("HX-Trigger", '{"showToast": {"message": "Cannot delete root user", "type": "error"}}')
+  if username == "root" or username == "admin" then
+    SetHeader("HX-Trigger", '{"showToast": {"message": "Cannot delete protected user", "type": "error"}}')
     return self:html("")
   end
 
@@ -221,6 +221,122 @@ function AdminController:delete_user()
     SetHeader("HX-Trigger", '{"showToast": {"message": "Failed to delete user", "type": "error"}}')
     self:html("")
   end
+end
+
+-- Edit user modal
+function AdminController:users_modal_edit()
+  local username = self.params.username
+
+  -- Fetch user's current roles
+  local roles_status, _, roles_body = self:fetch_api("/_api/auth/users/" .. username .. "/roles")
+  local user_roles = {}
+  if roles_status == 200 then
+    local ok, data = pcall(DecodeJson, roles_body)
+    if ok and data then
+      user_roles = data.roles or data or {}
+    end
+  end
+
+  -- Fetch available roles for the dropdown
+  local status, _, body = self:fetch_api("/_api/auth/roles")
+  local all_roles = {}
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data then
+      all_roles = data.roles or data or {}
+    end
+  end
+
+  -- Convert user_roles to a set for easy lookup
+  local user_role_set = {}
+  for _, role in ipairs(user_roles) do
+    local role_name = type(role) == "table" and (role.name or role.role) or role
+    user_role_set[role_name] = true
+  end
+
+  local is_protected = (username == "root" or username == "admin")
+  self:render_partial("dashboard/_modal_edit_user", {
+    username = username,
+    user_roles = user_roles,
+    user_role_set = user_role_set,
+    all_roles = all_roles,
+    is_root = (username == "root"),
+    is_protected = is_protected
+  })
+end
+
+-- Update user action
+function AdminController:update_user()
+  local username = self.params.username
+  local password = self.params.password
+  local roles = self.params.roles or {}
+
+  -- Update password if provided
+  if password and password ~= "" then
+    local status, _, body = self:fetch_api("/_api/auth/users/" .. username .. "/password", {
+      method = "PUT",
+      body = EncodeJson({ password = password })
+    })
+
+    if status ~= 200 and status ~= 204 then
+      local err_msg = "Failed to update password"
+      local ok, err_data = pcall(DecodeJson, body)
+      if ok and err_data and err_data.error then
+        err_msg = err_data.error
+      end
+      SetHeader("HX-Trigger", '{"showToast": {"message": "' .. err_msg:gsub('"', '\\"') .. '", "type": "error"}}')
+      return self:users_table()
+    end
+  end
+
+  -- Normalize roles to array
+  if type(roles) == "string" then
+    roles = { roles }
+  end
+
+  -- Get current roles
+  local current_roles_status, _, current_roles_body = self:fetch_api("/_api/auth/users/" .. username .. "/roles")
+  local current_roles = {}
+  if current_roles_status == 200 then
+    local ok, data = pcall(DecodeJson, current_roles_body)
+    if ok and data then
+      current_roles = data.roles or data or {}
+    end
+  end
+
+  -- Convert to sets for comparison
+  local current_role_set = {}
+  for _, role in ipairs(current_roles) do
+    local role_name = type(role) == "table" and (role.name or role.role) or role
+    current_role_set[role_name] = true
+  end
+
+  local new_role_set = {}
+  for _, role in ipairs(roles) do
+    new_role_set[role] = true
+  end
+
+  -- Add new roles
+  for role, _ in pairs(new_role_set) do
+    if not current_role_set[role] then
+      self:fetch_api("/_api/auth/users/" .. username .. "/roles", {
+        method = "POST",
+        body = EncodeJson({ role = role })
+      })
+    end
+  end
+
+  -- Remove old roles
+  for role, _ in pairs(current_role_set) do
+    if not new_role_set[role] then
+      self:fetch_api("/_api/auth/users/" .. username .. "/roles/" .. role, {
+        method = "DELETE"
+      })
+    end
+  end
+
+  SetHeader("HX-Trigger", '{"showToast": {"message": "User updated successfully", "type": "success"}}')
+  self:users_table()
 end
 
 -- Assign role to user

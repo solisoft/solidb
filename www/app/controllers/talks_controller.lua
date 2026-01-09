@@ -170,6 +170,46 @@ function TalksController:send_message()
   })
 end
 
+-- Edit message form
+function TalksController:edit_message()
+  local current_user = get_current_user()
+  local msg = Message:find(self.params.key)
+
+  if not msg or msg.user_key ~= current_user._key then
+    return self:json({ error = "Unauthorized" }, 403)
+  end
+
+  self.layout = false
+  self:render("talks/_message_edit_form", {
+    msg = msg
+  })
+end
+
+-- Update message
+function TalksController:update_message()
+  local current_user = get_current_user()
+  local msg = Message:find(self.params.key)
+  local text = self.params.text
+
+  if not msg or msg.user_key ~= current_user._key then
+    return self:json({ error = "Unauthorized" }, 403)
+  end
+
+  if not text or text == "" then
+    return self:json({ error = "Message cannot be empty" }, 400)
+  end
+
+  msg:update({ text = text })
+  msg.data.sender = msg:sender_info()
+
+  self.layout = false
+  self:render("talks/_message", {
+    msg = msg,
+    current_user = current_user,
+    TextHelper = TextHelper
+  })
+end
+
 -- Delete message
 function TalksController:delete_message()
   local current_user = get_current_user()

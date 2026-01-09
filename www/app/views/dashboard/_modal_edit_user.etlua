@@ -9,31 +9,33 @@
         </button>
       </div>
       <div class="flex items-center gap-4">
-        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center shadow-lg shadow-primary/20">
-          <i class="fas fa-user-plus text-white text-lg"></i>
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br <%= is_protected and 'from-warning to-amber-500' or 'from-primary to-primary-light' %> flex items-center justify-center shadow-lg <%= is_protected and 'shadow-warning/20' or 'shadow-primary/20' %>">
+          <i class="fas <%= is_protected and 'fa-shield-alt' or 'fa-user-pen' %> text-white text-lg"></i>
         </div>
         <div>
-          <h3 class="text-xl font-bold text-text">Create User</h3>
-          <p class="text-sm text-text-muted">Add a new user to the database</p>
+          <h3 class="text-xl font-bold text-text">Edit User</h3>
+          <p class="text-sm text-text-muted">Modify <span class="font-semibold text-text"><%= username %></span></p>
         </div>
       </div>
     </div>
 
-    <form hx-post="/database/_system/users"
+    <form hx-put="/database/_system/users/<%= username %>"
           hx-target="#panel-users"
           hx-swap="innerHTML"
           hx-on::after-request="if(event.detail.successful) this.closest('.fixed').remove()">
       <div class="px-6 pb-4 space-y-5">
-        <!-- Username Field -->
+        <!-- Username (read-only) -->
         <div class="space-y-2">
           <label class="flex items-center gap-2 text-sm font-medium text-text">
             <i class="fas fa-user text-text-dim text-xs"></i>
             Username
           </label>
           <div class="relative">
-            <input type="text" name="username" required autocomplete="off"
-                   class="w-full px-4 py-3 bg-bg-dark/70 border border-border/40 rounded-xl text-text placeholder-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                   placeholder="Enter username">
+            <input type="text" value="<%= username %>" disabled
+                   class="w-full px-4 py-3 bg-bg-dark/40 border border-border/20 rounded-xl text-text-muted cursor-not-allowed">
+            <div class="absolute right-3 top-1/2 -translate-y-1/2">
+              <i class="fas fa-lock text-text-dim text-xs"></i>
+            </div>
           </div>
         </div>
 
@@ -41,45 +43,58 @@
         <div class="space-y-2">
           <label class="flex items-center gap-2 text-sm font-medium text-text">
             <i class="fas fa-lock text-text-dim text-xs"></i>
-            Password
+            New Password
+            <span class="text-xs text-text-dim font-normal">(leave empty to keep current)</span>
           </label>
           <div class="relative">
-            <input type="password" name="password" required id="user-password"
+            <input type="password" name="password" id="edit-user-password"
                    class="w-full px-4 py-3 bg-bg-dark/70 border border-border/40 rounded-xl text-text placeholder-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all pr-12"
-                   placeholder="Enter secure password">
-            <button type="button" onclick="togglePassword()" class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-text-dim hover:text-text transition-colors">
-              <i class="fas fa-eye" id="password-toggle-icon"></i>
+                   placeholder="Enter new password">
+            <button type="button" onclick="toggleEditPassword()" class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-text-dim hover:text-text transition-colors">
+              <i class="fas fa-eye" id="edit-password-toggle-icon"></i>
             </button>
           </div>
         </div>
 
         <!-- Roles Section -->
-        <% if #roles > 0 then %>
+        <% if not is_protected and #all_roles > 0 then %>
         <div class="space-y-3">
           <label class="flex items-center gap-2 text-sm font-medium text-text">
             <i class="fas fa-user-tag text-text-dim text-xs"></i>
-            Assign Roles
-            <span class="text-xs text-text-dim font-normal">(optional)</span>
+            Assigned Roles
           </label>
           <div class="grid gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
-            <% for _, role in ipairs(roles) do
+            <% for _, role in ipairs(all_roles) do
               local role_name = type(role) == "table" and role.name or role
-              local is_admin = role_name == "admin" or role_name == "root"
+              local is_admin_role = role_name == "admin" or role_name == "root"
+              local is_checked = user_role_set[role_name]
             %>
             <label class="group flex items-center gap-3 p-3 bg-bg-dark/40 border border-border/30 rounded-xl cursor-pointer hover:border-primary/40 hover:bg-bg-dark/60 transition-all has-[:checked]:border-primary/60 has-[:checked]:bg-primary/5">
-              <input type="checkbox" name="roles" value="<%= role_name %>"
+              <input type="checkbox" name="roles" value="<%= role_name %>" <%= is_checked and 'checked' or '' %>
                      class="w-5 h-5 rounded-lg border-2 border-border/50 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer">
               <div class="flex items-center gap-2 flex-1">
-                <div class="w-7 h-7 rounded-lg <%= is_admin and 'bg-error/10' or 'bg-warning/10' %> flex items-center justify-center">
-                  <i class="fas fa-shield-alt text-xs <%= is_admin and 'text-error' or 'text-warning' %>"></i>
+                <div class="w-7 h-7 rounded-lg <%= is_admin_role and 'bg-error/10' or 'bg-warning/10' %> flex items-center justify-center">
+                  <i class="fas fa-shield-alt text-xs <%= is_admin_role and 'text-error' or 'text-warning' %>"></i>
                 </div>
                 <span class="text-sm font-medium text-text"><%= role_name %></span>
-                <% if is_admin then %>
+                <% if is_admin_role then %>
                 <span class="ml-auto px-2 py-0.5 bg-error/10 text-error text-xs rounded-full">Admin</span>
                 <% end %>
               </div>
             </label>
             <% end %>
+          </div>
+        </div>
+        <% elseif is_protected then %>
+        <div class="p-4 bg-warning/5 border border-warning/20 rounded-xl">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
+              <i class="fas fa-shield-check text-warning"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-warning">Protected User</p>
+              <p class="text-xs text-text-dim">Roles cannot be modified for this user</p>
+            </div>
           </div>
         </div>
         <% end %>
@@ -93,8 +108,8 @@
         </button>
         <button type="submit"
                 class="px-6 py-2.5 bg-gradient-to-r from-primary to-primary-light hover:from-primary-light hover:to-primary text-white font-semibold rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all duration-300 hover:scale-[1.02]">
-          <i class="fas fa-plus mr-2"></i>
-          Create User
+          <i class="fas fa-save mr-2"></i>
+          Save Changes
         </button>
       </div>
     </form>
@@ -102,9 +117,9 @@
 </div>
 
 <script>
-function togglePassword() {
-  var input = document.getElementById('user-password');
-  var icon = document.getElementById('password-toggle-icon');
+function toggleEditPassword() {
+  var input = document.getElementById('edit-user-password');
+  var icon = document.getElementById('edit-password-toggle-icon');
   if (input.type === 'password') {
     input.type = 'text';
     icon.classList.remove('fa-eye');

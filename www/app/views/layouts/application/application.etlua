@@ -74,7 +74,10 @@
         </div>
       </main>
 
+      <% if GetPath() ~= "/" then %>
+      <%- partial("shared/right_sidebar_toggle") %>
       <%- partial("shared/right_sidebar") %>
+      <% end %>
     </div>
 
     <script type="module">

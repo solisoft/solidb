@@ -15,6 +15,7 @@ end
 
 function RepositoriesController:before_action()
   self.layout = "talks"
+  self.current_user = get_current_user()
 end
 
 function RepositoriesController:index()

@@ -1,101 +1,170 @@
 <div class="max-w-6xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold text-text">Users & Roles</h1>
-      <p class="text-text-muted text-sm">Manage database access and permissions</p>
-    </div>
+  <!-- Premium Hero Header Section -->
+  <div class="relative mb-10 group">
+    <!-- Animated background glow and mesh decorative elements -->
+    <div class="absolute -top-12 -right-12 w-64 h-64 bg-primary/10 rounded-full blur-[100px] -z-10 animate-pulse"></div>
+    <div class="absolute -bottom-12 -left-12 w-64 h-64 bg-info/5 rounded-full blur-[100px] -z-10"></div>
+    <div class="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5 rounded-[2rem] blur-xl -z-10 opacity-50 group-hover:opacity-100 transition-opacity duration-1000"></div>
 
-    <div class="flex items-center gap-2">
-      <button type="button" id="add-user-btn"
-              hx-get="/database/_system/users/modal/create"
-              hx-target="#modal-container"
-              hx-swap="innerHTML"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
-        <i class="fas fa-user-plus"></i>
-        <span>Add User</span>
-      </button>
-      <button type="button" id="add-role-btn"
-              hx-get="/database/_system/roles/modal/create"
-              hx-target="#modal-container"
-              hx-swap="innerHTML"
-              class="hidden inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-light text-white font-medium rounded-lg transition-colors">
-        <i class="fas fa-shield-alt"></i>
-        <span>Add Role</span>
-      </button>
+    <div class="glass-card relative overflow-hidden border border-white/5 rounded-[2rem] p-8 sm:p-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8 shadow-2xl shadow-black/20">
+      <!-- Subtle internal mesh gradient -->
+      <div class="absolute inset-0 bg-[radial-gradient(circle_at_30%_-20%,rgba(139,92,246,0.12),transparent_50%)] pointer-events-none"></div>
+
+      <div class="relative flex items-center gap-8">
+        <div class="relative flex-shrink-0">
+          <div class="absolute inset-0 bg-primary blur-2xl opacity-25 group-hover:opacity-40 transition-opacity duration-500"></div>
+          <div class="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center shadow-[0_0_30px_rgba(139,92,246,0.4)] ring-1 ring-white/20 transform group-hover:scale-105 transition-transform duration-500">
+            <i class="fas fa-users-cog text-4xl text-white drop-shadow-lg"></i>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <h1 class="text-3xl font-extrabold tracking-tight text-text sm:text-4xl">Users & Roles</h1>
+          <p class="text-text-muted text-base sm:text-lg max-w-xl leading-relaxed">Centrally manage database access, secure permissions, and system roles with granular control.</p>
+        </div>
+      </div>
+
+      <div class="relative flex flex-wrap items-center gap-4">
+        <button type="button" id="add-user-btn"
+                hx-get="/database/_system/users/modal/create"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="glass inline-flex items-center gap-3 px-7 py-3.5 bg-primary/90 hover:bg-primary text-white font-bold rounded-2xl transition-all duration-300 shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-1 border border-white/10 active:scale-95">
+          <i class="fas fa-user-plus text-lg"></i>
+          <span>Add User</span>
+        </button>
+        <button type="button" id="add-role-btn"
+                hx-get="/database/_system/roles/modal/create"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="hidden lg:inline-flex items-center gap-3 px-7 py-3.5 glass bg-white/5 hover:bg-white/10 text-text font-bold rounded-2xl transition-all duration-300 border border-white/10 hover:-translate-y-1 active:scale-95">
+          <i class="fas fa-shield-alt text-lg text-warning/90 group-hover:text-warning transition-colors"></i>
+          <span>Manage Roles</span>
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Tabs -->
-  <div class="bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
-    <div class="border-b border-border/30 px-4">
-      <nav class="flex gap-4 -mb-px">
+  <!-- Modern Segmented Tabs -->
+  <div class="bg-bg-card/40 backdrop-blur-2xl border border-border/40 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/5">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between px-2 border-b border-border/20">
+      <nav class="flex">
         <button type="button" onclick="switchTab('users')" id="tab-users"
-                class="tab-btn py-3 px-1 border-b-2 border-primary-light text-text text-sm font-medium transition-colors">
-          <i class="fas fa-users mr-2"></i>
-          Users
+                class="tab-btn group relative flex items-center gap-3 px-6 py-5 text-sm font-semibold transition-all duration-300 text-primary">
+          <i class="fas fa-users text-lg"></i>
+          <span>Users</span>
+          <span class="flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-primary/15 text-primary border border-primary/20 text-[10px] font-bold group-hover:scale-110 transition-transform" id="users-count"></span>
+          <div class="active-indicator absolute bottom-0 left-0 w-full h-0.5 bg-primary shadow-[0_0_12px_rgba(139,92,246,0.6)]"></div>
         </button>
         <button type="button" onclick="switchTab('roles')" id="tab-roles"
-                class="tab-btn py-3 px-1 border-b-2 border-transparent text-text-muted hover:text-text text-sm font-medium transition-colors">
-          <i class="fas fa-shield-alt mr-2"></i>
-          Roles
+                class="tab-btn group relative flex items-center gap-3 px-6 py-5 text-sm font-semibold transition-all duration-300 text-text-muted hover:text-text">
+          <i class="fas fa-shield-alt text-lg"></i>
+          <span>Roles</span>
+          <span class="flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-white/5 text-text-dim border border-border/40 text-[10px] font-bold group-hover:scale-110 transition-transform" id="roles-count"></span>
+          <div class="active-indicator absolute bottom-0 left-0 w-0 h-0.5 bg-primary transition-all duration-300"></div>
         </button>
       </nav>
+
+      <div class="px-4 py-3 sm:py-0 flex items-center">
+        <div class="relative group w-full sm:w-64">
+          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors duration-200"></i>
+          <input type="text" placeholder="Quick search..."
+                 class="w-full bg-bg-dark/30 border border-border/40 rounded-xl py-2 pl-10 pr-4 text-xs focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/5 transition-all duration-300 placeholder:text-text-dim/50">
+        </div>
+      </div>
     </div>
 
     <!-- Users Tab -->
     <div id="panel-users"
+         class="animate-in fade-in slide-in-from-bottom-2 duration-500"
          hx-get="/database/_system/users/table"
          hx-trigger="load"
          hx-swap="innerHTML">
-      <div class="p-8 text-center">
-        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
-        <p class="text-text-muted">Loading users...</p>
+      <div class="p-20 text-center">
+        <div class="relative w-16 h-16 mx-auto mb-6">
+          <div class="absolute inset-0 rounded-full bg-primary/20 animate-ping"></div>
+          <div class="relative w-16 h-16 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <i class="fas fa-circle-notch fa-spin text-2xl text-primary"></i>
+          </div>
+        </div>
+        <p class="text-text-muted font-medium tracking-wide">Synchronizing users...</p>
       </div>
     </div>
 
     <!-- Roles Tab -->
-    <div id="panel-roles" class="hidden">
-      <div class="p-8 text-center">
-        <i class="fas fa-spinner fa-spin text-2xl text-primary-light mb-4"></i>
-        <p class="text-text-muted">Loading roles...</p>
+    <div id="panel-roles" class="hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div class="p-20 text-center">
+        <div class="relative w-16 h-16 mx-auto mb-6">
+          <div class="absolute inset-0 rounded-full bg-warning/20 animate-ping"></div>
+          <div class="relative w-16 h-16 rounded-full bg-warning/10 border border-warning/20 flex items-center justify-center">
+            <i class="fas fa-circle-notch fa-spin text-2xl text-warning"></i>
+          </div>
+        </div>
+        <p class="text-text-muted font-medium tracking-wide">Fetching access roles...</p>
       </div>
     </div>
   </div>
 
-  <!-- Permissions Reference -->
-  <div class="mt-6">
-    <h3 class="text-sm font-medium text-text-muted mb-3">Permission Levels</h3>
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="w-2 h-2 rounded-full bg-text-dim"></span>
-          <span class="text-sm font-medium text-text">None</span>
+  <!-- Permission Levels Reference -->
+  <div class="mt-12 pt-8 relative">
+    <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border/40 to-transparent"></div>
+
+    <details class="group">
+      <summary class="flex items-center gap-4 cursor-pointer list-none select-none">
+        <div class="flex items-center gap-2 text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.2em]">
+          <i class="fas fa-shield-halved text-primary/50 group-open:text-primary transition-colors"></i>
+          <span>Access Level Matrix</span>
         </div>
-        <p class="text-xs text-text-dim">No access</p>
-      </div>
-      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="w-2 h-2 rounded-full bg-info"></span>
-          <span class="text-sm font-medium text-text">Read</span>
+        <div class="h-px flex-1 bg-border/10"></div>
+        <div class="flex items-center gap-2 text-[10px] text-text-dim group-hover:text-text transition-colors">
+          <span class="group-open:hidden">Details</span>
+          <span class="hidden group-open:block">Collapse</span>
+          <i class="fas fa-chevron-down text-[10px] transition-transform duration-300 group-open:rotate-180"></i>
         </div>
-        <p class="text-xs text-text-dim">Read documents</p>
-      </div>
-      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="w-2 h-2 rounded-full bg-warning"></span>
-          <span class="text-sm font-medium text-text">Read/Write</span>
+      </summary>
+
+      <div class="mt-6 flex flex-wrap gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+        <div class="glass flex items-center gap-3 pl-1.5 pr-5 py-1.5 rounded-full border border-white/5 hover:border-text-dim/20 hover:shadow-[0_0_20px_-5px_rgba(156,163,175,0.15)] transition-all duration-300 cursor-default">
+          <div class="w-7 h-7 rounded-full bg-text-dim/10 flex items-center justify-center border border-white/5">
+            <i class="fas fa-ban text-text-dim text-[10px]"></i>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[11px] font-bold text-text">None</span>
+            <span class="text-[9px] text-text-dim/60 leading-tight">Restricted access</span>
+          </div>
         </div>
-        <p class="text-xs text-text-dim">Read and modify documents</p>
-      </div>
-      <div class="bg-bg-card/30 border border-border/30 rounded-lg p-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="w-2 h-2 rounded-full bg-error"></span>
-          <span class="text-sm font-medium text-text">Admin</span>
+
+        <div class="glass flex items-center gap-3 pl-1.5 pr-5 py-1.5 rounded-full border border-info/10 hover:border-info/40 hover:shadow-[0_0_25px_-5px_rgba(6,182,212,0.25)] transition-all duration-300 cursor-default">
+          <div class="w-7 h-7 rounded-full bg-info/10 flex items-center justify-center border border-info/20">
+            <i class="fas fa-eye text-info text-[10px]"></i>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[11px] font-bold text-text">Read</span>
+            <span class="text-[9px] text-text-dim/60 leading-tight">View & Query only</span>
+          </div>
         </div>
-        <p class="text-xs text-text-dim">Full database control</p>
+
+        <div class="glass flex items-center gap-3 pl-1.5 pr-5 py-1.5 rounded-full border border-warning/10 hover:border-warning/40 hover:shadow-[0_0_25px_-5px_rgba(245,158,11,0.25)] transition-all duration-300 cursor-default">
+          <div class="w-7 h-7 rounded-full bg-warning/10 flex items-center justify-center border border-warning/20">
+            <i class="fas fa-pen-nib text-warning text-[10px]"></i>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[11px] font-bold text-text">Read/Write</span>
+            <span class="text-[9px] text-text-dim/60 leading-tight">Standard editing</span>
+          </div>
+        </div>
+
+        <div class="glass flex items-center gap-3 pl-1.5 pr-5 py-1.5 rounded-full border border-error/10 hover:border-error/40 hover:shadow-[0_0_25px_-5px_rgba(239,68,68,0.25)] transition-all duration-300 cursor-default">
+          <div class="w-7 h-7 rounded-full bg-error/10 flex items-center justify-center border border-error/20">
+            <i class="fas fa-crown text-error text-[10px]"></i>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[11px] font-bold text-text">Admin</span>
+            <span class="text-[9px] text-text-dim/60 leading-tight">Full management</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </details>
   </div>
 </div>
 
@@ -103,20 +172,64 @@
 function switchTab(tab) {
   // Update tab buttons
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
-    btn.classList.remove('border-primary-light', 'text-text');
-    btn.classList.add('border-transparent', 'text-text-muted');
+    btn.classList.remove('text-primary', 'text-warning');
+    btn.classList.add('text-text-muted');
+    // Hide the active indicator
+    var indicator = btn.querySelector('.active-indicator');
+    if (indicator) {
+      indicator.classList.remove('w-full');
+      indicator.classList.add('w-0');
+    }
+    // Reset count badge styling
+    var badge = btn.querySelector('span[id$="-count"]');
+    if (badge) {
+      badge.classList.remove('bg-primary/15', 'text-primary', 'border-primary/20', 'bg-warning/15', 'text-warning', 'border-warning/20');
+      badge.classList.add('bg-white/5', 'text-text-dim', 'border-border/40');
+    }
   });
-  document.getElementById('tab-' + tab).classList.remove('border-transparent', 'text-text-muted');
-  document.getElementById('tab-' + tab).classList.add('border-primary-light', 'text-text');
 
-  // Update panels
+  // Set active state for selected tab
+  var activeTab = document.getElementById('tab-' + tab);
+  activeTab.classList.remove('text-text-muted');
+  var activeIndicator = activeTab.querySelector('.active-indicator');
+  if (activeIndicator) {
+    activeIndicator.classList.remove('w-0');
+    activeIndicator.classList.add('w-full');
+  }
+
+  // Update badge colors based on tab
+  var activeBadge = activeTab.querySelector('span[id$="-count"]');
+  if (activeBadge) {
+    activeBadge.classList.remove('bg-white/5', 'text-text-dim', 'border-border/40');
+    if (tab === 'roles') {
+      activeTab.classList.add('text-warning');
+      activeBadge.classList.add('bg-warning/15', 'text-warning', 'border-warning/20');
+      activeIndicator.classList.remove('bg-primary', 'shadow-[0_0_12px_rgba(139,92,246,0.6)]');
+      activeIndicator.classList.add('bg-warning', 'shadow-[0_0_12px_rgba(245,158,11,0.6)]');
+    } else {
+      activeTab.classList.add('text-primary');
+      activeBadge.classList.add('bg-primary/15', 'text-primary', 'border-primary/20');
+      activeIndicator.classList.remove('bg-warning', 'shadow-[0_0_12px_rgba(245,158,11,0.6)]');
+      activeIndicator.classList.add('bg-primary', 'shadow-[0_0_12px_rgba(139,92,246,0.6)]');
+    }
+  }
+
+  // Update panels with animation
   document.getElementById('panel-users').classList.add('hidden');
   document.getElementById('panel-roles').classList.add('hidden');
   document.getElementById('panel-' + tab).classList.remove('hidden');
 
-  // Update add buttons
-  document.getElementById('add-user-btn').classList.toggle('hidden', tab !== 'users');
-  document.getElementById('add-role-btn').classList.toggle('hidden', tab !== 'roles');
+  // Update add buttons in header
+  var addUserBtn = document.getElementById('add-user-btn');
+  var addRoleBtn = document.getElementById('add-role-btn');
+  if (tab === 'users') {
+    addUserBtn.classList.remove('hidden');
+    addRoleBtn.classList.add('hidden');
+  } else {
+    addUserBtn.classList.add('hidden');
+    addRoleBtn.classList.remove('hidden', 'lg:inline-flex');
+    addRoleBtn.classList.add('inline-flex');
+  }
 
   // Load content if not already loaded
   var panel = document.getElementById('panel-' + tab);
@@ -125,4 +238,16 @@ function switchTab(tab) {
     htmx.ajax('GET', '/database/_system/roles/table', {target: '#panel-roles', swap: 'innerHTML'});
   }
 }
+
+// Update counts after HTMX loads
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+  if (evt.detail.target.id === 'panel-users') {
+    var count = document.querySelectorAll('#panel-users .user-card, #panel-users .user-row').length;
+    document.getElementById('users-count').textContent = count || '';
+  }
+  if (evt.detail.target.id === 'panel-roles') {
+    var count = document.querySelectorAll('#panel-roles .role-card, #panel-roles .role-row').length;
+    document.getElementById('roles-count').textContent = count || '';
+  }
+});
 </script>

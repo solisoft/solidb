@@ -1,0 +1,38 @@
+<form id="msg-<%= msg._key %>" hx-put="/talks/message/<%= msg._key %>" hx-target="this" hx-swap="outerHTML" class="w-full relative py-2">
+  <textarea name="text" 
+            id="edit-msg-<%= msg._key %>"
+            class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white placeholder-text-dim focus:outline-none focus:border-primary/50 resize-none mb-2 chat-scrollbar leading-relaxed" 
+            rows="1"
+            autofocus
+            oninput="if(window.autoGrow) window.autoGrow(this)"
+            onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit(); } else if(event.key === 'Escape') { htmx.ajax('GET', '/talks/message/<%= msg._key %>', { target: '#msg-<%= msg._key %>', swap: 'outerHTML' }) }"><%= msg.text %></textarea>
+  <div class="flex items-center justify-end gap-2 text-[10px]">
+    <span class="text-text-dim">Esc to cancel • Enter to save</span>
+    <button type="button" 
+            hx-get="/talks/message/<%= msg._key %>"
+            hx-target="#msg-<%= msg._key %>"
+            hx-swap="outerHTML"
+            class="px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-text-muted hover:text-white transition-colors">
+      Cancel
+    </button>
+    <button type="submit" 
+            class="px-2 py-1 bg-primary hover:bg-primary-light rounded text-white transition-colors">
+      Save
+    </button>
+  </div>
+  <script>
+    (function() {
+      const ta = document.getElementById('edit-msg-<%= msg._key %>');
+      if(ta && window.autoGrow) {
+         // Tiny delay to ensure rendering
+         setTimeout(() => {
+            window.autoGrow(ta);
+            // Cursor at end
+            const len = ta.value.length;
+            ta.focus();
+            ta.setSelectionRange(len, len);
+         }, 10);
+      }
+    })();
+  </script>
+</form>

@@ -1,0 +1,54 @@
+<aside class="w-64 glass border-r border-white/5 flex flex-col shrink-0 hidden md:flex">
+  <div class="p-6">
+    <div class="flex items-center gap-3 mb-8">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white shadow-lg shadow-amber-500/20">
+        <i class="fas fa-cubes text-xs"></i>
+      </div>
+      <span class="font-bold text-white tracking-tight">Data Builder</span>
+    </div>
+
+    <div class="space-y-6">
+      <!-- Datatypes -->
+      <div>
+        <div class="flex items-center justify-between px-3 mb-2">
+           <h3 class="text-[10px] font-bold text-text-dim uppercase tracking-widest">Collections</h3>
+           <a href="/cruds/datatypes/new" class="text-text-dim hover:text-amber-400 transition-colors" title="New Collection">
+             <i class="fas fa-plus text-xs"></i>
+           </a>
+        </div>
+        <nav class="space-y-0.5 max-h-[calc(100vh-250px)] overflow-y-auto chat-scrollbar">
+          <%
+          local current_path = GetPath() or ""
+          local is_dashboard = current_path == "/cruds"
+          %>
+          
+          <a href="/cruds" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 <%= is_dashboard and 'bg-white/10 text-white shadow-sm ring-1 ring-white/5' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+            <i class="fas fa-th-large w-5 text-center <%= is_dashboard and 'text-amber-400' or 'text-text-dim' %>"></i>
+            Dashboard
+          </a>
+
+          <% if datatypes then %>
+            <% for _, dt in ipairs(datatypes) do 
+               local dt_slug = dt.slug or dt.data.slug
+               local is_active = current_path:match("/cruds/data/" .. dt_slug) or current_path:match("/cruds/datatypes/" .. dt_slug)
+            %>
+            <a href="/cruds/data/<%= dt_slug %>" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 <%= is_active and 'bg-white/10 text-white shadow-sm ring-1 ring-white/5' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+              <i class="fas fa-cube w-5 text-center <%= is_active and 'text-amber-400' or 'text-text-dim' %>"></i>
+              <span class="truncate"><%= dt.name %></span>
+              <span class="ml-auto text-[10px] text-text-dim opacity-50"><%= dt:records_count() %></span>
+            </a>
+            <% end %>
+          <% end %>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Info -->
+  <div class="mt-auto p-6 border-t border-white/5">
+    <a href="/cruds/datatypes/new" class="flex items-center justify-center gap-2 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white text-xs font-medium rounded-lg transition-all group">
+      <i class="fas fa-plus-circle group-hover:text-amber-400 transition-colors"></i>
+      <span>New Collection</span>
+    </a>
+  </div>
+</aside>

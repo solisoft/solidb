@@ -36,7 +36,8 @@
       local is_projects = current_path:match("^/projects")
       local is_repos = current_path:match("^/repositories") or current_path:match("^/git")
       local is_admin = current_path:match("^/admin")
-      local is_talks = not is_projects and not is_repos and not is_admin
+      local is_cruds = current_path:match("^/cruds")
+      local is_talks = not is_projects and not is_repos and not is_admin and not is_cruds
     %>
 
     <!-- Sidebar (Visible only for Talks) -->
@@ -102,8 +103,6 @@
       <%- yield() %>
     </main>
 
-    <%- partial("shared/right_sidebar") %>
-
     <% if not is_projects then %>
     <!-- Thread Panel (hidden by default) - Talks only -->
     <aside id="thread-panel" class="hidden w-96 glass border-l border-white/5 flex flex-col shrink-0 z-20 shadow-2xl">
@@ -117,6 +116,9 @@
       <div id="thread-content" class="flex-1 overflow-y-auto chat-scrollbar bg-bg/50"></div>
     </aside>
     <% end %>
+
+    <%- partial("shared/right_sidebar_toggle") %>
+    <%- partial("shared/right_sidebar") %>
   </div>
 
   <% if is_projects then %>

@@ -1,152 +1,171 @@
 <!-- Data Index - List of Records -->
-<% local dt = datatype.data or datatype %>
-<% local fields = dt.fields or {} %>
-<div class="space-y-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <a href="/cruds" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
-        <i class="fas fa-arrow-left"></i>
-      </a>
-      <div>
-        <h1 class="text-2xl font-bold text-gradient"><%= dt.name %></h1>
-        <p class="text-text-muted mt-1"><%= total %> records</p>
+<div class="flex h-full">
+  <%- partial("cruds/sidebar") %>
+  
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
+    <% local dt = datatype.data or datatype %>
+    <% local fields = dt.fields or {} %>
+    
+    <!-- Header -->
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center text-amber-400">
+            <i class="fas fa-cube text-sm"></i>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight"><%= dt.name %></h1>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="text-xs text-text-dim"><%= total %> records</span>
+              <span class="w-1 h-1 rounded-full bg-white/20"></span>
+              <span class="text-xs text-text-dim"><%= dt.slug %></span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-2">
+           <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2">
+             <i class="fas fa-cog text-xs text-text-dim"></i>
+             <span>Settings</span>
+           </a>
+           <a href="/cruds/data/<%= dt.slug %>/new" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-amber-500/20 transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2">
+             <i class="fas fa-plus text-xs"></i>
+             <span>New Record</span>
+           </a>
+        </div>
       </div>
     </div>
-    <div class="flex items-center gap-2">
-      <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="px-3 py-2 hover:bg-white/10 rounded-lg transition-colors text-sm">
-        <i class="fas fa-cog mr-1"></i> Settings
-      </a>
-      <a href="/cruds/data/<%= dt.slug %>/new" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors flex items-center gap-2">
-        <i class="fas fa-plus"></i>
-        <span>New Record</span>
-      </a>
-    </div>
-  </div>
 
-  <!-- Records Table -->
-  <% if records and #records > 0 then %>
-  <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full">
-        <thead class="bg-bg-dark/50 border-b border-border/30">
-          <tr>
-            <% for i, field in ipairs(fields) do %>
-              <% if i <= 5 then %>
-              <th class="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider"><%= field.label or field.name %></th>
-              <% end %>
-            <% end %>
-            <th class="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Created</th>
-            <th class="px-4 py-3 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Actions</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-border/20">
-          <% for _, record in ipairs(records) do %>
-          <tr class="hover:bg-white/5 transition-colors">
-            <% for i, field in ipairs(fields) do %>
-              <% if i <= 5 then %>
-              <td class="px-4 py-3 text-sm">
-                <% local value = record[field.name] %>
-                <% if field.type == "tags" or field.type == "multilist" then %>
-                  <% if value and type(value) == "table" then %>
-                  <div class="flex flex-wrap gap-1">
-                    <% for j, tag in ipairs(value) do %>
-                      <% if j <= 3 then %>
-                      <span class="px-2 py-0.5 bg-primary/20 text-primary-light rounded text-xs"><%= tag %></span>
-                      <% end %>
-                    <% end %>
-                    <% if #value > 3 then %>
-                    <span class="text-text-muted text-xs">+<%= #value - 3 %></span>
-                    <% end %>
-                  </div>
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <% if records and #records > 0 then %>
+      <div class="bg-white/[0.03] border border-white/5 rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-white/5 border-b border-white/5">
+              <tr>
+                <% for i, field in ipairs(fields) do %>
+                  <% if i <= 5 then %>
+                  <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider whitespace-nowrap"><%= field.label or field.name %></th>
                   <% end %>
-                <% elseif field.type == "gps" then %>
-                  <% if value and value.lat and value.lng then %>
-                  <span class="text-text-muted text-xs"><%= string.format("%.4f, %.4f", value.lat, value.lng) %></span>
-                  <% end %>
-                <% elseif field.type == "images" or field.type == "files" then %>
-                  <% if value and type(value) == "table" then %>
-                  <span class="text-text-muted text-xs"><%= #value %> files</span>
-                  <% end %>
-                <% elseif field.type == "wysiwyg" or field.type == "text" then %>
-                  <span class="line-clamp-1 max-w-xs" title="<%= value or '' %>"><%= value and string.sub(value, 1, 50) or '' %><%= value and #value > 50 and '...' or '' %></span>
-                <% else %>
-                  <span class="line-clamp-1 max-w-xs"><%= value or '' %></span>
                 <% end %>
-              </td>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider whitespace-nowrap">Created</th>
+                <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+              <% for _, record in ipairs(records) do %>
+              <tr class="hover:bg-white/5 transition-colors group">
+                <% for i, field in ipairs(fields) do %>
+                  <% if i <= 5 then %>
+                  <td class="px-4 py-3 text-sm text-white/90">
+                    <% local value = record[field.name] %>
+                    <% if field.type == "tags" or field.type == "multilist" then %>
+                      <% if value and type(value) == "table" then %>
+                      <div class="flex flex-wrap gap-1">
+                        <% for j, tag in ipairs(value) do %>
+                          <% if j <= 2 then %>
+                          <span class="px-1.5 py-0.5 bg-white/10 text-text-muted rounded text-[10px]"><%= tag %></span>
+                          <% end %>
+                        <% end %>
+                        <% if #value > 2 then %>
+                        <span class="text-text-dim text-[10px]">+<%= #value - 2 %></span>
+                        <% end %>
+                      </div>
+                      <% end %>
+                    <% elseif field.type == "gps" then %>
+                      <% if value and value.lat and value.lng then %>
+                      <span class="text-text-dim text-xs font-mono"><i class="fas fa-map-marker-alt text-[10px] mr-1"></i><%= string.format("%.4f, %.4f", value.lat, value.lng) %></span>
+                      <% end %>
+                    <% elseif field.type == "images" or field.type == "files" then %>
+                      <% if value and type(value) == "table" and #value > 0 then %>
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-xs">
+                        <i class="fas fa-paperclip text-[10px]"></i> <%= #value %>
+                      </span>
+                      <% else %>
+                      <span class="text-white/20">-</span>
+                      <% end %>
+                    <% elseif field.type == "boolean" then %>
+                       <% if value then %>
+                       <i class="fas fa-check text-emerald-400 text-xs"></i>
+                       <% else %>
+                       <i class="fas fa-times text-text-dim text-xs"></i>
+                       <% end %>
+                    <% elseif field.type == "wysiwyg" or field.type == "text" then %>
+                      <span class="line-clamp-1 max-w-xs text-xs text-text-muted" title="<%= value or '' %>"><%= value and string.sub(value, 1, 50) or '' %><%= value and #value > 50 and '...' or '' %></span>
+                    <% else %>
+                      <span class="line-clamp-1 max-w-xs"><%= value or '' %></span>
+                    <% end %>
+                  </td>
+                  <% end %>
+                <% end %>
+                <td class="px-4 py-3 text-xs text-text-dim whitespace-nowrap">
+                  <%= record.created_at and os.date("%b %d, %Y", record.created_at) or "-" %>
+                </td>
+                <td class="px-4 py-3 text-right whitespace-nowrap">
+                  <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a href="/cruds/data/<%= dt.slug %>/<%= record._key %>/edit" class="w-7 h-7 flex items-center justify-center rounded bg-white/5 hover:bg-white/10 text-text-muted hover:text-white transition-colors" title="Edit">
+                      <i class="fas fa-pen text-xs"></i>
+                    </a>
+                    <button
+                      hx-delete="/cruds/data/<%= dt.slug %>/<%= record._key %>"
+                      hx-confirm="Delete this record?"
+                      hx-target="closest tr"
+                      hx-swap="outerHTML"
+                      class="w-7 h-7 flex items-center justify-center rounded bg-white/5 hover:bg-rose-500/10 text-text-muted hover:text-rose-500 transition-colors"
+                      title="Delete">
+                      <i class="fas fa-trash text-xs"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
               <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <% if total_pages > 1 then %>
+        <div class="px-4 py-3 border-t border-white/5 flex items-center justify-between bg-white/[0.02]">
+          <p class="text-xs text-text-dim">
+            <%= (page - 1) * per_page + 1 %>-<%= math.min(page * per_page, total) %> of <%= total %>
+          </p>
+          <div class="flex items-center gap-1">
+            <% if page > 1 then %>
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= page - 1 %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
+              <i class="fas fa-chevron-left text-xs"></i>
+            </a>
             <% end %>
-            <td class="px-4 py-3 text-sm text-text-muted">
-              <% if record.created_at then %>
-              <%= os.date("%Y-%m-%d %H:%M", record.created_at) %>
-              <% end %>
-            </td>
-            <td class="px-4 py-3 text-right">
-              <div class="flex items-center justify-end gap-1">
-                <a href="/cruds/data/<%= dt.slug %>/<%= record._key %>" class="p-2 hover:bg-white/10 rounded-lg transition-colors" title="View">
-                  <i class="fas fa-eye text-text-muted"></i>
-                </a>
-                <a href="/cruds/data/<%= dt.slug %>/<%= record._key %>/edit" class="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Edit">
-                  <i class="fas fa-edit text-text-muted"></i>
-                </a>
-                <button
-                  hx-delete="/cruds/data/<%= dt.slug %>/<%= record._key %>"
-                  hx-confirm="Are you sure you want to delete this record?"
-                  hx-target="closest tr"
-                  hx-swap="outerHTML"
-                  class="p-2 hover:bg-error/20 rounded-lg transition-colors"
-                  title="Delete">
-                  <i class="fas fa-trash text-error"></i>
-                </button>
-              </div>
-            </td>
-          </tr>
-          <% end %>
-        </tbody>
-      </table>
-    </div>
 
-    <!-- Pagination -->
-    <% if total_pages > 1 then %>
-    <div class="px-4 py-3 border-t border-border/30 flex items-center justify-between">
-      <p class="text-sm text-text-muted">
-        Showing <%= (page - 1) * per_page + 1 %> to <%= math.min(page * per_page, total) %> of <%= total %> records
-      </p>
-      <div class="flex items-center gap-1">
-        <% if page > 1 then %>
-        <a href="/cruds/data/<%= dt.slug %>?page=<%= page - 1 %>" class="px-3 py-1.5 hover:bg-white/10 rounded-lg transition-colors text-sm">
-          <i class="fas fa-chevron-left mr-1"></i> Previous
-        </a>
-        <% end %>
+            <% for p = math.max(1, page - 2), math.min(total_pages, page + 2) do %>
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= p %>"
+               class="min-w-[28px] h-7 flex items-center justify-center px-2 rounded text-xs transition-colors <%= p == page and 'bg-amber-500 text-white font-bold' or 'hover:bg-white/10 text-text-muted' %>">
+              <%= p %>
+            </a>
+            <% end %>
 
-        <% for p = math.max(1, page - 2), math.min(total_pages, page + 2) do %>
-        <a href="/cruds/data/<%= dt.slug %>?page=<%= p %>"
-           class="px-3 py-1.5 rounded-lg transition-colors text-sm <%= p == page and 'bg-primary text-white' or 'hover:bg-white/10' %>">
-          <%= p %>
-        </a>
-        <% end %>
-
-        <% if page < total_pages then %>
-        <a href="/cruds/data/<%= dt.slug %>?page=<%= page + 1 %>" class="px-3 py-1.5 hover:bg-white/10 rounded-lg transition-colors text-sm">
-          Next <i class="fas fa-chevron-right ml-1"></i>
-        </a>
+            <% if page < total_pages then %>
+            <a href="/cruds/data/<%= dt.slug %>?page=<%= page + 1 %>" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-text-muted transition-colors">
+              <i class="fas fa-chevron-right text-xs"></i>
+            </a>
+            <% end %>
+          </div>
+        </div>
         <% end %>
       </div>
+      <% else %>
+      <!-- Empty state -->
+      <div class="flex flex-col items-center justify-center h-[50vh] text-center">
+        <div class="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
+          <i class="fas fa-database text-3xl text-text-dim"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white mb-2">No records found</h3>
+        <p class="text-sm text-text-muted max-w-xs mx-auto mb-8">This collection is empty. Add your first record to get started.</p>
+        <a href="/cruds/data/<%= dt.slug %>/new" class="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-amber-500/20 transition-all">
+          Create First Record
+        </a>
+      </div>
+      <% end %>
     </div>
-    <% end %>
   </div>
-  <% else %>
-  <!-- Empty state -->
-  <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-12 text-center">
-    <div class="w-16 h-16 mx-auto bg-primary/20 rounded-full flex items-center justify-center mb-4">
-      <i class="fas fa-inbox text-2xl text-primary"></i>
-    </div>
-    <h3 class="text-lg font-semibold mb-2">No Records Yet</h3>
-    <p class="text-text-muted mb-6">Create your first <%= dt.name %> record.</p>
-    <a href="/cruds/data/<%= dt.slug %>/new" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors inline-flex items-center gap-2">
-      <i class="fas fa-plus"></i>
-      <span>Create Record</span>
-    </a>
-  </div>
-  <% end %>
 </div>

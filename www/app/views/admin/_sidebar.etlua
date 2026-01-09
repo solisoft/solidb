@@ -1,0 +1,58 @@
+<aside class="w-64 glass border-r border-white/5 flex flex-col shrink-0 hidden md:flex">
+  <div class="p-6">
+    <div class="flex items-center gap-3 mb-8">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20">
+        <i class="fas fa-shield-alt text-xs"></i>
+      </div>
+      <span class="font-bold text-white tracking-tight">Admin Console</span>
+    </div>
+
+    <div class="space-y-6">
+      <!-- User Management -->
+      <div>
+        <h3 class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 px-3">User Management</h3>
+        <nav class="space-y-0.5">
+          <%
+          local current_path = GetPath() or ""
+          local is_users = current_path:match("^/admin/users") and not current_path:match("invitations")
+          local is_invitations = current_path:match("invitations")
+          %>
+          <a href="/admin/users" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 <%= is_users and 'bg-white/10 text-white shadow-sm ring-1 ring-white/5' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+            <i class="fas fa-users w-5 text-center <%= is_users and 'text-rose-400' or 'text-text-dim' %>"></i>
+            Users
+          </a>
+          <a href="/admin/invitations" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 <%= is_invitations and 'bg-white/10 text-white shadow-sm ring-1 ring-white/5' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
+            <i class="fas fa-envelope w-5 text-center <%= is_invitations and 'text-rose-400' or 'text-text-dim' %>"></i>
+            Invitations
+            <% if pending_invitations and pending_invitations > 0 then %>
+            <span class="ml-auto px-1.5 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-bold rounded-full"><%= pending_invitations %></span>
+            <% end %>
+          </a>
+        </nav>
+      </div>
+
+      <!-- System (Placeholder for future) -->
+      <div>
+        <h3 class="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 px-3">System</h3>
+        <nav class="space-y-0.5">
+          <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-text-muted hover:bg-white/5 hover:text-white transition-all duration-200 opacity-50 cursor-not-allowed">
+            <i class="fas fa-server w-5 text-center text-text-dim"></i>
+            Settings
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-text-muted hover:bg-white/5 hover:text-white transition-all duration-200 opacity-50 cursor-not-allowed">
+            <i class="fas fa-file-alt w-5 text-center text-text-dim"></i>
+            Logs
+          </a>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Info -->
+  <div class="mt-auto p-6 border-t border-white/5">
+    <div class="p-3 rounded-lg bg-white/5 border border-white/5">
+      <div class="text-[10px] font-medium text-text-dim uppercase tracking-wider mb-1">SoliDB Version</div>
+      <div class="text-xs text-white font-mono">v0.1.0-beta</div>
+    </div>
+  </div>
+</aside>
