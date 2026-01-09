@@ -346,29 +346,31 @@ router.delete("/projects/task/:key/file/:file_key", "projects#remove_file")
 router.get("/projects/task/:key/card", "projects#task_card")
 router.get("/projects/task/:key/row", "projects#task_row")
 
--- CRUDs App routes (Dynamic CRUD builder)
-router.get("/cruds", "cruds#index")
+-- CRUDs App routes (Dynamic CRUD builder) - requires session auth
+router.scope("/cruds", { middleware = { "session_auth" } }, function()
+  router.get("/", "cruds#index")
 
--- Datatype management
-router.get("/cruds/datatypes/new", "cruds#new_datatype")
-router.post("/cruds/datatypes", "cruds#create_datatype")
-router.get("/cruds/datatypes/:slug/edit", "cruds#edit_datatype")
-router.put("/cruds/datatypes/:slug", "cruds#update_datatype")
-router.delete("/cruds/datatypes/:slug", "cruds#delete_datatype")
-router.get("/cruds/datatypes/:slug/schema", "cruds#schema_editor")
-router.put("/cruds/datatypes/:slug/schema", "cruds#update_schema")
+  -- Datatype management
+  router.get("/datatypes/new", "cruds#new_datatype")
+  router.post("/datatypes", "cruds#create_datatype")
+  router.get("/datatypes/:slug/edit", "cruds#edit_datatype")
+  router.put("/datatypes/:slug", "cruds#update_datatype")
+  router.delete("/datatypes/:slug", "cruds#delete_datatype")
+  router.get("/datatypes/:slug/schema", "cruds#schema_editor")
+  router.put("/datatypes/:slug/schema", "cruds#update_schema")
 
--- Dynamic data CRUD (must come after /datatypes routes to avoid conflicts)
-router.get("/cruds/data/:datatype_slug", "cruds#data_index")
-router.get("/cruds/data/:datatype_slug/new", "cruds#data_new")
-router.post("/cruds/data/:datatype_slug", "cruds#data_create")
-router.get("/cruds/data/:datatype_slug/:key", "cruds#data_show")
-router.get("/cruds/data/:datatype_slug/:key/edit", "cruds#data_edit")
-router.put("/cruds/data/:datatype_slug/:key", "cruds#data_update")
-router.delete("/cruds/data/:datatype_slug/:key", "cruds#data_delete")
+  -- Dynamic data CRUD (must come after /datatypes routes to avoid conflicts)
+  router.get("/data/:datatype_slug", "cruds#data_index")
+  router.get("/data/:datatype_slug/new", "cruds#data_new")
+  router.post("/data/:datatype_slug", "cruds#data_create")
+  router.get("/data/:datatype_slug/:key", "cruds#data_show")
+  router.get("/data/:datatype_slug/:key/edit", "cruds#data_edit")
+  router.put("/data/:datatype_slug/:key", "cruds#data_update")
+  router.delete("/data/:datatype_slug/:key", "cruds#data_delete")
 
--- File uploads
-router.get("/cruds/upload/config", "cruds#upload_config")
-router.get("/cruds/file/:key", "cruds#file_proxy")
+  -- File uploads
+  router.get("/upload/config", "cruds#upload_config")
+  router.get("/file/:key", "cruds#file_proxy")
+end)
 
 return router

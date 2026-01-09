@@ -34,6 +34,15 @@ local Middleware = require("middleware")
 -- Named Middleware Registration (for route-scoped use)
 -- ============================================================================
 
+-- Session authentication middleware (for apps using Luaonbeans sessions)
+Middleware.register("session_auth", function(ctx, next)
+  local session = GetSession()
+  if not session or not session.user_key then
+    return ctx:redirect("/auth/login")
+  end
+  next()
+end)
+
 -- Dashboard authentication middleware
 Middleware.register("dashboard_auth", function(ctx, next)
   local token = GetCookie("sdb_token")
