@@ -9,8 +9,10 @@ local AuthHelper = require("helpers.auth_helper")
 -- Login page
 function DashboardController:login()
   self.layout = "auth" -- Use a separate auth layout or none
+  local redirect_to = self.params.redirect or "/database/_system"
   self:render("dashboard/login", {
     title = "Sign In - SoliDB",
+    redirect_to = redirect_to,
     error_message = GetFlashMessage("error")
   })
 end
@@ -20,6 +22,7 @@ function DashboardController:do_login()
   local username = self.params.username
   local password = self.params.password
   local server_url = self.params.server_url or "http://localhost:6745"
+  local redirect_to = self.params.redirect or "/database/_system"
 
   -- Ensure server_url has http/https
   if not server_url:match("^https?://") then
@@ -45,11 +48,6 @@ function DashboardController:do_login()
      if ok and response and response.token then
        Log(kLogInfo, "Login successful, token found. Setting cookies...")
 
-       -- Use client-side redirect to ensure cookies are set (bypassing potential 302 header issues)
-       local target_url = "/database/_system"
-
-       self:redirect(target_url)
-
        self:set_cookie("sdb_token", response.token, {
         path = "/",
         http_only = true,
@@ -63,10 +61,12 @@ function DashboardController:do_login()
         same_site = "Lax",
         max_age = 3600 * 24 * 30 -- 30 days
        })
+
+       self:redirect(redirect_to)
      else
        Log(kLogWarn, "Login failed: Invalid response or missing token. Response: " .. EncodeJson(response or {}))
        SetFlash("error", "Invalid response from server")
-       self:redirect("/dashboard/login")
+       self:redirect("/dashboard/login?redirect=" .. redirect_to)
      end
   else
      Log(kLogWarn, "Login failed with status " .. tostring(status))
@@ -78,7 +78,7 @@ function DashboardController:do_login()
        end
      end
      SetFlash("error", error_msg)
-     self:redirect("/dashboard/login")
+     self:redirect("/dashboard/login?redirect=" .. redirect_to)
   end
 end
 

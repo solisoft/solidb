@@ -6,8 +6,8 @@ local Channel = require("models.channel")
 local Message = require("models.message")
 local Signal = require("models.signal")
 
--- Get current user (no redirect - caller handles unauthorized)
-local function require_auth()
+-- Get current user (middleware ensures user is authenticated)
+local function get_current_user()
   return AuthHelper.get_current_user()
 end
 
@@ -22,9 +22,7 @@ end
 
 -- Main index page
 function TalksController:index()
-  local current_user = require_auth()
-  if not current_user then return self:redirect("/auth/login?redirect=/talks") end
-
+  local current_user = get_current_user()
   local channel_key = self.params.channel or "general"
 
   -- Get current channel with access control
@@ -77,9 +75,7 @@ end
 
 -- Sidebar: Channels list
 function TalksController:sidebar_channels()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local current_channel = self.params.channel or "general"
   local channels = Channel.for_user(current_user._key)
 
@@ -92,9 +88,7 @@ end
 
 -- Sidebar: DMs list
 function TalksController:sidebar_dms()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local current_channel = self.params.channel
   local dm_channels = Channel.dms_for_user(current_user._key)
 
@@ -113,8 +107,7 @@ end
 
 -- Sidebar: Users list
 function TalksController:sidebar_users()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("talks/_users_list", {
@@ -125,9 +118,7 @@ end
 
 -- Messages for a channel
 function TalksController:messages()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local channel_key = self.params.channel or "general"
 
   local channel = Channel.find_for_user(channel_key, current_user._key)
@@ -147,9 +138,7 @@ end
 
 -- Single message (for LiveQuery updates)
 function TalksController:show_message()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local msg = Message:find(self.params.key)
   if not msg then return self:html("") end
 
@@ -165,9 +154,7 @@ end
 
 -- Send message
 function TalksController:send_message()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local channel_id = self.params.channel_id
   local text = self.params.text
 
@@ -185,9 +172,7 @@ end
 
 -- Delete message
 function TalksController:delete_message()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local msg = Message:find(self.params.key)
   if msg then
     msg:delete_by_user(current_user._key)
@@ -198,9 +183,7 @@ end
 
 -- Toggle reaction
 function TalksController:toggle_reaction()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local message_key = self.params.message_key
   local emoji = self.params.emoji
 
@@ -222,9 +205,6 @@ end
 
 -- Emoji picker
 function TalksController:emoji_picker()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   self.layout = false
   self:render("talks/_emoji_picker", {
     message_key = self.params.key
@@ -233,9 +213,7 @@ end
 
 -- Thread view
 function TalksController:thread()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local message_key = self.params.message_id
 
   local parent = Message:find(message_key)
@@ -257,9 +235,7 @@ end
 
 -- Thread reply
 function TalksController:thread_reply()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local parent_key = self.params.message_id
   local text = self.params.text
 
@@ -277,8 +253,7 @@ end
 
 -- Channel modal
 function TalksController:channel_modal()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("talks/_channel_modal", {
@@ -288,9 +263,7 @@ end
 
 -- User selector for private channels
 function TalksController:channel_users()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local result = Sdb:Sdbql("FOR u IN users RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname, email: u.email }")
 
   self.layout = false
@@ -302,9 +275,7 @@ end
 
 -- Create channel
 function TalksController:create_channel()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local name = self.params.name
   local channel_type = self.params.type or "standard"
   local members = self.params.members
@@ -343,8 +314,7 @@ end
 
 -- Group modal
 function TalksController:group_modal()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("talks/_group_modal", {
@@ -354,9 +324,7 @@ end
 
 -- Create group
 function TalksController:create_group()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local name = self.params.name
   local members = self.params.members
 
@@ -397,9 +365,7 @@ end
 
 -- Start DM
 function TalksController:dm_start()
-  local current_user = require_auth()
-  if not current_user then return self:redirect("/auth/login?redirect=/talks") end
-
+  local current_user = get_current_user()
   local other_user_key = self.params.user_key
 
   if not other_user_key or other_user_key == current_user._key then
@@ -422,11 +388,6 @@ end
 
 -- LiveQuery token
 function TalksController:livequery_token()
-  local current_user = require_auth()
-  if not current_user then
-    return self:json({ error = "Unauthorized" }, 401)
-  end
-
   local token = Sdb:LiveQueryToken()
 
   self:json({
@@ -437,11 +398,6 @@ end
 
 -- Get user info (for call notifications)
 function TalksController:get_user()
-  local current_user = require_auth()
-  if not current_user then
-    return self:json({ error = "Unauthorized" }, 401)
-  end
-
   local key = self.params.key
   local result = Sdb:Sdbql([[
     FOR u IN users
@@ -459,11 +415,6 @@ end
 
 -- File proxy
 function TalksController:file()
-  local current_user = require_auth()
-  if not current_user then
-    return self:redirect("/auth/login?redirect=/talks")
-  end
-
   local key = self.params.key
   local db_name = Sdb._db_config and Sdb._db_config.db_name or "_system"
   local db_url = Sdb._db_config and Sdb._db_config.url or "http://localhost:6745"
@@ -478,9 +429,7 @@ end
 
 -- Call UI
 function TalksController:call_ui()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local channel_key = self.params.channel_key
   local call_type = self.params.type or "audio"
 
@@ -510,9 +459,7 @@ end
 
 -- Join call
 function TalksController:call_join()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
+  local current_user = get_current_user()
   local channel = Channel:find(self.params.channel_key)
   local result = nil
   if channel then
@@ -528,9 +475,7 @@ end
 
 -- Leave call
 function TalksController:call_leave()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
+  local current_user = get_current_user()
   local channel = Channel:find(self.params.channel_key)
   if channel then
     channel:leave_call(current_user._key)
@@ -541,9 +486,7 @@ end
 
 -- Get active call participants
 function TalksController:call_participants()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
+  local current_user = get_current_user()
   local channel = Channel:find(self.params.channel_key)
   if not channel then
     return self:json({ error = "Channel not found" }, 404)
@@ -572,9 +515,7 @@ end
 
 -- Decline call (receiver declines incoming call)
 function TalksController:call_decline()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
+  local current_user = get_current_user()
   local body = GetBody()
   local data = body and DecodeJson(body) or self.params
 
@@ -610,8 +551,7 @@ end
 
 -- Send signal
 function TalksController:call_signal()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
+  local current_user = get_current_user()
 
   -- Parse JSON body
   local body = GetBody()
@@ -630,9 +570,6 @@ end
 
 -- Delete signal (after processing)
 function TalksController:call_signal_delete()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   Signal.delete_by_key(self.params.key)
 
   self:json({ success = true })
@@ -640,9 +577,6 @@ end
 
 -- Setup presence script
 function TalksController:setup_presence()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local script = [[
 -- Presence tracking script
 local user_id = params.user_id

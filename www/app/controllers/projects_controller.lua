@@ -5,8 +5,8 @@ local App = require("models.app")
 local Feature = require("models.feature")
 local Task = require("models.task")
 
--- Get current user (no redirect - caller handles unauthorized)
-local function require_auth()
+-- Get current user (middleware ensures user is authenticated)
+local function get_current_user()
   return AuthHelper.get_current_user()
 end
 
@@ -22,9 +22,7 @@ end
 
 -- List all apps
 function ProjectsController:index()
-  local current_user = require_auth()
-  if not current_user then return self:redirect("/auth/login?redirect=/projects") end
-
+  local current_user = get_current_user()
   local apps = App:new():order("doc.position ASC, doc.created_at DESC"):all()
 
   -- Enrich with feature counts
@@ -42,8 +40,7 @@ end
 
 -- Create app modal
 function ProjectsController:app_modal_create()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("projects/_app_modal", { current_user = current_user })
@@ -51,10 +48,9 @@ end
 
 -- Create app
 function ProjectsController:create_app()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local name = self.params.name
+
   if not name or name == "" then
     return self:html('<div class="text-red-400 text-sm">Name is required</div>')
   end
@@ -79,10 +75,9 @@ end
 
 -- Edit app modal
 function ProjectsController:app_edit()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local app = App:find(self.params.key)
+
   if not app then
     return self:html('<div class="p-6 text-center text-text-dim">App not found</div>')
   end
@@ -96,9 +91,6 @@ end
 
 -- Update app
 function ProjectsController:update_app()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local app = App:find(self.params.key)
   if not app then return self:html("") end
 
@@ -119,9 +111,6 @@ end
 
 -- Delete app
 function ProjectsController:delete_app()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local key = self.params.key
 
   -- Delete all tasks in features of this app
@@ -145,10 +134,9 @@ end
 
 -- List features for an app
 function ProjectsController:features()
-  local current_user = require_auth()
-  if not current_user then return self:redirect("/auth/login?redirect=/projects") end
-
+  local current_user = get_current_user()
   local app = App:find(self.params.app_key)
+
   if not app then
     return self:redirect("/projects")
   end
@@ -172,8 +160,7 @@ end
 
 -- Create feature modal
 function ProjectsController:feature_modal_create()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("projects/_feature_modal", {
@@ -184,9 +171,7 @@ end
 
 -- Create feature
 function ProjectsController:create_feature()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local app_key = self.params.app_key
   local name = self.params.name
 
@@ -225,10 +210,9 @@ end
 
 -- Edit feature modal
 function ProjectsController:feature_edit()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local feature = Feature:find(self.params.key)
+
   if not feature then
     return self:html('<div class="p-6 text-center text-text-dim">Feature not found</div>')
   end
@@ -243,9 +227,6 @@ end
 
 -- Update feature
 function ProjectsController:update_feature()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local app_key = self.params.app_key
   local feature = Feature:find(self.params.key)
   if not feature then return self:html("") end
@@ -278,9 +259,6 @@ end
 
 -- Delete feature
 function ProjectsController:delete_feature()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local app_key = self.params.app_key
   local key = self.params.key
 
@@ -303,9 +281,7 @@ end
 
 -- Feature board view
 function ProjectsController:board()
-  local current_user = require_auth()
-  if not current_user then return self:redirect("/auth/login?redirect=/projects") end
-
+  local current_user = get_current_user()
   local app_key = self.params.app_key
   local feature_key = self.params.key
 
@@ -364,9 +340,7 @@ end
 
 -- Get tasks for a specific column (HTMX partial)
 function ProjectsController:column()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local feature_key = self.params.feature_key
   local status = self.params.status or "todo"
 
@@ -390,10 +364,9 @@ end
 
 -- Columns management modal
 function ProjectsController:columns_modal()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local feature = Feature:find(self.params.feature_key)
+
   if not feature then
     return self:html('<div class="p-6 text-center text-text-dim">Feature not found</div>')
   end
@@ -413,9 +386,6 @@ end
 
 -- Add column
 function ProjectsController:add_column()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local app_key = self.params.app_key
   local feature_key = self.params.feature_key
   local name = self.params.name
@@ -466,9 +436,6 @@ end
 
 -- Update columns (reorder/rename/delete)
 function ProjectsController:update_columns()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local feature = Feature:find(self.params.feature_key)
   if not feature then
     return self:json({ error = "Feature not found" }, 404)
@@ -492,9 +459,6 @@ end
 
 -- Delete column
 function ProjectsController:delete_column()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local app_key = self.params.app_key
   local feature_key = self.params.feature_key
   local column_id = self.params.column_id
@@ -535,8 +499,7 @@ end
 
 -- Create task modal
 function ProjectsController:task_modal_create()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
+  local current_user = get_current_user()
 
   self.layout = false
   self:render("projects/_task_modal", {
@@ -549,9 +512,7 @@ end
 
 -- Create task
 function ProjectsController:create_task()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local app_key = self.params.app_key
   local feature_key = self.params.feature_key
   local title = self.params.title
@@ -593,9 +554,7 @@ end
 
 -- Assignee dropdown
 function ProjectsController:assignee_dropdown()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local task = Task:find(self.params.key)
 
   self.layout = false
@@ -609,9 +568,6 @@ end
 
 -- Get task card HTML (for real-time updates)
 function ProjectsController:task_card()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local task = Task:find(self.params.key)
   if not task then return self:html("") end
 
@@ -623,9 +579,6 @@ end
 
 -- Get task row HTML (for real-time updates)
 function ProjectsController:task_row()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local task = Task:find(self.params.key)
   if not task then return self:html("") end
 
@@ -648,9 +601,6 @@ end
 
 -- Assign task to user
 function ProjectsController:assign_task()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local task = Task:find(self.params.key)
   if not task then
     return self:json({ error = "Task not found" }, 404)
@@ -670,9 +620,6 @@ end
 
 -- Update task status (drag & drop)
 function ProjectsController:update_status()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local key = self.params.key
   local status = self.params.status
   local position = self.params.position
@@ -702,9 +649,6 @@ end
 
 -- Update task priority
 function ProjectsController:update_priority()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local key = self.params.key
   local priority = self.params.priority
 
@@ -727,10 +671,9 @@ end
 
 -- Show task details
 function ProjectsController:show()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local task = Task:find(self.params.key)
+
   if not task then
     return self:html('<div class="p-6 text-center text-text-dim">Task not found</div>')
   end
@@ -764,9 +707,7 @@ end
 
 -- Add comment
 function ProjectsController:add_comment()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local key = self.params.key
   local text = self.params.text
 
@@ -784,9 +725,6 @@ end
 
 -- Update task
 function ProjectsController:update()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local task = Task:find(self.params.key)
   if not task then return self:show() end
 
@@ -806,9 +744,6 @@ end
 
 -- Update task tags
 function ProjectsController:update_tags()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local task = Task:find(self.params.key)
   if not task then
     return self:json({ error = "Task not found" }, 404)
@@ -832,10 +767,9 @@ end
 
 -- Add file to task
 function ProjectsController:attach_file()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
+  local current_user = get_current_user()
   local task = Task:find(self.params.key)
+
   if not task then
     return self:json({ error = "Task not found" }, 404)
   end
@@ -852,9 +786,6 @@ end
 
 -- Remove file from task
 function ProjectsController:remove_file()
-  local current_user = require_auth()
-  if not current_user then return self:json({ error = "Unauthorized" }, 401) end
-
   local task = Task:find(self.params.key)
   if not task then
     return self:json({ error = "Task not found" }, 404)
@@ -867,9 +798,6 @@ end
 
 -- Delete task
 function ProjectsController:delete()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local task = Task:find(self.params.key)
   local redirect_url = "/projects"
 
@@ -897,9 +825,7 @@ end
 
 -- Sidebar: My in-progress tasks
 function ProjectsController:sidebar_in_progress()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local tasks = Task.in_progress_for_user(current_user._key, 10)
 
   -- Enrich with feature and app info
@@ -926,9 +852,7 @@ end
 
 -- Sidebar: Latest tasks assigned to me
 function ProjectsController:sidebar_my_tasks()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
+  local current_user = get_current_user()
   local tasks = Task.todo_for_user(current_user._key, 10)
 
   -- Enrich with feature and app info
@@ -955,9 +879,6 @@ end
 
 -- Sidebar: Apps list
 function ProjectsController:sidebar_apps()
-  local current_user = require_auth()
-  if not current_user then return self:html("") end
-
   local apps = App:new():order("doc.position ASC, doc.created_at DESC"):all()
 
   self.layout = false

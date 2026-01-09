@@ -8,14 +8,18 @@ local DateHelper = require("helpers.date_helper")
 -- Make helper available to views
 _G.time_ago_in_words = DateHelper.time_ago_in_words
 
+-- Get current user (middleware ensures user is authenticated)
+local function get_current_user()
+  return AuthHelper.get_current_user()
+end
+
 function RepositoriesController:before_action()
   self.layout = "talks"
-  self.current_user = AuthHelper.require_login(self, "/repositories")
-  if not self.current_user then return end
 end
 
 function RepositoriesController:index()
-  local repos = Repository.where({ owner_id = self.current_user._key }):all()
+  local current_user = get_current_user()
+  local repos = Repository.where({ owner_id = current_user._key }):all()
   local MergeRequest = require("models.merge_request")
 
   -- Decorate repositories with extra stats
@@ -34,7 +38,7 @@ function RepositoriesController:index()
       if mr.status == "open" then open_mrs = open_mrs + 1 end
     end
     repo.open_mrs_count = open_mrs
-    
+
     -- Get default branch
     repo.default_branch = GitHelper.get_default_branch(repo.name) or "master"
   end
@@ -54,18 +58,19 @@ function RepositoriesController:new_form()
 end
 
 function RepositoriesController:create()
+  local current_user = get_current_user()
   local params = Repository.permit(self.params.repository)
-  params.owner_id = self.current_user._key
-  
+  params.owner_id = current_user._key
+
   local repository = Repository:new(params)
-  
+
   -- Check if name is taken physically or in DB?
   -- Assuming DB unique index handles it, or GitHelper fails.
   if GitHelper.repo_exists(repository.name) then
     repository.errors = { name = "Repository name already exists" }
     return self:render("repositories/new", { repository = repository })
   end
-  
+
   if repository:save() then
     -- after_create hook in model inits the repo
     self:redirect("/repositories")
@@ -115,6 +120,7 @@ function RepositoriesController:commits()
 end
 
 function RepositoriesController:edit()
+  local current_user = get_current_user()
   local id = self.params.id
   local repository = Repository:find(id)
 
@@ -123,7 +129,7 @@ function RepositoriesController:edit()
   end
 
   -- Check ownership
-  if repository.owner_id ~= self.current_user._key then
+  if repository.owner_id ~= current_user._key then
     return self:render("errors/403", {}, { status = 403 })
   end
 
@@ -131,6 +137,7 @@ function RepositoriesController:edit()
 end
 
 function RepositoriesController:update()
+  local current_user = get_current_user()
   local id = self.params.id
   local repository = Repository:find(id)
 
@@ -139,7 +146,7 @@ function RepositoriesController:update()
   end
 
   -- Check ownership
-  if repository.owner_id ~= self.current_user._key then
+  if repository.owner_id ~= current_user._key then
     return self:render("errors/403", {}, { status = 403 })
   end
 
@@ -159,6 +166,7 @@ function RepositoriesController:update()
 end
 
 function RepositoriesController:destroy()
+  local current_user = get_current_user()
   local id = self.params.id
   local repository = Repository:find(id)
 
@@ -167,7 +175,7 @@ function RepositoriesController:destroy()
   end
 
   -- Check ownership
-  if repository.owner_id ~= self.current_user._key then
+  if repository.owner_id ~= current_user._key then
     return self:render("errors/403", {}, { status = 403 })
   end
 

@@ -37,8 +37,9 @@ local Middleware = require("middleware")
 -- Session authentication middleware (for apps using Luaonbeans sessions)
 Middleware.register("session_auth", function(ctx, next)
   local session = GetSession()
-  if not session or not session.user_key then
-    return ctx:redirect("/auth/login")
+  if not session or not session.user_id then
+    local current_path = GetPath() or "/"
+    return ctx:redirect("/auth/login?redirect=" .. current_path)
   end
   next()
 end)
@@ -47,16 +48,18 @@ end)
 Middleware.register("dashboard_auth", function(ctx, next)
   local token = GetCookie("sdb_token")
   if not token or token == "" then
-    return ctx:redirect("/dashboard/login")
+    local current_path = GetPath() or "/"
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
   next()
 end)
 
--- Dashboard admin authentication middleware (for _system database routes)
+-- Dashboard admin authentication middleware (for _system database routes and admin apps)
 Middleware.register("dashboard_admin_auth", function(ctx, next)
+  local current_path = GetPath() or "/"
   local token = GetCookie("sdb_token")
   if not token or token == "" then
-    return ctx:redirect("/dashboard/login")
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   -- Verify admin role by checking with the API
@@ -69,12 +72,12 @@ Middleware.register("dashboard_admin_auth", function(ctx, next)
   })
 
   if status ~= 200 then
-    return ctx:redirect("/dashboard/login")
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   local ok, user_data = pcall(DecodeJson, body)
   if not ok or not user_data then
-    return ctx:redirect("/dashboard/login")
+    return ctx:redirect("/dashboard/login?redirect=" .. current_path)
   end
 
   -- Check if user has admin role
@@ -90,7 +93,7 @@ Middleware.register("dashboard_admin_auth", function(ctx, next)
   end
 
   if not is_admin then
-    return ctx:halt(403, EncodeJson(roles))
+    return ctx:halt(403, "Access denied. Admin privileges required.")
   end
 
   next()
