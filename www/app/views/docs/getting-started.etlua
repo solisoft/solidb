@@ -320,16 +320,12 @@
                       <td class="p-3">Overrides the auto-generated admin password.</td>
                     </tr>
                     <tr>
-                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SECRET</td>
-                      <td class="p-3">Secret key required for inter-node authentication.</td>
+                      <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
+                      <td class="p-3">Secret for signing JSON Web Tokens (32+ chars recommended).</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_CLUSTER_SCHEME</td>
                       <td class="p-3">Protocol for cluster traffic (http or https).</td>
-                    </tr>
-                    <tr>
-                      <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
-                      <td class="p-3">Secret for signing JSON Web Tokens.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">QUEUE_WORKERS</td>
@@ -345,8 +341,28 @@
               <div
                 class="bg-gray-950 p-4 rounded-xl border border-white/10 font-mono text-sm text-gray-300 whitespace-pre"
               >SOLIDB_ADMIN_PASSWORD=my_secure_password
-SOLIDB_CLUSTER_SECRET=shhhh_its_a_secret
+JWT_SECRET=your-secure-jwt-secret-32-chars-min
 QUEUE_WORKERS=8</div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-6 mt-6">
+              <h3 class="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Cluster Authentication (Keyfile)
+              </h3>
+              <p class="text-gray-300 text-sm mb-4">
+                For cluster mode, inter-node authentication uses a shared keyfile instead of environment variables.
+                All nodes must use the same keyfile content.
+              </p>
+              <div class="space-y-3">
+                <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
+                  <span class="text-gray-500"># Generate a keyfile</span><br/>
+                  openssl rand -hex 32 > solidb.key
+                </div>
+                <div class="bg-gray-950 p-3 rounded-lg font-mono text-sm text-gray-300 border border-white/10">
+                  <span class="text-gray-500"># Start with keyfile</span><br/>
+                  ./solidb --keyfile solidb.key --cluster-peers "node2:6746"
+                </div>
+              </div>
             </div>
           </div>
         </div>
