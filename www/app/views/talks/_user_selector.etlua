@@ -1,0 +1,21 @@
+<% if not users or #users == 0 then %>
+<p class="text-text-dim text-sm text-center py-2">No users available</p>
+<% else %>
+<div class="space-y-1">
+  <% for _, user in ipairs(users) do
+    if not current_user or user._key ~= current_user._key then
+      local display_name = user.firstname or user.email or "?"
+      local initial = string.sub(display_name, 1, 1):upper()
+  %>
+  <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer">
+    <input type="checkbox" name="members" value="<%= user._key %>" class="text-primary rounded">
+    <div class="w-6 h-6 rounded-md bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white text-xs font-medium">
+      <%= initial %>
+    </div>
+    <span class="text-sm text-text">
+      <%= display_name %><% if user.lastname then %> <%= user.lastname %><% end %>
+    </span>
+  </label>
+  <% end end %>
+</div>
+<% end %>

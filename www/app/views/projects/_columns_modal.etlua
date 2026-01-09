@@ -1,0 +1,274 @@
+<%
+local columns = feature.columns or {}
+local color_options = {
+  { id = "text-dim", name = "Gray", class = "bg-white/20" },
+  { id = "primary", name = "Blue", class = "bg-primary" },
+  { id = "accent", name = "Purple", class = "bg-accent" },
+  { id = "success", name = "Green", class = "bg-success" },
+  { id = "warning", name = "Yellow", class = "bg-warning" },
+  { id = "error", name = "Red", class = "bg-error" }
+}
+%>
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card rounded-xl shadow-2xl w-full max-w-lg mx-4 border border-white/5 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between shrink-0">
+      <h2 class="text-lg font-semibold text-text">Manage Columns</h2>
+      <button onclick="this.closest('.fixed').remove()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Columns List -->
+    <div class="p-6 flex-1 overflow-y-auto">
+      <div id="columns-list" class="space-y-2">
+        <% for i, col in ipairs(columns) do %>
+        <div class="column-item flex items-center gap-3 p-3 bg-white/5 rounded-lg group" data-column-id="<%= col.id %>" data-position="<%= i %>">
+          <!-- Drag handle -->
+          <div class="cursor-grab text-text-dim hover:text-text">
+            <i class="fas fa-grip-vertical"></i>
+          </div>
+
+          <!-- Color selector -->
+          <div class="relative">
+            <button type="button" onclick="toggleColorPicker(this)"
+                    class="w-6 h-6 rounded-full border-2 border-white/20 color-preview bg-<%= col.color or 'text-dim' %>"></button>
+            <div class="color-picker hidden absolute top-full left-0 mt-2 p-2 bg-bg-card border border-white/10 rounded-lg shadow-xl z-10 flex gap-1">
+              <% for _, c in ipairs(color_options) do %>
+              <button type="button" onclick="selectColor(this, '<%= c.id %>')"
+                      class="w-6 h-6 rounded-full <%= c.class %> hover:ring-2 hover:ring-white/50 transition-all"
+                      title="<%= c.name %>"></button>
+              <% end %>
+            </div>
+            <input type="hidden" name="color" value="<%= col.color or 'text-dim' %>">
+          </div>
+
+          <!-- Name input -->
+          <input type="text" name="name" value="<%= col.name %>"
+                 class="flex-1 px-3 py-1.5 bg-transparent border border-white/10 rounded-lg text-text text-sm focus:ring-2 focus:ring-primary focus:border-transparent">
+
+          <!-- Delete button (only if more than 1 column) -->
+          <% if #columns > 1 then %>
+          <button type="button" onclick="deleteColumn(this, '<%= col.id %>')"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all">
+            <i class="fas fa-trash text-sm"></i>
+          </button>
+          <% end %>
+        </div>
+        <% end %>
+      </div>
+
+      <!-- Add Column Button -->
+      <button type="button" onclick="addNewColumn()"
+              class="mt-4 w-full px-4 py-3 border-2 border-dashed border-white/10 hover:border-primary/50 rounded-lg text-text-dim hover:text-primary text-sm flex items-center justify-center gap-2 transition-colors">
+        <i class="fas fa-plus"></i> Add Column
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3 shrink-0">
+      <button type="button" onclick="this.closest('.fixed').remove()"
+              class="px-4 py-2 text-text-muted hover:text-text">
+        Cancel
+      </button>
+      <button type="button" onclick="saveColumns()"
+              class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium">
+        Save Changes
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const APP_KEY = '<%= app_key %>';
+  const FEATURE_KEY = '<%= feature_key %>';
+  let draggedItem = null;
+
+  // Make columns sortable
+  const columnsList = document.getElementById('columns-list');
+
+  columnsList.querySelectorAll('.column-item').forEach(item => {
+    item.draggable = true;
+
+    item.addEventListener('dragstart', function(e) {
+      draggedItem = this;
+      this.classList.add('opacity-50');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', function() {
+      this.classList.remove('opacity-50');
+      draggedItem = null;
+      updatePositions();
+    });
+
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = this.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        columnsList.insertBefore(draggedItem, this);
+      } else {
+        columnsList.insertBefore(draggedItem, this.nextSibling);
+      }
+    });
+  });
+
+  function updatePositions() {
+    document.querySelectorAll('.column-item').forEach((item, index) => {
+      item.dataset.position = index + 1;
+    });
+  }
+
+  window.toggleColorPicker = function(btn) {
+    const picker = btn.nextElementSibling;
+    document.querySelectorAll('.color-picker').forEach(p => {
+      if (p !== picker) p.classList.add('hidden');
+    });
+    picker.classList.toggle('hidden');
+  };
+
+  window.selectColor = function(btn, colorId) {
+    const item = btn.closest('.column-item');
+    const preview = item.querySelector('.color-preview');
+    const input = item.querySelector('input[name="color"]');
+
+    // Remove old color class and add new one
+    preview.className = preview.className.replace(/bg-\S+/, 'bg-' + colorId);
+    input.value = colorId;
+
+    // Close picker
+    btn.closest('.color-picker').classList.add('hidden');
+  };
+
+  // Close color picker when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.color-preview') && !e.target.closest('.color-picker')) {
+      document.querySelectorAll('.color-picker').forEach(p => p.classList.add('hidden'));
+    }
+  });
+
+  window.addNewColumn = function() {
+    const newId = 'col_' + Date.now();
+    const position = document.querySelectorAll('.column-item').length + 1;
+
+    const html = `
+      <div class="column-item flex items-center gap-3 p-3 bg-white/5 rounded-lg group" data-column-id="${newId}" data-position="${position}">
+        <div class="cursor-grab text-text-dim hover:text-text">
+          <i class="fas fa-grip-vertical"></i>
+        </div>
+        <div class="relative">
+          <button type="button" onclick="toggleColorPicker(this)"
+                  class="w-6 h-6 rounded-full border-2 border-white/20 color-preview bg-text-dim"></button>
+          <div class="color-picker hidden absolute top-full left-0 mt-2 p-2 bg-bg-card border border-white/10 rounded-lg shadow-xl z-10 flex gap-1">
+            <button type="button" onclick="selectColor(this, 'text-dim')" class="w-6 h-6 rounded-full bg-white/20 hover:ring-2 hover:ring-white/50" title="Gray"></button>
+            <button type="button" onclick="selectColor(this, 'primary')" class="w-6 h-6 rounded-full bg-primary hover:ring-2 hover:ring-white/50" title="Blue"></button>
+            <button type="button" onclick="selectColor(this, 'accent')" class="w-6 h-6 rounded-full bg-accent hover:ring-2 hover:ring-white/50" title="Purple"></button>
+            <button type="button" onclick="selectColor(this, 'success')" class="w-6 h-6 rounded-full bg-success hover:ring-2 hover:ring-white/50" title="Green"></button>
+            <button type="button" onclick="selectColor(this, 'warning')" class="w-6 h-6 rounded-full bg-warning hover:ring-2 hover:ring-white/50" title="Yellow"></button>
+            <button type="button" onclick="selectColor(this, 'error')" class="w-6 h-6 rounded-full bg-error hover:ring-2 hover:ring-white/50" title="Red"></button>
+          </div>
+          <input type="hidden" name="color" value="text-dim">
+        </div>
+        <input type="text" name="name" value="New Column" autofocus
+               class="flex-1 px-3 py-1.5 bg-transparent border border-white/10 rounded-lg text-text text-sm focus:ring-2 focus:ring-primary focus:border-transparent">
+        <button type="button" onclick="deleteColumn(this, '${newId}')"
+                class="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all">
+          <i class="fas fa-trash text-sm"></i>
+        </button>
+      </div>
+    `;
+
+    columnsList.insertAdjacentHTML('beforeend', html);
+
+    // Focus the new input
+    const newItem = columnsList.lastElementChild;
+    newItem.querySelector('input[name="name"]').select();
+
+    // Make new item draggable
+    newItem.draggable = true;
+    newItem.addEventListener('dragstart', function(e) {
+      draggedItem = this;
+      this.classList.add('opacity-50');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    newItem.addEventListener('dragend', function() {
+      this.classList.remove('opacity-50');
+      draggedItem = null;
+      updatePositions();
+    });
+    newItem.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = this.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        columnsList.insertBefore(draggedItem, this);
+      } else {
+        columnsList.insertBefore(draggedItem, this.nextSibling);
+      }
+    });
+
+    // Update delete buttons visibility
+    updateDeleteButtons();
+  };
+
+  window.deleteColumn = function(btn, columnId) {
+    if (document.querySelectorAll('.column-item').length <= 1) {
+      alert('You must have at least one column');
+      return;
+    }
+    btn.closest('.column-item').remove();
+    updatePositions();
+    updateDeleteButtons();
+  };
+
+  function updateDeleteButtons() {
+    const items = document.querySelectorAll('.column-item');
+    items.forEach(item => {
+      const deleteBtn = item.querySelector('button[onclick^="deleteColumn"]');
+      if (deleteBtn) {
+        if (items.length <= 1) {
+          deleteBtn.classList.add('hidden');
+        } else {
+          deleteBtn.classList.remove('hidden');
+        }
+      }
+    });
+  }
+
+  window.saveColumns = function() {
+    const columns = [];
+    document.querySelectorAll('.column-item').forEach((item, index) => {
+      columns.push({
+        id: item.dataset.columnId,
+        name: item.querySelector('input[name="name"]').value,
+        color: item.querySelector('input[name="color"]').value,
+        position: index + 1
+      });
+    });
+
+    fetch(`/projects/app/${APP_KEY}/feature/${FEATURE_KEY}/columns`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columns: columns })
+    })
+    .then(res => {
+      if (res.ok) {
+        document.querySelector('.fixed.inset-0').remove();
+        document.body.dispatchEvent(new CustomEvent('columnsUpdated'));
+      } else {
+        alert('Failed to save columns');
+      }
+    })
+    .catch(err => {
+      console.error('Error saving columns:', err);
+      alert('Failed to save columns');
+    });
+  };
+})();
+</script>

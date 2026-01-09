@@ -111,3 +111,15 @@ local is_blob = collection_type == "blob"
     </div>
   </div>
 </div>
+
+<% if edit_key then %>
+<script>
+  // Auto-open edit modal for document
+  document.addEventListener('DOMContentLoaded', function() {
+    htmx.ajax('GET', '/database/<%= db %>/documents/<%= collection %>/<%= edit_key %>/edit', {
+      target: '#modal-container',
+      swap: 'innerHTML'
+    });
+  });
+</script>
+<% end %>

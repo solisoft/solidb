@@ -1,0 +1,50 @@
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card rounded-lg shadow-xl w-full max-w-md mx-4" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-border/30 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-text">New Group Chat</h2>
+      <button onclick="this.closest('.fixed').remove()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-post="/talks/group"
+          hx-target="#channels-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) document.querySelector('.fixed.inset-0').remove()">
+      <div class="p-6 space-y-4">
+        <!-- Group Name -->
+        <div>
+          <label for="group-name" class="block text-sm font-medium text-text-muted mb-2">Group Name</label>
+          <input type="text" id="group-name" name="name" required
+                 class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent"
+                 placeholder="e.g. project-team">
+        </div>
+
+        <!-- Members -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Select Members</label>
+          <div hx-get="/talks/channel/users" hx-trigger="load" hx-swap="innerHTML"
+               class="max-h-48 overflow-y-auto bg-bg-input border border-border rounded-lg p-2">
+            <div class="text-text-dim text-sm text-center py-2">Loading users...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-border/30 flex justify-end gap-3">
+        <button type="button" onclick="this.closest('.fixed').remove()"
+                class="px-4 py-2 text-text-muted hover:text-text">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg">
+          Create Group
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

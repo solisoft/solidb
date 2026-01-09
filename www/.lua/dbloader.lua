@@ -4,43 +4,50 @@
 
 local DbLoader = {}
 DbLoader.cache = {}
+DbLoader.loaded_all = false
 DbLoader.collection = "_luaonbeans"
 
--- Query the _luaonbeans collection for a specific type and name
-function DbLoader.load_code(doc_type, name)
-  -- Check cache first
-  local cache_key = doc_type .. ":" .. name
-  if DbLoader.cache[cache_key] then
-    return DbLoader.cache[cache_key]
+-- Load ALL documents from _luaonbeans collection at once
+function DbLoader.load_all()
+  if DbLoader.loaded_all then
+    return
   end
 
   -- Check if we have a DB connection
   if not _G.Sdb then
-    return nil
+    DbLoader.loaded_all = true
+    return
   end
 
-  -- Query the collection
-  local query = string.format(
-    'FOR doc IN %s FILTER doc.type == @type AND doc.name == @name RETURN doc',
-    DbLoader.collection
-  )
+  local query = string.format('FOR doc IN %s RETURN doc', DbLoader.collection)
 
   local ok, result = pcall(function()
-    return _G.Sdb:Sdbql(query, { type = doc_type, name = name })
+    return _G.Sdb:Sdbql(query, {})
   end)
 
-  if not ok or not result or result.error then
-    return nil
+  if ok and result and not result.error then
+    local docs = result.result or {}
+    for _, doc in ipairs(docs) do
+      if doc.type and doc.name then
+        local cache_key = doc.type .. ":" .. doc.name
+        DbLoader.cache[cache_key] = doc
+      end
+    end
   end
 
-  local docs = result.result or {}
-  if #docs == 0 then
-    return nil
+  DbLoader.loaded_all = true
+end
+
+-- Query the _luaonbeans collection for a specific type and name
+function DbLoader.load_code(doc_type, name)
+  -- Load all documents on first access
+  if not DbLoader.loaded_all then
+    DbLoader.load_all()
   end
 
-  local doc = docs[1]
-  DbLoader.cache[cache_key] = doc
-  return doc
+  -- Check cache (will be nil if not found, which is fine)
+  local cache_key = doc_type .. ":" .. name
+  return DbLoader.cache[cache_key]
 end
 
 -- Load and compile a controller from DB
@@ -237,6 +244,7 @@ end
 -- Clear the cache
 function DbLoader.clear_cache()
   DbLoader.cache = {}
+  DbLoader.loaded_all = false
 end
 
 return DbLoader

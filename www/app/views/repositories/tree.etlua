@@ -1,0 +1,215 @@
+<%
+  local FileTypes = require("helpers.file_types")
+%>
+<!-- Repository Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/repositories" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <i class="fas fa-code-branch text-primary text-sm"></i>
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <a href="/repositories/<%= repository.id %>" class="text-lg font-bold text-white hover:text-primary transition-colors"><%= repository.name %></a>
+        <% if repository.is_public then %>
+        <span class="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-globe text-[8px]"></i> Public
+        </span>
+        <% else %>
+        <span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-lock text-[8px]"></i> Private
+        </span>
+        <% end %>
+      </div>
+      <span class="text-xs text-text-dim truncate max-w-md block"><%= repository.description or "No description provided" %></span>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <a href="/repositories/<%= repository.id %>/merge_requests/new" class="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-code-pull-request"></i> New MR
+    </a>
+  </div>
+</div>
+
+<!-- Main Content Area -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-6xl mx-auto">
+    <!-- Tabs -->
+    <div class="border-b border-white/10 mb-6">
+      <nav class="flex gap-6" aria-label="Tabs">
+        <a href="/repositories/<%= repository.id %>/tree" class="border-b-2 border-primary py-4 px-1 inline-flex items-center gap-2 text-primary font-medium text-sm">
+          <i class="fas fa-folder-tree text-lg"></i>
+          Code
+        </a>
+        <a href="/repositories/<%= repository.id %>/commits" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-code-commit text-lg"></i>
+          Commits
+        </a>
+        <a href="/repositories/<%= repository.id %>/merge_requests" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-code-pull-request text-lg"></i>
+          Merge Requests
+          <% if open_mrs_count and open_mrs_count > 0 then %>
+            <span class="ml-1 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full border border-primary/20"><%= open_mrs_count %></span>
+          <% end %>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Branch Selector & Breadcrumbs -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-3">
+        <!-- Branch Selector -->
+        <div class="relative">
+          <select onchange="window.location.href='/repositories/<%= repository.id %>/tree<%= tree_path ~= '' and ('/' .. tree_path) or '' %>?ref=' + this.value"
+                  class="appearance-none bg-surface border border-white/10 rounded-lg px-3 py-2 pr-8 text-sm text-white focus:outline-none focus:border-primary/50 cursor-pointer">
+            <% for _, branch in ipairs(branches) do %>
+            <option value="<%= branch %>" <%= branch == ref and 'selected' or '' %>><%= branch %></option>
+            <% end %>
+          </select>
+          <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-text-dim text-xs pointer-events-none"></i>
+        </div>
+
+        <!-- Breadcrumbs -->
+        <div class="flex items-center gap-1 text-sm">
+          <a href="/repositories/<%= repository.id %>/tree?ref=<%= ref %>" class="text-primary hover:underline font-medium">
+            <%= repository.name %>
+          </a>
+          <% for i, crumb in ipairs(breadcrumbs) do %>
+          <span class="text-text-dim">/</span>
+          <% if i == #breadcrumbs then %>
+          <span class="text-white font-medium"><%= crumb.name %></span>
+          <% else %>
+          <a href="/repositories/<%= repository.id %>/tree/<%= crumb.path %>?ref=<%= ref %>" class="text-primary hover:underline">
+            <%= crumb.name %>
+          </a>
+          <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Clone URL -->
+      <div class="flex items-center gap-2">
+        <div class="bg-surface border border-white/10 rounded-lg px-3 py-2 flex items-center gap-2">
+          <code class="font-mono text-xs text-text-dim">http://localhost:8080/git/<%= repository.name %>.git</code>
+          <button onclick="navigator.clipboard.writeText('http://localhost:8080/git/<%= repository.name %>.git')"
+                  class="text-text-dim hover:text-white transition-colors" title="Copy URL">
+            <i class="fas fa-copy text-xs"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Last Commit Info -->
+    <% if last_commit then %>
+    <div class="bg-surface border border-white/10 rounded-t-xl px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-[10px] text-white font-bold uppercase">
+          <%= last_commit.author:sub(1,1) %>
+        </div>
+        <span class="text-sm text-white font-medium"><%= last_commit.author %></span>
+        <span class="text-sm text-text-dim truncate max-w-md"><%= last_commit.message %></span>
+      </div>
+      <div class="flex items-center gap-3">
+        <code class="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+          <%= last_commit.hash:sub(1, 7) %>
+        </code>
+        <span class="text-xs text-text-dim"><%= last_commit.date %></span>
+      </div>
+    </div>
+    <% end %>
+
+    <!-- File Tree -->
+    <div class="bg-surface border border-white/10 <%= last_commit and 'rounded-b-xl border-t-0' or 'rounded-xl' %> overflow-hidden">
+      <% if #entries == 0 then %>
+      <div class="p-12 text-center">
+        <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-folder-open text-2xl text-text-dim"></i>
+        </div>
+        <h3 class="text-lg font-medium text-white mb-2">Empty Directory</h3>
+        <p class="text-text-dim">This directory is empty or the repository has no commits yet.</p>
+      </div>
+      <% else %>
+      <table class="w-full">
+        <tbody class="divide-y divide-white/5">
+          <% if tree_path ~= "" then %>
+          <!-- Parent Directory Link -->
+          <%
+            local parent_path = tree_path:match("^(.+)/[^/]+$") or ""
+            local parent_url = parent_path ~= "" and ("/repositories/" .. repository.id .. "/tree/" .. parent_path .. "?ref=" .. ref) or ("/repositories/" .. repository.id .. "/tree?ref=" .. ref)
+          %>
+          <tr class="hover:bg-white/5 transition-colors">
+            <td class="px-4 py-3">
+              <a href="<%= parent_url %>" class="flex items-center gap-3 text-text-dim hover:text-white">
+                <i class="fas fa-level-up-alt text-lg w-5"></i>
+                <span>..</span>
+              </a>
+            </td>
+            <td></td>
+            <td></td>
+          </tr>
+          <% end %>
+          <% for _, entry in ipairs(entries) do %>
+          <tr class="hover:bg-white/5 transition-colors group">
+            <td class="px-4 py-3 w-[35%]">
+              <% if entry.type == "tree" then %>
+              <a href="/repositories/<%= repository.id %>/tree/<%= entry.path %>?ref=<%= ref %>" class="flex items-center gap-3 text-white hover:text-primary">
+                <i class="fas fa-folder text-blue-400 text-lg w-5"></i>
+                <span class="font-medium"><%= entry.name %></span>
+              </a>
+              <% else %>
+              <a href="/repositories/<%= repository.id %>/blob/<%= entry.path %>?ref=<%= ref %>" class="flex items-center gap-3 text-white hover:text-primary">
+                <i class="<%= FileTypes.get_icon(entry.name) %> <%= FileTypes.get_color(entry.name) %> text-lg w-5"></i>
+                <span><%= entry.name %></span>
+              </a>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-text-dim text-sm truncate max-w-[300px]">
+              <% if entry.commit then %>
+              <span class="hover:text-white cursor-default" title="<%= entry.commit.message %>"><%= entry.commit.message %></span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <% if entry.commit then %>
+              <span class="text-xs text-text-dim"><%= entry.commit.date %></span>
+              <% end %>
+            </td>
+          </tr>
+          <% end %>
+        </tbody>
+      </table>
+      <% end %>
+    </div>
+
+    <!-- README Preview (if exists at root) -->
+    <%
+      local readme_entry = nil
+      if tree_path == "" then
+        for _, entry in ipairs(entries) do
+          if entry.name:lower():match("^readme") and entry.type == "blob" then
+            readme_entry = entry
+            break
+          end
+        end
+      end
+    %>
+    <% if readme_entry then %>
+    <div class="mt-6 bg-surface border border-white/10 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+        <i class="fas fa-book text-text-dim"></i>
+        <span class="text-sm font-medium text-white"><%= readme_entry.name %></span>
+      </div>
+      <div class="p-6 prose prose-invert prose-sm max-w-none">
+        <!-- README content would be rendered here with markdown -->
+        <p class="text-text-dim text-sm">
+          <a href="/repositories/<%= repository.id %>/blob/<%= readme_entry.path %>?ref=<%= ref %>" class="text-primary hover:underline">
+            View <%= readme_entry.name %>
+          </a>
+        </p>
+      </div>
+    </div>
+    <% end %>
+  </div>
+</div>

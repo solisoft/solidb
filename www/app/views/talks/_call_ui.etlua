@@ -1,0 +1,105 @@
+<!-- Call Overlay (Immersive Design) -->
+<div id="call-overlay" class="fixed inset-0 bg-black z-50 flex flex-col font-sans text-white overflow-hidden">
+  
+  <!-- Remote Video / Main Stage -->
+  <div id="remote-videos" class="absolute inset-0 z-0 flex items-center justify-center bg-zinc-900">
+    <!-- Remote participants will be injected here via JS -->
+    <!-- Default state (waiting for connection) -->
+    <div id="waiting-message" class="flex flex-col items-center opacity-50">
+      <div class="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center mb-4 animate-pulse">
+        <i class="fas fa-user text-4xl text-white/20"></i>
+      </div>
+      <p class="text-white/40 text-lg">Waiting for connection...</p>
+    </div>
+  </div>
+
+  <!-- Header Overlay -->
+  <div class="absolute top-0 left-0 right-0 p-6 z-10 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-start pointer-events-none">
+    <div class="flex items-center gap-4 pointer-events-auto">
+      <button onclick="TalksCall.minimizeCall()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center transition-all">
+        <i class="fas fa-compress text-white/80"></i>
+      </button>
+      <div>
+        <h2 class="font-bold text-lg leading-tight text-white shadow-sm"><%= display_name or channel and channel.name or "Unknown Channel" %></h2>
+        <div class="flex items-center gap-2 text-sm text-white/60">
+          <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+          <span><%= call_type == "video" and "Video Call" or "Voice Call" %></span>
+          <span>•</span>
+          <span id="call-duration" class="font-mono">00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Video (PIP) -->
+  <div id="local-video-container" class="fixed bottom-32 right-6 z-20 w-48 h-64 md:w-64 md:h-80 bg-zinc-800 rounded-2xl overflow-hidden shadow-2xl border border-white/10 transition-all hover:scale-105 group">
+    <video id="local-video" autoplay muted playsinline class="w-full h-full object-cover transform px-0"></video>
+    
+    <!-- Local Avatar Fallback -->
+    <div id="local-avatar" class="<%= call_type == 'video' and 'hidden' or '' %> absolute inset-0 flex items-center justify-center bg-zinc-800">
+      <div class="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold shadow-inner">
+        <%= current_user and string.sub(current_user.firstname or current_user.email, 1, 1):upper() or "?" %>
+      </div>
+    </div>
+    
+    <!-- Video Loading Indicator -->
+    <div id="local-video-loading" class="absolute inset-0 flex items-center justify-center bg-zinc-900 z-10 hidden">
+        <div class="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+    </div>
+
+    <!-- Mute Indicator -->
+    <div id="local-mute-indicator" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-red-500/90 text-white flex items-center justify-center text-xs shadow-lg hidden">
+      <i class="fas fa-microphone-slash"></i>
+    </div>
+    
+    <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+      <p class="text-xs font-medium text-white">You</p>
+    </div>
+  </div>
+
+  <!-- Controls Bar -->
+  <div class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-4 px-6 py-4 bg-zinc-900/40 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl">
+    
+    <!-- Mute Audio -->
+    <button id="btn-mute" onclick="TalksCall.toggleMute()"
+            class="w-14 h-14 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white transition-all active:scale-95 group relative">
+      <i class="fas fa-microphone text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]"></i>
+      <span class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Mute</span>
+    </button>
+
+    <!-- Toggle Video -->
+    <button id="btn-video" onclick="TalksCall.toggleVideo()"
+            class="w-14 h-14 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white transition-all active:scale-95 group relative">
+      <i class="fas fa-video<%= call_type ~= 'video' and '-slash text-red-400' or '' %> text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]"></i>
+      <span class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Video</span>
+    </button>
+
+    <!-- Screen Share -->
+    <button id="btn-screen" onclick="TalksCall.toggleScreenShare()"
+            class="w-14 h-14 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white transition-all active:scale-95 group relative">
+      <i class="fas fa-desktop text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]"></i>
+      <span class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Share Screen</span>
+    </button>
+
+    <div class="w-px h-8 bg-white/10 mx-2"></div>
+
+    <!-- End Call -->
+    <button onclick="TalksCall.endCall()"
+            class="w-16 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-500/20 transition-all active:scale-95 group relative">
+      <i class="fas fa-phone-slash text-xl transform group-hover:rotate-90 transition-transform"></i>
+      <span class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">End Call</span>
+    </button>
+  </div>
+</div>
+
+<script>
+// Initialize call with data
+window.TalksCallData = {
+  channelId: '<%= channel and channel._id or "" %>',
+  channelKey: '<%= channel and channel._key or "" %>',
+  callType: '<%= call_type or "audio" %>',
+  userKey: '<%= current_user and current_user._key or "" %>',
+  userName: '<%= current_user and current_user.firstname or "Unknown" %>'
+};
+TalksCall.initCall();
+</script>

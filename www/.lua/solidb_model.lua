@@ -145,6 +145,8 @@ end
 function SoliDBModel:find(handler)
   assert(not self.data or next(self.data) == nil, "find not allowed here")
 
+  if not handler then return nil end
+
   local prefix = self.COLLECTION .. "/"
   if string.sub(handler, 1, #prefix) ~= prefix then
     handler = prefix .. handler

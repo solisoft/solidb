@@ -148,14 +148,11 @@ end
             </a>
             <% else %>
             <!-- Edit button for documents -->
-            <button type="button"
-                    hx-get="/database/<%= db %>/documents/<%= collection %>/<%= doc._key %>/edit"
-                    hx-target="#modal-container"
-                    hx-swap="innerHTML"
-                    class="p-1.5 rounded hover:bg-primary/10 text-text-muted hover:text-primary-light transition-colors"
-                    title="Edit">
+            <a href="/database/<%= db %>/documents/<%= collection %>/edit/<%= doc._key %>"
+               class="p-1.5 rounded hover:bg-primary/10 text-text-muted hover:text-primary-light transition-colors"
+               title="Edit">
               <i class="fas fa-pen"></i>
-            </button>
+            </a>
             <% end %>
             <button type="button"
                     hx-delete="/database/<%= db %>/documents/<%= collection %>/<%= doc._key %>"

@@ -1,0 +1,28 @@
+<div class="py-1 max-h-48 overflow-y-auto chat-scrollbar">
+  <!-- Unassign option -->
+  <button type="button"
+          onclick="assignTask('<%= task_key %>', '')"
+          class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= not current_assignee and 'bg-primary/10 text-primary' or 'text-text-dim' %>">
+    <div class="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+      <i class="fas fa-user-slash"></i>
+    </div>
+    <span>Unassigned</span>
+    <% if not current_assignee then %>
+    <i class="fas fa-check text-xs ml-auto"></i>
+    <% end %>
+  </button>
+
+  <% for _, user in ipairs(users) do %>
+  <button type="button"
+          onclick="assignTask('<%= task_key %>', '<%= user._key %>')"
+          class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= current_assignee == user._key and 'bg-primary/10 text-primary' or 'text-text' %>">
+    <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-[10px] text-white font-medium">
+      <%= string.sub(user.firstname or "?", 1, 1) %>
+    </div>
+    <span><%= user.firstname %> <%= user.lastname and string.sub(user.lastname, 1, 1) .. "." or "" %></span>
+    <% if current_assignee == user._key then %>
+    <i class="fas fa-check text-xs ml-auto"></i>
+    <% end %>
+  </button>
+  <% end %>
+</div>

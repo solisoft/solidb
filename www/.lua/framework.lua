@@ -223,6 +223,12 @@ function Framework.handle_request()
     i = i + 1
   end
 
+  -- Also try direct GetParam by name for common query params
+  local channel_param = GetParam("channel")
+  if channel_param then
+    raw_params["channel"] = channel_param
+  end
+
   -- Merge POST body params
   local body_params = Framework.parse_request_body()
   for k, v in pairs(body_params) do

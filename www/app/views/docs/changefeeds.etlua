@@ -278,7 +278,8 @@
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"subscribe"</span>,
     <span class="text-purple-400">"collection"</span>: <span class="text-green-400">"users"</span>,
     <span class="text-purple-400">"database"</span>: <span class="text-green-400">"_system"</span>, <span class="text-gray-500">// Optional: database name</span>
-    <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span> <span class="text-gray-500">// Optional: filter by key</span>
+    <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span>, <span class="text-gray-500">// Optional: filter by key</span>
+    <span class="text-purple-400">"id"</span>: <span class="text-green-400">"sub_1"</span> <span class="text-gray-500">// Optional: client ID</span>
   }</code></pre>
               </div>
             </div>
@@ -307,6 +308,7 @@
                     class="bg-transparent p-0 m-0"
                   ><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"insert"</span>,
+    <span class="text-purple-400">"id"</span>: <span class="text-green-400">"sub_1"</span>,
     <span class="text-purple-400">"key"</span>: <span class="text-green-400">"user_123"</span>,
     <span class="text-purple-400">"data"</span>: { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">30</span> }
   }</code></pre>

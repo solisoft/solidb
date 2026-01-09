@@ -1,0 +1,26 @@
+<% if messages and #messages > 0 then %>
+  <div class="space-y-3 animate-fade-in">
+    <% for _, msg in ipairs(messages) do %>
+    <a href="/talks/<%= msg.channel_id %>" class="group flex gap-3 cursor-pointer hover:bg-white/5 p-2 rounded-lg -mx-2 transition-colors">
+      <!-- Avatar -->
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-lg">
+        <%= string.sub(msg.sender_name or "?", 1, 1):upper() %>
+      </div>
+      
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between mb-0.5">
+          <span class="text-xs font-bold text-text group-hover:text-white transition-colors truncate"><%= msg.sender_name or "Unknown" %></span>
+          <span class="text-[10px] text-text-dim"><%= os.date("%H:%M", msg.timestamp) %></span>
+        </div>
+        <p class="text-xs text-text-muted truncate group-hover:text-text-dim transition-colors">
+          <%= msg.text %>
+        </p>
+      </div>
+    </a>
+    <% end %>
+  </div>
+<% else %>
+  <div class="text-center py-4 text-text-dim text-xs">
+    No recent messages.
+  </div>
+<% end %>

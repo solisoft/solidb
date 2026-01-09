@@ -4,6 +4,8 @@
 -- Configure package path for app modules
 package.path = package.path .. ";.lua/?.lua;.lua/db/?.lua;app/?.lua;app/controllers/?.lua;app/models/?.lua;config/?.lua;config/locales/?.lua"
 
+ProgramMaxPayloadSize(10485760 * 10) -- 100 MB
+
 -- Environment (default to development)
 local BEANS_ENV = os.getenv("BEANS_ENV") or "development"
 
@@ -27,21 +29,35 @@ local Middleware = require("middleware")
 
 -- Global debug helper
 function P(...)
-  local f = io.open("/Users/olivier.bonnaure/workspace/solisoft/luaonbeans/debug.log", "a")
-  if f then
-    local args = {...}
-    local formatted = {}
-    for _, v in ipairs(args) do
-      if type(v) == "table" then
-        table.insert(formatted, EncodeJson(v))
-      else
-        table.insert(formatted, tostring(v))
-      end
+  local args = {...}
+  local formatted = {}
+  for _, v in ipairs(args) do
+    if type(v) == "table" then
+      table.insert(formatted, EncodeJson(v))
+    else
+      table.insert(formatted, tostring(v))
     end
-    f:write(string.format("[%s] %s\n", os.date(), table.concat(formatted, "\t")))
-    f:close()
+  end
+
+  local log_file = "debug.log"
+  local current_content = Slurp(log_file) or ""
+  local new_entry = string.format("[%s] %s\n", os.date(), table.concat(formatted, "\t"))
+
+  Barf(log_file, current_content .. new_entry)
+end
+
+_G.ENV = {}
+
+local env_data = LoadAsset(".env")
+if env_data then
+  for line in env_data:gmatch("[^\r\n]+") do
+    local key, value = line:match("([^=]+)=(.+)")
+    if key and value then
+      _G.ENV[key:gsub("%s+", "")] = value:gsub("%s+", "")
+    end
   end
 end
+
 
 -- Load database driver (optional - only if config exists)
 local db_config_ok, db_config = pcall(require, "database")
@@ -49,6 +65,19 @@ if db_config_ok and db_config.solidb then
   local SoliDB = require("solidb")
   -- Global DB connection
   _G.Sdb = SoliDB.new(db_config.solidb)
+
+  -- Add timing wrapper for Sdbql (for performance debugging)
+  if _G.Sdb then
+    local original_sdbql = _G.Sdb.Sdbql
+    _G.Sdb.Sdbql = function(self, query, params)
+      local start_time = GetTime()
+      local result = original_sdbql(self, query, params)
+      local elapsed_ms = (GetTime() - start_time) / 1000
+      local params_str = params and EncodeJson(params) or "{}"
+      P(string.format("[TIMING] Sdbql %.2fms: %s | params: %s", elapsed_ms, (query or ""):sub(1, 80), params_str:sub(1, 100)))
+      return result
+    end
+  end
 
   -- Ensure _luaonbeans system collection exists
   local function ensure_luaonbeans_collection()
@@ -98,9 +127,9 @@ local function clear_caches()
   controllers = {}
   view.clear_cache()
   Middleware.clear()
-  -- Clear DB loader cache
-  local DbLoader = require("dbloader")
-  DbLoader.clear_cache()
+  -- NOTE: We intentionally do NOT clear DbLoader cache here.
+  -- DbLoader loads code from the _luaonbeans collection which rarely changes.
+  -- It will be cleared only on explicit server reload (OnServerReload/SIGHUP).
   -- Clear loaded modules to allow reload
   -- Note: We DON'T clear 'router' or 'middleware' because they are singletons that
   -- framework.lua and other modules reference. routes.lua calls router.clear() itself.
@@ -156,6 +185,9 @@ end
 function OnServerReload()
   Log(kLogInfo, "Reloading Luaonbeans...")
   clear_caches()
+  -- Clear DbLoader cache on explicit reload (SIGHUP)
+  local DbLoader = require("dbloader")
+  DbLoader.clear_cache()
   load_routes()
   load_middleware()
 end

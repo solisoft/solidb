@@ -1,0 +1,454 @@
+<!-- New Datatype Form -->
+<div class="max-w-4xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex items-center gap-4">
+    <a href="/cruds" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div>
+      <h1 class="text-2xl font-bold text-gradient">New Datatype</h1>
+      <p class="text-text-muted mt-1">Define your data structure</p>
+    </div>
+  </div>
+
+  <!-- Form -->
+  <form hx-post="/cruds/datatypes" hx-swap="none" class="space-y-6">
+    <!-- Basic Info -->
+    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4">Basic Information</h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Name *</label>
+          <input type="text" name="name" required
+                 placeholder="e.g., Products"
+                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary"
+                 oninput="autoGenerateSlug(this.value)">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Slug *</label>
+          <input type="text" name="slug" id="slug-input" required
+                 placeholder="e.g., products"
+                 pattern="^[a-z0-9_-]+$"
+                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+          <p class="text-xs text-text-muted mt-1">URL-safe identifier (lowercase, no spaces)</p>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
+          <textarea name="description" rows="2"
+                    placeholder="What is this datatype for?"
+                    class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary resize-none"></textarea>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium text-text-muted mb-2">Collection Name (optional)</label>
+          <input type="text" name="collection_name"
+                 placeholder="Leave empty to use 'datasets' collection"
+                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+          <p class="text-xs text-text-muted mt-1">Custom collection name, or leave empty to store in 'datasets' with _type field</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fields Builder -->
+    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Fields</h2>
+        <button type="button" onclick="addField()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
+          <i class="fas fa-plus mr-1"></i> Add Field
+        </button>
+      </div>
+
+      <div id="fields-container" class="space-y-3">
+        <!-- Fields will be added here dynamically -->
+      </div>
+
+      <input type="hidden" name="fields" id="fields-json" value="[]">
+
+      <p class="text-xs text-text-muted mt-4">
+        <i class="fas fa-info-circle mr-1"></i>
+        Drag fields to reorder. Click the gear icon to configure options.
+      </p>
+    </div>
+
+    <!-- Relations -->
+    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Relations</h2>
+        <button type="button" onclick="addRelation()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
+          <i class="fas fa-plus mr-1"></i> Add Relation
+        </button>
+      </div>
+
+      <div id="relations-container" class="space-y-3">
+        <!-- Relations will be added here dynamically -->
+      </div>
+
+      <input type="hidden" name="relations" id="relations-json" value="[]">
+
+      <p class="text-xs text-text-muted mt-4">
+        <i class="fas fa-info-circle mr-1"></i>
+        Has-many relations can be embedded (nested array) or referenced (foreign key).
+      </p>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex items-center justify-end gap-3">
+      <a href="/cruds" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</a>
+      <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-save mr-2"></i> Create Datatype
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+// Field types available
+const FIELD_TYPES = <%- EncodeJson(field_types or {"string", "text", "wysiwyg", "gps", "images", "files", "tags", "list", "multilist"}) %>;
+
+// Fields and relations data
+let fields = [];
+let relations = [];
+let fieldIndex = 0;
+let relationIndex = 0;
+
+// Auto-generate slug from name
+function autoGenerateSlug(name) {
+  const slug = name.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  document.getElementById('slug-input').value = slug;
+}
+
+// Add a new field
+function addField() {
+  const container = document.getElementById('fields-container');
+  const id = 'field_' + fieldIndex++;
+
+  const fieldHtml = `
+    <div id="${id}" class="flex items-center gap-3 p-3 bg-bg-dark/50 border border-border/30 rounded-lg group">
+      <i class="fas fa-grip-vertical text-text-muted cursor-move"></i>
+
+      <input type="text" placeholder="Field name" data-field="name"
+             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
+             onchange="updateFieldData('${id}')">
+
+      <select data-field="type" onchange="updateFieldData('${id}')"
+              class="px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm">
+        ${FIELD_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+      </select>
+
+      <input type="text" placeholder="Label" data-field="label"
+             class="w-32 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
+             onchange="updateFieldData('${id}')">
+
+      <label class="flex items-center gap-1 text-sm">
+        <input type="checkbox" data-field="required" onchange="updateFieldData('${id}')" class="rounded">
+        <span class="text-text-muted">Required</span>
+      </label>
+
+      <button type="button" onclick="configureField('${id}')" class="p-1.5 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100" title="Configure">
+        <i class="fas fa-cog text-text-muted"></i>
+      </button>
+
+      <button type="button" onclick="removeField('${id}')" class="p-1.5 hover:bg-error/20 rounded transition-colors opacity-0 group-hover:opacity-100" title="Remove">
+        <i class="fas fa-times text-error"></i>
+      </button>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', fieldHtml);
+
+  // Add to fields array
+  fields.push({
+    id: id,
+    name: '',
+    type: 'string',
+    label: '',
+    required: false,
+    placeholder: '',
+    options: []
+  });
+
+  updateFieldsJson();
+}
+
+// Update field data from inputs
+function updateFieldData(id) {
+  const el = document.getElementById(id);
+  const field = fields.find(f => f.id === id);
+  if (!field) return;
+
+  field.name = el.querySelector('[data-field="name"]').value;
+  field.type = el.querySelector('[data-field="type"]').value;
+  field.label = el.querySelector('[data-field="label"]').value;
+  field.required = el.querySelector('[data-field="required"]').checked;
+
+  updateFieldsJson();
+}
+
+// Remove a field
+function removeField(id) {
+  document.getElementById(id).remove();
+  fields = fields.filter(f => f.id !== id);
+  updateFieldsJson();
+}
+
+// Configure field options (modal)
+function configureField(id) {
+  const field = fields.find(f => f.id === id);
+  if (!field) return;
+
+  let optionsHtml = '';
+  if (field.type === 'list' || field.type === 'multilist') {
+    optionsHtml = `
+      <div class="mt-4">
+        ${field.type === 'list' ? `
+        <div class="mb-4 p-3 bg-bg-dark/50 rounded-lg">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="field-allow-blank" ${field.allow_blank !== false ? 'checked' : ''} class="rounded">
+            <span class="text-sm">Allow blank value</span>
+          </label>
+          <p class="text-xs text-text-muted mt-1 ml-6">When unchecked, user must select a value</p>
+        </div>
+        ` : ''}
+        <label class="block text-sm font-medium text-text-muted mb-2">Options Source</label>
+        <div class="flex gap-2 mb-3">
+          <button type="button" onclick="toggleOptionsSource('static')" id="btn-static"
+                  class="px-3 py-1.5 rounded-lg text-sm transition-colors ${field.source_query ? 'bg-white/5 text-text-muted' : 'bg-primary/20 text-primary-light'}">
+            Static List
+          </button>
+          <button type="button" onclick="toggleOptionsSource('query')" id="btn-query"
+                  class="px-3 py-1.5 rounded-lg text-sm transition-colors ${field.source_query ? 'bg-primary/20 text-primary-light' : 'bg-white/5 text-text-muted'}">
+            SDBQL Query
+          </button>
+        </div>
+        <div id="static-options" class="${field.source_query ? 'hidden' : ''}">
+          <label class="block text-sm font-medium text-text-muted mb-2">Options (one per line)</label>
+          <textarea id="field-options" rows="4" class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary font-mono text-sm">${(field.options || []).join('\\n')}</textarea>
+        </div>
+        <div id="query-options" class="${field.source_query ? '' : 'hidden'}">
+          <label class="block text-sm font-medium text-text-muted mb-2">SDBQL Query</label>
+          <textarea id="field-source-query" rows="4" placeholder="FOR doc IN collection RETURN doc.name"
+                    class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary font-mono text-sm">${field.source_query || ''}</textarea>
+          <p class="text-xs text-text-muted mt-2">
+            <i class="fas fa-info-circle mr-1"></i>
+            Use <code class="px-1 py-0.5 bg-white/10 rounded">@doc</code> to reference the current document's _id
+          </p>
+          <div class="mt-3">
+            <label class="block text-sm font-medium text-text-muted mb-2">Label Field (optional)</label>
+            <input type="text" id="field-label-field" value="${field.label_field || ''}" placeholder="e.g., name or title"
+                   class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary text-sm">
+            <p class="text-xs text-text-muted mt-1">Field to display as label (if query returns objects)</p>
+          </div>
+          <div class="mt-3">
+            <label class="block text-sm font-medium text-text-muted mb-2">Value Field (optional)</label>
+            <input type="text" id="field-value-field" value="${field.value_field || ''}" placeholder="e.g., _key or _id"
+                   class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary text-sm">
+            <p class="text-xs text-text-muted mt-1">Field to use as value (if query returns objects)</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const modalHtml = `
+    <div class="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) closeModal()">
+      <div class="bg-bg-card border border-border/50 rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <h3 class="text-lg font-semibold mb-4">Configure Field: ${field.name || 'Unnamed'}</h3>
+
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Placeholder</label>
+          <input type="text" id="field-placeholder" value="${field.placeholder || ''}"
+                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+        </div>
+
+        ${optionsHtml}
+
+        <div class="flex justify-end gap-3 mt-6">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</button>
+          <button type="button" onclick="saveFieldConfig('${id}')" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-container').innerHTML = modalHtml;
+}
+
+// Toggle between static options and query source
+function toggleOptionsSource(type) {
+  const staticDiv = document.getElementById('static-options');
+  const queryDiv = document.getElementById('query-options');
+  const btnStatic = document.getElementById('btn-static');
+  const btnQuery = document.getElementById('btn-query');
+
+  if (type === 'static') {
+    staticDiv.classList.remove('hidden');
+    queryDiv.classList.add('hidden');
+    btnStatic.classList.remove('bg-white/5', 'text-text-muted');
+    btnStatic.classList.add('bg-primary/20', 'text-primary-light');
+    btnQuery.classList.remove('bg-primary/20', 'text-primary-light');
+    btnQuery.classList.add('bg-white/5', 'text-text-muted');
+  } else {
+    staticDiv.classList.add('hidden');
+    queryDiv.classList.remove('hidden');
+    btnQuery.classList.remove('bg-white/5', 'text-text-muted');
+    btnQuery.classList.add('bg-primary/20', 'text-primary-light');
+    btnStatic.classList.remove('bg-primary/20', 'text-primary-light');
+    btnStatic.classList.add('bg-white/5', 'text-text-muted');
+  }
+}
+
+// Save field configuration
+function saveFieldConfig(id) {
+  const field = fields.find(f => f.id === id);
+  if (!field) return;
+
+  field.placeholder = document.getElementById('field-placeholder').value;
+
+  const optionsEl = document.getElementById('field-options');
+  if (optionsEl) {
+    field.options = optionsEl.value.split('\\n').map(o => o.trim()).filter(o => o);
+  }
+
+  const sourceQueryEl = document.getElementById('field-source-query');
+  if (sourceQueryEl) {
+    field.source_query = sourceQueryEl.value.trim() || null;
+    field.label_field = document.getElementById('field-label-field')?.value.trim() || null;
+    field.value_field = document.getElementById('field-value-field')?.value.trim() || null;
+  }
+
+  const allowBlankEl = document.getElementById('field-allow-blank');
+  if (allowBlankEl) {
+    field.allow_blank = allowBlankEl.checked;
+  }
+
+  updateFieldsJson();
+  closeModal();
+}
+
+// Add a new relation
+function addRelation() {
+  const container = document.getElementById('relations-container');
+  const id = 'relation_' + relationIndex++;
+
+  const relationHtml = `
+    <div id="${id}" class="flex items-center gap-3 p-3 bg-bg-dark/50 border border-border/30 rounded-lg group">
+      <i class="fas fa-grip-vertical text-text-muted cursor-move"></i>
+
+      <input type="text" placeholder="Relation name" data-relation="name"
+             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
+             onchange="updateRelationData('${id}')">
+
+      <input type="text" placeholder="Target datatype slug" data-relation="target_datatype"
+             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
+             onchange="updateRelationData('${id}')">
+
+      <select data-relation="storage" onchange="updateRelationData('${id}')"
+              class="px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm">
+        <option value="embedded">Embedded</option>
+        <option value="referenced">Referenced</option>
+      </select>
+
+      <button type="button" onclick="removeRelation('${id}')" class="p-1.5 hover:bg-error/20 rounded transition-colors opacity-0 group-hover:opacity-100" title="Remove">
+        <i class="fas fa-times text-error"></i>
+      </button>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', relationHtml);
+
+  relations.push({
+    id: id,
+    name: '',
+    target_datatype: '',
+    storage: 'embedded'
+  });
+
+  updateRelationsJson();
+}
+
+// Update relation data from inputs
+function updateRelationData(id) {
+  const el = document.getElementById(id);
+  const rel = relations.find(r => r.id === id);
+  if (!rel) return;
+
+  rel.name = el.querySelector('[data-relation="name"]').value;
+  rel.target_datatype = el.querySelector('[data-relation="target_datatype"]').value;
+  rel.storage = el.querySelector('[data-relation="storage"]').value;
+
+  updateRelationsJson();
+}
+
+// Remove a relation
+function removeRelation(id) {
+  document.getElementById(id).remove();
+  relations = relations.filter(r => r.id !== id);
+  updateRelationsJson();
+}
+
+// Update hidden JSON inputs
+function updateFieldsJson() {
+  // Remove internal IDs before saving
+  const cleanFields = fields.map(f => ({
+    name: f.name,
+    type: f.type,
+    label: f.label,
+    required: f.required,
+    placeholder: f.placeholder,
+    options: f.options
+  })).filter(f => f.name);
+
+  document.getElementById('fields-json').value = JSON.stringify(cleanFields);
+}
+
+function updateRelationsJson() {
+  const cleanRelations = relations.map(r => ({
+    name: r.name,
+    target_datatype: r.target_datatype,
+    storage: r.storage
+  })).filter(r => r.name && r.target_datatype);
+
+  document.getElementById('relations-json').value = JSON.stringify(cleanRelations);
+}
+
+// Initialize Sortable for drag & drop
+document.addEventListener('DOMContentLoaded', function() {
+  // Fields sortable
+  new Sortable(document.getElementById('fields-container'), {
+    animation: 150,
+    handle: '.fa-grip-vertical',
+    ghostClass: 'opacity-50',
+    onEnd: function(evt) {
+      // Reorder the fields array based on new DOM order
+      const newOrder = [];
+      document.querySelectorAll('#fields-container > div').forEach(el => {
+        const field = fields.find(f => f.id === el.id);
+        if (field) newOrder.push(field);
+      });
+      fields = newOrder;
+      updateFieldsJson();
+    }
+  });
+
+  // Relations sortable
+  new Sortable(document.getElementById('relations-container'), {
+    animation: 150,
+    handle: '.fa-grip-vertical',
+    ghostClass: 'opacity-50',
+    onEnd: function(evt) {
+      const newOrder = [];
+      document.querySelectorAll('#relations-container > div').forEach(el => {
+        const rel = relations.find(r => r.id === el.id);
+        if (rel) newOrder.push(rel);
+      });
+      relations = newOrder;
+      updateRelationsJson();
+    }
+  });
+});
+</script>

@@ -1,0 +1,128 @@
+<%
+local available_tags = {
+  { id = "backend", name = "Backend", color = "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  { id = "frontend", name = "Frontend", color = "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  { id = "ios", name = "iOS", color = "bg-gray-500/20 text-gray-300 border-gray-500/30" },
+  { id = "android", name = "Android", color = "bg-green-500/20 text-green-400 border-green-500/30" },
+  { id = "mobile", name = "Mobile", color = "bg-orange-500/20 text-orange-400 border-orange-500/30" }
+}
+
+local feature_tags = (feature and feature.tags) or {}
+local function has_tag(tag_id)
+  for _, t in ipairs(feature_tags) do
+    if t == tag_id then return true end
+  end
+  return false
+end
+%>
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card rounded-xl shadow-2xl w-full max-w-lg mx-4 border border-white/5" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-text"><%= feature and "Edit Feature" or "Create Feature" %></h2>
+      <button onclick="this.closest('.fixed').remove()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-<%= feature and "put" or "post" %>="<%= feature and ('/projects/app/' .. app_key .. '/feature/' .. feature._key) or ('/projects/app/' .. app_key .. '/feature') %>"
+          hx-target="this"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) document.querySelector('.fixed.inset-0')?.remove()">
+      <div class="p-6 space-y-4">
+        <!-- Name -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Name *</label>
+          <input type="text" name="name" required autofocus
+                 value="<%= feature and feature.name or '' %>"
+                 class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent"
+                 placeholder="Feature name">
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
+          <textarea name="description" rows="3"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                    placeholder="What is this feature about?"><%= feature and feature.description or '' %></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <!-- Color -->
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Color</label>
+            <div class="flex gap-2">
+              <% local colors = {"primary", "accent", "success", "warning", "error"} %>
+              <% for _, c in ipairs(colors) do %>
+              <label class="cursor-pointer">
+                <input type="radio" name="color" value="<%= c %>" class="sr-only peer"
+                       <%= ((feature and feature.color == c) or (not feature and c == "primary")) and "checked" or "" %>>
+                <div class="w-8 h-8 rounded-lg bg-<%= c %> opacity-50 peer-checked:opacity-100 peer-checked:ring-2 peer-checked:ring-white peer-checked:ring-offset-2 peer-checked:ring-offset-bg-card transition-all"></div>
+              </label>
+              <% end %>
+            </div>
+          </div>
+
+          <!-- Status (only for edit) -->
+          <% if feature then %>
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Status</label>
+            <select name="status"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text focus:ring-2 focus:ring-primary focus:border-transparent">
+              <option value="active" <%= feature.status == 'active' and 'selected' or '' %>>Active</option>
+              <option value="archived" <%= feature.status == 'archived' and 'selected' or '' %>>Archived</option>
+            </select>
+          </div>
+          <% end %>
+        </div>
+
+        <!-- Tags -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Tags</label>
+          <input type="hidden" name="tags" id="feature-tags-hidden" value="<%= table.concat(feature_tags, ',') %>">
+          <div class="flex flex-wrap gap-2" id="feature-tags-selector">
+            <% for _, tag in ipairs(available_tags) do %>
+            <button type="button" data-tag="<%= tag.id %>"
+                    onclick="toggleFeatureTag(this)"
+                    class="tag-btn px-2.5 py-1 text-xs font-medium rounded-full border <%= tag.color %> <%= has_tag(tag.id) and 'opacity-100 ring-1 ring-white/30' or 'opacity-50' %> transition-all">
+              <%= tag.name %>
+            </button>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      function toggleFeatureTag(btn) {
+        btn.classList.toggle('opacity-50');
+        btn.classList.toggle('opacity-100');
+        btn.classList.toggle('ring-1');
+        btn.classList.toggle('ring-white/30');
+        updateFeatureTagsHidden();
+      }
+      function updateFeatureTagsHidden() {
+        const tags = [];
+        document.querySelectorAll('#feature-tags-selector .tag-btn.opacity-100').forEach(btn => {
+          tags.push(btn.dataset.tag);
+        });
+        document.getElementById('feature-tags-hidden').value = tags.join(',');
+      }
+      </script>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3">
+        <button type="button" onclick="this.closest('.fixed').remove()"
+                class="px-4 py-2 text-text-muted hover:text-text">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium">
+          <%= feature and "Save Changes" or "Create Feature" %>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

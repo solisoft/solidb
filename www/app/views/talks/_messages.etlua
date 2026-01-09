@@ -1,19 +1,58 @@
-<% if #messages == 0 then %>
-<!-- Empty State -->
-<div class="flex flex-col items-center justify-center py-16 text-center">
-  <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-    <i class="fas fa-comments text-2xl text-primary-light"></i>
+<% if not messages or #messages == 0 then %>
+<div class="flex items-center justify-center h-full">
+  <div class="text-center">
+    <div class="text-4xl mb-4">
+      <i class="fas fa-comments text-text-dim"></i>
+    </div>
+    <p class="text-text-muted">No messages yet</p>
+    <p class="text-sm text-text-dim">Start the conversation!</p>
   </div>
-  <h3 class="text-lg font-semibold text-text mb-2">Welcome to #<%= channel %></h3>
-  <p class="text-text-muted text-sm max-w-md">
-    This is the start of the channel. Send a message to start the conversation!
-  </p>
 </div>
 <% else %>
-<!-- Messages -->
-<div class="space-y-1">
-  <% for _, msg in ipairs(messages) do %>
-  <%- partial("talks/_message", { message = msg }) %>
-  <% end %>
+<%
+  local last_date = nil
+  local today = os.date("%Y-%m-%d")
+  local yesterday = os.date("%Y-%m-%d", os.time() - 86400)
+  
+  local last_user_key = nil
+  local last_msg_time = 0
+  
+  -- Iterate through messages
+  for i, msg in ipairs(messages) do
+    local msg_date = os.date("%Y-%m-%d", msg.timestamp or os.time())
+    
+    -- Date Separator Logic
+    if msg_date ~= last_date then
+      local display_date = msg_date
+      if msg_date == today then
+        display_date = "Today"
+      elseif msg_date == yesterday then
+        display_date = "Yesterday"
+      else
+        display_date = os.date("%B %d, %Y", msg.timestamp)
+      end
+%>
+<div class="flex items-center justify-center my-6 first:mt-2">
+  <div class="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-bold text-text-muted uppercase tracking-wider backdrop-blur-sm select-none shadow-sm">
+    <%= display_date %>
+  </div>
 </div>
+<%
+      last_date = msg_date
+      last_user_key = nil -- Reset burst on new day
+    end
+
+    -- Burst Logic (same user, within 5 mins, same day)
+    local is_continuous = false
+    local current_ts = msg.timestamp or os.time()
+    if last_user_key and msg.user_key == last_user_key and (current_ts - last_msg_time) < 300 then
+      is_continuous = true
+    end
+%>
+<%- partial("talks/message", { msg = msg, current_user = current_user, TextHelper = TextHelper, is_continuous = is_continuous }) %>
+<%
+    last_user_key = msg.user_key
+    last_msg_time = msg.timestamp
+  end
+%>
 <% end %>

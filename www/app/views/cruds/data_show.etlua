@@ -1,0 +1,253 @@
+<!-- Show Record -->
+<% local dt = datatype.data or datatype %>
+<% local fields = dt.fields or {} %>
+<% local relations = dt.relations or {} %>
+
+<div class="max-w-3xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <a href="/cruds/data/<%= dt.slug %>" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+        <i class="fas fa-arrow-left"></i>
+      </a>
+      <div>
+        <h1 class="text-2xl font-bold text-gradient"><%= dt.name %></h1>
+        <p class="text-text-muted mt-1 font-mono"><%= record._key %></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/cruds/data/<%= dt.slug %>/<%= record._key %>/edit" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-edit mr-2"></i> Edit
+      </a>
+    </div>
+  </div>
+
+  <!-- Fields -->
+  <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
+    <h2 class="text-lg font-semibold mb-4">Fields</h2>
+
+    <dl class="space-y-4">
+      <% for _, field in ipairs(fields) do %>
+        <% local value = record[field.name] %>
+        <div class="grid grid-cols-3 gap-4">
+          <dt class="text-text-muted font-medium"><%= field.label or field.name %></dt>
+          <dd class="col-span-2">
+            <% if field.type == "tags" or field.type == "multilist" then %>
+              <% if value and type(value) == "table" and #value > 0 then %>
+              <div class="flex flex-wrap gap-2">
+                <% for _, tag in ipairs(value) do %>
+                <span class="px-2 py-1 bg-primary/20 text-primary-light rounded text-sm"><%= tag %></span>
+                <% end %>
+              </div>
+              <% else %>
+              <span class="text-text-muted">-</span>
+              <% end %>
+
+            <% elseif field.type == "gps" then %>
+              <% if value and value.lat and value.lng then %>
+              <div class="space-y-2">
+                <span class="font-mono"><%= string.format("%.6f, %.6f", value.lat, value.lng) %></span>
+                <a href="https://www.google.com/maps?q=<%= value.lat %>,<%= value.lng %>" target="_blank"
+                   class="text-primary hover:text-primary-light text-sm">
+                  <i class="fas fa-external-link-alt mr-1"></i> View on map
+                </a>
+              </div>
+              <% else %>
+              <span class="text-text-muted">-</span>
+              <% end %>
+
+            <% elseif field.type == "images" then %>
+              <% if value and type(value) == "table" and #value > 0 then %>
+              <div class="grid grid-cols-4 gap-2">
+                <% for _, img in ipairs(value) do %>
+                  <%
+                    local img_url = type(img) == "table" and img.url or (img:sub(1, 5) == "data:" and img or "/cruds/file/" .. img)
+                  %>
+                <a href="<%= img_url %>" target="_blank" class="aspect-square bg-bg-dark rounded-lg overflow-hidden">
+                  <img src="<%= img_url %>" class="w-full h-full object-cover hover:opacity-80 transition-opacity">
+                </a>
+                <% end %>
+              </div>
+              <% else %>
+              <span class="text-text-muted">No images</span>
+              <% end %>
+
+            <% elseif field.type == "files" then %>
+              <% if value and type(value) == "table" and #value > 0 then %>
+              <ul class="space-y-1">
+                <% for _, file in ipairs(value) do %>
+                  <%
+                    local file_url = type(file) == "table" and file.url or "/cruds/file/" .. file
+                    local file_name = type(file) == "table" and file.name or file
+                  %>
+                <li>
+                  <a href="<%= file_url %>" target="_blank" class="text-primary hover:text-primary-light flex items-center gap-2">
+                    <i class="fas fa-file"></i>
+                    <span><%= file_name %></span>
+                  </a>
+                </li>
+                <% end %>
+              </ul>
+              <% else %>
+              <span class="text-text-muted">No files</span>
+              <% end %>
+
+            <% elseif field.type == "wysiwyg" then %>
+              <% if value and value ~= "" then %>
+              <div class="prose prose-invert max-w-none">
+                <%- value %>
+              </div>
+              <% else %>
+              <span class="text-text-muted">-</span>
+              <% end %>
+
+            <% elseif field.type == "text" then %>
+              <% if value and value ~= "" then %>
+              <div class="whitespace-pre-wrap"><%= value %></div>
+              <% else %>
+              <span class="text-text-muted">-</span>
+              <% end %>
+
+            <% else %>
+              <% if value and value ~= "" then %>
+              <span><%= value %></span>
+              <% else %>
+              <span class="text-text-muted">-</span>
+              <% end %>
+            <% end %>
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+  </div>
+
+  <!-- Embedded Relations -->
+  <% for _, rel in ipairs(relations) do %>
+    <% if rel.storage == "embedded" then %>
+      <% local items = record[rel.name] or {} %>
+      <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
+        <h2 class="text-lg font-semibold mb-4"><%= rel.name %> (<%= #items %> items)</h2>
+
+        <% if #items > 0 then %>
+        <div class="space-y-3">
+          <% for i, item in ipairs(items) do %>
+          <div class="p-3 bg-bg-dark/50 border border-border/30 rounded-lg">
+            <pre class="text-sm font-mono overflow-x-auto"><%= EncodeJson(item) %></pre>
+          </div>
+          <% end %>
+        </div>
+        <% else %>
+        <p class="text-text-muted">No items</p>
+        <% end %>
+      </div>
+    <% end %>
+  <% end %>
+
+  <!-- Metadata -->
+  <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
+    <h3 class="text-sm font-semibold text-text-muted mb-3">Metadata</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>
+        <span class="text-text-muted">Key:</span>
+        <span class="font-mono ml-1"><%= record._key %></span>
+      </div>
+      <% if record._id then %>
+      <div>
+        <span class="text-text-muted">ID:</span>
+        <span class="font-mono ml-1"><%= record._id %></span>
+      </div>
+      <% end %>
+      <% if record.created_at then %>
+      <div>
+        <span class="text-text-muted">Created:</span>
+        <span class="ml-1"><%= os.date("%Y-%m-%d %H:%M:%S", record.created_at) %></span>
+      </div>
+      <% end %>
+      <% if record.updated_at then %>
+      <div>
+        <span class="text-text-muted">Updated:</span>
+        <span class="ml-1"><%= os.date("%Y-%m-%d %H:%M:%S", record.updated_at) %></span>
+      </div>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Raw JSON -->
+  <div class="bg-bg-card/30 border border-border/30 rounded-xl overflow-hidden">
+    <button type="button" onclick="toggleJsonView()" class="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors">
+      <div class="flex items-center gap-2">
+        <i id="json-chevron" class="fas fa-chevron-right text-text-muted transition-transform"></i>
+        <h3 class="text-sm font-semibold text-text-muted">Raw JSON</h3>
+      </div>
+      <button type="button" onclick="event.stopPropagation(); copyJson()" class="text-xs text-primary hover:text-primary-light px-2 py-1 rounded hover:bg-primary/10">
+        <i class="fas fa-copy mr-1"></i> Copy
+      </button>
+    </button>
+    <div id="json-container" class="hidden border-t border-border/30">
+      <pre id="raw-json" class="text-sm font-mono p-4 overflow-x-auto max-h-[500px] overflow-y-auto"></pre>
+    </div>
+  </div>
+  <script>
+    (function() {
+      var rawData = <%- EncodeJson(record) %>;
+      var jsonStr = JSON.stringify(rawData, null, 2);
+      var highlighted = syntaxHighlight(jsonStr);
+      document.getElementById('raw-json').innerHTML = highlighted;
+    })();
+
+    function syntaxHighlight(json) {
+      json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        var cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+          } else {
+            cls = 'json-string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-boolean';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
+    }
+
+    function toggleJsonView() {
+      var container = document.getElementById('json-container');
+      var chevron = document.getElementById('json-chevron');
+      container.classList.toggle('hidden');
+      chevron.classList.toggle('rotate-90');
+    }
+
+    function copyJson() {
+      var rawData = <%- EncodeJson(record) %>;
+      var jsonStr = JSON.stringify(rawData, null, 2);
+      navigator.clipboard.writeText(jsonStr).then(function() {
+        showToast('Copied to clipboard', 'success');
+      });
+    }
+  </script>
+  <style>
+    .json-key { color: #f59e0b; }
+    .json-string { color: #10b981; }
+    .json-number { color: #3b82f6; }
+    .json-boolean { color: #8b5cf6; }
+    .json-null { color: #ef4444; }
+  </style>
+
+  <!-- Actions -->
+  <div class="flex items-center justify-between">
+    <button type="button"
+            hx-delete="/cruds/data/<%= dt.slug %>/<%= record._key %>"
+            hx-confirm="Are you sure you want to delete this record?"
+            class="px-4 py-2 text-error hover:bg-error/20 rounded-lg transition-colors">
+      <i class="fas fa-trash mr-2"></i> Delete
+    </button>
+
+    <a href="/cruds/data/<%= dt.slug %>/<%= record._key %>/edit" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+      <i class="fas fa-edit mr-2"></i> Edit Record
+    </a>
+  </div>
+</div>

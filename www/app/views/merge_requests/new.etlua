@@ -1,0 +1,163 @@
+<!-- Fixed Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30 shrink-0">
+  <div class="flex items-center gap-4">
+    <a href="/repositories/<%= repository.id %>/merge_requests" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-text-dim hover:text-white">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="h-6 w-px bg-white/10"></div>
+    <div>
+      <h1 class="text-lg font-bold text-white">New Merge Request</h1>
+      <div class="flex items-center gap-2 text-xs text-text-dim">
+        <span>for</span>
+        <a href="/repositories/<%= repository.id %>" class="text-primary hover:underline font-medium"><%= repository.name %></a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-4xl mx-auto space-y-6">
+    
+    <!-- Compare Section -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+      <div class="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center gap-3">
+         <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary text-sm">
+           <i class="fas fa-code-compare"></i>
+         </div>
+         <h2 class="text-sm font-bold text-white uppercase tracking-wider">Compare Branches</h2>
+      </div>
+      
+      <div class="p-6">
+        <form hx-post="/repositories/<%= repository.id %>/merge_requests/compare" 
+              hx-target="#compare-container" 
+              hx-swap="innerHTML"
+              hx-indicator="#compare-spinner"
+              class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+          
+          <!-- Source -->
+          <div class="space-y-2">
+            <label class="block text-xs font-bold text-text-dim uppercase tracking-wider">Source Branch</label>
+            <div class="relative group">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fas fa-code-branch text-text-dim group-focus-within:text-primary transition-colors"></i>
+              </div>
+              <select name="source_branch" 
+                      class="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-primary/50 focus:bg-white/10 appearance-none cursor-pointer transition-all"
+                      onchange="this.form.requestSubmit()">
+                <% for _, branch in ipairs(branches) do %>
+                <option value="<%= branch %>" <%= merge_request.source_branch == branch and "selected" or "" %>><%= branch %></option>
+                <% end %>
+              </select>
+              <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <i class="fas fa-chevron-down text-xs text-text-dim"></i>
+              </div>
+            </div>
+            <p class="text-[10px] text-text-dim">Branch containing your changes</p>
+          </div>
+
+          <!-- Target -->
+          <div class="space-y-2">
+             <label class="block text-xs font-bold text-text-dim uppercase tracking-wider">Target Branch</label>
+             <div class="relative group">
+               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                 <i class="fas fa-code-branch text-text-dim group-focus-within:text-purple-400 transition-colors"></i>
+               </div>
+               <select name="target_branch" 
+                       class="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/50 focus:bg-white/10 appearance-none cursor-pointer transition-all"
+                       onchange="this.form.requestSubmit()">
+                 <% for _, branch in ipairs(branches) do %>
+                 <option value="<%= branch %>" <%= (merge_request.target_branch == branch or (not merge_request.target_branch and (branch == "main" or branch == "master"))) and "selected" or "" %>><%= branch %></option>
+                 <% end %>
+               </select>
+               <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                 <i class="fas fa-chevron-down text-xs text-text-dim"></i>
+               </div>
+             </div>
+             <p class="text-[10px] text-text-dim">Branch to merge into</p>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <!-- Compare Results & Form Container -->
+    <div id="compare-spinner" class="htmx-indicator hidden flex justify-center py-12">
+      <div class="flex flex-col items-center gap-3">
+        <i class="fas fa-circle-notch fa-spin text-2xl text-primary"></i>
+        <span class="text-xs text-text-dim font-medium uppercase tracking-wider">Comparing...</span>
+      </div>
+    </div>
+
+    <!-- Comparison Result / Error -->
+    <div id="compare-container">
+       <!-- Initial state or previous result can go here -->
+       <div class="text-center py-12 border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
+         <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-3 text-text-dim">
+            <i class="fas fa-search"></i>
+         </div>
+         <h3 class="text-text font-medium text-sm">Select branches to compare</h3>
+         <p class="text-text-dim text-xs mt-1">Choose a source and target branch to preview changes.</p>
+       </div>
+    </div>
+
+    <!-- Submission Form (Initially Hidden, can be toggled or part of the result if valid) -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+       <div class="px-6 py-4 border-b border-white/5 bg-white/[0.02]">
+         <h2 class="text-sm font-bold text-white uppercase tracking-wider">Merge Request Details</h2>
+       </div>
+       <div class="p-6">
+         <form action="/repositories/<%= repository.id %>/merge_requests" method="POST">
+           <input type="hidden" name="merge_request[source_branch]" id="form_source_branch">
+           <input type="hidden" name="merge_request[target_branch]" id="form_target_branch">
+           
+           <!-- Script to sync selects -->
+           <script>
+             document.addEventListener('DOMContentLoaded', function() {
+                const sourceSelect = document.querySelector('select[name="source_branch"]');
+                const targetSelect = document.querySelector('select[name="target_branch"]');
+                const formSource = document.getElementById('form_source_branch');
+                const formTarget = document.getElementById('form_target_branch');
+                
+                function sync() {
+                  formSource.value = sourceSelect.value;
+                  formTarget.value = targetSelect.value;
+                }
+                
+                sourceSelect.addEventListener('change', sync);
+                targetSelect.addEventListener('change', sync);
+                sync(); // Initial sync
+             });
+           </script>
+
+           <div class="space-y-4">
+             <div>
+               <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2" for="title">Title</label>
+               <input type="text" id="title" name="merge_request[title]" placeholder="Brief description of changes"
+                      value="<%= merge_request.title or '' %>"
+                      class="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-text-dim focus:outline-none focus:border-primary/50 transition-all">
+               <% if merge_request.errors and merge_request.errors.title then %>
+               <p class="text-error text-xs mt-1"><%= merge_request.errors.title %></p>
+               <% end %>
+             </div>
+             
+             <div>
+               <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2" for="description">Description</label>
+               <textarea id="description" name="merge_request[description]" rows="6"
+                         placeholder="Describe the changes in this merge request..."
+                         class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-text-dim focus:outline-none focus:border-primary/50 resize-none transition-all"><%= merge_request.description or '' %></textarea>
+             </div>
+           </div>
+
+           <div class="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-white/5">
+             <a href="/repositories/<%= repository.id %>/merge_requests" class="px-4 py-2 text-text-dim hover:text-white transition-colors text-sm font-medium">Cancel</a>
+             <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-all shadow-lg shadow-primary/20 text-sm font-bold flex items-center gap-2">
+               <i class="fas fa-code-pull-request"></i>
+               <span>Create Merge Request</span>
+             </button>
+           </div>
+         </form>
+       </div>
+    </div>
+
+  </div>
+</div>

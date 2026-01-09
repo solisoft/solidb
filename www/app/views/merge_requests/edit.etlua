@@ -1,0 +1,119 @@
+<!-- Fixed Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30 shrink-0">
+  <div class="flex items-center gap-4">
+    <a href="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-text-dim hover:text-white">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="h-6 w-px bg-white/10"></div>
+    <div>
+      <h1 class="text-lg font-bold text-white">Edit Merge Request</h1>
+      <div class="flex items-center gap-2 text-xs text-text-dim">
+        <span class="font-mono">MR #<%= merge_request.id:sub(1,8) %></span>
+        <span>in</span>
+        <a href="/repositories/<%= repository.id %>" class="text-primary hover:underline font-medium"><%= repository.name %></a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-4xl mx-auto space-y-8">
+
+    <!-- Edit Form -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+       <div class="px-6 py-4 border-b border-white/5 bg-white/[0.02]">
+         <h2 class="text-sm font-bold text-white uppercase tracking-wider">Merge Request Details</h2>
+       </div>
+       <div class="p-6">
+         <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>" method="POST">
+           <input type="hidden" name="_method" value="PUT">
+
+           <div class="space-y-6">
+             <!-- Title -->
+             <div>
+               <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2" for="title">Title</label>
+               <input type="text" id="title" name="merge_request[title]" placeholder="Brief description of changes"
+                      value="<%= merge_request.title or '' %>"
+                      class="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-text-dim focus:outline-none focus:border-primary/50 transition-all">
+               <% if merge_request.errors and merge_request.errors.title then %>
+               <p class="text-error text-xs mt-1"><%= merge_request.errors.title %></p>
+               <% end %>
+             </div>
+
+             <!-- Branches -->
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Source (Read-only) -->
+                <div>
+                   <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2">Source Branch</label>
+                   <div class="px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-text-dim font-mono text-sm flex items-center gap-2">
+                     <i class="fas fa-code-branch text-text-dim/50"></i>
+                     <%= merge_request.source_branch %>
+                   </div>
+                   <p class="text-[10px] text-text-dim mt-1.5 ml-1">Cannot be changed</p>
+                </div>
+
+                <!-- Target (Editable) -->
+                <div>
+                  <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2" for="target_branch">Target Branch</label>
+                  <div class="relative group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <i class="fas fa-code-branch text-text-dim group-focus-within:text-purple-400 transition-colors"></i>
+                    </div>
+                    <select name="merge_request[target_branch]" id="target_branch"
+                            class="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/50 focus:bg-white/10 appearance-none cursor-pointer transition-all">
+                      <% for _, branch in ipairs(branches) do %>
+                      <option value="<%= branch %>" <%= merge_request.target_branch == branch and "selected" or "" %>><%= branch %></option>
+                      <% end %>
+                    </select>
+                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <i class="fas fa-chevron-down text-xs text-text-dim"></i>
+                    </div>
+                  </div>
+                </div>
+             </div>
+             
+             <!-- Description -->
+             <div>
+               <label class="block text-xs font-bold text-text-dim uppercase tracking-wider mb-2" for="description">Description</label>
+               <textarea id="description" name="merge_request[description]" rows="8"
+                         placeholder="Describe the changes in this merge request..."
+                         class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-text-dim focus:outline-none focus:border-primary/50 resize-none transition-all block text-sm leading-relaxed"><%= merge_request.description or '' %></textarea>
+             </div>
+           </div>
+
+           <div class="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-white/5">
+             <a href="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>" class="px-4 py-2 text-text-dim hover:text-white transition-colors text-sm font-medium">Cancel</a>
+             <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-all shadow-lg shadow-primary/20 text-sm font-bold flex items-center gap-2">
+               <i class="fas fa-save"></i>
+               <span>Save Changes</span>
+             </button>
+           </div>
+         </form>
+       </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="bg-error/5 border border-error/10 rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-error/10 bg-error/5 flex items-center gap-3">
+         <i class="fas fa-exclamation-triangle text-error"></i>
+         <h2 class="text-sm font-bold text-white uppercase tracking-wider">Danger Zone</h2>
+      </div>
+      <div class="p-6 flex items-center justify-between gap-6">
+         <div>
+           <h3 class="text-white font-medium text-sm">Delete Merge Request</h3>
+           <p class="text-text-dim text-xs mt-1">This action cannot be undone. All comments and data associated with this merge request will be permanently removed.</p>
+         </div>
+         <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>" method="POST"
+               onsubmit="return confirm('Are you sure you want to delete this merge request? This cannot be undone.');">
+           <input type="hidden" name="_method" value="DELETE">
+           <button type="submit" class="px-4 py-2 bg-error hover:bg-error/80 text-white rounded-lg transition-colors text-xs font-bold shadow-lg shadow-error/20 flex items-center gap-2 whitespace-nowrap">
+             <i class="fas fa-trash"></i>
+             Delete Merge Request
+           </button>
+         </form>
+      </div>
+    </div>
+
+  </div>
+</div>

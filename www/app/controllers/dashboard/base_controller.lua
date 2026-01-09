@@ -24,8 +24,14 @@ function DashboardBaseController:fetch_api(path, options)
   options.headers["Authorization"] = "Bearer " .. (token or "")
   options.headers["Content-Type"] = "application/json"
 
-  Log(kLogInfo, "Fetching API: " .. server_url .. path)
-  return Fetch(server_url .. path, options)
+  local start_time = GetTime()
+
+  local status, headers, body = Fetch(server_url .. path, options)
+
+  local elapsed_ms = (GetTime() - start_time) / 1000
+  P(string.format("[TIMING] Fetch %s took %.2fms (status: %d)", path, elapsed_ms, status or 0))
+
+  return status, headers, body
 end
 
 -- Helper for GET requests

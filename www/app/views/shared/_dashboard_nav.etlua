@@ -72,6 +72,19 @@
         let ws = null;
         let reconnectTimer = null;
 
+        // Clean up WebSocket on page unload
+        window.addEventListener('beforeunload', function() {
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          if (ws) {
+            ws.onclose = null;
+            ws.close();
+            ws = null;
+          }
+        });
+
         const connect = () => {
            if (ws) return;
 

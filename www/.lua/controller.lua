@@ -35,6 +35,8 @@ function Controller:new(request_context)
   instance.variant = nil -- View variant (e.g., "iphone", "tablet")
   instance._rendered = false
   instance.cookies = {}
+  instance.session = {}
+  instance.flash = {}
 
   return instance
 end
@@ -133,8 +135,9 @@ end
 -- Check if request is from HTMX
 function Controller:is_htmx_request()
   -- Use pcall for test environment safety (GetHeader may not be available)
+  -- Try multiple case variations as HTTP headers are case-insensitive
   local ok, value = pcall(function()
-    return GetHeader("HX-Request")
+    return GetHeader("HX-Request") or GetHeader("hx-request") or GetHeader("Hx-Request")
   end)
   return ok and value == "true"
 end
@@ -208,8 +211,22 @@ function Controller:redirect_to(url, status)
   return self:redirect(url, status)
 end
 
+-- Set cookie
 function Controller:set_cookie(name, value, options)
   self.cookies[name] = { value = value, options = options }
+  return self
+end
+
+-- Set session
+function Controller:set_session(data, ttl)
+  self.session.data = data or {}
+  self.session.ttl = ttl
+  return self
+end
+
+-- Set flash
+function Controller:set_flash(name, value)
+  self.flash[name] = value
   return self
 end
 
@@ -277,6 +294,14 @@ function Controller:send_response()
 
   for name, cookie in pairs(self.cookies) do
     SetCookie(name, cookie.value, cookie.options)
+  end
+
+  if self.session.data then
+    SetSession(self.session.data, self.session.ttl)
+  end
+
+  for name, flash in pairs(self.flash) do
+    SetFlash(name, flash)
   end
 
   if self.response.body and self.response.body ~= "" then

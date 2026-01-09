@@ -7,193 +7,2022 @@
   <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <script src="https://unpkg.com/htmx-ext-ws@2.0.1/ws.js"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <style>
-    [x-cloak] { display: none !important; }
+    /* Custom Scrollbar */
+    .chat-scrollbar::-webkit-scrollbar { width: 6px; }
+    .chat-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .chat-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    .chat-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-    /* Custom scrollbar for chat */
-    .chat-scrollbar::-webkit-scrollbar {
-      width: 8px;
-    }
-    .chat-scrollbar::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .chat-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-    }
-    .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-
-    /* Message hover effects */
-    .message-hover:hover {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    /* Typing animation */
-    @keyframes typing {
-      0%, 60%, 100% { opacity: 0.3; }
-      30% { opacity: 1; }
-    }
-    .typing-dot:nth-child(1) { animation: typing 1.4s infinite; }
-    .typing-dot:nth-child(2) { animation: typing 1.4s infinite 0.2s; }
-    .typing-dot:nth-child(3) { animation: typing 1.4s infinite 0.4s; }
+    .message-row:hover .message-actions { opacity: 1; }
+    .message-actions { opacity: 0; transition: opacity 0.15s; }
   </style>
 </head>
-<body class="h-screen bg-bg text-text overflow-hidden">
-  <!-- Main Chat Layout -->
-  <div class="h-full flex" x-data="talksApp()">
-    <!-- Sidebar -->
-    <aside class="w-64 bg-bg-card/30 border-r border-border/30 flex flex-col shrink-0">
-      <!-- Workspace Header -->
-      <div class="h-14 px-4 flex items-center justify-between border-b border-border/30">
-        <button class="flex items-center gap-2 hover:bg-white/5 rounded-lg px-2 py-1.5 transition-colors">
-          <span class="font-bold text-text">SoliDB Talks</span>
-          <i class="fas fa-chevron-down text-xs text-text-muted"></i>
-        </button>
-        <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
-          <i class="fas fa-edit"></i>
-        </button>
-      </div>
+<body class="h-screen bg-bg text-text overflow-hidden font-sans antialiased selection:bg-primary/30 selection:text-white">
 
-      <!-- Channels Section -->
-      <div class="flex-1 overflow-y-auto chat-scrollbar py-3">
+  <!-- Background Ambient Glow -->
+  <div class="fixed inset-0 pointer-events-none z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] opacity-40"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-accent/20 rounded-full blur-[120px] opacity-30"></div>
+  </div>
+
+  <div class="h-full flex relative z-10 backdrop-blur-[1px]">
+    <%- partial("shared/activity_sidebar") %>
+    <!-- Path Detection -->
+    <%
+      local current_path = GetPath() or ""
+      local is_projects = current_path:match("^/projects")
+      local is_repos = current_path:match("^/repositories") or current_path:match("^/git")
+      local is_talks = not is_projects and not is_repos
+    %>
+
+    <!-- Sidebar (Visible only for Talks) -->
+    <% if is_talks then %>
+    <aside class="w-72 glass border-r border-white/5 flex flex-col shrink-0 z-20 relative">
+      <!-- Context-specific sidebar content -->
+      <div class="flex-1 overflow-y-auto chat-scrollbar py-2">
+        <!-- Talks Sidebar -->
         <!-- Channels -->
-        <div class="px-3 mb-4">
-          <div class="flex items-center justify-between px-2 py-1.5">
-            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Channels</span>
-            <button hx-get="/talks/channels/modal/create"
-                    hx-target="#modal-container"
-                    hx-swap="innerHTML"
-                    class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text hover:bg-white/10 transition-colors">
-              <i class="fas fa-plus text-xs"></i>
+        <div class="px-4 mb-8">
+          <div class="flex items-center justify-between px-2 py-2 mb-2">
+            <span class="text-xs font-bold text-text-dim uppercase tracking-widest">Channels</span>
+            <button hx-get="/talks/channel/modal/create" hx-target="#modal-container"
+                    class="w-6 h-6 flex items-center justify-center rounded-md text-text-dim hover:text-white hover:bg-white/10 transition-colors">
+              <i class="fas fa-plus text-[10px]"></i>
             </button>
           </div>
-          <div id="channels-list"
-               hx-get="/talks/channels/list"
-               hx-trigger="load"
-               hx-swap="innerHTML">
-            <div class="px-2 py-4 text-center">
-              <i class="fas fa-spinner fa-spin text-text-dim"></i>
-            </div>
+          <div id="channels-list" hx-get="/talks/sidebar/channels" hx-trigger="load" hx-swap="innerHTML" class="space-y-0.5">
+            <div class="px-2 py-4 text-xs text-text-dim text-center animate-pulse">Loading channels...</div>
           </div>
         </div>
 
-        <!-- Direct Messages -->
-        <div class="px-3">
-          <div class="flex items-center justify-between px-2 py-1.5">
-            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Direct Messages</span>
-            <button class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text hover:bg-white/10 transition-colors">
-              <i class="fas fa-plus text-xs"></i>
+        <!-- Team Members -->
+        <div class="px-4">
+          <div class="flex items-center justify-between px-2 py-2 mb-2">
+            <span class="text-xs font-bold text-text-dim uppercase tracking-widest">Direct Messages</span>
+            <button hx-get="/talks/group/modal/create" hx-target="#modal-container"
+                    class="w-6 h-6 flex items-center justify-center rounded-md text-text-dim hover:text-white hover:bg-white/10 transition-colors"
+                    title="New group chat">
+              <i class="fas fa-plus text-[10px]"></i>
             </button>
           </div>
-          <div id="dm-list"
-               hx-get="/talks/dm/list"
-               hx-trigger="load"
-               hx-swap="innerHTML">
-            <div class="px-2 py-4 text-center">
-              <i class="fas fa-spinner fa-spin text-text-dim"></i>
-            </div>
+          <div id="users-list" hx-get="/talks/sidebar/users" hx-trigger="load, refreshUsers from:body" hx-swap="innerHTML" class="space-y-0.5">
+             <div class="px-2 py-4 text-xs text-text-dim text-center animate-pulse">Loading team...</div>
           </div>
         </div>
       </div>
 
-      <!-- User Section -->
-      <div class="h-14 px-3 flex items-center gap-3 border-t border-border/30 bg-bg-dark/50">
-        <div class="relative">
-          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
-            <% if current_user then %><%= string.sub(current_user.firstname or current_user.email, 1, 1):upper() %><% else %>?<% end %>
+      <!-- User Footer -->
+      <div class="p-4 mt-auto">
+        <div class="glass-card rounded-xl p-3 flex items-center gap-3 hover:bg-white/5 transition-colors group cursor-pointer relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative">
+            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm shadow-lg">
+              <%= current_user and string.sub(current_user.firstname or current_user.email, 1, 1):upper() or "?" %>
+            </div>
+            <span class="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-[3px] border-bg-card"></span>
           </div>
-          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-bg-dark"></span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-text truncate">
-            <% if current_user then %><%= current_user.firstname or current_user.email %><% else %>Guest<% end %>
-          </p>
-          <p class="text-xs text-text-dim truncate">Online</p>
-        </div>
-        <div class="flex items-center gap-1">
-          <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Settings">
-            <i class="fas fa-cog"></i>
-          </button>
-          <a href="/talks/logout" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors" title="Logout">
+          <div class="flex-1 min-w-0 relative">
+            <div class="text-sm font-semibold text-white truncate"><%= current_user and current_user.firstname or "Guest" %></div>
+            <div class="text-[11px] text-text-dim group-hover:text-text-muted transition-colors">Online</div>
+          </div>
+          <a href="/auth/logout" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-all opacity-0 group-hover:opacity-100 relative" title="Logout">
             <i class="fas fa-sign-out-alt"></i>
           </a>
         </div>
       </div>
     </aside>
+    <% end %>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col min-w-0">
+    <main id="main-content" class="flex-1 flex flex-col min-w-0 relative bg-bg/50">
       <%- yield() %>
     </main>
 
-    <!-- Thread Panel (shown when viewing a thread) -->
-    <aside x-show="threadOpen" x-cloak
-           x-transition:enter="transition ease-out duration-200"
-           x-transition:enter-start="translate-x-full"
-           x-transition:enter-end="translate-x-0"
-           x-transition:leave="transition ease-in duration-150"
-           x-transition:leave-start="translate-x-0"
-           x-transition:leave-end="translate-x-full"
-           class="w-96 bg-bg-card/30 border-l border-border/30 flex flex-col shrink-0">
-      <div class="h-14 px-4 flex items-center justify-between border-b border-border/30">
-        <h3 class="font-semibold text-text">Thread</h3>
-        <button @click="threadOpen = false" class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
+    <%- partial("shared/right_sidebar") %>
+
+    <% if not is_projects then %>
+    <!-- Thread Panel (hidden by default) - Talks only -->
+    <aside id="thread-panel" class="hidden w-96 glass border-l border-white/5 flex flex-col shrink-0 z-20 shadow-2xl">
+      <div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5">
+        <span class="font-bold text-lg text-white">Thread</span>
+        <button onclick="document.getElementById('thread-panel').classList.add('hidden')"
+                class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors">
           <i class="fas fa-times"></i>
         </button>
       </div>
-      <div id="thread-content" class="flex-1 overflow-y-auto chat-scrollbar">
-        <!-- Thread messages loaded here -->
-      </div>
+      <div id="thread-content" class="flex-1 overflow-y-auto chat-scrollbar bg-bg/50"></div>
     </aside>
+    <% end %>
   </div>
+
+  <% if is_projects then %>
+  <!-- Task Panel (Projects only) -->
+  <div id="task-panel" class="hidden fixed inset-y-0 right-0 w-[500px] bg-bg-card border-l border-white/5 shadow-2xl z-50 transform transition-transform overflow-hidden">
+    <div id="task-panel-content" class="h-full"></div>
+  </div>
+  <% end %>
 
   <!-- Modal Container -->
   <div id="modal-container"></div>
 
   <!-- Toast Container -->
-  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
+  <!-- Incoming Call Notification -->
+  <div id="incoming-call-notification" class="hidden fixed top-4 right-4 z-[60] w-80 bg-bg-card/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden animate-slide-in">
+    <div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 pointer-events-none"></div>
+    <div class="relative p-4">
+      <!-- Caller Info -->
+      <div class="flex items-center gap-3 mb-4">
+        <div class="relative">
+          <div id="call-caller-avatar" class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-lg shadow-lg">
+            ?
+          </div>
+          <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success flex items-center justify-center ring-2 ring-bg-card">
+            <i id="call-type-icon" class="fas fa-phone text-[10px] text-white"></i>
+          </div>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div id="call-caller-name" class="font-semibold text-white truncate">Someone</div>
+          <div id="call-channel-name" class="text-xs text-text-muted truncate">is calling...</div>
+        </div>
+      </div>
+
+      <!-- Ringing Animation -->
+      <div class="flex items-center justify-center gap-1 mb-4">
+        <span class="w-2 h-2 rounded-full bg-primary animate-bounce" style="animation-delay: 0ms"></span>
+        <span class="w-2 h-2 rounded-full bg-primary animate-bounce" style="animation-delay: 150ms"></span>
+        <span class="w-2 h-2 rounded-full bg-primary animate-bounce" style="animation-delay: 300ms"></span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex gap-2">
+        <button onclick="TalksCallNotification.decline()"
+                class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-error/20 hover:bg-error/30 text-error font-medium transition-colors">
+          <i class="fas fa-phone-slash"></i>
+          <span>Decline</span>
+        </button>
+        <button onclick="TalksCallNotification.accept()"
+                class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-success hover:bg-success/90 text-white font-medium transition-colors shadow-lg shadow-success/30">
+          <i class="fas fa-phone"></i>
+          <span>Accept</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes slide-in {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .animate-slide-in { animation: slide-in 0.3s ease-out; }
+  </style>
+
+  <!-- Minimal JS: Presence + LiveQuery -->
   <script>
-    function talksApp() {
-      return {
-        threadOpen: false,
-        currentChannel: '<%= current_channel or "general" %>',
+    (function() {
+      const DB_NAME = '<%= db_name or "_system" %>';
+      const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+      const USER_KEY = '<%= current_user and current_user._key or "" %>';
+      const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-        openThread(messageId) {
-          this.threadOpen = true;
-          htmx.ajax('GET', '/talks/thread/' + messageId, { target: '#thread-content' });
+      let presenceWs = null;
+      let liveQueryWs = null;
+      let tokenCache = { token: null, expiry: 0 };
+
+      // Clean up WebSockets and calls on page unload
+      window.addEventListener('beforeunload', function() {
+        // Leave any active call using sendBeacon (more reliable during page unload)
+        if (window.TalksCallData && window.TalksCallData.channelKey) {
+          navigator.sendBeacon('/talks/call/leave/' + window.TalksCallData.channelKey);
+        }
+        if (presenceWs) {
+          presenceWs.onclose = null;
+          presenceWs.close();
+        }
+        if (liveQueryWs) {
+          liveQueryWs.onclose = null;
+          liveQueryWs.close();
+        }
+        if (typeof signalingWs !== 'undefined' && signalingWs) {
+          signalingWs.onclose = null;
+          signalingWs.close();
+        }
+      });
+
+      // Quote message
+      let pendingQuote = null;
+
+      window.quoteMessage = function(msgKey, text, senderName) {
+        const textarea = document.getElementById('message-text');
+        const preview = document.getElementById('quote-preview');
+        const senderEl = document.getElementById('quote-sender');
+        const textEl = document.getElementById('quote-text');
+        if (!textarea || !preview) return;
+
+        // Store quote data
+        const cleanText = text.replace(/\\n/g, '\n');
+        pendingQuote = { msgKey, text: cleanText, senderName };
+
+        // Show visual preview
+        senderEl.textContent = 'Replying to ' + senderName;
+        textEl.textContent = cleanText;
+        preview.classList.remove('hidden');
+
+        // Focus textarea
+        textarea.focus();
+      };
+
+      window.clearQuote = function() {
+        pendingQuote = null;
+        const preview = document.getElementById('quote-preview');
+        if (preview) preview.classList.add('hidden');
+      };
+
+      window.getQuoteMarkdown = function() {
+        if (!pendingQuote) return '';
+        const lines = pendingQuote.text.split('\n');
+        const quoted = lines.map(line => '> ' + line).join('\n');
+        return `> **${pendingQuote.senderName}:**\n${quoted}\n\n`;
+      };
+
+      // Image Lightbox
+      function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return '';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0;
+        while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+        return bytes.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+      }
+
+      window.openLightbox = function(src) {
+        let lightbox = document.getElementById('image-lightbox');
+        if (!lightbox) {
+          lightbox = document.createElement('div');
+          lightbox.id = 'image-lightbox';
+          lightbox.className = 'fixed inset-0 bg-black/90 z-50 flex flex-col items-center justify-center cursor-zoom-out opacity-0 transition-opacity duration-200';
+          lightbox.innerHTML = `
+            <div class="absolute top-4 left-4 right-4 flex items-center justify-between">
+              <div class="flex items-center gap-3 bg-black/50 backdrop-blur-sm rounded-lg px-4 py-2">
+                <i class="fas fa-image text-white/70"></i>
+                <span id="lightbox-filename" class="text-white/90 text-sm font-medium truncate max-w-md"></span>
+                <span id="lightbox-filesize" class="text-white/50 text-xs"></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <a id="lightbox-download" href="#" download class="text-white/70 hover:text-white text-sm px-4 py-2 rounded-lg bg-black/50 backdrop-blur-sm hover:bg-white/10 transition-colors flex items-center gap-2">
+                  <i class="fas fa-download"></i>
+                  <span>Download</span>
+                </a>
+                <button id="lightbox-close" class="text-white/70 hover:text-white text-xl w-10 h-10 flex items-center justify-center rounded-lg bg-black/50 backdrop-blur-sm hover:bg-white/10 transition-colors">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+            <img id="lightbox-image" class="max-w-[90vw] max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+          `;
+          lightbox.onclick = function(e) {
+            if (e.target === lightbox || e.target.id === 'lightbox-close' || e.target.closest('#lightbox-close')) {
+              lightbox.classList.add('opacity-0');
+              setTimeout(() => lightbox.classList.add('hidden'), 200);
+            }
+          };
+          document.body.appendChild(lightbox);
+        }
+        // Extract filename from URL
+        const filename = decodeURIComponent(src.split('/').pop().split('?')[0]) || 'image';
+        document.getElementById('lightbox-filename').textContent = filename;
+        document.getElementById('lightbox-filesize').textContent = '';
+        document.getElementById('lightbox-download').href = src;
+        document.getElementById('lightbox-download').download = filename;
+        document.getElementById('lightbox-image').src = src;
+        lightbox.classList.remove('hidden');
+        requestAnimationFrame(() => lightbox.classList.remove('opacity-0'));
+
+        // Fetch file size
+        fetch(src, { method: 'HEAD' }).then(res => {
+          const size = res.headers.get('Content-Length');
+          if (size) {
+            document.getElementById('lightbox-filesize').textContent = '(' + formatFileSize(parseInt(size)) + ')';
+          }
+        }).catch(() => {});
+      };
+
+      // Presence WebSocket
+      let lastPresenceUpdate = 0;
+      function connectPresence() {
+        if (!USER_KEY) return;
+        const url = `${WS_PROTOCOL}//${DB_HOST}/api/custom/${DB_NAME}/presence?user_id=${USER_KEY}`;
+        presenceWs = new WebSocket(url);
+        presenceWs.onmessage = (e) => {
+          // Debounce: only refresh users list at most every 30 seconds
+          // Real-time presence updates come via WebSocket status indicators
+          const now = Date.now();
+          if (now - lastPresenceUpdate > 30000) {
+            lastPresenceUpdate = now;
+            document.body.dispatchEvent(new CustomEvent('refreshUsers'));
+          }
+        };
+        presenceWs.onclose = () => setTimeout(connectPresence, 5000);
+      }
+
+      // Get LiveQuery token
+      async function getToken() {
+        if (tokenCache.token && Date.now() < tokenCache.expiry - 5000) {
+          return tokenCache.token;
+        }
+        try {
+          const res = await fetch('/talks/livequery_token');
+          const data = await res.json();
+          tokenCache.token = data.token;
+          tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;
+          return data.token;
+        } catch (e) {
+          console.error('Token fetch failed:', e);
+          return null;
         }
       }
-    }
 
-    // HTMX configuration
-    document.body.addEventListener('htmx:configRequest', function(evt) {
-      // Add any common headers here
-    });
+      // LiveQuery WebSocket for messages
+      let currentChannelId = null;
+      let currentChannelKey = null;
+      let knownMessageKeys = new Set();
+      let pendingMessageKeys = new Set(); // Track messages being fetched to prevent duplicates
+      let initialLoadDone = false;
+      let unreadCounts = {}; // Track unread messages per channel
 
-    // Auto-scroll messages on new content
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-      if (evt.detail.target.id === 'messages-container') {
-        evt.detail.target.scrollTop = evt.detail.target.scrollHeight;
+      function updateUnreadBadge(channelKey, count) {
+        const badge = document.getElementById('unread-' + channelKey);
+        if (badge) {
+          if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+          } else {
+            badge.classList.add('hidden');
+            badge.classList.remove('flex');
+          }
+        }
       }
-      // Apply syntax highlighting
-      if (window.hljs) {
-        document.querySelectorAll('pre code').forEach((el) => {
-          hljs.highlightElement(el);
+
+      function extractChannelKey(channelId) {
+        // channelId format: "dbname:channels/key"
+        if (!channelId) return null;
+        const match = channelId.match(/channels\/([^\/]+)$/);
+        return match ? match[1] : null;
+      }
+
+      async function connectLiveQuery() {
+        const token = await getToken();
+        if (!token) return setTimeout(connectLiveQuery, 5000);
+
+        const container = document.getElementById('messages-container');
+        const channelId = container?.dataset.channelId;
+        const channelKey = container?.dataset.channelKey;
+        if (!channelId || !channelKey) return;
+
+        currentChannelKey = channelKey;
+        currentChannelId = channelId;
+        initialLoadDone = false;
+        knownMessageKeys.clear();
+        pendingMessageKeys.clear();
+
+        // Clear unread for current channel
+        unreadCounts[channelKey] = 0;
+        updateUnreadBadge(channelKey, 0);
+
+        const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+        liveQueryWs = new WebSocket(url);
+
+        liveQueryWs.onopen = () => {
+          // Check if messages are already loaded (SSR) or need to be fetched
+          const msgContainer = document.getElementById('messages-container');
+          const messagesLoaded = msgContainer && msgContainer.dataset.messagesLoaded === 'true';
+
+          if (messagesLoaded) {
+            // Messages already rendered server-side, just register known keys
+            document.querySelectorAll('[id^="msg-"]').forEach(el => {
+              const key = el.id.replace('msg-', '');
+              if (key) knownMessageKeys.add(key);
+            });
+            initialLoadDone = true;
+            // Scroll to bottom
+            if (msgContainer) {
+              setTimeout(() => { msgContainer.scrollTop = msgContainer.scrollHeight; }, 50);
+            }
+          } else {
+            // Load messages via HTMX (fallback)
+            htmx.ajax('GET', '/talks/messages/' + currentChannelKey, {
+              target: '#messages-container',
+              swap: 'innerHTML'
+            }).then(() => {
+              document.querySelectorAll('[id^="msg-"]').forEach(el => {
+                const key = el.id.replace('msg-', '');
+                if (key) knownMessageKeys.add(key);
+              });
+              initialLoadDone = true;
+              const container = document.getElementById('messages-container');
+              if (container) {
+                setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
+              }
+            });
+          }
+
+          // Subscribe to ALL messages (not just current channel) to track unread
+          liveQueryWs.send(JSON.stringify({
+            type: 'subscribe',
+            database: DB_NAME,
+            query: `FOR msg IN messages FILTER (msg.parent_id == null OR msg.parent_id == "") RETURN msg`
+          }));
+        };
+
+        liveQueryWs.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+
+            // Handle INSERT (new message)
+            if (data.operation === 'insert' && (data.document || data.data)) {
+              const msg = data.document || data.data;
+              const msgChannelKey = extractChannelKey(msg.channel_id);
+
+              // Get current channel from DOM (more reliable than variable)
+              const container = document.getElementById('messages-container');
+              const activeChannelKey = container?.dataset.channelKey || currentChannelKey;
+
+              // Check if message is for current channel or another channel
+              if (msgChannelKey && msgChannelKey !== activeChannelKey) {
+                // Message is for another channel - increment unread count
+                // Skip if it's from the current user (don't notify yourself)
+                if (msg.user_key !== USER_KEY) {
+                  unreadCounts[msgChannelKey] = (unreadCounts[msgChannelKey] || 0) + 1;
+                  updateUnreadBadge(msgChannelKey, unreadCounts[msgChannelKey]);
+                }
+                return;
+              }
+
+              // Skip if we already have it or it's being fetched
+              if (knownMessageKeys.has(msg._key) || pendingMessageKeys.has(msg._key) || document.getElementById('msg-' + msg._key)) {
+                return;
+              }
+
+              // Mark as pending before fetching
+              pendingMessageKeys.add(msg._key);
+              knownMessageKeys.add(msg._key);
+
+              htmx.ajax('GET', '/talks/message/' + msg._key, {
+                 target: '#messages-container',
+                 swap: 'beforeend'
+              }).then(() => {
+                 pendingMessageKeys.delete(msg._key);
+                 const container = document.getElementById('messages-container');
+                 if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 100);
+              }).catch(err => {
+                 pendingMessageKeys.delete(msg._key);
+                 console.error('HTMX ajax failed:', err);
+              });
+            }
+            // Handle UPDATE (reactions, edits)
+            else if (data.operation === 'update' && (data.document || data.data)) {
+              const msg = data.document || data.data;
+              if (document.getElementById('msg-' + msg._key)) {
+                console.log('Updating message:', msg._key);
+                htmx.ajax('GET', '/talks/message/' + msg._key, {
+                  target: '#msg-' + msg._key,
+                  swap: 'outerHTML'
+                });
+              }
+            }
+             // Handle DELETE
+            else if (data.operation === 'delete' && (data.document || data.data || data.key)) {
+               // For delete, we might just get the key or the whole document
+               const key = data.key || (data.document && data.document._key) || (data.data && data.data._key);
+               console.log('Deleting message:', key);
+               const el = document.getElementById('msg-' + key);
+               if (el) el.remove();
+            }
+
+          } catch (err) { console.error('LiveQuery error:', err); }
+        };
+
+        liveQueryWs.onclose = () => setTimeout(connectLiveQuery, 5000);
+      }
+
+      // Highlight code blocks
+      function highlightCode() {
+        if (window.hljs) {
+          document.querySelectorAll('pre code:not(.hljs)').forEach(el => hljs.highlightElement(el));
+        }
+      }
+
+      // Track if LiveQuery has been initialized
+      let liveQueryInitialized = false;
+
+      // Initialize
+      document.addEventListener('DOMContentLoaded', () => {
+        connectPresence();
+        highlightCode();
+        // Fallback: connect if partial hasn't triggered it after 200ms
+        setTimeout(() => {
+          if (!liveQueryInitialized && !liveQueryWs) {
+            connectLiveQuery();
+          }
+        }, 200);
+      });
+
+      // After HTMX swaps
+      document.body.addEventListener('htmx:afterSettle', function(evt) {
+        highlightCode();
+        // Re-apply channel/user highlighting after sidebar loads
+        const targetId = evt.detail.target && evt.detail.target.id;
+        if (targetId === 'channels-list' || targetId === 'users-list') {
+          const channelKey = (window.TalksApp && window.TalksApp.currentChannelKey) || getCurrentChannelFromUrl();
+          const dmUserKey = window.TalksApp && window.TalksApp.currentDmUserKey;
+          highlightCurrentChannel(channelKey);
+          // Also highlight DM user if applicable
+          if (dmUserKey) {
+            const userEl = document.querySelector('[data-user-key="' + dmUserKey + '"]');
+            if (userEl) {
+              userEl.classList.remove('text-text-muted', 'hover:text-text', 'hover:bg-white/5');
+              userEl.classList.add('bg-white/10', 'text-text');
+            }
+          }
+        }
+      });
+
+      // Highlight current channel/DM in sidebar
+      function highlightCurrentChannel(channelKey) {
+        // Remove active class from all sidebar items
+        document.querySelectorAll('[data-channel-key]').forEach(el => {
+          el.classList.remove('bg-white/10', 'text-text');
+          el.classList.add('text-text-muted', 'hover:text-text', 'hover:bg-white/5');
+        });
+        // Highlight current user in users list
+        document.querySelectorAll('[data-user-key]').forEach(el => {
+          el.classList.remove('bg-white/10', 'text-text');
+          el.classList.add('text-text-muted', 'hover:text-text', 'hover:bg-white/5');
+        });
+        // Add active class to current channel
+        if (channelKey) {
+          const activeEl = document.querySelector('[data-channel-key="' + channelKey + '"]');
+          if (activeEl) {
+            activeEl.classList.remove('text-text-muted', 'hover:text-text', 'hover:bg-white/5');
+            activeEl.classList.add('bg-white/10', 'text-text');
+          }
+        }
+      }
+
+      // Initialize state from URL or default
+      (function() {
+         // Wait for DOM to be ready
+         document.addEventListener('DOMContentLoaded', () => {
+           const initialChannel = getCurrentChannelFromUrl();
+           // Set initial channel ID for realtime updates
+           if (window.TalksApp) {
+             window.TalksApp.currentChannelId = initialChannel;
+             window.TalksApp.currentChannelKey = initialChannel;
+
+             // Highlight initial channel
+             highlightCurrentChannel(initialChannel);
+           }
+         });
+      })();
+
+      // Get current channel from URL
+      function getCurrentChannelFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('channel') || 'general';
+      }
+
+      // Expose for channel changes
+      window.TalksApp = {
+        reconnectLiveQuery: function() {
+          liveQueryInitialized = true;
+          // Close existing connection and reconnect
+          if (liveQueryWs) {
+            liveQueryWs.close();
+            liveQueryWs = null;
+          }
+          knownMessageKeys.clear();
+          pendingMessageKeys.clear();
+          setTimeout(connectLiveQuery, 100);
+        },
+        highlightChannel: highlightCurrentChannel,
+        currentChannelKey: null,
+        currentDmUserKey: null,
+        switchChannel: function(channelKey) {
+          // Clear unread for this channel
+          unreadCounts[channelKey] = 0;
+          updateUnreadBadge(channelKey, 0);
+          // Update current channel state (DM user key will be set by partial if applicable)
+          this.currentChannelKey = channelKey;
+          this.currentChannelId = channelKey; // Alias for consistency with notification logic
+          this.currentDmUserKey = null; // Will be set by partial if it's a DM
+          // Highlight current channel in sidebar
+          highlightCurrentChannel(channelKey);
+          // Reconnect LiveQuery for new channel
+          this.reconnectLiveQuery();
+
+          // Trigger real-time UI update for the new channel (e.g. Join button)
+          const participants = knownCallParticipants[channelKey] || new Set();
+          const isInCall = participants.has(USER_KEY); // Assuming USER_KEY is available in scope
+          const headerJoinContainer = document.getElementById('channel-header-join-actions');
+          if (headerJoinContainer) {
+             if (participants.size > 0 && !isInCall) {
+               headerJoinContainer.classList.remove('hidden');
+               const avatarsContainer = document.getElementById('active-huddle-avatars');
+               if (avatarsContainer) {
+                 avatarsContainer.innerHTML = `<span class="text-xs text-text-dim px-2">${participants.size} active</span>`;
+               }
+             } else {
+               headerJoinContainer.classList.add('hidden');
+             }
+          }
+        },
+        registerMessageKey: function(key) {
+          // Register a message key to prevent LiveQuery from adding it again
+          if (key) knownMessageKeys.add(key);
+        }
+      };
+
+      // Call Notification System
+      let callNotificationWs = null;
+      let knownCallParticipants = {}; // channelKey -> Set of participant keys
+      let pendingCallData = null;
+      let ringtoneAudio = null;
+      let joiningCall = false; // Flag to suppress notifications when joining
+
+      // Check if we're joining a call via URL param
+      (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('join_call')) {
+          joiningCall = true;
+          // Reset flag after call is established
+          setTimeout(() => { joiningCall = false; }, 5000);
+        }
+      })();
+
+      async function connectCallNotifications() {
+        if (!USER_KEY) return;
+
+        const token = await getToken();
+        if (!token) return setTimeout(connectCallNotifications, 5000);
+
+        const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+        callNotificationWs = new WebSocket(url);
+
+        callNotificationWs.onopen = () => {
+          // Subscribe to ALL channel updates - filter in JS
+          callNotificationWs.send(JSON.stringify({
+            type: 'subscribe',
+            database: DB_NAME,
+            query: `FOR c IN channels RETURN c`
+          }));
+
+          // Keep-alive
+          if (window.callNotificationPing) clearInterval(window.callNotificationPing);
+          window.callNotificationPing = setInterval(() => {
+            if (callNotificationWs.readyState === WebSocket.OPEN) {
+              callNotificationWs.send(JSON.stringify({ type: 'ping' }));
+            }
+          }, 30000);
+        };
+
+        callNotificationWs.onmessage = async (e) => {
+          try {
+            const data = JSON.parse(e.data);
+
+            if ((data.operation === 'insert' || data.operation === 'update') && (data.document || data.data)) {
+              const channel = data.document || data.data;
+              let participants = channel.active_call_participants;
+              if (!Array.isArray(participants)) participants = [];
+              const channelKey = channel._key;
+              const previousParticipants = knownCallParticipants[channelKey] || new Set();
+
+              // Find new participants (excluding ourselves)
+              const newCallers = participants.filter(p =>
+                p !== USER_KEY && !previousParticipants.has(p)
+              );
+
+              // Update known participants
+              knownCallParticipants[channelKey] = new Set(participants);
+
+              // Check if we should show notification
+              // - We're not already in the call
+              // - We're not in the process of joining a call
+              // - Someone new joined
+              // - For DM channels: we must be a member
+              // - For other channels: show if we're a member
+              const isInCall = participants.includes(USER_KEY);
+              const isMember = !channel.members || channel.members.includes(USER_KEY) ||
+                              channel.type === 'standard' || channel.type === 'system';
+
+              console.log('[NOTIF] Update for channel:', channel.name, 'Type:', channel.type, 'New Callers:', newCallers, 'InCall:', isInCall, 'IsMember:', isMember);
+
+              // ---------------------------------------------------------
+              // REAL-TIME UI UPDATES (Huddles & DMs)
+              // ---------------------------------------------------------
+
+              // 1. Update Sidebar Indicator
+              const sidebarLink = document.querySelector(`a[data-channel-key="${channelKey}"]`);
+              if (sidebarLink) {
+                // Look for existing indicator or create one
+                let indicator = sidebarLink.querySelector('.huddle-indicator');
+                if (participants.length > 0) {
+                  if (!indicator) {
+                    indicator = document.createElement('span');
+                    indicator.className = 'huddle-indicator ml-auto mr-2 text-xs text-green-400';
+                    indicator.innerHTML = '<i class="fas fa-headphones"></i>';
+                    sidebarLink.appendChild(indicator);
+                  }
+                  // Optional: Update participant count tooltip or similar
+                } else if (indicator) {
+                  indicator.remove();
+                }
+              }
+
+              // 2. Update Header "Join" Button (if looking at this channel)
+              // 2. Update Header Buttons (if looking at this channel)
+              if (window.TalksApp && window.TalksApp.currentChannelId === channelKey) {
+                 const headerJoinContainer = document.getElementById('channel-header-join-actions');
+                 const headerStartContainer = document.getElementById('channel-header-start-actions');
+
+                 // If there are participants and we are NOT in the call, show Join button.
+                 // Otherwise assume we can show Start button (if we are in call, we likely want controls elsewhere?
+                 // Actually if we are IN call, we don't need Join OR Start. But sticking to simple toggle for now)
+                 const showJoin = participants.length > 0 && !isInCall;
+
+                 if (showJoin) {
+                   if (headerJoinContainer) {
+                     headerJoinContainer.classList.remove('hidden');
+                     const avatarsContainer = document.getElementById('active-huddle-avatars');
+                     if (avatarsContainer) {
+                       avatarsContainer.innerHTML = `(${participants.length})`;
+                     }
+                   }
+                   if (headerStartContainer) headerStartContainer.classList.add('hidden');
+                 } else {
+                   // No active call or we are in it
+                   if (headerJoinContainer) headerJoinContainer.classList.add('hidden');
+                   // If we are in call, we probably shouldn't show Start either?
+                   // For now, let's restore Start buttons if call ends (participants=0)
+                   // If we are IN the call, hiding both is fine, but if we leave, we want Start back.
+                   if (participants.length === 0 && headerStartContainer) {
+                      headerStartContainer.classList.remove('hidden');
+                   } else if (isInCall && headerStartContainer) {
+                      // If in call, hide start buttons too?
+                      headerStartContainer.classList.add('hidden');
+                   } else if (headerStartContainer && !isInCall) {
+                      // Call active but we are not in it -> handled by showJoin logic above (start hidden)
+                      // What if call active, we are not in, so Start hidden, Join shown. Correct.
+                   }
+                 }
+              }
+
+              // ---------------------------------------------------------
+
+              if (!isInCall && !joiningCall && newCallers.length > 0 && isMember) {
+                 // ONLY notify/ring for Direct Messages (DMs)
+                 // Huddles (channels) should be silent/passive
+                 if (channel.type === 'dm') {
+                    // Fetch caller info
+                    const callerKey = newCallers[0];
+                    try {
+                      const userRes = await fetch(`/talks/user/${callerKey}`);
+                      const userData = await userRes.json();
+                      showCallNotification({
+                        channelKey: channelKey,
+                        channelName: channel.name || 'Unknown',
+                        channelType: channel.type,
+                        callerKey: callerKey,
+                        callerName: userData.firstname || 'Someone',
+                        callerInitial: (userData.firstname || 'S').charAt(0).toUpperCase(),
+                        callType: 'audio' // Default, could be enhanced
+                      });
+                    } catch (err) {
+                      showCallNotification({
+                        channelKey: channelKey,
+                        channelName: channel.name || 'Unknown',
+                        channelType: channel.type,
+                        callerKey: callerKey,
+                        callerName: 'Someone',
+                        callerInitial: 'S',
+                        callType: 'audio'
+                      });
+                    }
+                 } else {
+                   console.log('[CALL] Huddle started in channel', channel.name, 'Type:', channel.type, '- suppressing notification');
+                 }
+              } else if (newCallers.length > 0) {
+                 console.log('[NOTIF] Skipped. InCall:', isInCall, 'Joining:', joiningCall, 'IsMember:', isMember);
+              }
+
+              // Hide notification if call ended (no participants)
+              if (participants.length === 0) {
+                hideCallNotification();
+              }
+
+              // Auto-end call if everyone else leaves (1-1 becomes 1-0 from our perspective, or N becomes 1)
+              // Only end if we were previously in a call with others (>1) and now it's just us (1)
+              const currentCallData = window.TalksCallData;
+              if (currentCallData && currentCallData.channelKey === channel._key &&
+                  isInCall && previousParticipants.size > 1 && participants.length === 1) {
+                 console.log('[CALL] Participant count dropped from', previousParticipants.size, 'to 1 - ending call');
+                 TalksCall.endCall();
+              }
+            }
+          } catch (err) {
+            console.error('Call notification error:', err);
+          }
+        };
+
+        callNotificationWs.onerror = () => {};
+
+        callNotificationWs.onclose = () => {
+          if (window.callNotificationPing) clearInterval(window.callNotificationPing);
+          setTimeout(connectCallNotifications, 5000);
+        };
+      }
+
+      function showCallNotification(callData) {
+        pendingCallData = callData;
+
+        const notification = document.getElementById('incoming-call-notification');
+        const avatar = document.getElementById('call-caller-avatar');
+        const name = document.getElementById('call-caller-name');
+        const channelName = document.getElementById('call-channel-name');
+        const typeIcon = document.getElementById('call-type-icon');
+
+        avatar.textContent = callData.callerInitial;
+        name.textContent = callData.callerName;
+
+        if (callData.channelType === 'dm') {
+          channelName.textContent = 'is calling you...';
+        } else {
+          channelName.textContent = `started a call in #${callData.channelName}`;
+        }
+
+        typeIcon.className = callData.callType === 'video'
+          ? 'fas fa-video text-[10px] text-white'
+          : 'fas fa-phone text-[10px] text-white';
+
+        notification.classList.remove('hidden');
+
+        // Play ringtone (simple beep pattern)
+        playRingtone();
+
+        // Auto-dismiss after 30 seconds
+        setTimeout(() => {
+          if (pendingCallData?.channelKey === callData.channelKey) {
+            hideCallNotification();
+          }
+        }, 30000);
+      }
+
+      function hideCallNotification() {
+        const notification = document.getElementById('incoming-call-notification');
+        notification.classList.add('hidden');
+        pendingCallData = null;
+        stopRingtone();
+      }
+
+      function playRingtone() {
+        stopRingtone();
+        // Create a simple oscillator-based ringtone
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const playTone = () => {
+            if (!pendingCallData) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 440;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.5);
+          };
+          playTone();
+          ringtoneAudio = setInterval(() => {
+            if (pendingCallData) playTone();
+            else stopRingtone();
+          }, 2000);
+        } catch (e) {
+          console.log('Audio not supported');
+        }
+      }
+
+      function stopRingtone() {
+        if (ringtoneAudio) {
+          clearInterval(ringtoneAudio);
+          ringtoneAudio = null;
+        }
+      }
+
+      // Expose call notification controls
+      window.TalksCallNotification = {
+        accept: function() {
+          if (!pendingCallData) return;
+          const data = pendingCallData;
+          hideCallNotification();
+
+          // Set joining flag to suppress further notifications
+          joiningCall = true;
+          setTimeout(() => { joiningCall = false; }, 5000);
+
+          // Start call directly (no page navigation needed - call UI is an overlay)
+          if (window.TalksCall) {
+            window.TalksCall.startCall(data.channelKey, data.callType || 'audio');
+          } else {
+            console.error('[CALL] TalksCall not available');
+          }
+        },
+        decline: async function() {
+          if (!pendingCallData) return;
+          const data = pendingCallData;
+          hideCallNotification();
+          // Send decline signal to caller
+          try {
+            await fetch('/talks/call/decline', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                channel_key: data.channelKey,
+                caller_key: data.callerKey
+              })
+            });
+          } catch (err) {
+            console.error('Decline failed:', err);
+          }
+        },
+        show: showCallNotification,
+        hide: hideCallNotification
+      };
+
+      // Start call notifications on DOMContentLoaded
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(connectCallNotifications, 500);
+      });
+
+      // Clean up on unload
+      window.addEventListener('beforeunload', function() {
+        if (callNotificationWs) {
+          callNotificationWs.onclose = null;
+          callNotificationWs.close();
+        }
+        stopRingtone();
+      });
+    })();
+
+    // WebRTC Call Module
+    window.TalksCall = (function() {
+      let localStream = null;
+      let screenStream = null;
+      let peerConnections = {};
+      let isAudioMuted = false;
+      let isVideoOff = true; // Default to true until init checks callType
+      let isScreenSharing = false;
+      let callStartTime = null;
+      let durationInterval = null;
+      let signalingWs = null;
+      let signalingPing = null;
+
+      const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+      async function initCall() {
+        const data = window.TalksCallData;
+        if (!data) {
+          console.error('[CALL] No TalksCallData');
+          return;
+        }
+
+        console.log('[CALL] initCall starting', data);
+
+        // Reset state for new call
+        peerConnections = {};
+        processedSignals.clear();
+        Object.keys(pendingCandidates).forEach(k => delete pendingCandidates[k]);
+        callStartTime = Date.now();
+
+        // Initialize Audio Context for active speaker detection
+        if (!window.audioCtx) {
+           window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        window.soundMeters = {}; // userId -> analyser
+        window.speakingThreshold = 0.01; // Adjust based on sensitivity
+
+        // Start analysis loop
+        if (window.audioAnalysisInterval) clearInterval(window.audioAnalysisInterval);
+        window.audioAnalysisInterval = setInterval(checkAudioLevels, 200);
+
+        try {
+          // Get user media
+          const constraints = {
+            audio: true,
+            video: data.callType === 'video'
+          };
+
+          // Set initial video state
+          isVideoOff = data.callType !== 'video';
+          console.log('[CALL] Initial state: isVideoOff=', isVideoOff);
+          console.log('[CALL] Requesting media with constraints:', constraints);
+          localStream = await navigator.mediaDevices.getUserMedia(constraints);
+          console.log('[CALL] Got local stream:', localStream.getTracks().map(t => t.kind + ':' + t.enabled));
+
+          // Show local video
+          const localVideo = document.getElementById('local-video');
+          const loadingIndicator = document.getElementById('local-video-loading');
+
+          if (localVideo) {
+            // Show loading if we requested video
+            if (!isVideoOff && loadingIndicator) loadingIndicator.classList.remove('hidden');
+
+            localVideo.srcObject = localStream;
+            console.log('[CALL] Set local video srcObject');
+            try {
+              await localVideo.play();
+              console.log('[CALL] Local video playing');
+              if (loadingIndicator && !isVideoOff) loadingIndicator.classList.add('hidden');
+            } catch (e) {
+              console.error('[CALL] Error playing local video:', e);
+            }
+          } else {
+            console.error('[CALL] Local video element not found!');
+          }
+
+          // Start call timer
+          durationInterval = setInterval(updateDuration, 1000);
+
+          // Connect to signaling first
+          console.log('[CALL] Connecting signaling...');
+          await connectSignaling();
+          console.log('[CALL] Signaling connected');
+
+          // Join call on server
+          console.log('[CALL] Joining call on server...');
+          const joinRes = await fetch('/talks/call/join/' + data.channelKey, { method: 'POST' });
+          const joinData = await joinRes.json();
+          console.log('[CALL] Join response:', joinData);
+
+          // Small delay to ensure join is processed before fetching participants
+          await new Promise(r => setTimeout(r, 500));
+
+          // Get existing participants and send offers to them
+          console.log('[CALL] Sending offers to participants...');
+          await sendOffersToParticipants();
+
+        } catch (err) {
+          console.error('[CALL] Failed to start call:', err);
+          alert('Could not access camera/microphone: ' + err.message);
+          endCall();
+        }
+      }
+
+      async function sendOffersToParticipants() {
+        const data = window.TalksCallData;
+        if (!data || !data.channelKey) {
+           console.error('[CALL] No call data/channelKey available for fetching participants');
+           return;
+        }
+
+        try {
+          console.log('[CALL] Fetching participants for channel:', data.channelKey);
+          const res = await fetch('/talks/call/participants/' + data.channelKey);
+          const result = await res.json();
+          console.log('[CALL] Participants result:', result);
+
+          if (result.participants && result.participants.length > 0) {
+            console.log('[CALL] Found', result.participants.length, 'participants to connect to');
+            for (const participant of result.participants) {
+              // Skip if we already have a connection to this user
+              if (peerConnections[participant._key]) {
+                console.log('[CALL] Already connected to:', participant._key, '- skipping');
+                continue;
+              }
+              console.log('[CALL] Creating offer for participant:', participant._key);
+              // Create peer connection and send offer
+              const pc = createPeerConnection(participant._key);
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              console.log('[CALL] Sending offer to:', participant._key);
+              await sendSignal(participant._key, 'offer', offer);
+            }
+          } else {
+            console.log('[CALL] No other participants in call yet - waiting for incoming connections');
+          }
+        } catch (err) {
+          console.error('[CALL] Error fetching participants:', err);
+        }
+      }
+
+      function updateDuration() {
+        if (!callStartTime) return;
+        const seconds = Math.floor((Date.now() - callStartTime) / 1000);
+        const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const secs = (seconds % 60).toString().padStart(2, '0');
+        const el = document.getElementById('call-duration');
+        if (el) el.textContent = mins + ':' + secs;
+      }
+
+      function connectSignaling() {
+        return new Promise(async (resolve, reject) => {
+          const data = window.TalksCallData;
+          try {
+            const tokenRes = await fetch('/talks/livequery_token');
+            const tokenData = await tokenRes.json();
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host.replace(/:\d+$/, '') + ':6745';
+            const url = `${wsProtocol}//${host}/_api/ws/changefeed?token=${tokenData.token}`;
+
+            signalingWs = new WebSocket(url);
+
+            signalingWs.onopen = () => {
+              // Subscribe to signals for this user
+              signalingWs.send(JSON.stringify({
+                type: 'subscribe',
+                database: '<%= db_name or "_system" %>',
+                query: `FOR s IN signals FILTER s.to_user == "${data.userKey}" RETURN s`
+              }));
+
+              // Keep-alive
+              if (signalingPing) clearInterval(signalingPing);
+              signalingPing = setInterval(() => {
+                if (signalingWs.readyState === WebSocket.OPEN) {
+                  signalingWs.send(JSON.stringify({ type: 'ping' }));
+                }
+              }, 30000);
+
+              resolve();
+            };
+
+            signalingWs.onerror = (err) => {
+              reject(err);
+            };
+
+            signalingWs.onmessage = async (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                console.log('[CALL] Signaling WS message:', msg.type || msg.operation, msg);
+                // Handle both 'document' and 'data' structures
+                const signalDoc = msg.document || msg.data;
+                if (msg.operation === 'insert' && signalDoc) {
+                  // IMPORTANT: Only process signals meant for us (LiveQuery filter might not apply to changes)
+                  if (signalDoc.to_user !== data.userKey) {
+                    console.log('[CALL] Ignoring signal not meant for us:', signalDoc.to_user, '!==', data.userKey);
+                    return;
+                  }
+                  // Ignore signals from ourselves
+                  if (signalDoc.from_user === data.userKey) {
+                    console.log('[CALL] Ignoring signal from ourselves');
+                    return;
+                  }
+                  console.log('[CALL] New signal received:', signalDoc.type, 'from:', signalDoc.from_user);
+                  await handleSignal(signalDoc);
+                  // Delete processed signal - use msg.key or signalDoc._key
+                  const signalKey = msg.key || signalDoc._key;
+                  if (signalKey) {
+                    fetch('/talks/call/signal/' + signalKey, { method: 'DELETE' });
+                  }
+                }
+              } catch (err) {
+                console.error('[CALL] Signaling message error:', err);
+              }
+            };
+
+            signalingWs.onclose = () => {
+              if (signalingPing) clearInterval(signalingPing);
+              if (localStream) setTimeout(connectSignaling, 3000);
+            };
+
+          } catch (err) {
+            console.error('Signaling error:', err);
+            reject(err);
+          }
         });
       }
-    });
+
+      // Track processed signals to avoid duplicates
+      const processedSignals = new Set();
+      // Queue ICE candidates that arrive before remote description
+      const pendingCandidates = {};
+
+      async function handleSignal(signal) {
+        // Ignore signals older than when this call started (stale signals from previous calls)
+        if (signal.timestamp && callStartTime && signal.timestamp * 1000 < callStartTime - 5000) {
+          console.log('[CALL] Ignoring old signal from:', signal.from_user, 'timestamp:', signal.timestamp);
+          return;
+        }
+
+        // Create unique signal ID to avoid processing duplicates
+        const signalId = signal._key || `${signal.from_user}-${signal.type}-${Date.now()}`;
+        if (processedSignals.has(signalId)) {
+          console.log('[CALL] Skipping duplicate signal:', signalId);
+          return;
+        }
+        processedSignals.add(signalId);
+
+        console.log('[CALL] Received signal:', signal.type, 'from:', signal.from_user);
+        const fromUser = signal.from_user;
+        let pc = peerConnections[fromUser];
+
+        if (signal.type === 'presence') {
+          console.log('[CALL] Presence update from:', fromUser, signal.data);
+          // Find remote participant wrapper
+          // Wrapper ID format: remote-wrapper-${userId}
+          const remoteWrapper = document.getElementById(`remote-wrapper-${fromUser}`);
+          if (remoteWrapper) {
+             const muteIcon = remoteWrapper.querySelector('.remote-mute-icon');
+             if (muteIcon) {
+                if (signal.data.muted) {
+                   muteIcon.classList.remove('hidden');
+                } else {
+                   muteIcon.classList.add('hidden');
+                }
+             }
+          }
+          return;
+        }
+
+        if (signal.type === 'offer') {
+          console.log('[CALL] Processing offer from:', fromUser);
+
+          if (!pc) {
+            pc = createPeerConnection(fromUser);
+          } else {
+             // Existing connection - this is a renegotiation
+             console.log('[CALL] renegotiating existing connection with:', fromUser);
+             // If we have a local offer (glare), we usually back off or compare IDs.
+             // For simplicity, if we are "polite", we accept.
+             // Ideally we'd have a 'polite' peer role.
+             // Resetting to stable if needed is complex.
+             // But simpler: just set remote description. If it fails, we might need rollback.
+          }
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.data));
+
+          // Process any queued ICE candidates
+          if (pendingCandidates[fromUser]) {
+            console.log('[CALL] Processing', pendingCandidates[fromUser].length, 'queued ICE candidates');
+            for (const candidate of pendingCandidates[fromUser]) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (e) { console.warn('[CALL] Failed to add queued candidate:', e); }
+            }
+            delete pendingCandidates[fromUser];
+          }
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          console.log('[CALL] Sending answer to:', fromUser);
+          await sendSignal(fromUser, 'answer', answer);
+
+        } else if (signal.type === 'answer') {
+          console.log('[CALL] Processing answer from:', fromUser);
+          if (pc && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.data));
+
+            // Process any queued ICE candidates
+            if (pendingCandidates[fromUser]) {
+              console.log('[CALL] Processing', pendingCandidates[fromUser].length, 'queued ICE candidates');
+              for (const candidate of pendingCandidates[fromUser]) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) { console.warn('[CALL] Failed to add queued candidate:', e); }
+              }
+              delete pendingCandidates[fromUser];
+            }
+          } else {
+            console.warn('[CALL] No pending offer for answer from:', fromUser, 'state:', pc?.signalingState);
+          }
+
+        } else if (signal.type === 'candidate') {
+          console.log('[CALL] Processing ICE candidate from:', fromUser);
+          if (pc && pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(signal.data));
+            } catch (e) { console.warn('[CALL] Failed to add ICE candidate:', e); }
+          } else {
+            // Queue the candidate for later
+            console.log('[CALL] Queuing ICE candidate - no remote description yet');
+            if (!pendingCandidates[fromUser]) pendingCandidates[fromUser] = [];
+            pendingCandidates[fromUser].push(signal.data);
+          }
+
+        } else if (signal.type === 'bye') {
+          console.log('[CALL] User left:', fromUser);
+          if (pc) {
+            pc.close();
+            delete peerConnections[fromUser];
+            removeRemoteVideo(fromUser);
+          }
+          delete pendingCandidates[fromUser];
+        } else if (signal.type === 'decline') {
+          console.log('[CALL] Call declined by:', fromUser);
+          const declinedByName = signal.data?.declined_by_name || 'User';
+          alert(`${declinedByName} declined the call`);
+          endCall();
+        }
+      }
+
+      function createPeerConnection(remoteUser) {
+        // Check if we already have a connection for this user
+        if (peerConnections[remoteUser]) {
+          console.log('[CALL] Peer connection already exists for:', remoteUser);
+          return peerConnections[remoteUser];
+        }
+
+        console.log('[CALL] Creating peer connection for:', remoteUser);
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        peerConnections[remoteUser] = pc;
+
+        // Add local tracks
+        if (localStream) {
+          const tracks = localStream.getTracks();
+          console.log('[CALL] Adding', tracks.length, 'local tracks to peer connection');
+          tracks.forEach(track => {
+            console.log('[CALL] Adding track:', track.kind, track.enabled ? 'enabled' : 'disabled');
+            pc.addTrack(track, localStream);
+          });
+        } else {
+          console.warn('[CALL] No local stream available when creating peer connection!');
+        }
+
+        // Handle ICE candidates
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            console.log('[CALL] Sending ICE candidate to:', remoteUser);
+            sendSignal(remoteUser, 'candidate', e.candidate);
+          }
+        };
+
+        // Handle connection state changes
+        pc.onconnectionstatechange = () => {
+          console.log('[CALL] Connection state with', remoteUser, ':', pc.connectionState);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          console.log('[CALL] ICE connection state with', remoteUser, ':', pc.iceConnectionState);
+          if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+            console.warn('[CALL] ICE connection failed/disconnected. Attempting restart...');
+            // Optional: Automatically try to restart ICE
+             pc.createOffer({ iceRestart: true })
+               .then(offer => pc.setLocalDescription(offer))
+               .then(() => sendSignal(remoteUser, 'offer', pc.localDescription))
+               .catch(e => console.error('[CALL] ICE restart failed:', e));
+          }
+        };
+
+        // Handle remote stream
+        pc.ontrack = (e) => {
+          console.log('[CALL] Received remote track from:', remoteUser, e.track.kind, 'stream:', e.streams[0]?.id);
+          if (e.streams && e.streams[0]) {
+            addRemoteVideo(remoteUser, e.streams[0]);
+          } else {
+            console.error('[CALL] No stream in ontrack event!');
+          }
+        };
+
+        return pc;
+      }
+
+      async function addRemoteVideo(userId, stream) {
+        console.log('[CALL] Adding remote video for:', userId, 'tracks:', stream.getTracks().map(t => t.kind + ':' + t.readyState));
+        const container = document.getElementById('remote-videos');
+        if (!container) return;
+
+        // Hide waiting message
+        const waitingMsg = document.getElementById('waiting-message');
+        if (waitingMsg) waitingMsg.style.display = 'none';
+
+        // Check if wrapper already exists
+        let wrapper = document.getElementById('remote-wrapper-' + userId);
+        let videoEl = document.getElementById('remote-' + userId);
+
+        const isVideo = stream.getVideoTracks().length > 0;
+        console.log('[CALL] Stream has video:', isVideo);
+
+        if (!wrapper) {
+          wrapper = document.createElement('div');
+          wrapper.id = 'remote-wrapper-' + userId;
+          // For 1-1 priority, we default to full width, but layout function will handle positioning
+          wrapper.className = 'remote-participant-wrapper flex items-center justify-center w-full h-full relative overflow-hidden';
+
+          const userName = 'Participant';
+
+          if (isVideo) {
+             wrapper.innerHTML = `
+              <video id="remote-${userId}" autoplay playsinline class="w-full h-full object-contain bg-black"></video>
+              <div class="absolute top-6 left-6 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full text-sm text-white font-medium user-name-label opacity-0 hover:opacity-100 transition-opacity">${userName}</div>
+              <div class="remote-mute-icon absolute top-6 right-6 w-8 h-8 rounded-full bg-red-500/90 text-white flex items-center justify-center text-xs shadow-lg hidden z-10">
+                <i class="fas fa-microphone-slash"></i>
+              </div>
+            `;
+          } else {
+             wrapper.innerHTML = `
+              <div class="w-32 h-32 rounded-full bg-gradient-to-br from-gray-700 to-gray-600 flex items-center justify-center text-white text-4xl font-bold shadow-2xl user-initial-label animate-pulse">?</div>
+              <audio id="remote-${userId}" autoplay></audio>
+              <div class="absolute top-6 left-6 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full text-sm text-white font-medium user-name-label">${userName}</div>
+              <div class="remote-mute-icon absolute top-6 right-6 w-8 h-8 rounded-full bg-red-500/90 text-white flex items-center justify-center text-xs shadow-lg hidden z-10">
+                <i class="fas fa-microphone-slash"></i>
+              </div>
+            `;
+          }
+          container.appendChild(wrapper);
+          videoEl = wrapper.querySelector(isVideo ? 'video' : 'audio');
+
+           // Fetch user info
+          fetch('/talks/user/' + userId).then(res => res.json()).then(userData => {
+            if (userData.firstname) {
+              const name = userData.firstname + (userData.lastname ? ' ' + userData.lastname : '');
+              const nameEl = wrapper.querySelector('.user-name-label');
+              if (nameEl) nameEl.innerText = name;
+              const initialEl = wrapper.querySelector('.user-initial-label');
+              if (initialEl) initialEl.innerText = userData.firstname.charAt(0).toUpperCase();
+            }
+          }).catch(e => console.log('User info fetch error:', e));
+
+        } else {
+          // Upgrade logic
+           const isWrapperVideo = wrapper.querySelector('video') !== null;
+           if (isVideo && !isWrapperVideo) {
+             console.log('[CALL] Upgrading remote element to video');
+             wrapper.innerHTML = `
+              <video id="remote-${userId}" autoplay playsinline class="w-full h-full object-contain bg-black"></video>
+              <div class="absolute top-6 left-6 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full text-sm text-white font-medium user-name-label">Participant</div>
+            `;
+            // Re-fetch name if needed, or just let it be generic for a second
+            videoEl = document.getElementById('remote-' + userId);
+           } else {
+             videoEl = document.getElementById('remote-' + userId);
+           }
+        }
+
+        if (videoEl) {
+          videoEl.srcObject = stream;
+          videoEl.play().catch(e => {
+             if (e.name !== 'AbortError') console.error('[CALL] Play error:', e);
+          });
+
+          // Setup audio analysis for active speaker detection
+          setupAudioAnalysis(stream, userId);
+        }
+
+        updateLayout();
+      }
+
+      function removeRemoteVideo(userId) {
+        const wrapper = document.getElementById('remote-wrapper-' + userId);
+        if (wrapper) wrapper.remove();
+      }
+
+      async function sendSignal(toUser, type, data) {
+        const callData = window.TalksCallData;
+        console.log('[CALL] Sending signal:', type, 'to:', toUser);
+        try {
+          const res = await fetch('/talks/call/signal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to_user: toUser,
+              from_user: callData.userKey,
+              type: type,
+              data: data,
+              channel_id: callData.channelId
+            })
+          });
+          const result = await res.json();
+          console.log('[CALL] Signal sent response:', result);
+        } catch (err) {
+          console.error('[CALL] Failed to send signal:', err);
+        }
+      }
+
+      function toggleMute() {
+        isAudioMuted = !isAudioMuted;
+        if (localStream) {
+          localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
+        }
+        const btnIcon = document.querySelector('#btn-mute i');
+        const indicator = document.getElementById('local-mute-indicator');
+        if (btnIcon) {
+          btnIcon.className = isAudioMuted
+            ? 'fas fa-microphone-slash text-xl text-red-400 group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+            : 'fas fa-microphone text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]';
+        }
+        if (indicator) indicator.classList.toggle('hidden', !isAudioMuted);
+
+        // Broadcast mute state to peers
+        const presence = { muted: isAudioMuted };
+        Object.keys(peerConnections).forEach(userId => {
+           sendSignal(userId, 'presence', presence);
+        });
+      }
+
+      async function toggleVideo() {
+        if (isVideoOff) {
+          // Turning video ON
+          if (localStream && localStream.getVideoTracks().length > 0) {
+            // Tracks exist, just enable
+            localStream.getVideoTracks().forEach(t => t.enabled = true);
+            isVideoOff = false;
+            updateVideoButton();
+            showLocalVideo(true);
+          } else {
+            // Need to request video
+            try {
+              console.log('[CALL] Upgrading to video...');
+              const loadingIndicator = document.getElementById('local-video-loading');
+              const avatar = document.getElementById('local-avatar');
+              if (loadingIndicator) loadingIndicator.classList.remove('hidden');
+              if (avatar) avatar.classList.add('hidden');
+
+              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              const videoTrack = stream.getVideoTracks()[0];
+
+              if (localStream) {
+                localStream.addTrack(videoTrack);
+              } else {
+                localStream = stream;
+              }
+
+              // Add to all peer connections and renegotiate
+              for (const [userId, pc] of Object.entries(peerConnections)) {
+                console.log('[CALL] Adding video track to peer:', userId);
+                pc.addTrack(videoTrack, localStream);
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                sendSignal(userId, 'offer', offer);
+              }
+
+              isVideoOff = false;
+              updateVideoButton();
+              showLocalVideo(true);
+
+              // Ensure local video plays
+              const localVideo = document.getElementById('local-video');
+              if (localVideo) {
+                localVideo.srcObject = localStream;
+                localVideo.play().then(() => {
+                   if (loadingIndicator) loadingIndicator.classList.add('hidden');
+                }).catch(e => console.error('Play error:', e));
+              }
+
+            } catch (err) {
+              console.error('[CALL] Failed to upgrade to video:', err);
+              alert('Could not access camera: ' + err.message);
+              const loadingIndicator = document.getElementById('local-video-loading');
+              const avatar = document.getElementById('local-avatar');
+              if (loadingIndicator) loadingIndicator.classList.add('hidden');
+              if (avatar) avatar.classList.remove('hidden');
+            }
+          }
+        } else {
+          // Turning video OFF
+          if (localStream) {
+            localStream.getVideoTracks().forEach(t => t.enabled = false);
+            // Optionally stop the track to release hardware, but disabling is faster for toggle
+            // t.stop();
+          }
+          isVideoOff = true;
+          updateVideoButton();
+          showLocalVideo(false);
+        }
+      }
+
+      function updateVideoButton() {
+        const btnIcon = document.querySelector('#btn-video i');
+        if (btnIcon) {
+          btnIcon.className = isVideoOff
+            ? 'fas fa-video-slash text-xl text-red-400 group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+            : 'fas fa-video text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]';
+        }
+      }
+
+      function showLocalVideo(show) {
+        // In the new PIP design, we just toggle the avatar visibility overlay
+        const avatar = document.getElementById('local-avatar');
+        if (avatar) {
+          if (show) {
+             avatar.classList.add('hidden');
+          } else {
+             avatar.classList.remove('hidden');
+          }
+        }
+      }
+
+      async function toggleScreenShare() {
+        const btn = document.getElementById('btn-screen');
+        const localVideo = document.getElementById('local-video');
+
+        if (isScreenSharing) {
+          // Stop screen share
+          if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+          }
+
+          // Restore camera track to peers
+          // Restore camera track to peers or stop sending video
+          const videoTrack = localStream ? localStream.getVideoTracks()[0] : null;
+
+          Object.values(peerConnections).forEach(pc => {
+            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+              if (videoTrack) {
+                // Restore camera
+                sender.replaceTrack(videoTrack).catch(e => console.error('[CALL] Failed to restore camera track:', e));
+              } else {
+                // Stop sending video (was screen share, now nothing)
+                // Passing null to replaceTrack stops the sender
+                 sender.replaceTrack(null).catch(e => console.error('[CALL] Failed to clear video track:', e));
+              }
+            } else {
+              // Should not happen if we were screen sharing, but maybe we were receiving only?
+               // If we were screen sharing, we MUST have had a sender.
+               // Check if we have a transceiver that is sendrecv or sendonly
+               // But usually looking for track.kind === 'video' works if we just stopped the track
+               // The track property of sender might be the old STOPPED track, so kind is still 'video'.
+            }
+          });
+
+          // Restore local video display
+          if (localVideo) {
+            localVideo.srcObject = localStream;
+            if (!isVideoOff) {
+               localVideo.play().catch(e => console.error('Play restored local error:', e));
+            }
+          }
+
+          // Revert UI state based on camera toggle
+          showLocalVideo(!isVideoOff);
+
+          isScreenSharing = false;
+          const btnIcon = document.querySelector('#btn-screen i');
+          if (btnIcon) btnIcon.className = 'fas fa-desktop text-xl group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]';
+
+        } else {
+          // Start screen share
+          try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            screenStream = stream;
+            const screenTrack = stream.getVideoTracks()[0];
+
+            screenTrack.onended = () => {
+              if (isScreenSharing) toggleScreenShare();
+            };
+
+            // Replace track for peers
+            Object.entries(peerConnections).forEach(([userId, pc]) => {
+              const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+              if (sender) {
+                sender.replaceTrack(screenTrack).catch(e => console.error('Replace track error:', e));
+              } else {
+                // If no video sender (audio-only call), add track and renegotiate
+                console.log('[CALL] Adding screen track to audio-only peer:', userId);
+                pc.addTrack(screenTrack, localStream || stream);
+                pc.createOffer({ iceRestart: true }).then(offer => {
+                   return pc.setLocalDescription(offer).then(() => offer);
+                }).then(offer => {
+                   sendSignal(userId, 'offer', offer);
+                }).catch(e => console.error('[CALL] Renegotiation failed:', e));
+              }
+            });
+
+            // SHOW local screen share regardless of camera state
+            if (localVideo) {
+              localVideo.srcObject = screenStream;
+              localVideo.play().catch(e => console.error('Play screen error:', e));
+            }
+            showLocalVideo(true); // Force video UI visible
+
+            isScreenSharing = true;
+            const btnIcon = document.querySelector('#btn-screen i');
+            if (btnIcon) btnIcon.className = 'fas fa-desktop text-xl text-blue-400 group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]';
+
+          } catch (err) {
+            console.error('Screen share error:', err);
+          }
+        }
+      }
+
+      function endCall() {
+        // Send bye to all peers
+        Object.keys(peerConnections).forEach(userId => {
+          sendSignal(userId, 'bye', {});
+          peerConnections[userId].close();
+        });
+        peerConnections = {};
+
+        // Stop media
+        if (localStream) {
+          localStream.getTracks().forEach(t => t.stop());
+          localStream = null;
+        }
+        if (screenStream) {
+          screenStream.getTracks().forEach(t => t.stop());
+          screenStream = null;
+        }
+
+        // Close signaling
+        if (signalingWs) {
+          signalingWs.close();
+          signalingWs = null;
+        }
+
+        // Stop timer
+        if (durationInterval) {
+          clearInterval(durationInterval);
+          durationInterval = null;
+        }
+
+        // Leave call on server
+        const data = window.TalksCallData;
+        if (data && data.channelKey) {
+          fetch('/talks/call/leave/' + data.channelKey, { method: 'POST' });
+        }
+
+        // Clear call data to prevent double cleanup on page unload
+        window.TalksCallData = null;
+
+        // Remove overlay
+        const overlay = document.getElementById('call-overlay');
+        if (overlay) overlay.remove();
+      }
+
+      function startCall(channelKey, callType) {
+        console.log('[CALL] Starting call for channel:', channelKey, 'Type:', callType);
+        // Set flag to prevent showing call notifications while we're joining
+        if (typeof joiningCall !== 'undefined') {
+          joiningCall = true;
+          setTimeout(() => { joiningCall = false; }, 5000);
+        }
+
+        // Use path-based param to ensure type is preserved
+        const url = '/talks/call/ui/' + channelKey + '/' + (callType || 'audio');
+        htmx.ajax('GET', url, {
+          target: 'body',
+          swap: 'beforeend'
+        });
+      }
+
+      function setupAudioAnalysis(stream, userId) {
+        if (!window.audioCtx) return;
+        try {
+           const source = window.audioCtx.createMediaStreamSource(stream);
+           const analyser = window.audioCtx.createAnalyser();
+           analyser.fftSize = 256;
+           source.connect(analyser);
+           window.soundMeters[userId] = analyser;
+        } catch (e) {
+           console.error('[CALL] Audio analysis setup failed:', e);
+        }
+      }
+
+      function updateLayout() {
+         const container = document.getElementById('remote-videos');
+         if (!container) return;
+
+         const wrappers = container.querySelectorAll('.remote-participant-wrapper');
+         const count = wrappers.length;
+
+         const waitingMsg = document.getElementById('waiting-message');
+         if (waitingMsg) waitingMsg.style.display = count === 0 ? 'flex' : 'none';
+
+         // Reset container classes
+         container.className = 'absolute inset-0 z-0 flex items-center justify-center bg-zinc-900';
+
+         // Helper to detect screen share (check video track settings)
+         let screenShareWrapper = null;
+         wrappers.forEach(w => {
+            w.classList.remove('absolute', 'inset-0', 'col-span-2', 'row-span-2');
+            w.classList.add('w-full', 'h-full'); // Default to fill cell
+            const video = w.querySelector('video');
+            if (video && video.srcObject) {
+               const tracks = video.srcObject.getVideoTracks();
+               if (tracks.length > 0) {
+                  const settings = tracks[0].getSettings();
+                  // displaySurface is standard for screen share
+                  if (settings.displaySurface || settings.cursor) {
+                     screenShareWrapper = w;
+                  }
+               }
+            }
+         });
+
+         if (count === 1) {
+            // Immersive 1-1
+            wrappers[0].classList.add('absolute', 'inset-0');
+            // Remove w/h limits to allow object-contain to work fully within absolute
+            wrappers[0].classList.remove('w-full', 'h-full');
+         } else if (count > 0) {
+            // Grid Layout
+            container.classList.remove('flex', 'items-center', 'justify-center');
+            container.classList.add('grid', 'gap-4', 'p-4', 'overflow-y-auto');
+
+            // Layout logic based on count and screen share
+            if (screenShareWrapper) {
+               // Screen share priority
+               container.classList.add('grid-cols-1', 'md:grid-cols-3', 'grid-rows-[2fr_1fr]');
+               screenShareWrapper.classList.add('md:col-span-2', 'md:row-span-2');
+            } else {
+               // Normal Grid
+               if (count === 2) container.classList.add('grid-cols-1', 'md:grid-cols-2');
+               else if (count <= 4) container.classList.add('grid-cols-2', 'md:grid-cols-2');
+               else container.classList.add('grid-cols-2', 'md:grid-cols-3');
+            }
+         }
+      }
+
+      function checkAudioLevels() {
+        if (!window.soundMeters) return;
+
+        Object.entries(window.soundMeters).forEach(([userId, analyser]) => {
+           const dataArray = new Uint8Array(analyser.frequencyBinCount);
+           analyser.getByteFrequencyData(dataArray);
+
+           // Calculate average volume
+           let sum = 0;
+           for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+           }
+           const average = sum / dataArray.length;
+
+           // Threshold check (approx 10-20 out of 255 for speaking)
+           const isSpeaking = average > 10;
+
+           const wrapper = document.getElementById(`remote-wrapper-${userId}`);
+           if (wrapper) {
+             // Add/remove visual indicator
+             // We can use a border or a glowing ring
+             if (isSpeaking) {
+                // Add ring if not present
+                wrapper.classList.add('ring-4', 'ring-green-500', 'ring-opacity-70');
+                // Store last spoke time (could be used for layout sorting later)
+                wrapper.dataset.lastSpoke = Date.now();
+             } else {
+                wrapper.classList.remove('ring-4', 'ring-green-500', 'ring-opacity-70');
+             }
+           }
+        });
+      }
+
+      return {
+        initCall,
+        toggleMute,
+        toggleVideo,
+        toggleScreenShare,
+        endCall,
+        startCall
+      };
+    })();
+
+    <% if is_projects then %>
+    // Projects-specific functions (only init once)
+    if (!window._projectsInitialized) {
+      window._projectsInitialized = true;
+
+      window.openTaskPanel = function(key) {
+        const panel = document.getElementById('task-panel');
+        const content = document.getElementById('task-panel-content');
+        if (panel && content) {
+          panel.classList.remove('hidden');
+          htmx.ajax('GET', '/projects/task/' + key, { target: content, swap: 'innerHTML' });
+        }
+      };
+
+      window.closeTaskPanel = function() {
+        const panel = document.getElementById('task-panel');
+        if (panel) panel.classList.add('hidden');
+      };
+
+      window.refreshSidebar = function() {
+        document.body.dispatchEvent(new CustomEvent('refreshSidebar'));
+      };
+
+      // Close task panel when clicking outside
+      let justOpened = false;
+      const originalOpenTaskPanel = window.openTaskPanel;
+      window.openTaskPanel = function(key) {
+        justOpened = true;
+        originalOpenTaskPanel(key);
+        setTimeout(() => { justOpened = false; }, 100);
+      };
+
+      document.addEventListener('click', function(e) {
+        if (justOpened) return; // Don't close on the same click that opened
+        const panel = document.getElementById('task-panel');
+        if (panel && !panel.classList.contains('hidden')) {
+          if (!panel.contains(e.target) && !e.target.closest('.task-card')) {
+            closeTaskPanel();
+          }
+        }
+      });
+
+      // Close on escape key
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          closeTaskPanel();
+        }
+      });
+    }
+
+    // Projects Sidebar LiveQuery for real-time updates
+    if (!window._sidebarLQInitialized) {
+      window._sidebarLQInitialized = true;
+      console.log('[SIDEBAR LQ] Initializing...');
+
+      (function() {
+        const USER_KEY = '<%= current_user and current_user._key or "" %>';
+        const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+        const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        console.log('[SIDEBAR LQ] USER_KEY:', USER_KEY, 'DB_HOST:', DB_HOST);
+
+        let sidebarWs = null;
+        let lastTasksHash = null;
+
+        async function getToken() {
+          try {
+            const res = await fetch('/talks/livequery_token');
+            const data = await res.json();
+            return data.token;
+          } catch (e) {
+            console.error('Token fetch failed:', e);
+            return null;
+          }
+        }
+
+        async function connectSidebarLiveQuery() {
+          if (!USER_KEY) return;
+
+          const token = await getToken();
+          if (!token) return setTimeout(connectSidebarLiveQuery, 5000);
+
+          const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+          sidebarWs = new WebSocket(url);
+          let sidebarPing = null;
+
+          sidebarWs.onopen = () => {
+            console.log('[SIDEBAR LQ] WebSocket connected');
+            const lqMsg = {
+              type: 'live_query',
+              database: '<%= db_name or "_system" %>',
+              query: `FOR t IN tasks FILTER t.assignee_id == "${USER_KEY}" RETURN { _key: t._key, status: t.status, priority: t.priority, updated_at: t.updated_at }`
+            };
+            console.log('[SIDEBAR LQ] Sending:', lqMsg);
+            sidebarWs.send(JSON.stringify(lqMsg));
+
+            if (sidebarPing) clearInterval(sidebarPing);
+            sidebarPing = setInterval(() => {
+              if (sidebarWs.readyState === WebSocket.OPEN) {
+                sidebarWs.send(JSON.stringify({ type: 'ping' }));
+              }
+            }, 30000);
+          };
+
+          sidebarWs.onmessage = (e) => {
+            try {
+              const data = JSON.parse(e.data);
+              console.log('[SIDEBAR LQ] Received:', data.type || data.operation, data);
+              if (data.type === 'query_result' && data.result) {
+                const newHash = JSON.stringify(data.result.map(t => `${t._key}:${t.status}:${t.priority}:${t.updated_at}`).sort());
+                console.log('[SIDEBAR LQ] Hash comparison:', lastTasksHash !== null, 'changed:', newHash !== lastTasksHash);
+                if (lastTasksHash !== null && newHash !== lastTasksHash) {
+                  console.log('[SIDEBAR LQ] Refreshing sidebar!');
+                  refreshSidebar();
+                }
+                lastTasksHash = newHash;
+              }
+            } catch (err) { console.error('[SIDEBAR LQ] Error:', err); }
+          };
+
+          sidebarWs.onclose = () => {
+            if (sidebarPing) clearInterval(sidebarPing);
+            setTimeout(connectSidebarLiveQuery, 5000);
+          };
+        }
+
+        window.addEventListener('beforeunload', function() {
+          if (sidebarWs) {
+            sidebarWs.onclose = null;
+            sidebarWs.close();
+          }
+        });
+
+        connectSidebarLiveQuery();
+      })();
+    }
+    <% end %>
   </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
   <%- RefreshPageForDevMode() %>
 </body>
 </html>

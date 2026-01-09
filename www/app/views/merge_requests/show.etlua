@@ -1,0 +1,252 @@
+<%
+local status_styles = {
+  open = { bg = "bg-success/20", text = "text-success", icon = "fa-circle-dot" },
+  merged = { bg = "bg-primary/20", text = "text-primary", icon = "fa-code-merge" },
+  closed = { bg = "bg-white/10", text = "text-text-dim", icon = "fa-circle-xmark" }
+}
+local style = status_styles[merge_request.status] or status_styles.closed
+
+-- Helper to parse and colorize diff
+local function format_diff_line(line)
+  if line:sub(1, 1) == "+" and line:sub(1, 3) ~= "+++" then
+    return '<span class="text-success">' .. line:gsub("<", "&lt;"):gsub(">", "&gt;") .. '</span>'
+  elseif line:sub(1, 1) == "-" and line:sub(1, 3) ~= "---" then
+    return '<span class="text-error">' .. line:gsub("<", "&lt;"):gsub(">", "&gt;") .. '</span>'
+  elseif line:sub(1, 2) == "@@" then
+    return '<span class="text-primary">' .. line:gsub("<", "&lt;"):gsub(">", "&gt;") .. '</span>'
+  elseif line:sub(1, 4) == "diff" or line:sub(1, 5) == "index" or line:sub(1, 3) == "---" or line:sub(1, 3) == "+++" then
+    return '<span class="text-text-dim">' .. line:gsub("<", "&lt;"):gsub(">", "&gt;") .. '</span>'
+  else
+    return line:gsub("<", "&lt;"):gsub(">", "&gt;")
+  end
+end
+%>
+
+<!-- Fixed Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30 shrink-0">
+  <div class="flex items-center gap-4">
+    <a href="/repositories/<%= repository.id %>/merge_requests" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-text-dim hover:text-white">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="h-6 w-px bg-white/10"></div>
+    <div>
+      <div class="flex items-center gap-2 mb-0.5">
+        <span class="<%= style.bg %> <%= style.text %> px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+          <i class="fas <%= style.icon %> text-[10px]"></i>
+          <%= merge_request.status %>
+        </span>
+        <span class="text-xs text-text-dim">MR #<%= merge_request.id:sub(1,8) %></span>
+      </div>
+      <h1 class="text-sm font-bold text-white leading-none"><%= merge_request.title %></h1>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-2">
+      <% if merge_request.status == "open" then %>
+        <% if repository.owner_id == current_user._key then %>
+        <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>/merge" method="POST" class="inline">
+          <button type="submit" class="px-4 py-1.5 bg-success hover:bg-success/80 text-white rounded-lg transition-colors flex items-center gap-2 text-xs font-bold shadow-lg shadow-success/20">
+            <i class="fas fa-code-merge"></i>
+            <span>Merge</span>
+          </button>
+        </form>
+        <% end %>
+        <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>/close" method="POST" class="inline">
+          <button type="submit" class="px-4 py-1.5 bg-white/5 hover:bg-white/10 text-text rounded-lg transition-colors text-xs font-medium border border-white/5">
+            Close
+          </button>
+        </form>
+      <% elseif merge_request.status == "closed" then %>
+        <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>/reopen" method="POST" class="inline">
+          <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary/80 text-white rounded-lg transition-colors text-xs font-bold shadow-lg shadow-primary/20">
+            Reopen
+          </button>
+        </form>
+      <% end %>
+      
+      <% if merge_request.author_id == current_user._key then %>
+      <div class="h-6 w-px bg-white/10 mx-1"></div>
+      <a href="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>/edit"
+         class="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 text-text-dim hover:text-white rounded-lg transition-colors border border-white/5" title="Edit">
+        <i class="fas fa-pen text-xs"></i>
+      </a>
+      <% end %>
+  </div>
+</div>
+
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- Description & Context -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+      <div class="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+         <div class="flex items-center gap-2 text-xs">
+           <span class="text-text-dim">Requesting merge from</span>
+           <code class="bg-white/5 px-2 py-0.5 rounded text-primary font-mono"><%= merge_request.source_branch %></code>
+           <i class="fas fa-arrow-right text-text-dim mx-1"></i>
+           <code class="bg-white/5 px-2 py-0.5 rounded text-purple-400 font-mono"><%= merge_request.target_branch %></code>
+         </div>
+         <% if merge_request.merged_at then %>
+           <span class="text-xs text-text-dim">Merged <%= os.date("%Y-%m-%d %H:%M", merge_request.merged_at) %></span>
+         <% end %>
+      </div>
+      <% if merge_request.description and merge_request.description ~= "" then %>
+      <div class="p-6 text-text text-sm whitespace-pre-wrap leading-relaxed"><%= merge_request.description %></div>
+      <% else %>
+      <div class="p-6 text-text-dim/50 text-sm italic">No description provided.</div>
+      <% end %>
+    </div>
+    
+    <% if merge_request.status == "merged" then %>
+    <div class="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-center gap-3 animate-fade-in">
+      <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary shrink-0">
+         <i class="fas fa-code-merge"></i>
+      </div>
+      <div>
+        <p class="text-white font-bold text-sm">Merged Successfully</p>
+        <p class="text-xs text-text-dim">Changes from <strong><%= merge_request.source_branch %></strong> have been merged into <strong><%= merge_request.target_branch %></strong>.</p>
+      </div>
+    </div>
+    <% end %>
+
+    <!-- Diff Section -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+      <div class="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <i class="fas fa-code-compare text-text-dim"></i>
+          Changes
+          <% if diff and #diff > 0 then %>
+          <span class="bg-white/10 text-white px-1.5 rounded-full text-[10px]"><%= #diff %> files</span>
+          <% end %>
+        </h2>
+      </div>
+      <div class="bg-bg-card">
+<%
+        if diff and #diff > 0 then
+        for _, file in ipairs(diff) do
+%>
+          <!-- File Header -->
+          <div class="px-4 py-2 border-y border-white/5 bg-white/[0.02] text-xs font-bold text-white flex items-center gap-2 sticky top-0 z-10">
+            <i class="fas fa-file-code text-text-dim"></i>
+            <%= file.file_b %>
+          </div>
+
+          <!-- File Content -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs font-mono border-collapse">
+              <% for _, hunk in ipairs(file.hunks) do %>
+                <!-- Hunk Header -->
+                <tr class="bg-primary/5 text-text-dim">
+                  <td class="p-1 px-2 text-right border-r border-white/5 w-12 select-none">...</td>
+                  <td class="p-1 px-2 text-right border-r border-white/5 w-12 select-none">...</td>
+                  <td class="p-1 px-3 w-full whitespace-pre"><%= hunk.header %></td>
+                </tr>
+
+                <% for _, line in ipairs(hunk.lines) do 
+                     local bg_class = ""
+                     local text_class = "text-text-dim"
+                     if line.type == "addition" then 
+                        bg_class = "bg-success/10"
+                        text_class = "text-success-light"
+                     elseif line.type == "deletion" then 
+                        bg_class = "bg-error/10"
+                        text_class = "text-error-light"
+                     end
+                %>
+                <tr class="<%= bg_class %> hover:bg-white/5 transition-colors group">
+                  <td class="p-0.5 px-2 text-right border-r border-white/5 text-text-dim/50 select-none group-hover:text-text-dim cursor-pointer" title="<%= line.old_ln or '' %>">
+                    <%= line.old_ln or "" %>
+                  </td>
+                  <td class="p-0.5 px-2 text-right border-r border-white/5 text-text-dim/50 select-none group-hover:text-text-dim cursor-pointer" title="<%= line.new_ln or '' %>">
+                    <%= line.new_ln or "" %>
+                  </td>
+                  <td class="p-0.5 px-3 w-full whitespace-pre <%= text_class %>"><%= (line.content:sub(1,1) == "+" or line.content:sub(1,1) == "-") and line.content:sub(2) or line.content:sub(2) %></td>
+                </tr>
+                <% end %>
+              <% end %>
+            </table>
+          </div>
+<%
+        end
+        else
+%>
+        <div class="flex flex-col items-center justify-center py-12 text-text-dim">
+          <i class="fas fa-check-circle text-2xl mb-2 text-white/10"></i>
+          <p class="text-sm">No changes to display</p>
+        </div>
+<%
+        end
+%>
+      </div>
+    </div>
+
+    <!-- Discussion Section -->
+    <div class="bg-surface rounded-xl border border-white/5 overflow-hidden">
+      <div class="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <i class="fas fa-comments text-text-dim"></i>
+          Discussion
+          <span class="bg-white/10 text-white px-1.5 rounded-full text-[10px]"><%= #comments %></span>
+        </h2>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <% if #comments == 0 then %>
+        <div class="text-center py-6 text-text-dim border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
+          <p class="text-sm">No comments yet. Start the discussion below!</p>
+        </div>
+        <% else %>
+          <div class="space-y-6">
+          <% for _, comment in ipairs(comments) do %>
+          <div class="flex gap-4 group">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 text-white flex items-center justify-center shrink-0 text-xs font-bold border border-white/5 mt-1">
+              <%= (comment.author_name or "?"):sub(1,1):upper() %>
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-bold text-white text-sm">
+                  <%= comment.author_name or ("User " .. comment.author_id) %>
+                </span>
+                <span class="text-[10px] text-text-dim"><%= os.date("%b %d, %H:%M", comment.created_at) %></span>
+              </div>
+              <div class="bg-white/5 border border-white/5 rounded-r-xl rounded-bl-xl p-3 text-text text-sm whitespace-pre-wrap group-hover:bg-white/10 transition-colors"><%= comment.content %></div>
+            </div>
+          </div>
+          <% end %>
+          </div>
+        <% end %>
+
+        <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>/comments" method="POST" class="mt-6 pt-6 border-t border-white/5 flex gap-4">
+           <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 border border-white/5">
+             <i class="fas fa-user text-text-dim text-xs"></i>
+           </div>
+           <div class="flex-1">
+             <textarea name="content" rows="3" placeholder="Write a comment..."
+                       class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 resize-none transition-all block text-sm"></textarea>
+             <div class="flex justify-end mt-2">
+               <button type="submit" class="px-4 py-2 bg-primary hover:bg-primary/80 text-white rounded-lg transition-colors text-xs font-bold shadow-lg shadow-primary/20">
+                 Post Comment
+               </button>
+             </div>
+           </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Danger Zone (Delete) -->
+    <% if merge_request.author_id == current_user._key or repository.owner_id == current_user._key then %>
+    <div class="mt-8 flex justify-end">
+      <form action="/repositories/<%= repository.id %>/merge_requests/<%= merge_request.id %>" method="POST"
+            onsubmit="return confirm('Are you sure you want to delete this merge request? This cannot be undone.');">
+        <input type="hidden" name="_method" value="DELETE">
+        <button type="submit" class="px-3 py-1.5 text-error/60 hover:text-error hover:bg-error/10 rounded-lg transition-colors text-xs font-medium flex items-center gap-2">
+          <i class="fas fa-trash"></i>
+          Delete Merge Request
+        </button>
+      </form>
+    </div>
+    <% end %>
+
+  </div>
+</div>

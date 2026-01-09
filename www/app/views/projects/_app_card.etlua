@@ -1,0 +1,59 @@
+<%
+local color_classes = {
+  primary = "from-primary/20 to-primary/5 border-primary/30",
+  accent = "from-accent/20 to-accent/5 border-accent/30",
+  success = "from-success/20 to-success/5 border-success/30",
+  warning = "from-warning/20 to-warning/5 border-warning/30",
+  error = "from-error/20 to-error/5 border-error/30"
+}
+local icon_classes = {
+  primary = "text-primary",
+  accent = "text-accent",
+  success = "text-success",
+  warning = "text-warning",
+  error = "text-error"
+}
+local color_class = color_classes[app.color] or color_classes.primary
+local icon_class = icon_classes[app.color] or icon_classes.primary
+%>
+<a href="/projects/app/<%= app._key %>"
+   id="app-<%= app._key %>"
+   class="group block bg-gradient-to-br <%= color_class %> rounded-xl border border-white/5 p-5 hover:border-white/10 transition-all hover:scale-[1.02]">
+  <div class="flex items-start justify-between mb-3">
+    <div class="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
+      <i class="fas fa-rocket <%= icon_class %> text-lg"></i>
+    </div>
+    <div class="flex items-center gap-2">
+      <button hx-get="/projects/app/<%= app._key %>/edit" hx-target="#modal-container"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              class="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text opacity-0 group-hover:opacity-100 transition-opacity">
+        <i class="fas fa-pen text-xs"></i>
+      </button>
+      <button hx-delete="/projects/app/<%= app._key %>"
+              hx-confirm="Delete this app and all its features and tasks?"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              class="w-7 h-7 rounded-lg bg-white/5 hover:bg-error/20 flex items-center justify-center text-text-dim hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+        <i class="fas fa-trash text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <h3 class="text-xl font-bold text-text mb-1 group-hover:text-white transition-colors"><%= app.name %></h3>
+  <% if app.description and app.description ~= "" then %>
+  <p class="text-sm text-text-muted line-clamp-2 mb-4"><%= app.description %></p>
+  <% else %>
+  <p class="text-sm text-text-dim italic mb-4">No description</p>
+  <% end %>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-between text-xs text-text-dim pt-3 border-t border-white/5">
+    <span class="flex items-center gap-1">
+      <i class="fas fa-puzzle-piece"></i>
+      <%= app.feature_count %> feature<%= app.feature_count ~= 1 and "s" or "" %>
+    </span>
+    <span class="flex items-center gap-1">
+      <span class="w-2 h-2 rounded-full <%= app.status == 'active' and 'bg-success' or 'bg-text-dim' %>"></span>
+      <%= app.status == 'active' and 'Active' or 'Archived' %>
+    </span>
+  </div>
+</a>

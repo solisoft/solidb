@@ -5147,6 +5147,8 @@ pub struct ChangefeedRequest {
     pub local: Option<bool>,
     /// SDBQL query for live_query mode
     pub query: Option<String>,
+    /// Optional Client ID to identify the subscription/query in responses
+    pub id: Option<String>,
 }
 
 /// WebSocket handler for real-time changefeeds
@@ -5184,199 +5186,401 @@ pub async fn ws_changefeed_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state, use_htmx))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, use_htmx: bool) {
-    // Wait for subscription message
-    if let Some(Ok(msg)) = socket.recv().await {
-        if let Message::Text(text) = msg {
-            match serde_json::from_str::<ChangefeedRequest>(&text) {
-                Ok(req) if req.type_ == "subscribe" => {
-                    let db_name = req.database.clone().unwrap_or("_system".to_string());
-                    
-                    let coll_name = match req.collection.clone() {
-                        Some(c) => c,
-                        None => {
-                            // Try to infer from SDBQL query
-                            if let Some(query_str) = &req.query {
-                                if let Ok(query_ast) = crate::sdbql::parser::parse(query_str) {
-                                    // Check explicit FOR clauses first
-                                    if let Some(first_for) = query_ast.for_clauses.first() {
-                                        first_for.collection.clone()
-                                    } else {
-                                        // Check body clauses
-                                        query_ast.body_clauses.iter().find_map(|c| {
-                                            if let crate::sdbql::ast::BodyClause::For(f) = c {
-                                                Some(f.collection.clone())
-                                            } else {
-                                                None
-                                            }
-                                        }).unwrap_or_else(|| {
-                                            // Fallback or error
-                                            "".to_string()
-                                        })
-                                    }
-                                } else {
-                                    "".to_string()
-                                }
+async fn handle_socket(socket: WebSocket, state: AppState, use_htmx: bool) {
+    use futures::{SinkExt, StreamExt};
+    
+    // Split socket into sender and receiver
+    let (mut sender, mut receiver) = socket.split();
+    
+    // Unified channel for sending messages to the client
+    // All subscription tasks and live queries will send ready-to-emit Messages to this channel
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(1000);
+    
+    // Spawn writer task that forwards messages from the channel to the WebSocket
+    let send_task = tokio::spawn(async move {
+        // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
+        let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        
+        loop {
+            tokio::select! {
+                // Send heartbeat
+                _ = heartbeat_interval.tick() => {
+                    if sender.send(Message::Ping(vec![].into())).await.is_err() {
+                        tracing::debug!("[WS] Failed to send ping, closing writer");
+                        break;
+                    }
+                }
+                // Forward messages
+                Some(msg) = rx.recv() => {
+                    if sender.send(msg).await.is_err() {
+                        tracing::debug!("[WS] Failed to send message, closing writer");
+                        break;
+                    }
+                }
+                else => break,
+            }
+        }
+    });
+
+    // Main Receiver Loop
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Text(text) => {
+                let req_result = serde_json::from_str::<ChangefeedRequest>(&text);
+                match req_result {
+                    Ok(req) if req.type_ == "subscribe" => {
+                        let tx_clone = tx.clone();
+                        let state_clone = state.clone();
+                        
+                        // Spawn a dedicated task for this subscription
+                        tokio::spawn(async move {
+                            handle_subscribe_request(req, state_clone, tx_clone, use_htmx).await;
+                        });
+                    }
+                    Ok(req) if req.type_ == "live_query" => {
+                        let tx_clone = tx.clone();
+                        let state_clone = state.clone();
+                        
+                        // Spawn a dedicated task for this live query
+                        tokio::spawn(async move {
+                            handle_live_query_request(req, state_clone, tx_clone).await;
+                        });
+                    }
+                    _ => {
+                        let _ = tx.send(Message::Text(serde_json::json!({
+                            "error": "Invalid subscription request or unknown type"
+                        }).to_string().into())).await;
+                    }
+                }
+            }
+            Message::Close(_) => break,
+            Message::Ping(_) => {
+                // Auto-replied with Pong by axum usually, but we can ignore
+            }
+            Message::Pong(_) => {
+                // Heartbeat response, ignore
+            }
+            _ => {}
+        }
+    }
+
+    // When log out, abort the sender task
+    send_task.abort();
+}
+
+/// Handle a single subscription request
+async fn handle_subscribe_request(
+    req: ChangefeedRequest, 
+    state: AppState, 
+    tx: tokio::sync::mpsc::Sender<Message>,
+    use_htmx: bool
+) {
+    let db_name = req.database.clone().unwrap_or("_system".to_string());
+    
+    let coll_name = match req.collection.clone() {
+        Some(c) => c,
+        None => {
+            // Try to infer from SDBQL query
+            if let Some(query_str) = &req.query {
+                if let Ok(query_ast) = crate::sdbql::parser::parse(query_str) {
+                    // Check explicit FOR clauses first
+                    if let Some(first_for) = query_ast.for_clauses.first() {
+                        first_for.collection.clone()
+                    } else {
+                        // Check body clauses
+                        query_ast.body_clauses.iter().find_map(|c| {
+                            if let crate::sdbql::ast::BodyClause::For(f) = c {
+                                Some(f.collection.clone())
                             } else {
-                                "".to_string()
+                                None
+                            }
+                        }).unwrap_or_default()
+                    }
+                } else {
+                    "".to_string()
+                }
+            } else {
+                "".to_string()
+            }
+        }
+    };
+
+    if coll_name.is_empty() {
+        let _ = tx.send(Message::Text(serde_json::json!({
+            "error": "Collection required for subscribe mode (could not infer from query)"
+        }).to_string().into())).await;
+        return;
+    }
+
+    // Try to get collection from specific database or fallback
+    let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
+
+    match collection_result {
+        Ok(collection) => {
+            // Send confirmation
+            let msg = if use_htmx {
+                format!(r#"<div id="connection-status" hx-swap-oob="innerHTML" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-success/10 text-success">
+                    <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                    <span>Connected: {}</span>
+                </div>
+                <div id="no-subscriptions" hx-swap-oob="true" class="hidden"></div>
+                <div id="subscriptions-list" hx-swap-oob="beforeend">
+                    <div class="px-4 py-3 border-b border-border/20 last:border-0 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                        <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                        <div>
+                            <span class="font-medium text-text">{}</span>
+                        </div>
+                        </div>
+                    </div>
+                </div>"#, coll_name, coll_name)
+            } else {
+                serde_json::json!({
+                    "type": "subscribed",
+                    "collection": coll_name
+                }).to_string()
+            };
+            if tx.send(Message::Text(msg.into())).await.is_err() { return; }
+
+            // Set up our OWN internal channel to aggregate events for THIS subscription
+            // Then we format them and send to the main `tx`
+            let (sub_tx, mut sub_rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
+            let req_key = req.key.clone();
+
+            // 1. Subscribe to local logical collection
+            let mut local_rx = collection.change_sender.subscribe();
+            let sub_tx_local = sub_tx.clone();
+            let req_key_local = req_key.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    match local_rx.recv().await {
+                        Ok(event) => {
+                            if let Some(ref target_key) = req_key_local {
+                                if &event.key != target_key { continue; }
+                            }
+                            if sub_tx_local.send(event).await.is_err() { break; }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
+
+            // 2. Subscribe to PHYSICAL SHARDS (if sharded)
+            if let Some(shard_config) = collection.get_shard_config() {
+                if shard_config.num_shards > 0 {
+                    if let Ok(database) = state.storage.get_database(&db_name) {
+                        for shard_id in 0..shard_config.num_shards {
+                            let physical_name = format!("{}_s{}", coll_name, shard_id);
+                            if let Ok(physical_coll) = database.get_collection(&physical_name) {
+                                 let mut shard_rx = physical_coll.change_sender.subscribe();
+                                 let sub_tx_shard = sub_tx.clone();
+                                 let req_key_shard = req_key.clone();
+
+                                 tokio::spawn(async move {
+                                    loop {
+                                        match shard_rx.recv().await {
+                                            Ok(event) => {
+                                                if let Some(ref target_key) = req_key_shard {
+                                                    if &event.key != target_key { continue; }
+                                                }
+                                                if sub_tx_shard.send(event).await.is_err() { break; }
+                                            }
+                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                            Err(_) => break,
+                                        }
+                                    }
+                                 });
                             }
                         }
-                    };
-
-                    if coll_name.is_empty() {
-                        let _ = socket.send(Message::Text(serde_json::json!({
-                            "error": "Collection required for subscribe mode (could not infer from query)"
-                        }).to_string().into())).await;
-                        return;
                     }
+                }
+            }
 
-                    // Try to get collection from specific database or fallback
-                    let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
+            // 3. Connect to REMOTE nodes
+            let is_local_only = req.local.unwrap_or(false);
 
-                    match collection_result {
-                        Ok(collection) => {
-                            // Send confirmation
-                            let msg = if use_htmx {
-                                format!(r#"<div id="connection-status" hx-swap-oob="innerHTML" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-success/10 text-success">
-                                    <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
-                                    <span>Connected: {}</span>
-                                </div>
-                                <div id="no-subscriptions" hx-swap-oob="true" class="hidden"></div>
-                                <div id="subscriptions-list" hx-swap-oob="innerHTML">
-                                    <div class="px-4 py-3 border-b border-border/20 last:border-0 flex items-center justify-between">
-                                        <div class="flex items-center gap-3">
-                                        <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
-                                        <div>
-                                            <span class="font-medium text-text">{}</span>
-                                        </div>
-                                        </div>
-                                    </div>
-                                </div>"#, coll_name, coll_name)
-                            } else {
-                                serde_json::json!({
-                                    "type": "subscribed",
-                                    "collection": coll_name
-                                }).to_string()
-                            };
-                            let _ = socket.send(Message::Text(msg.into())).await;
+            if !is_local_only {
+                if let Some(shard_config) = collection.get_shard_config() {
+                    if let Some(coordinator) = &state.shard_coordinator {
+                        let my_addr = coordinator.my_address();
+                        let all_nodes = coordinator.get_collection_nodes(&shard_config);
 
-                            // Set up streams vector for aggregation
-                            // We use a channel to merge streams because SelectAll requires Unpin which can be tricky with async streams
-                            let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
-                            let req_key = req.key.clone();
+                        let mut remote_nodes = std::collections::HashSet::new();
+                        for node_addr in all_nodes {
+                            if node_addr != my_addr {
+                                remote_nodes.insert(node_addr);
+                            }
+                        }
 
-                            // 1. Subscribe to local logical collection (always useful for metadata or non-sharded)
-                            let mut local_rx = collection.change_sender.subscribe();
-                            let tx_local = tx.clone();
-                            let req_key_local = req_key.clone();
+                        for node_addr in remote_nodes {
+                            let sub_tx_remote = sub_tx.clone();
+                            let db_name_remote = db_name.clone();
+                            let coll_name_remote = coll_name.clone();
+                            let node_addr_clone = node_addr.clone();
 
                             tokio::spawn(async move {
-                                loop {
-                                    match local_rx.recv().await {
-                                        Ok(event) => {
-                                            if let Some(ref target_key) = req_key_local {
-                                                if &event.key != target_key { continue; }
+                                use crate::cluster::ClusterWebsocketClient;
+                                match ClusterWebsocketClient::connect(
+                                    &node_addr_clone,
+                                    &db_name_remote,
+                                    &coll_name_remote,
+                                    true 
+                                ).await {
+                                    Ok(stream) => {
+                                        tokio::pin!(stream);
+                                        while let Some(result) = stream.next().await {
+                                            match result {
+                                                Ok(event) => {
+                                                    if sub_tx_remote.send(event).await.is_err() { break; }
+                                                }
+                                                Err(_) => break,
                                             }
-                                            if tx_local.send(event).await.is_err() { break; }
                                         }
-                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                        Err(_) => break,
                                     }
+                                    Err(_) => {}
                                 }
                             });
+                        }
+                    }
+                }
+            }
 
-                            // 2. Subscribe to PHYSICAL SHARDS (if sharded)
-                            if let Some(shard_config) = collection.get_shard_config() {
-                                if shard_config.num_shards > 0 {
-                                    tracing::debug!("[CHANGEFEED] Subscribing to local physical shards for {}/{}", db_name, coll_name);
+            // Drop original sub_tx so we don't hold the channel open forever if all producers die
+            drop(sub_tx);
 
-                                    // Subscribe to all LOCAL physical shards
-                                    // Iterate potential shard IDs and check if they exist locally
-                                    if let Ok(database) = state.storage.get_database(&db_name) {
-                                        for shard_id in 0..shard_config.num_shards {
-                                            let physical_name = format!("{}_s{}", coll_name, shard_id);
-                                            // Check if this physical shard collection exists locally
-                                            if let Ok(physical_coll) = database.get_collection(&physical_name) {
-                                                 tracing::debug!("[CHANGEFEED] Found local shard {}, subscribing", physical_name);
+            // Forward aggregated events to the main socket channel
+            loop {
+                match sub_rx.recv().await {
+                    Some(event) => {
+                        // Double check filter (especially for remote events)
+                        if let Some(ref target_key) = req.key {
+                            if &event.key != target_key { continue; }
+                        }
 
-                                                 let mut shard_rx = physical_coll.change_sender.subscribe();
-                                                 let tx_shard = tx.clone();
-                                                 let req_key_shard = req_key.clone();
+                        // Format message
+                        let msg_text = if use_htmx {
+                            use crate::storage::collection::ChangeType;
+                            let op_type = match event.type_ {
+                                ChangeType::Insert => "INSERT",
+                                ChangeType::Update => "UPDATE",
+                                ChangeType::Delete => "DELETE",
+                            };
+                            let status_class = match event.type_ {
+                                ChangeType::Insert => "bg-success/10 text-success",
+                                ChangeType::Update => "bg-warning/10 text-warning",
+                                ChangeType::Delete => "bg-error/10 text-error",
+                            };
+                            let data_str = event.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
+                            
+                            format!(r#"<div hx-swap-oob="afterbegin:#events-container">
+                                <div class="px-4 py-2 border-b border-border/10 last:border-0 font-mono text-sm hover:bg-white/5 transition-colors">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-1.5 py-0.5 rounded text-xs {}">{}</span>
+                                        <span class="text-text-dim text-xs">{}</span>
+                                        <span class="text-text-dim text-xs ml-auto">{}</span>
+                                    </div>
+                                    <pre class="text-text-muted text-xs overflow-x-auto">{}</pre>
+                                </div>
+                            </div>"#,
+                            status_class, op_type, coll_name, chrono::Local::now().format("%H:%M:%S"), data_str)
+                        } else {
+                            serde_json::json!({
+                                "operation": event.type_, 
+                                "collection": coll_name,
+                                "key": event.key,
+                                "data": event.data
+                            }).to_string()
+                        };
 
-                                                 tokio::spawn(async move {
-                                                    loop {
-                                                        match shard_rx.recv().await {
-                                                            Ok(event) => {
-                                                                if let Some(ref target_key) = req_key_shard {
-                                                                    if &event.key != target_key { continue; }
-                                                                }
-                                                                if tx_shard.send(event).await.is_err() { break; }
-                                                            }
-                                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                                            Err(_) => break,
-                                                        }
-                                                    }
-                                                 });
-                                            }
-                                        }
-                                    }
+                        if tx.send(Message::Text(msg_text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break, // All producers gone
+                }
+            }
+        },
+        Err(_) => {
+             let _ = tx.send(Message::Text(serde_json::json!({
+                 "error": format!("Collection '{}' not found", coll_name)
+             }).to_string().into())).await;
+        }
+    }
+}
+
+/// Handle a live query request
+async fn handle_live_query_request(
+    req: ChangefeedRequest,
+    state: AppState,
+    tx: tokio::sync::mpsc::Sender<Message>
+) {
+    if let Some(query_str) = req.query {
+         let db_name = req.database.clone().unwrap_or("_system".to_string());
+         
+         // 1. Parse query to identify dependencies
+         match crate::sdbql::parser::parse(&query_str) {
+            Ok(query) => {
+                let mut dependencies = std::collections::HashSet::new();
+                for clause in &query.for_clauses {
+                    dependencies.insert(clause.collection.clone());
+                }
+                
+                if dependencies.is_empty() {
+                     let _ = tx.send(Message::Text(serde_json::json!({
+                         "error": "Live query must reference at least one collection"
+                     }).to_string().into())).await;
+                     return;
+                }
+
+                // Send confirmation
+                let mut response = serde_json::json!({
+                    "type": "subscribed",
+                    "mode": "live_query",
+                    "collections": dependencies
+                });
+                if let Some(req_id) = &req.id {
+                    response["id"] = serde_json::Value::String(req_id.clone());
+                }
+                let _ = tx.send(Message::Text(response.to_string().into())).await;
+
+                // 2. Setup aggregated change channel for dependencies
+                let (dep_tx, mut dep_rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
+
+                // 3. Subscribe to ALL dependencies
+                for coll_name in &dependencies {
+                    let coll_name = coll_name.clone(); 
+                    
+                    if let Ok(collection) = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name)) {
+                        // A. Subscribe to local logical
+                        let mut local_rx = collection.change_sender.subscribe();
+                        let tx_local = dep_tx.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                match local_rx.recv().await {
+                                    Ok(event) => { if tx_local.send(event).await.is_err() { break; } },
+                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                    Err(_) => break,
                                 }
                             }
+                        });
 
-                            // 3. Connect to REMOTE nodes for aggregation (unless local_only=true)
-                            let is_local_only = req.local.unwrap_or(false);
-
-                            if !is_local_only {
-                                if let Some(shard_config) = collection.get_shard_config() {
-                                    if let Some(coordinator) = &state.shard_coordinator {
-                                        let my_addr = coordinator.my_address();
-                                        // Get ALL nodes relevant for this collection
-                                        let all_nodes = coordinator.get_collection_nodes(&shard_config);
-
-                                        // Filter unique nodes that are NOT self
-                                        let mut remote_nodes = std::collections::HashSet::new();
-                                        for node_addr in all_nodes {
-                                            if node_addr != my_addr {
-                                                remote_nodes.insert(node_addr);
-                                            }
-                                        }
-
-                                        for node_addr in remote_nodes {
-                                            // Spawn remote listener
-                                            let tx_remote = tx.clone();
-                                            let db_name_remote = db_name.clone();
-                                            let coll_name_remote = coll_name.clone();
-                                            let node_addr_clone = node_addr.clone();
-
+                        // B. Subscribe to local physical shards
+                        if let Some(shard_config) = collection.get_shard_config() {
+                            if shard_config.num_shards > 0 {
+                                if let Ok(database) = state.storage.get_database(&db_name) {
+                                    for shard_id in 0..shard_config.num_shards {
+                                        let physical_name = format!("{}_s{}", coll_name, shard_id);
+                                        if let Ok(physical_coll) = database.get_collection(&physical_name) {
+                                            let mut shard_rx = physical_coll.change_sender.subscribe();
+                                            let tx_shard = dep_tx.clone();
                                             tokio::spawn(async move {
-                                                use crate::cluster::ClusterWebsocketClient;
-
-                                                tracing::debug!("[CHANGEFEED] connecting to remote {}", node_addr_clone);
-                                                // Pass local_only=true to prevent infinite recursion
-                                                match ClusterWebsocketClient::connect(
-                                                    &node_addr_clone,
-                                                    &db_name_remote,
-                                                    &coll_name_remote,
-                                                    true // <--- IMPORTANT: Ask for local events only
-                                                ).await {
-                                                    Ok(stream) => {
-                                                        tokio::pin!(stream);
-                                                        while let Some(result) = stream.next().await {
-                                                            match result {
-                                                                Ok(event) => {
-                                                                    if tx_remote.send(event).await.is_err() {
-                                                                        break;
-                                                                    }
-                                                                }
-                                                                Err(e) => {
-                                                                    tracing::warn!("[CHANGEFEED] Remote stream error from {}: {}", node_addr_clone, e);
-                                                                    break;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::warn!("[CHANGEFEED] Failed to connect to remote {}: {}", node_addr_clone, e);
+                                                loop {
+                                                    match shard_rx.recv().await {
+                                                        Ok(event) => { if tx_shard.send(event).await.is_err() { break; } },
+                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                                        Err(_) => break,
                                                     }
                                                 }
                                             });
@@ -5384,227 +5588,98 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, use_htmx: bool) {
                                     }
                                 }
                             }
+                        }
 
-                            // Forward aggregated events to client
-                            // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
-                            let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
-                            loop {
-                                tokio::select! {
-                                    // Heartbeat tick: send a Ping to keep the connection alive
-                                    _ = heartbeat_interval.tick() => {
-                                        if socket.send(Message::Ping(vec![].into())).await.is_err() {
-                                            tracing::debug!("[CHANGEFEED] Failed to send ping, closing connection");
-                                            break;
-                                        }
+                        // C. Subscribe to REMOTE nodes
+                        let is_local_only = req.local.unwrap_or(false);
+                        if !is_local_only {
+                            if let Some(shard_config) = collection.get_shard_config() {
+                                if let Some(coordinator) = &state.shard_coordinator {
+                                    let my_addr = coordinator.my_address();
+                                    let all_nodes = coordinator.get_collection_nodes(&shard_config);
+                                    let mut remote_nodes = std::collections::HashSet::new();
+                                    for node_addr in all_nodes {
+                                        if node_addr != my_addr { remote_nodes.insert(node_addr); }
                                     }
-                                    // Received event from aggregator
-                                    Some(event) = rx.recv() => {
-                                        // Note: Local events were already filtered by key in the spawned task.
-                                        // Remote events should eventually be filtered too, but for now we filter here again just in case
-                                        // to be safe (though remote subscription should filter ideally, current impl connects to stream).
-                                        // Actually ClusterWebsocketClient subscription sends a filter?
-                                        // The current ClusterWebsocketClient connect() sends "subscribe" without key filter.
-                                        // So we MUST filter here.
-                                        if let Some(ref target_key) = req.key {
-                                            if &event.key != target_key {
-                                                continue;
+
+                                    for node_addr in remote_nodes {
+                                        let tx_remote = dep_tx.clone();
+                                        let db_remote = db_name.clone();
+                                        let c_remote = coll_name.clone();
+                                        let n_addr = node_addr.clone();
+                                        
+                                        tokio::spawn(async move {
+                                            use crate::cluster::ClusterWebsocketClient;
+                                            match ClusterWebsocketClient::connect(&n_addr, &db_remote, &c_remote, true).await {
+                                                Ok(stream) => {
+                                                    tokio::pin!(stream);
+                                                    while let Some(result) = stream.next().await {
+                                                        if let Ok(event) = result {
+                                                            if tx_remote.send(event).await.is_err() { break; }
+                                                        } else { break; }
+                                                    }
+                                                }
+                                                Err(_) => {}
                                             }
-                                        }
-
-                                        // Optimized payload: send only metadata, not full data
-                                        let msg_text = if use_htmx {
-                                            use crate::storage::collection::ChangeType;
-                                            let op_type = match event.type_ {
-                                                ChangeType::Insert => "INSERT",
-                                                ChangeType::Update => "UPDATE",
-                                                ChangeType::Delete => "DELETE",
-                                            };
-                                            let status_class = match event.type_ {
-                                                ChangeType::Insert => "bg-success/10 text-success",
-                                                ChangeType::Update => "bg-warning/10 text-warning",
-                                                ChangeType::Delete => "bg-error/10 text-error",
-                                            };
-                                            let data_str = event.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
-                                            // Format as HTML for HTMX oob swap
-                                            format!(r#"<div hx-swap-oob="afterbegin:#events-container">
-                                                <div class="px-4 py-2 border-b border-border/10 last:border-0 font-mono text-sm hover:bg-white/5 transition-colors">
-                                                    <div class="flex items-center gap-2 mb-1">
-                                                        <span class="px-1.5 py-0.5 rounded text-xs {}">{}</span>
-                                                        <span class="text-text-dim text-xs">{}</span>
-                                                        <span class="text-text-dim text-xs ml-auto">{}</span>
-                                                    </div>
-                                                    <pre class="text-text-muted text-xs overflow-x-auto">{}</pre>
-                                                </div>
-                                            </div>"#,
-                                            status_class, op_type, coll_name, chrono::Local::now().format("%H:%M:%S"), data_str)
-                                        } else {
-                                            serde_json::json!({
-                                                "operation": event.type_, 
-                                                "collection": coll_name,
-                                                "key": event.key,
-                                                "data": event.data // Serialize Value directly
-                                            }).to_string()
-                                        };
-
-                                        if socket.send(Message::Text(msg_text.into())).await.is_err() {
-                                            break;
-                                        }
+                                        });
                                     }
-                                    // Handle incoming messages (e.g. close, pong)
-                                    Some(msg) = socket.recv() => {
-                                        match msg {
-                                            Ok(Message::Close(_)) | Err(_) => break,
-                                            Ok(Message::Pong(_)) => { /* heartbeat acknowledged */ }
-                                            _ => {} // Ignore other messages
-                                        }
-                                    }
-                                    else => break,
                                 }
                             }
-                        },
-                        Err(_) => {
-                             let _ = socket.send(Message::Text(serde_json::json!({
-                                 "error": "Collection not found"
-                             }).to_string().into())).await;
                         }
                     }
                 }
-                Ok(req) if req.type_ == "live_query" => {
-                    if let Some(query_str) = req.query {
-                         let db_name = req.database.clone().unwrap_or("_system".to_string());
-                         
-                         // 1. Parse query to identify dependencies
-                         match crate::sdbql::parser::parse(&query_str) {
-                            Ok(query) => {
-                                // Extract all referenced collections from FOR clauses
-                                let mut dependencies = std::collections::HashSet::new();
-                                for clause in &query.for_clauses {
-                                    dependencies.insert(clause.collection.clone());
-                                }
-                                
-                                if dependencies.is_empty() {
-                                     let _ = socket.send(Message::Text(serde_json::json!({
-                                         "error": "Live query must reference at least one collection"
-                                     }).to_string().into())).await;
-                                     return;
-                                }
+                
+                drop(dep_tx); // Close original sender
 
-                                // Send confirmation
-                                let _ = socket.send(Message::Text(serde_json::json!({
-                                    "type": "subscribed",
-                                    "mode": "live_query",
-                                    "collections": dependencies
-                                }).to_string().into())).await;
+                // Helper for live query execution
+                // We use an inner helper function here to reuse logic
+                // but since we are inside an async move block, we can just define it inline or call a static helper
+                // calling static helper `execute_live_query_step` is better but we can't pass `socket`, we need to pass `tx`.
+                
+                // Let's refactor `execute_live_query_step` to take `tx` and `req_id`
+                
+                // 5. Initial Execution
+                execute_live_query_step(&tx, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone(), req.id.clone()).await;
 
-                                // 2. Setup aggregated change channel
-                                let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::storage::collection::ChangeEvent>(1000);
+                // 6. Reactive Loop
+                while dep_rx.recv().await.is_some() {
+                    // On ANY change to ANY dependency, re-run query
+                    execute_live_query_step(&tx, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone(), req.id.clone()).await;
+                }
+            },
+            Err(e) => {
+                let _ = tx.send(Message::Text(serde_json::json!({
+                    "error": format!("Invalid SDBQL query: {}", e)
+                }).to_string().into())).await;
+            }
+         }
+    } else {
+         let _ = tx.send(Message::Text(serde_json::json!({
+             "error": "Missing 'query' field for live_query"
+         }).to_string().into())).await;
+    }
+}
 
-                                // 3. Subscribe to ALL dependencies
-                                // We reuse the logic from standard changefeed but apply it to multiple collections
-                                for coll_name in &dependencies {
-                                    let coll_name = coll_name.clone(); // Clone for closure
-                                    
-                                    // Try to get collection
-                                    let collection_result = state.storage.get_database(&db_name).and_then(|db| db.get_collection(&coll_name));
-                                    
-                                    if let Ok(collection) = collection_result {
-                                        // A. Subscribe to local logical
-                                        let mut local_rx = collection.change_sender.subscribe();
-                                        let tx_local = tx.clone();
-                                        tokio::spawn(async move {
-                                            loop {
-                                                match local_rx.recv().await {
-                                                    Ok(event) => { if tx_local.send(event).await.is_err() { break; } },
-                                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                                    Err(_) => break,
-                                                }
-                                            }
-                                        });
-
-                                        // B. Subscribe to local physical shards
-                                        if let Some(shard_config) = collection.get_shard_config() {
-                                            if shard_config.num_shards > 0 {
-                                                if let Ok(database) = state.storage.get_database(&db_name) {
-                                                    for shard_id in 0..shard_config.num_shards {
-                                                        let physical_name = format!("{}_s{}", coll_name, shard_id);
-                                                        if let Ok(physical_coll) = database.get_collection(&physical_name) {
-                                                            let mut shard_rx = physical_coll.change_sender.subscribe();
-                                                            let tx_shard = tx.clone();
-                                                            tokio::spawn(async move {
-                                                                loop {
-                                                                    match shard_rx.recv().await {
-                                                                        Ok(event) => { if tx_shard.send(event).await.is_err() { break; } },
-                                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                                                                        Err(_) => break,
-                                                                    }
-                                                                }
-                                                            });
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // C. Subscribe to REMOTE nodes
-                                        let is_local_only = req.local.unwrap_or(false);
-                                        if !is_local_only {
-                                            if let Some(shard_config) = collection.get_shard_config() {
-                                                if let Some(coordinator) = &state.shard_coordinator {
-                                                    let my_addr = coordinator.my_address();
-                                                    let all_nodes = coordinator.get_collection_nodes(&shard_config);
-                                                    let mut remote_nodes = std::collections::HashSet::new();
-                                                    for node_addr in all_nodes {
-                                                        if node_addr != my_addr { remote_nodes.insert(node_addr); }
-                                                    }
-
-                                                    for node_addr in remote_nodes {
-                                                        let tx_remote = tx.clone();
-                                                        let db_remote = db_name.clone();
-                                                        let c_remote = coll_name.clone();
-                                                        let n_addr = node_addr.clone();
-                                                        
-                                                        tokio::spawn(async move {
-                                                            use crate::cluster::ClusterWebsocketClient;
-                                                            // For live query dependencies, we just need the events to trigger re-run
-                                                            // We subscribe to the collection changefeed on the remote node
-                                                            match ClusterWebsocketClient::connect(&n_addr, &db_remote, &c_remote, true).await {
-                                                                Ok(stream) => {
-                                                                    tokio::pin!(stream);
-                                                                    while let Some(result) = stream.next().await {
-                                                                        if let Ok(event) = result {
-                                                                            if tx_remote.send(event).await.is_err() { break; }
-                                                                        } else { break; }
-                                                                    }
-                                                                }
-                                                                Err(_) => {}
-                                                            }
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-// Helper for live query execution
+// Updated Helper for live query execution
 async fn execute_live_query_step(
-    socket: &mut WebSocket,
+    tx: &tokio::sync::mpsc::Sender<Message>,
     storage: std::sync::Arc<StorageEngine>,
     query_str: String,
     db_name: String,
     shard_coordinator: Option<std::sync::Arc<crate::sharding::ShardCoordinator>>,
+    req_id: Option<String>,
 ) {
     // Execute SDBQL
     let exec_result = tokio::task::spawn_blocking(move || {
         match crate::sdbql::parser::parse(&query_str) {
             Ok(parsed) => {
-                // Security check: Reject mutations in live queries
+                // Security check
                 for clause in &parsed.body_clauses {
                     match clause {
                         crate::sdbql::BodyClause::Insert(_) |
                         crate::sdbql::BodyClause::Update(_) |
                         crate::sdbql::BodyClause::Remove(_) => {
-                             return Err(crate::error::DbError::ExecutionError("Live queries are read-only and cannot contain INSERT, UPDATE, or REMOVE operations".to_string()));
+                             return Err(crate::error::DbError::ExecutionError("Live queries are read-only".to_string()));
                         },
                         _ => {}
                     }
@@ -5622,72 +5697,28 @@ async fn execute_live_query_step(
 
     match exec_result {
         Ok(results) => {
-            let _ = socket.send(Message::Text(serde_json::json!({
+            let mut response = serde_json::json!({
                 "type": "query_result",
                 "result": results
-            }).to_string().into())).await;
+            });
+            if let Some(id) = req_id {
+                response["id"] = serde_json::Value::String(id);
+            }
+            let _ = tx.send(Message::Text(response.to_string().into())).await;
         },
         Err(e) => {
-            let _ = socket.send(Message::Text(serde_json::json!({
+            let mut response = serde_json::json!({
                 "type": "error",
                 "error": e.to_string()
-            }).to_string().into())).await;
-        }
-    }
-}
-
-                                // 5. Initial Execution
-                                execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
-
-                                // 6. Reactive Loop with heartbeat
-                                // Heartbeat: Send a Ping every 30 seconds to keep the connection alive
-                                let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
-                                loop {
-                                    tokio::select! {
-                                        // Heartbeat tick: send a Ping to keep the connection alive
-                                        _ = heartbeat_interval.tick() => {
-                                            if socket.send(Message::Ping(vec![].into())).await.is_err() {
-                                                tracing::debug!("[LIVE_QUERY] Failed to send ping, closing connection");
-                                                break;
-                                            }
-                                        }
-                                        Some(_) = rx.recv() => {
-                                            // On ANY change to ANY dependency, re-run query
-                                            execute_live_query_step(&mut socket, state.storage.clone(), query_str.clone(), db_name.clone(), state.shard_coordinator.clone()).await;
-                                        }
-                                        Some(msg) = socket.recv() => {
-                                            match msg {
-                                                Ok(Message::Close(_)) | Err(_) => break,
-                                                Ok(Message::Pong(_)) => { /* heartbeat acknowledged */ }
-                                                _ => {} 
-                                            }
-                                        }
-                                        else => break,
-                                    }
-                                }
-                            },
-                            Err(e) => {
-                                let _ = socket.send(Message::Text(serde_json::json!({
-                                    "error": format!("Invalid SDBQL query: {}", e)
-                                }).to_string().into())).await;
-                            }
-                         }
-                    } else {
-                         let _ = socket.send(Message::Text(serde_json::json!({
-                             "error": "Missing 'query' field for live_query"
-                         }).to_string().into())).await;
-                    }
-                }
-                _ => {
-                    let _ = socket.send(Message::Text(serde_json::json!({
-                        "error": "Invalid subscription request"
-                    }).to_string().into())).await;
-                }
-
+            });
+            if let Some(id) = req_id {
+                response["id"] = serde_json::Value::String(id);
             }
+            let _ = tx.send(Message::Text(response.to_string().into())).await;
         }
     }
 }
+
 
 /// Distribute blob chunks across the cluster for fault tolerance
 /// This provides redundancy without requiring logical sharding of the collection

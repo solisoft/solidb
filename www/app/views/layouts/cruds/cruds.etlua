@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- title or "CRUDs Builder" %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="<%- public_path('layouts.css') %>">
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Tagify -->
+  <script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.polyfills.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+
+  <!-- Quill WYSIWYG Editor -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+
+  <!-- SortableJS for drag & drop -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+  <!-- Monaco Editor for JSON Schema -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  <%- head_content or "" %>
+</head>
+<body class="min-h-screen bg-bg text-text">
+  <!-- Background decorations -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-primary/10 rounded-full blur-[120px]"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-1/2 h-1/2 bg-accent/10 rounded-full blur-[120px]"></div>
+  </div>
+
+  <div class="flex h-screen relative z-10">
+    <!-- Main Activity Sidebar -->
+    <%- partial("shared/activity_sidebar") %>
+
+    <!-- CRUDs Sidebar -->
+    <aside id="sidebar" class="w-64 bg-bg-dark/95 backdrop-blur-xl border-r border-border/50 flex-shrink-0 hidden lg:block">
+      <div class="h-full overflow-y-auto py-4">
+        <nav class="px-3 space-y-1">
+          <!-- Datatypes Section -->
+          <div class="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Datatypes
+          </div>
+
+          <a href="/cruds" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors <%= current_page == 'index' and 'bg-primary/20 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-text' %>">
+            <i class="fas fa-layer-group w-5 text-center"></i>
+            <span>All Datatypes</span>
+          </a>
+
+          <a href="/cruds/datatypes/new" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors <%= current_page == 'new_datatype' and 'bg-primary/20 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-text' %>">
+            <i class="fas fa-plus w-5 text-center"></i>
+            <span>New Datatype</span>
+          </a>
+
+          <% if datatypes and #datatypes > 0 then %>
+          <div class="px-3 py-2 mt-4 text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Data
+          </div>
+          <% for _, dt in ipairs(datatypes) do %>
+          <a href="/cruds/data/<%= dt.slug %>" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors <%= current_datatype == dt.slug and 'bg-primary/20 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-text' %>">
+            <i class="fas fa-table w-5 text-center"></i>
+            <span><%= dt.name %></span>
+          </a>
+          <% end %>
+          <% end %>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Overlay for mobile -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity opacity-0 pointer-events-none"></div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <!-- Header -->
+      <header class="h-14 bg-gray-900/60 backdrop-blur-md border-b border-white/10 px-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-4">
+          <!-- Mobile menu button -->
+          <button type="button" onclick="toggleSidebar()" class="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+
+          <a href="/cruds" class="flex items-center gap-2 group">
+            <i class="fas fa-cubes text-xl text-amber-400 group-hover:rotate-12 transition-transform"></i>
+            <span class="font-bold text-gradient text-lg">CRUDs Builder</span>
+          </a>
+        </div>
+
+        <nav class="flex items-center gap-4">
+          <a href="/docs" class="text-text-muted hover:text-text transition-colors text-sm">Docs</a>
+        </nav>
+      </header>
+
+      <!-- Main Content -->
+      <main class="flex-1 overflow-y-auto">
+        <div class="p-4 sm:p-6 lg:p-8">
+          <%- yield() %>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[200] space-y-2"></div>
+
+  <!-- Modal container -->
+  <div id="modal-container"></div>
+
+  <script>
+    // Sidebar toggle for mobile
+    function toggleSidebar() {
+      var sidebar = document.getElementById('sidebar');
+      var overlay = document.getElementById('sidebar-overlay');
+      var isOpen = sidebar.classList.contains('mobile-open');
+
+      if (isOpen) {
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+        overlay.classList.remove('opacity-100', 'pointer-events-auto');
+      } else {
+        sidebar.classList.add('mobile-open');
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+        overlay.classList.add('opacity-100', 'pointer-events-auto');
+      }
+    }
+
+    // Close modal helper
+    function closeModal() {
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    // Toast helper
+    function showToast(message, type) {
+      type = type || 'info';
+      var container = document.getElementById('toast-container');
+      var toast = document.createElement('div');
+      toast.className = 'px-4 py-3 rounded-lg shadow-lg backdrop-blur-xl animate-in ' +
+        (type === 'success' ? 'bg-success/90 text-white' :
+         type === 'error' ? 'bg-error/90 text-white' :
+         'bg-bg-card/90 text-text border border-border/50');
+      toast.innerHTML = '<div class="flex items-center gap-2"><i class="fas ' +
+        (type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle') +
+        '"></i><span>' + message + '</span></div>';
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.classList.add('animate-out');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 5000);
+    }
+
+    // HTMX custom event listeners
+    document.body.addEventListener('showToast', function(evt) {
+      showToast(evt.detail.message, evt.detail.type);
+    });
+
+    document.body.addEventListener('closeModal', function(evt) {
+      closeModal();
+    });
+
+    // HTMX after-swap processing
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      htmx.process(evt.detail.target);
+    });
+
+    // Upload configuration (fetched on demand)
+    var uploadConfig = null;
+
+    function getUploadConfig() {
+      return new Promise(function(resolve, reject) {
+        if (uploadConfig) {
+          resolve(uploadConfig);
+          return;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/cruds/upload/config', true);
+        xhr.onload = function() {
+          if (xhr.status === 200) {
+            uploadConfig = JSON.parse(xhr.responseText);
+            resolve(uploadConfig);
+          } else {
+            reject(new Error('Failed to get upload config'));
+          }
+        };
+        xhr.onerror = function() { reject(new Error('Network error')); };
+        xhr.send();
+      });
+    }
+
+    function getAuthToken() {
+      var cookies = document.cookie.split(';');
+      for (var i = 0; i < cookies.length; i++) {
+        var cookie = cookies[i].trim();
+        if (cookie.startsWith('sdb_token=')) {
+          return cookie.substring('sdb_token='.length);
+        }
+      }
+      return null;
+    }
+
+    function uploadToBlob(file) {
+      return new Promise(function(resolve, reject) {
+        getUploadConfig().then(function(config) {
+          var formData = new FormData();
+          formData.append('file', file);
+
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', config.api_server + '/_api/blob/' + config.db_name + '/' + config.collection, true);
+
+          var token = getAuthToken();
+          if (token) {
+            xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+          }
+
+          xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                var result = JSON.parse(xhr.responseText);
+                resolve({
+                  key: result._key || result.key,
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                  url: '/cruds/file/' + (result._key || result.key)
+                });
+              } catch (e) {
+                reject(new Error('Invalid response'));
+              }
+            } else {
+              reject(new Error('Upload failed: ' + xhr.status));
+            }
+          };
+          xhr.onerror = function() { reject(new Error('Network error')); };
+          xhr.send(formData);
+        }).catch(reject);
+      });
+    }
+
+    // Drag & Drop handlers for images and files
+    function handleDragOver(e, fieldName) {
+      e.preventDefault();
+      e.stopPropagation();
+      var dropzone = document.getElementById('dropzone-' + fieldName);
+      if (dropzone) {
+        dropzone.classList.add('border-primary', 'bg-primary/10');
+        dropzone.classList.remove('border-border/50');
+      }
+    }
+
+    function handleDragLeave(e, fieldName) {
+      e.preventDefault();
+      e.stopPropagation();
+      var dropzone = document.getElementById('dropzone-' + fieldName);
+      if (dropzone) {
+        dropzone.classList.remove('border-primary', 'bg-primary/10');
+        dropzone.classList.add('border-border/50');
+      }
+    }
+
+    // Image handling
+    function handleImageDrop(e, fieldName) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleDragLeave(e, fieldName);
+      var files = e.dataTransfer.files;
+      processImageFiles(files, fieldName);
+    }
+
+    function handleImageSelect(input, fieldName) {
+      processImageFiles(input.files, fieldName);
+      input.value = '';
+    }
+
+    function processImageFiles(files, fieldName) {
+      var preview = document.getElementById('preview-' + fieldName);
+      var hiddenInput = document.getElementById('images-' + fieldName);
+      var currentImages = JSON.parse(hiddenInput.value || '[]');
+
+      Array.from(files).forEach(function(file) {
+        if (!file.type.startsWith('image/')) return;
+        if (file.size > 10 * 1024 * 1024) {
+          showToast('File too large: ' + file.name, 'error');
+          return;
+        }
+
+        // Show uploading placeholder
+        var tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        var div = document.createElement('div');
+        div.className = 'image-item relative aspect-square bg-bg-dark rounded-lg overflow-hidden group';
+        div.id = tempId;
+        div.innerHTML = '<div class="w-full h-full flex items-center justify-center">' +
+          '<i class="fas fa-spinner fa-spin text-2xl text-text-muted"></i></div>';
+        preview.appendChild(div);
+
+        uploadToBlob(file).then(function(result) {
+          // Update placeholder with actual image
+          var el = document.getElementById(tempId);
+          if (el) {
+            el.setAttribute('data-key', result.key);
+            el.innerHTML = '<img src="' + result.url + '" class="w-full h-full object-cover">' +
+              '<div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">' +
+              '<i class="fas fa-grip-vertical text-white/80 cursor-move"></i>' +
+              '<button type="button" onclick="removeImage(\'' + fieldName + '\', this.closest(\'.image-item\'))" class="p-1 hover:text-error">' +
+              '<i class="fas fa-trash text-white/80"></i></button></div>';
+          }
+          // Store file key (not base64)
+          currentImages.push({ key: result.key, name: result.name, url: result.url });
+          hiddenInput.value = JSON.stringify(currentImages);
+        }).catch(function(err) {
+          showToast('Upload failed: ' + err.message, 'error');
+          var el = document.getElementById(tempId);
+          if (el) el.remove();
+        });
+      });
+    }
+
+    function removeImage(fieldName, element) {
+      var hiddenInput = document.getElementById('images-' + fieldName);
+      var currentImages = JSON.parse(hiddenInput.value || '[]');
+      var key = element.getAttribute('data-key');
+      currentImages = currentImages.filter(function(img) {
+        if (typeof img === 'object') return img.key !== key;
+        return img !== key;
+      });
+      hiddenInput.value = JSON.stringify(currentImages);
+      element.remove();
+    }
+
+    function updateImagesOrder(fieldName) {
+      var preview = document.getElementById('preview-' + fieldName);
+      var hiddenInput = document.getElementById('images-' + fieldName);
+      var currentImages = JSON.parse(hiddenInput.value || '[]');
+      var newOrder = [];
+      preview.querySelectorAll('.image-item').forEach(function(el) {
+        var key = el.getAttribute('data-key');
+        if (key) {
+          var img = currentImages.find(function(i) {
+            return (typeof i === 'object' ? i.key : i) === key;
+          });
+          if (img) newOrder.push(img);
+        }
+      });
+      hiddenInput.value = JSON.stringify(newOrder);
+    }
+
+    // File handling
+    function handleFileDrop(e, fieldName) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleDragLeave(e, 'files-' + fieldName);
+      var files = e.dataTransfer.files;
+      processFiles(files, fieldName);
+    }
+
+    function handleFileSelect(input, fieldName) {
+      processFiles(input.files, fieldName);
+      input.value = '';
+    }
+
+    function processFiles(files, fieldName) {
+      var list = document.getElementById('files-' + fieldName);
+      var hiddenInput = document.getElementById('files-data-' + fieldName);
+      var currentFiles = JSON.parse(hiddenInput.value || '[]');
+
+      Array.from(files).forEach(function(file) {
+        if (file.size > 50 * 1024 * 1024) {
+          showToast('File too large: ' + file.name, 'error');
+          return;
+        }
+
+        // Show uploading placeholder
+        var tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        var li = document.createElement('li');
+        li.className = 'file-item flex items-center gap-3 p-2 bg-bg-dark/50 border border-border/30 rounded-lg';
+        li.id = tempId;
+        li.innerHTML = '<i class="fas fa-spinner fa-spin text-text-muted"></i>' +
+          '<span class="flex-1 text-sm truncate">' + file.name + '</span>';
+        list.appendChild(li);
+
+        uploadToBlob(file).then(function(result) {
+          // Update placeholder with actual file info
+          var el = document.getElementById(tempId);
+          if (el) {
+            el.setAttribute('data-key', result.key);
+            el.className = 'file-item flex items-center gap-3 p-2 bg-bg-dark/50 border border-border/30 rounded-lg group';
+            el.innerHTML = '<i class="fas fa-grip-vertical text-text-muted cursor-move"></i>' +
+              '<i class="fas fa-file text-primary-light"></i>' +
+              '<a href="' + result.url + '" target="_blank" class="flex-1 text-sm truncate hover:text-primary-light">' + result.name + '</a>' +
+              '<button type="button" onclick="removeFile(\'' + fieldName + '\', this.closest(\'.file-item\'))" class="p-1 opacity-0 group-hover:opacity-100 hover:text-error transition-opacity">' +
+              '<i class="fas fa-times"></i></button>';
+          }
+          // Store file data
+          currentFiles.push({ key: result.key, name: result.name, size: result.size, type: result.type, url: result.url });
+          hiddenInput.value = JSON.stringify(currentFiles);
+        }).catch(function(err) {
+          showToast('Upload failed: ' + err.message, 'error');
+          var el = document.getElementById(tempId);
+          if (el) el.remove();
+        });
+      });
+    }
+
+    function removeFile(fieldName, element) {
+      var hiddenInput = document.getElementById('files-data-' + fieldName);
+      var currentFiles = JSON.parse(hiddenInput.value || '[]');
+      var key = element.getAttribute('data-key');
+      currentFiles = currentFiles.filter(function(f) {
+        if (typeof f === 'object') return f.key !== key;
+        return f !== key;
+      });
+      hiddenInput.value = JSON.stringify(currentFiles);
+      element.remove();
+    }
+
+    function updateFilesOrder(fieldName) {
+      var list = document.getElementById('files-' + fieldName);
+      var hiddenInput = document.getElementById('files-data-' + fieldName);
+      var currentFiles = JSON.parse(hiddenInput.value || '[]');
+      var newOrder = [];
+      list.querySelectorAll('.file-item').forEach(function(el) {
+        var key = el.getAttribute('data-key');
+        if (key) {
+          var file = currentFiles.find(function(f) {
+            return (typeof f === 'object' ? f.key : f) === key;
+          });
+          if (file) newOrder.push(file);
+        }
+      });
+      hiddenInput.value = JSON.stringify(newOrder);
+    }
+
+
+    // Multilist handling
+    function updateMultilist(fieldName) {
+      var select = document.querySelector('select[name="data_' + fieldName + '"]');
+      var hiddenInput = document.getElementById('multilist-' + fieldName);
+      var selected = Array.from(select.selectedOptions).map(function(opt) { return opt.value; });
+      hiddenInput.value = JSON.stringify(selected);
+    }
+  </script>
+
+  <style>
+    .animate-in { animation: slideIn 0.3s ease-out; }
+    .animate-out { animation: slideOut 0.3s ease-in forwards; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+
+    /* Mobile sidebar */
+    @media (max-width: 1023px) {
+      #sidebar {
+        position: fixed;
+        top: 0;
+        left: 70px;
+        height: 100vh;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      #sidebar.mobile-open {
+        display: block;
+        transform: translateX(0);
+      }
+    }
+
+    /* Quill Editor Dark Theme */
+    .wysiwyg-wrapper .ql-toolbar.ql-snow {
+      background: rgba(0,0,0,0.3);
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .wysiwyg-wrapper .ql-container.ql-snow {
+      border: none;
+      background: transparent;
+    }
+    .wysiwyg-wrapper .ql-editor {
+      color: #e5e5e5;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 200px;
+      padding: 16px;
+    }
+    .wysiwyg-wrapper .ql-editor.ql-blank::before {
+      color: rgba(255,255,255,0.3);
+      font-style: normal;
+    }
+    .wysiwyg-wrapper .ql-snow .ql-stroke {
+      stroke: rgba(255,255,255,0.6);
+    }
+    .wysiwyg-wrapper .ql-snow .ql-fill {
+      fill: rgba(255,255,255,0.6);
+    }
+    .wysiwyg-wrapper .ql-snow .ql-picker {
+      color: rgba(255,255,255,0.6);
+    }
+    .wysiwyg-wrapper .ql-snow .ql-picker-label:hover,
+    .wysiwyg-wrapper .ql-snow .ql-picker-label.ql-active,
+    .wysiwyg-wrapper .ql-snow button:hover,
+    .wysiwyg-wrapper .ql-snow button.ql-active {
+      color: #f59e0b;
+    }
+    .wysiwyg-wrapper .ql-snow button:hover .ql-stroke,
+    .wysiwyg-wrapper .ql-snow button.ql-active .ql-stroke {
+      stroke: #f59e0b;
+    }
+    .wysiwyg-wrapper .ql-snow button:hover .ql-fill,
+    .wysiwyg-wrapper .ql-snow button.ql-active .ql-fill {
+      fill: #f59e0b;
+    }
+    .wysiwyg-wrapper .ql-snow .ql-picker-options {
+      background: #1f2937;
+      border-color: rgba(255,255,255,0.1);
+    }
+    .wysiwyg-wrapper .ql-snow .ql-picker-item:hover {
+      color: #f59e0b;
+    }
+    .wysiwyg-wrapper .ql-editor h1 { font-size: 2em; font-weight: 700; margin-bottom: 0.5em; }
+    .wysiwyg-wrapper .ql-editor h2 { font-size: 1.5em; font-weight: 600; margin-bottom: 0.5em; }
+    .wysiwyg-wrapper .ql-editor h3 { font-size: 1.25em; font-weight: 600; margin-bottom: 0.5em; }
+    .wysiwyg-wrapper .ql-editor blockquote {
+      border-left: 3px solid #f59e0b;
+      padding-left: 1em;
+      color: rgba(255,255,255,0.7);
+    }
+    .wysiwyg-wrapper .ql-editor pre.ql-syntax {
+      background: rgba(0,0,0,0.4);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .wysiwyg-wrapper .ql-editor a {
+      color: #f59e0b;
+    }
+    .wysiwyg-wrapper .ql-tooltip {
+      background: #1f2937;
+      border-color: rgba(255,255,255,0.1);
+      color: #e5e5e5;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .wysiwyg-wrapper .ql-tooltip input[type="text"] {
+      background: rgba(0,0,0,0.3);
+      border-color: rgba(255,255,255,0.2);
+      color: #e5e5e5;
+    }
+    .wysiwyg-wrapper .ql-tooltip a.ql-action::after,
+    .wysiwyg-wrapper .ql-tooltip a.ql-remove::before {
+      color: #f59e0b;
+    }
+  </style>
+  <%- RefreshPageForDevMode() %>
+</body>
+</html>

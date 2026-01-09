@@ -1,0 +1,89 @@
+<aside class="w-64 bg-bg-card/90 backdrop-blur-xl border-l border-white/5 flex flex-col shrink-0 z-10 hidden xl:flex">
+  <!-- Header -->
+  <div class="h-16 px-6 flex items-center border-b border-white/5">
+    <span class="font-bold text-sm tracking-widest uppercase text-text-muted">Activity & Info</span>
+  </div>
+
+  <div class="flex-1 overflow-y-auto chat-scrollbar p-4 space-y-6">
+    
+    <!-- Tasks in Progress -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">In Progress</h3>
+        <a href="/projects" class="text-[10px] text-primary hover:text-primary-hover transition-colors">View All</a>
+      </div>
+      <div id="sidebar-tasks-progress" 
+           hx-get="/sidebar/tasks_progress" 
+           hx-trigger="load, every 30s, sidebar:tasks from:body" 
+           hx-swap="innerHTML">
+        <div class="py-4 flex justify-center"><i class="fas fa-spinner fa-spin text-white/20"></i></div>
+      </div>
+    </div>
+
+    <!-- High Priority Tasks -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">High Priority</h3>
+      </div>
+      <div id="sidebar-tasks-priority" 
+           hx-get="/sidebar/tasks_priority" 
+           hx-trigger="load, every 30s, sidebar:tasks from:body" 
+           hx-swap="innerHTML">
+        <div class="py-4 flex justify-center"><i class="fas fa-spinner fa-spin text-white/20"></i></div>
+      </div>
+    </div>
+
+    <!-- Pending Merge Requests -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">Pending MRs</h3>
+        <a href="/repositories" class="text-[10px] text-blue-400 hover:text-blue-300 transition-colors">View All</a>
+      </div>
+      <div id="sidebar-pending-mrs" 
+           hx-get="/sidebar/pending_mrs" 
+           hx-trigger="load, every 60s, sidebar:mrs from:body" 
+           hx-swap="innerHTML">
+        <div class="py-4 flex justify-center"><i class="fas fa-spinner fa-spin text-white/20"></i></div>
+      </div>
+    </div>
+
+    <!-- Recent Messages -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">Latest Messages</h3>
+      </div>
+      <div id="sidebar-recent-messages" 
+           hx-get="/sidebar/recent_messages" 
+           hx-trigger="load, every 10s, sidebar:messages from:body" 
+           hx-swap="innerHTML">
+        <div class="py-4 flex justify-center"><i class="fas fa-spinner fa-spin text-white/20"></i></div>
+      </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="pt-4 border-t border-white/5 space-y-3">
+      <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider px-2">Quick Links</h3>
+      <div class="grid grid-cols-2 gap-2">
+        <a href="/docs" class="bg-white/5 hover:bg-white/10 p-2 rounded-lg text-center transition-colors border border-white/5 hover:border-white/10">
+          <div class="w-6 h-6 mx-auto mb-1 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center">
+             <i class="fas fa-book text-xs"></i>
+          </div>
+          <div class="text-[10px] text-text-muted">Docs</div>
+        </a>
+        <a href="/database" class="bg-white/5 hover:bg-white/10 p-2 rounded-lg text-center transition-colors border border-white/5 hover:border-white/10">
+          <div class="w-6 h-6 mx-auto mb-1 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center">
+             <i class="fas fa-database text-xs"></i>
+          </div>
+          <div class="text-[10px] text-text-muted">DB Admin</div>
+        </a>
+      </div>
+    </div>
+  </div>
+  <!-- Live Sidebar Updates -->
+  <script>
+    window.SoliDBConfig = {
+      dbName: '<%= db or db_name or (Sdb and Sdb._db_config and Sdb._db_config.db_name) or "_system" %>'
+    };
+  </script>
+  <script src="/js/sidebar-live.js"></script>
+</aside>

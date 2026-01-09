@@ -11,6 +11,19 @@ router.get("/", "home#index")
 router.get("/up", "home#up")
 router.get("/about", "home#about")
 
+-- Global Sidebar Widgets (use session auth, not dashboard auth)
+router.get("/sidebar/tasks_progress", "dashboard#sidebar_tasks_progress")
+router.get("/sidebar/tasks_priority", "dashboard#sidebar_tasks_priority")
+router.get("/sidebar/pending_mrs", "dashboard#sidebar_pending_mrs")
+router.get("/sidebar/recent_messages", "dashboard#sidebar_recent_messages")
+
+-- Auth routes
+router.get("/auth/login", "auth#login")
+router.post("/auth/login", "auth#do_login")
+router.get("/auth/signup", "auth#signup")
+router.post("/auth/signup", "auth#do_signup")
+router.get("/auth/logout", "auth#logout")
+
 -- SoliDB Documentation
 router.get("/docs", "docs#index")
 router.get("/docs/:page", "docs#show")
@@ -41,14 +54,15 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
 
   -- Documents routes
   router.get("/documents/:collection", "dashboard/collections#documents")
+  router.get("/documents/:collection/edit/:edit_key", "dashboard/collections#documents_with_edit")
   router.get("/documents/:collection/table", "dashboard/collections#documents_table")
   router.get("/documents/:collection/modal/create", "dashboard/collections#documents_modal_create")
   router.get("/documents/:collection/modal/upload", "dashboard/collections#blob_upload_modal")
   router.post("/documents/:collection", "dashboard/collections#create_document")
   router.get("/documents/:collection/:key/edit", "dashboard/collections#documents_modal_edit")
   router.put("/documents/:collection/:key", "dashboard/collections#update_document")
-  router.delete("/documents/:collection/:key", "dashboard/collections#delete_document")
   router.delete("/documents/:collection/truncate", "dashboard/collections#truncate_collection")
+  router.delete("/documents/:collection/:key", "dashboard/collections#delete_document")
 
   -- Schema routes
   router.get("/documents/:collection/modal/schema", "dashboard/collections#schema_modal")
@@ -156,13 +170,15 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.get("/ai/tasks/table", "dashboard/ai#tasks_table")
   router.delete("/ai/tasks/:task_id", "dashboard/ai#cancel_task")
 
-  router.get("/ai/agents", "dashboard/ai#agents")
-  router.get("/ai/agents/grid", "dashboard/ai#agents_grid")
-  router.get("/ai/agents/modal/create", "dashboard/ai#agents_modal_create")
-  router.get("/ai/agents/:agent_id/edit", "dashboard/ai#agents_modal_edit")
-  router.post("/ai/agents", "dashboard/ai#create_agent")
-  router.put("/ai/agents/:agent_id", "dashboard/ai#update_agent")
-  router.delete("/ai/agents/:agent_id", "dashboard/ai#delete_agent")
+  -- AI Agents
+  router.get("/ai-agents", "dashboard/ai_dashboard#agents")
+  router.get("/ai-agents/table", "dashboard/ai_dashboard#agents_table")
+  router.get("/ai-agents/modal/create", "dashboard/ai_dashboard#modal_create_agent")
+  router.post("/ai-agents", "dashboard/ai_dashboard#create_agent")
+  router.put("/ai-agents/:key", "dashboard/ai_dashboard#update_agent")
+  router.delete("/ai-agents/:key", "dashboard/ai_dashboard#delete_agent")
+
+
 end)
 
 -- System database specific routes (admin only)
@@ -199,18 +215,160 @@ end)
 
 -- Talks (Chat App) routes
 router.get("/talks", "talks#index")
-router.get("/talks/login", "talks#login")
-router.post("/talks/login", "talks#do_login")
-router.get("/talks/signup", "talks#signup")
-router.post("/talks/signup", "talks#do_signup")
-router.get("/talks/logout", "talks#logout")
+router.get("/talks/livequery_token", "talks#livequery_token")
+router.get("/talks/user/:key", "talks#get_user")
+router.get("/talks/setup_presence", "talks#setup_presence")
 
--- Talks HTMX partials
-router.get("/talks/channels/list", "talks#channels_list")
-router.get("/talks/dm/list", "talks#dm_list")
-router.get("/talks/messages", "talks#messages")
+-- Talks Sidebar partials
+router.get("/talks/sidebar/channels", "talks#sidebar_channels")
+router.get("/talks/sidebar/dms", "talks#sidebar_dms")
+router.get("/talks/sidebar/users", "talks#sidebar_users")
+
+-- Talks Messages
+router.get("/talks/messages/:channel", "talks#messages")
+router.get("/talks/message/:key", "talks#show_message")
 router.post("/talks/message", "talks#send_message")
+router.delete("/talks/message/:key", "talks#delete_message")
+
+-- Talks Reactions
+router.get("/talks/emoji_picker/:key", "talks#emoji_picker")
+router.post("/talks/react", "talks#toggle_reaction")
+
+-- Talks Threads
 router.get("/talks/thread/:message_id", "talks#thread")
 router.post("/talks/thread/:message_id/reply", "talks#thread_reply")
+
+-- Talks Channels
+router.get("/talks/channel/modal/create", "talks#channel_modal")
+router.get("/talks/channel/users", "talks#channel_users")
+router.post("/talks/channel", "talks#create_channel")
+
+-- Talks Groups
+router.get("/talks/group/modal/create", "talks#group_modal")
+router.post("/talks/group", "talks#create_group")
+
+-- Talks DMs
+router.post("/talks/dm/start/:user_key", "talks#dm_start")
+
+-- Talks Files
+router.get("/talks/file/:key", "talks#file")
+
+-- Talks Calls
+router.get("/talks/call/ui/:channel_key", "talks#call_ui")
+router.get("/talks/call/ui/:channel_key/:type", "talks#call_ui")
+router.post("/talks/call/join/:channel_key", "talks#call_join")
+router.post("/talks/call/leave/:channel_key", "talks#call_leave")
+router.get("/talks/call/participants/:channel_key", "talks#call_participants")
+router.post("/talks/call/decline", "talks#call_decline")
+router.post("/talks/call/signal", "talks#call_signal")
+router.delete("/talks/call/signal/:key", "talks#call_signal_delete")
+
+-- Repositories (explicit routes to avoid pluralization issues)
+router.get("/repositories", "repositories#index")
+router.get("/repositories/new", "repositories#new_form")
+router.post("/repositories", "repositories#create")
+router.get("/repositories/:id", "repositories#show")
+router.get("/repositories/:id/edit", "repositories#edit")
+router.put("/repositories/:id", "repositories#update")
+router.delete("/repositories/:id", "repositories#destroy")
+
+-- Code browser routes
+router.get("/repositories/:id/tree", "repositories#tree")
+router.get("/repositories/:id/tree/*path", "repositories#tree")
+router.get("/repositories/:id/blob/*path", "repositories#blob")
+router.get("/repositories/:id/raw/*path", "repositories#raw")
+router.get("/repositories/:id/commits", "repositories#commits")
+
+-- Merge requests (explicit routes)
+router.get("/repositories/:repo_id/merge_requests", "merge_requests#index")
+router.get("/repositories/:repo_id/merge_requests/new", "merge_requests#new_form")
+router.post("/repositories/:repo_id/merge_requests/compare", "merge_requests#compare")
+router.post("/repositories/:repo_id/merge_requests", "merge_requests#create")
+router.get("/repositories/:repo_id/merge_requests/:id", "merge_requests#show")
+router.get("/repositories/:repo_id/merge_requests/:id/edit", "merge_requests#edit")
+router.put("/repositories/:repo_id/merge_requests/:id", "merge_requests#update")
+router.delete("/repositories/:repo_id/merge_requests/:id", "merge_requests#destroy")
+router.post("/repositories/:repo_id/merge_requests/:id/comments", "merge_requests#add_comment")
+router.post("/repositories/:repo_id/merge_requests/:id/close", "merge_requests#close")
+router.post("/repositories/:repo_id/merge_requests/:id/reopen", "merge_requests#reopen")
+router.post("/repositories/:repo_id/merge_requests/:id/merge", "merge_requests#merge")
+
+-- Git Smart HTTP
+-- Matches /git/repo_name.git/info/refs, /git/repo_name.git/git-upload-pack, etc.
+-- We use a catch-all for the git path
+router.get("/git/:repo_path/info/refs", "git_http#info_refs")
+router.post("/git/:repo_path/git-upload-pack", "git_http#upload_pack")
+router.post("/git/:repo_path/git-receive-pack", "git_http#receive_pack")
+
+-- Projects routes (Apps CRUD)
+router.get("/projects", "projects#index")
+router.get("/projects/sidebar/in-progress", "projects#sidebar_in_progress")
+router.get("/projects/sidebar/my-tasks", "projects#sidebar_my_tasks")
+router.get("/projects/sidebar/apps", "projects#sidebar_apps")
+router.get("/projects/app/modal/create", "projects#app_modal_create")
+router.post("/projects/app", "projects#create_app")
+router.get("/projects/app/:key/edit", "projects#app_edit")
+router.put("/projects/app/:key", "projects#update_app")
+router.delete("/projects/app/:key", "projects#delete_app")
+
+-- Features routes (within an App)
+router.get("/projects/app/:app_key", "projects#features")
+router.get("/projects/app/:app_key/feature/modal/create", "projects#feature_modal_create")
+router.post("/projects/app/:app_key/feature", "projects#create_feature")
+router.get("/projects/app/:app_key/feature/:key/edit", "projects#feature_edit")
+router.put("/projects/app/:app_key/feature/:key", "projects#update_feature")
+router.delete("/projects/app/:app_key/feature/:key", "projects#delete_feature")
+
+-- Feature Board routes (Tasks Kanban)
+router.get("/projects/app/:app_key/feature/:key", "projects#board")
+router.get("/projects/app/:app_key/feature/:feature_key/column/:status", "projects#column")
+router.get("/projects/app/:app_key/feature/:feature_key/task/modal/create", "projects#task_modal_create")
+router.post("/projects/app/:app_key/feature/:feature_key/task", "projects#create_task")
+
+-- Columns management routes
+router.get("/projects/app/:app_key/feature/:feature_key/columns/modal", "projects#columns_modal")
+router.post("/projects/app/:app_key/feature/:feature_key/columns", "projects#add_column")
+router.put("/projects/app/:app_key/feature/:feature_key/columns", "projects#update_columns")
+router.delete("/projects/app/:app_key/feature/:feature_key/columns/:column_id", "projects#delete_column")
+
+-- Task routes
+router.post("/projects/status", "projects#update_status")
+router.post("/projects/priority", "projects#update_priority")
+router.get("/projects/task/:key", "projects#show")
+router.put("/projects/task/:key", "projects#update")
+router.delete("/projects/task/:key", "projects#delete")
+router.post("/projects/task/:key/comment", "projects#add_comment")
+router.get("/projects/task/:key/assignees", "projects#assignee_dropdown")
+router.post("/projects/task/:key/assign", "projects#assign_task")
+router.post("/projects/task/:key/tags", "projects#update_tags")
+router.post("/projects/task/:key/file", "projects#attach_file")
+router.delete("/projects/task/:key/file/:file_key", "projects#remove_file")
+router.get("/projects/task/:key/card", "projects#task_card")
+router.get("/projects/task/:key/row", "projects#task_row")
+
+-- CRUDs App routes (Dynamic CRUD builder)
+router.get("/cruds", "cruds#index")
+
+-- Datatype management
+router.get("/cruds/datatypes/new", "cruds#new_datatype")
+router.post("/cruds/datatypes", "cruds#create_datatype")
+router.get("/cruds/datatypes/:slug/edit", "cruds#edit_datatype")
+router.put("/cruds/datatypes/:slug", "cruds#update_datatype")
+router.delete("/cruds/datatypes/:slug", "cruds#delete_datatype")
+router.get("/cruds/datatypes/:slug/schema", "cruds#schema_editor")
+router.put("/cruds/datatypes/:slug/schema", "cruds#update_schema")
+
+-- Dynamic data CRUD (must come after /datatypes routes to avoid conflicts)
+router.get("/cruds/data/:datatype_slug", "cruds#data_index")
+router.get("/cruds/data/:datatype_slug/new", "cruds#data_new")
+router.post("/cruds/data/:datatype_slug", "cruds#data_create")
+router.get("/cruds/data/:datatype_slug/:key", "cruds#data_show")
+router.get("/cruds/data/:datatype_slug/:key/edit", "cruds#data_edit")
+router.put("/cruds/data/:datatype_slug/:key", "cruds#data_update")
+router.delete("/cruds/data/:datatype_slug/:key", "cruds#data_delete")
+
+-- File uploads
+router.get("/cruds/upload/config", "cruds#upload_config")
+router.get("/cruds/file/:key", "cruds#file_proxy")
 
 return router

@@ -55,13 +55,11 @@
       ></div>
     </div>
 
-    <!-- Header (Fixed Top) -->
-    <% if not hide_header then %>
-    <div class="relative z-0 flex-shrink-0"><%- partial("shared/header") %></div>
-    <% end %>
 
     <!-- Flex Container for Sidebar + Main Content -->
     <div class="flex flex-1 overflow-hidden relative z-10">
+      <%- partial("shared/activity_sidebar") %>
+
       <!-- Main Scrollable Content -->
       <main
         class="flex-1 <%= full_height and 'overflow-hidden' or 'overflow-y-auto' %> bg-transparent"
@@ -72,11 +70,11 @@
           >
             <%- yield() %>
           </div>
-          <% if not full_height then %>
-          <div class="mt-auto"><%- partial("shared/footer") %></div>
-          <% end %>
+
         </div>
       </main>
+
+      <%- partial("shared/right_sidebar") %>
     </div>
 
     <script type="module">

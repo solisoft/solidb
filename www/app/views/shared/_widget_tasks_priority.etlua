@@ -1,0 +1,31 @@
+<% if tasks and #tasks > 0 then %>
+  <div class="space-y-2 animate-fade-in">
+    <% for _, task in ipairs(tasks) do %>
+    <% 
+      local feature = task:get_feature()
+      local app = task:get_app()
+      local link = "#"
+      local hierarchy = "Project"
+      if app and feature then
+        link = "/projects/app/" .. app._key .. "/feature/" .. feature._key .. "?task=" .. task._key
+        hierarchy = app.name .. " / " .. feature.name
+      end
+    %>
+    <a href="<%= link %>" class="block p-3 bg-error/5 hover:bg-error/10 rounded-xl border border-error/10 transition-all group">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[10px] font-bold text-error uppercase tracking-wider truncate max-w-[70%]"><%= hierarchy %></span>
+        <span class="text-[10px] text-text-muted"><%= os.date("%b %d", task.updated_at or os.time()) %></span>
+      </div>
+      <h4 class="text-sm font-medium text-text group-hover:text-white truncate"><%= task.title %></h4>
+      <div class="mt-2 flex items-center gap-2">
+        <div class="h-1.5 w-1.5 rounded-full bg-error animate-pulse"></div>
+        <span class="text-[10px] text-error font-medium uppercase tracking-wide">High Priority</span>
+      </div>
+    </a>
+    <% end %>
+  </div>
+<% else %>
+  <div class="text-center py-4 text-text-dim text-xs">
+    No high priority tasks.
+  </div>
+<% end %>

@@ -1,0 +1,200 @@
+<%
+local priority_colors = {
+  high = "text-error bg-error/10",
+  medium = "text-warning bg-warning/10",
+  low = "text-success bg-success/10"
+}
+local priority_class = priority_colors[task.priority] or priority_colors.medium
+
+local status_labels = {
+  todo = "To Do",
+  in_progress = "In Progress",
+  done = "Done",
+  backlog = "Backlog"
+}
+local status_colors = {
+  todo = "text-text-dim bg-white/5",
+  in_progress = "text-primary bg-primary/10",
+  done = "text-success bg-success/10",
+  backlog = "text-text-dim border border-white/10"
+}
+
+-- Override with dynamic columns if available
+if columns then
+  for _, col in ipairs(columns) do
+    status_labels[col.id] = col.name
+    -- Map column color names to tailwind classes if needed, or use them directly if they are classes
+    -- Assuming col.color contains something like "text-warning" or just a color name
+    -- For now, let's try to preserve existing behavior or map
+    local color_class = "text-text-dim bg-white/5" -- default
+    if col.color then
+       -- If it's a "text-color" class
+       if col.color:match("text%-") then
+         color_class = col.color .. " bg-" .. col.color:gsub("text%-", "") .. "/10"
+       else
+         -- fallback or simple color name mapping could go here
+         color_class = "text-" .. col.color .. " bg-" .. col.color .. "/10"
+       end
+    end
+    status_colors[col.id] = color_class
+  end
+end
+
+local tag_colors = {
+  backend = "bg-purple-500/20 text-purple-400",
+  frontend = "bg-blue-500/20 text-blue-400",
+  ios = "bg-gray-500/20 text-gray-300",
+  android = "bg-green-500/20 text-green-400",
+  mobile = "bg-orange-500/20 text-orange-400"
+}
+local tag_labels = {
+  backend = "Backend",
+  frontend = "Frontend",
+  ios = "iOS",
+  android = "Android",
+  mobile = "Mobile"
+}
+%>
+<tr class="task-row group border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer"
+    onclick="openTaskPanel('<%= task._key %>')"
+    data-task-key="<%= task._key %>"
+    data-title="<%= (task.title or ''):lower() %>"
+    data-assignee="<%= task.assignee_id or '' %>"
+    data-status="<%= task.status or '' %>"
+    data-priority="<%= task.priority or '' %>"
+    data-sequence-id="<%= task.sequence_id or 0 %>"
+    data-position="<%= task.position or 0 %>">
+  <!-- ID -->
+  <td class="px-6 py-4 whitespace-nowrap w-24">
+    <span class="text-xs font-mono text-text-dim">Task-<%= task.sequence_id or "Pending" %></span>
+  </td>
+
+  <!-- Title & Tags -->
+  <td class="px-6 py-4">
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-text group-hover:text-primary transition-colors"><%= task.title %></span>
+      <% if task.tags and #task.tags > 0 then %>
+      <div class="flex gap-1">
+        <% for _, tag_id in ipairs(task.tags) do %>
+        <span class="text-[10px] px-1.5 py-0.5 rounded <%= tag_colors[tag_id] or 'bg-white/10 text-text-dim' %>">
+          <%= tag_labels[tag_id] or tag_id %>
+        </span>
+        <% end %>
+      </div>
+      <% end %>
+    </div>
+  </td>
+
+  <!-- Status -->
+  <td class="px-6 py-4 whitespace-nowrap w-32" onclick="event.stopPropagation()">
+    <div class="relative status-container inline-block text-left">
+      <button onclick="toggleStatusDropdown(this, '<%= task._key %>')" 
+              class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium <%= status_colors[task.status] or status_colors.todo %> hover:brightness-110 transition-all cursor-pointer">
+        <%= status_labels[task.status] or task.status %>
+        <i class="fas fa-chevron-down text-[8px] opacity-70"></i>
+      </button>
+      
+      <!-- Dropdown -->
+      <div class="status-dropdown hidden fixed mt-1 w-36 bg-bg-card border border-white/10 rounded-lg shadow-xl z-[9999] overflow-hidden py-1"
+           onclick="event.stopPropagation()">
+        <% 
+        -- Use provided columns or fallback defaults
+        local dd_columns = columns or {
+          { id = "todo", name = "To Do" },
+          { id = "in_progress", name = "In Progress" },
+          { id = "done", name = "Done" },
+          { id = "backlog", name = "Backlog" }
+        }
+        
+        for _, col in ipairs(dd_columns) do 
+          local status_key = col.id
+          local label = col.name
+          local color_class = status_colors[status_key] or "bg-white"
+          -- Extract text color for the dot
+          local dot_color = color_class:match("text%-[%w%-]+") or "bg-white"
+          -- Just use bg-{color} for the dot if possible, derived from text-{color}
+          if dot_color:match("text%-") then
+            dot_color = dot_color:gsub("text%-", "bg-")
+          end
+        %>
+          <% if status_key ~= task.status then %>
+          <button onclick="updateTaskStatus('<%= task._key %>', '<%= status_key %>')" 
+                  class="w-full text-left px-3 py-2 text-xs hover:bg-white/5 flex items-center gap-2 transition-colors group">
+            <span class="w-1.5 h-1.5 rounded-full <%= dot_color %>"></span>
+            <span class="text-text-dim group-hover:text-text"><%= label %></span>
+          </button>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </td>
+
+  <!-- Priority -->
+  <td class="px-6 py-4 whitespace-nowrap w-24" onclick="event.stopPropagation()">
+    <div class="relative priority-container inline-block text-left">
+      <button onclick="togglePriorityDropdown(this, '<%= task._key %>')"
+              class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium <%= priority_class %> hover:brightness-95 transition-all cursor-pointer">
+        <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+        <%= (task.priority or "medium"):sub(1,1):upper() .. (task.priority or "medium"):sub(2) %>
+        <i class="fas fa-chevron-down text-[8px] opacity-70"></i>
+      </button>
+
+      <!-- Dropdown -->
+      <div class="priority-dropdown hidden fixed mt-1 w-32 bg-bg-card border border-white/10 rounded-lg shadow-xl z-[9999] overflow-hidden py-1"
+           onclick="event.stopPropagation()">
+        <% 
+        local priorities = { 
+          { id = "high", label = "High" },
+          { id = "medium", label = "Medium" },
+          { id = "low", label = "Low" }
+        }
+        for _, p in ipairs(priorities) do 
+          local p_class = priority_colors[p.id]
+        %>
+          <% if p.id ~= task.priority then %>
+          <button onclick="updateTaskPriority('<%= task._key %>', '<%= p.id %>')" 
+                  class="w-full text-left px-3 py-2 text-xs hover:bg-white/5 flex items-center gap-2 transition-colors group">
+             <span class="w-1.5 h-1.5 rounded-full <%= p_class:match("text%-[%w%-]+") or "bg-white" %>"></span>
+             <span class="text-text-dim group-hover:text-text"><%= p.label %></span>
+          </button>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </td>
+
+  <!-- Assignee -->
+  <td class="px-6 py-4 whitespace-nowrap w-40" onclick="event.stopPropagation()">
+    <div class="relative assignee-container inline-block text-left">
+      <button onclick="toggleAssigneeDropdown(this, '<%= task._key %>')" 
+              class="flex items-center gap-2 hover:bg-white/5 rounded-lg px-2 py-1 transition-colors group w-full">
+        <% if task.assignee then %>
+          <div class="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-[10px] text-white font-medium shrink-0">
+            <%= string.sub(task.assignee.firstname or "?", 1, 1) %>
+          </div>
+          <span class="text-sm text-text truncate"><%= task.assignee.firstname %></span>
+        <% else %>
+          <div class="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+            <i class="fas fa-user text-[10px] text-text-dim"></i>
+          </div>
+          <span class="text-sm text-text-dim group-hover:text-text transition-colors">Assign</span>
+        <% end %>
+        <i class="fas fa-chevron-down text-[8px] opacity-0 group-hover:opacity-70 ml-auto transition-opacity"></i>
+      </button>
+
+      <!-- Dropdown (loaded via AJAX) -->
+      <div class="assignee-dropdown hidden fixed mt-1 w-64 bg-bg-card border border-white/10 rounded-lg shadow-xl z-[9999] overflow-hidden" 
+           onclick="event.stopPropagation()">
+      </div>
+    </div>
+  </td>
+
+  <!-- Actions -->
+  <td class="px-6 py-4 whitespace-nowrap text-right w-20" onclick="event.stopPropagation()">
+    <button hx-delete="/projects/task/<%= task._key %>"
+            hx-confirm="Delete task?"
+            class="text-text-dim hover:text-error transition-colors p-2 rounded-lg hover:bg-error/10">
+      <i class="fas fa-trash"></i>
+    </button>
+  </td>
+</tr>

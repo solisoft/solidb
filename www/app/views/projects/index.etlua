@@ -1,0 +1,106 @@
+<!-- Apps Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <i class="fas fa-th-large text-primary text-sm"></i>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-white">Apps</h1>
+      <span class="text-xs text-text-dim">Manage your applications</span>
+    </div>
+  </div>
+  <button hx-get="/projects/app/modal/create" hx-target="#modal-container"
+          class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+    <i class="fas fa-plus"></i> New App
+  </button>
+</div>
+
+<!-- Apps Grid -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6" data-db-name="<%= db_name or '_system' %>">
+  <% if #apps == 0 then %>
+  <div class="flex flex-col items-center justify-center h-64 text-center">
+    <div class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+      <i class="fas fa-rocket text-2xl text-text-dim"></i>
+    </div>
+    <h3 class="text-lg font-medium text-text mb-2">No apps yet</h3>
+    <p class="text-text-dim text-sm mb-4">Create your first app to start organizing features and tasks</p>
+    <button hx-get="/projects/app/modal/create" hx-target="#modal-container"
+            class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium">
+      <i class="fas fa-plus mr-2"></i>Create App
+    </button>
+  </div>
+  <% else %>
+  <div id="apps-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <% for _, app in ipairs(apps) do %>
+    <%- partial("projects/app_card", { app = app }) %>
+    <% end %>
+  </div>
+  <% end %>
+</div>
+
+<script>
+(function() {
+  const DB_NAME = '<%= db_name or "_system" %>';
+  const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+  const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  let appsLiveQueryWs = null;
+  let appsHash = null;
+
+  // Clean up WebSocket on page unload
+  window.addEventListener('beforeunload', function() {
+    if (appsLiveQueryWs) {
+      appsLiveQueryWs.onclose = null;
+      appsLiveQueryWs.close();
+    }
+  });
+
+  async function getToken() {
+    try {
+      const res = await fetch('/talks/livequery_token');
+      const data = await res.json();
+      return data.token;
+    } catch (e) {
+      console.error('Token fetch failed:', e);
+      return null;
+    }
+  }
+
+  async function connectAppsLiveQuery() {
+    const token = await getToken();
+    if (!token) return setTimeout(connectAppsLiveQuery, 5000);
+
+    const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+    appsLiveQueryWs = new WebSocket(url);
+
+    appsLiveQueryWs.onopen = () => {
+      appsLiveQueryWs.send(JSON.stringify({
+        type: 'live_query',
+        database: DB_NAME,
+        query: 'FOR a IN apps RETURN { _key: a._key, name: a.name, updated_at: a.updated_at }'
+      }));
+    };
+
+    appsLiveQueryWs.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'query_result' && data.result) {
+          const newHash = JSON.stringify(data.result.map(a => a._key + ':' + a.updated_at).sort());
+          if (appsHash !== null && newHash !== appsHash) {
+            if (appsLiveQueryWs) {
+              appsLiveQueryWs.onclose = null;
+              appsLiveQueryWs.close();
+            }
+            window.location.reload();
+          }
+          appsHash = newHash;
+        }
+      } catch (err) { console.error('Apps LiveQuery error:', err); }
+    };
+
+    appsLiveQueryWs.onclose = () => setTimeout(connectAppsLiveQuery, 5000);
+  }
+
+  connectAppsLiveQuery();
+})();
+</script>

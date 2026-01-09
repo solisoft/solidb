@@ -1,0 +1,120 @@
+<%
+local color_classes = {
+  primary = "text-primary",
+  accent = "text-accent",
+  success = "text-success",
+  warning = "text-warning",
+  error = "text-error"
+}
+local icon_class = color_classes[app.color] or color_classes.primary
+%>
+<!-- Features Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/projects" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+      <i class="fas fa-rocket <%= icon_class %> text-sm"></i>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-white"><%= app.name %></h1>
+      <span class="text-xs text-text-dim">Features</span>
+    </div>
+  </div>
+  <button hx-get="/projects/app/<%= app._key %>/feature/modal/create" hx-target="#modal-container"
+          class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+    <i class="fas fa-plus"></i> New Feature
+  </button>
+</div>
+
+<!-- Features Grid -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6" data-app-key="<%= app._key %>" data-db-name="<%= db_name or '_system' %>">
+  <% if #features == 0 then %>
+  <div class="flex flex-col items-center justify-center h-64 text-center">
+    <div class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+      <i class="fas fa-puzzle-piece text-2xl text-text-dim"></i>
+    </div>
+    <h3 class="text-lg font-medium text-text mb-2">No features yet</h3>
+    <p class="text-text-dim text-sm mb-4">Create your first feature to start organizing tasks</p>
+    <button hx-get="/projects/app/<%= app._key %>/feature/modal/create" hx-target="#modal-container"
+            class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium">
+      <i class="fas fa-plus mr-2"></i>Create Feature
+    </button>
+  </div>
+  <% else %>
+  <div id="features-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <% for _, feature in ipairs(features) do %>
+    <%- partial("projects/feature_card", { feature = feature, app = app }) %>
+    <% end %>
+  </div>
+  <% end %>
+</div>
+
+<script>
+(function() {
+  const APP_KEY = '<%= app._key %>';
+  const DB_NAME = '<%= db_name or "_system" %>';
+  const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+  const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  let featuresLiveQueryWs = null;
+  let featuresHash = null;
+
+  // Clean up WebSocket on page unload
+  window.addEventListener('beforeunload', function() {
+    if (featuresLiveQueryWs) {
+      featuresLiveQueryWs.onclose = null;
+      featuresLiveQueryWs.close();
+    }
+  });
+
+  async function getToken() {
+    try {
+      const res = await fetch('/talks/livequery_token');
+      const data = await res.json();
+      return data.token;
+    } catch (e) {
+      console.error('Token fetch failed:', e);
+      return null;
+    }
+  }
+
+  async function connectFeaturesLiveQuery() {
+    const token = await getToken();
+    if (!token) return setTimeout(connectFeaturesLiveQuery, 5000);
+
+    const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+    featuresLiveQueryWs = new WebSocket(url);
+
+    featuresLiveQueryWs.onopen = () => {
+      featuresLiveQueryWs.send(JSON.stringify({
+        type: 'live_query',
+        database: DB_NAME,
+        query: `FOR f IN features FILTER f.app_id == "${APP_KEY}" RETURN { _key: f._key, name: f.name, updated_at: f.updated_at }`
+      }));
+    };
+
+    featuresLiveQueryWs.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'query_result' && data.result) {
+          const newHash = JSON.stringify(data.result.map(f => f._key + ':' + f.updated_at).sort());
+          if (featuresHash !== null && newHash !== featuresHash) {
+            if (featuresLiveQueryWs) {
+              featuresLiveQueryWs.onclose = null;
+              featuresLiveQueryWs.close();
+            }
+            window.location.reload();
+          }
+          featuresHash = newHash;
+        }
+      } catch (err) { console.error('Features LiveQuery error:', err); }
+    };
+
+    featuresLiveQueryWs.onclose = () => setTimeout(connectFeaturesLiveQuery, 5000);
+  }
+
+  connectFeaturesLiveQuery();
+})();
+</script>

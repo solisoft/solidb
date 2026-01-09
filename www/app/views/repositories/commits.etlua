@@ -1,0 +1,160 @@
+<!-- Repository Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/repositories" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <i class="fas fa-code-branch text-primary text-sm"></i>
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <h1 class="text-lg font-bold text-white"><%= repository.name %></h1>
+        <% if repository.is_public then %>
+        <span class="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-globe text-[8px]"></i> Public
+        </span>
+        <% else %>
+        <span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-lock text-[8px]"></i> Private
+        </span>
+        <% end %>
+      </div>
+      <span class="text-xs text-text-dim truncate max-w-md block"><%= repository.description or "No description provided" %></span>
+    </div>
+  </div>
+  
+  <div class="flex items-center gap-2">
+    <a href="/repositories/<%= repository.id %>/merge_requests/new" class="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-code-pull-request"></i> New MR
+    </a>
+    <a href="/repositories/<%= repository.id %>/edit" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors" title="Settings">
+      <i class="fas fa-cog text-sm"></i>
+    </a>
+  </div>
+</div>
+
+<!-- Main Content Area -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <!-- Main Content -->
+      <div class="lg:col-span-2 space-y-6">
+        <!-- Tabs -->
+        <div class="border-b border-white/10">
+          <nav class="flex gap-6" aria-label="Tabs">
+            <a href="/repositories/<%= repository.id %>/tree" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+              <i class="fas fa-folder-tree text-lg"></i>
+              Code
+            </a>
+            <a href="/repositories/<%= repository.id %>/commits" class="border-b-2 border-primary py-4 px-1 inline-flex items-center gap-2 text-primary font-medium text-sm" aria-current="page">
+              <i class="fas fa-code-commit text-lg"></i>
+              Commits
+            </a>
+            <a href="/repositories/<%= repository.id %>/merge_requests" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+              <i class="fas fa-code-pull-request text-lg"></i>
+              Merge Requests
+              <% if open_mrs_count and open_mrs_count > 0 then %>
+                <span class="ml-1 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full border border-primary/20"><%= open_mrs_count %></span>
+              <% end %>
+            </a>
+          </nav>
+        </div>
+
+        <!-- Commits List -->
+        <% if #commits == 0 then %>
+        <div class="bg-surface rounded-xl p-12 border border-white/10 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-code-commit text-2xl text-text-dim"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">Empty Repository</h3>
+          <p class="text-text-dim mb-6">Push some code to get started!</p>
+          <div class="bg-black/30 rounded-lg p-5 text-left border border-white/5 overflow-x-auto">
+            <p class="text-xs text-text-dim uppercase tracking-wider font-semibold mb-3">Quick setup</p>
+            <pre class="text-sm text-text font-mono leading-relaxed select-all">cd existing_folder
+git init
+git remote add origin http://localhost:8080/git/<%= repository.name %>.git
+git add .
+git commit -m "Initial commit"
+git push -u origin main</pre>
+          </div>
+        </div>
+        <% else %>
+        <div class="relative pl-4 border-l border-white/10 space-y-8">
+          <% 
+            local current_date = "" 
+            for i, commit in ipairs(commits) do
+              -- Extract date part only (assuming format allows simple substring or we just use full string if strictly display)
+              -- For better grouping we'd need parsed dates, but let's stick to simple list for now
+          %>
+          <div class="relative group">
+            <div class="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full border-2 border-surface bg-white/20 group-hover:bg-primary group-hover:scale-110 transition-all"></div>
+            
+            <div class="bg-surface rounded-xl p-5 border border-white/5 hover:border-primary/20 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                  <p class="text-white text-lg font-medium truncate mb-2 group-hover:text-primary transition-colors cursor-pointer"><%= commit.message %></p>
+                  <div class="flex items-center gap-3 text-sm text-text-dim">
+                    <div class="flex items-center gap-2">
+                      <div class="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-[10px] text-white font-bold uppercase">
+                        <%= commit.author:sub(1,1) %>
+                      </div>
+                      <span class="font-medium text-text"><%= commit.author %></span>
+                    </div>
+                    <span>&bull;</span>
+                    <span><%= commit.date %></span>
+                  </div>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                  <button onclick="navigator.clipboard.writeText('<%= commit.hash %>')" class="p-2 text-text-dim hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Hash">
+                    <i class="fas fa-copy"></i>
+                  </button>
+                  <code class="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-2 py-1 rounded">
+                    <%= commit.hash:sub(1, 8) %>
+                  </code>
+                </div>
+              </div>
+            </div>
+          </div>
+          <% end %>
+        </div>
+        <% end %>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="space-y-6">
+        <!-- Clone Widget -->
+        <div class="bg-surface rounded-xl p-5 border border-white/10">
+          <h3 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <i class="fas fa-download text-primary"></i>
+            Clone Repository
+          </h3>
+          <div class="bg-black/30 rounded-lg p-3 border border-white/5 flex items-center gap-3 group">
+            <code class="flex-1 font-mono text-xs text-text-dim truncate select-all">http://localhost:8080/git/<%= repository.name %>.git</code>
+            <button onclick="navigator.clipboard.writeText('http://localhost:8080/git/<%= repository.name %>.git')"
+                    class="text-text-dim hover:text-white transition-colors" title="Copy URL">
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- About Widget (Placeholder for more stats) -->
+        <div class="bg-surface rounded-xl p-5 border border-white/10">
+          <h3 class="text-sm font-semibold text-white mb-3">About</h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-text-dim">Default Branch</span>
+              <span class="text-white font-mono bg-white/5 px-2 py-0.5 rounded text-xs">HEAD</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-text-dim"><i class="fas fa-history mr-2"></i>Commits</span>
+              <span class="text-white font-medium"><%= #commits %></span>
+            </div>
+            <!-- Potential for more stats: Branches, Contributors, Size, etc. -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

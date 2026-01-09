@@ -1,0 +1,289 @@
+<!-- JSON Schema Editor -->
+<% local dt = datatype.data or datatype %>
+<div class="max-w-4xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex items-center gap-4">
+    <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div>
+      <h1 class="text-2xl font-bold text-gradient">JSON Schema</h1>
+      <p class="text-text-muted mt-1"><%= dt.name %></p>
+    </div>
+  </div>
+
+  <!-- Info -->
+  <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+      <i class="fas fa-info-circle text-blue-400 mt-0.5"></i>
+      <div>
+        <p class="text-sm">The JSON schema is used to validate data when creating or updating records.</p>
+        <p class="text-sm text-text-muted mt-1">The schema is auto-generated from field definitions, but you can manually edit it for advanced validation rules.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schema Reference -->
+  <div class="bg-bg-card/50 border border-border/50 rounded-xl overflow-hidden">
+    <button type="button" onclick="toggleReference()" class="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+      <div class="flex items-center gap-3">
+        <i class="fas fa-book text-primary"></i>
+        <span class="font-medium">Schema Reference & Options</span>
+      </div>
+      <i id="ref-icon" class="fas fa-chevron-down transition-transform"></i>
+    </button>
+    <div id="ref-content" class="hidden border-t border-border/30 bg-bg-dark/30 p-4 space-y-4 text-sm">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Types -->
+        <div>
+          <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Supported Types</h3>
+          <ul class="space-y-1 text-text-muted">
+            <li><code class="text-primary-light">string</code> - Text values</li>
+            <li><code class="text-primary-light">number</code> - Floating point numbers</li>
+            <li><code class="text-primary-light">integer</code> - Whole numbers</li>
+            <li><code class="text-primary-light">boolean</code> - true/false</li>
+            <li><code class="text-primary-light">object</code> - Key-value maps</li>
+            <li><code class="text-primary-light">array</code> - Lists of items</li>
+            <li><code class="text-primary-light">null</code> - Null value</li>
+          </ul>
+        </div>
+
+        <!-- Validation -->
+        <div>
+          <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Validation Rules</h3>
+          <ul class="space-y-2 text-text-muted">
+            <li>
+              <code class="text-accent">required</code>
+              <span class="text-xs block">Array of required field names (Object)</span>
+            </li>
+            <li>
+              <code class="text-accent">minLength</code>, <code class="text-accent">maxLength</code>
+              <span class="text-xs block">Character count limits (String)</span>
+            </li>
+            <li>
+              <code class="text-accent">pattern</code>
+              <span class="text-xs block">Lua pattern string (e.g. <code class="text-xs">^%d+$</code>)</span>
+            </li>
+            <li>
+              <code class="text-accent">format</code>
+              <span class="text-xs block">Predefined formats: <code class="text-xs">email</code>, <code class="text-xs">date</code> (YYYY-MM-DD)</span>
+            </li>
+             <li>
+              <code class="text-accent">enum</code>
+              <span class="text-xs block">Array of allowed values</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="text-xs text-text-dim italic mt-2 border-t border-white/5 pt-2">
+        Note: The <code>pattern</code> property uses Lua patterns, not full RegEx.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleReference() {
+      const content = document.getElementById('ref-content');
+      const icon = document.getElementById('ref-icon');
+      content.classList.toggle('hidden');
+      icon.classList.toggle('rotate-180');
+    }
+  </script>
+
+  <!-- Editor -->
+  <form hx-put="/cruds/datatypes/<%= dt.slug %>/schema" hx-swap="none" id="schema-form" class="space-y-6">
+    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-bg-dark/50">
+        <span class="text-sm font-medium">JSON Schema</span>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="regenerateSchema()" class="px-3 py-1.5 bg-warning/20 hover:bg-warning/30 text-warning rounded-lg transition-colors text-sm">
+            <i class="fas fa-sync mr-1"></i> Regenerate from Fields
+          </button>
+          <button type="button" onclick="formatSchema()" class="px-3 py-1.5 hover:bg-white/10 rounded-lg transition-colors text-sm">
+            <i class="fas fa-align-left mr-1"></i> Format
+          </button>
+        </div>
+      </div>
+
+      <div id="monaco-editor-container" style="height: 500px;"></div>
+      <input type="hidden" name="json_schema" id="document-input" value="">
+    </div>
+
+    <!-- Submit -->
+    <div class="flex items-center justify-end gap-3">
+      <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</a>
+      <button type="submit" id="document-submit-btn" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
+        <i class="fas fa-save mr-2"></i> Save Schema
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+// Current schema
+const currentSchema = <%- EncodeJson(dt.json_schema or {}) %>;
+const fields = <%- EncodeJson(dt.fields or {}) %>;
+
+let schemaEditor = null;
+
+// Initialize Monaco Editor
+// Initialize Monaco Editor
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('Initializing Schema Editor...');
+  
+  if (typeof require !== 'undefined') {
+    console.log('RequireJS detected, configuring Monaco...');
+    require.config({
+      paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' }
+    });
+    require(['vs/editor/editor.main'], function() {
+      console.log('Monaco loaded via RequireJS');
+      initSchemaEditor();
+    });
+  } else if (typeof monaco !== 'undefined') {
+    console.log('Monaco global detected');
+    initSchemaEditor();
+  } else {
+    console.error('Monaco Loader not found. Attempting fallback load...');
+    // Fallback: load loader script dynamically
+    var script = document.createElement('script');
+    script.src = 'https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js';
+    script.onload = function() {
+      console.log('Fallback loader loaded');
+      require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' } });
+      require(['vs/editor/editor.main'], function() {
+        initSchemaEditor();
+      });
+    };
+    document.head.appendChild(script);
+  }
+});
+
+function initSchemaEditor() {
+  const container = document.getElementById('monaco-editor-container');
+
+  // Define dark theme
+  monaco.editor.defineTheme('solidb-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'string.key.json', foreground: '7dd3fc' },
+      { token: 'string.value.json', foreground: '86efac' },
+      { token: 'number', foreground: 'fbbf24' },
+      { token: 'keyword', foreground: 'c084fc' }
+    ],
+    colors: {
+      'editor.background': '#1a1a2e',
+      'editor.foreground': '#e2e8f0',
+      'editor.lineHighlightBackground': '#ffffff08',
+      'editorCursor.foreground': '#7c3aed',
+      'editor.selectionBackground': '#7c3aed40',
+      'editorLineNumber.foreground': '#64748b',
+      'editorLineNumber.activeForeground': '#94a3b8'
+    }
+  });
+
+  schemaEditor = monaco.editor.create(container, {
+    value: JSON.stringify(currentSchema, null, 2),
+    language: 'json',
+    theme: 'solidb-dark',
+    automaticLayout: true,
+    minimap: { enabled: false },
+    fontSize: 14,
+    fontFamily: "'JetBrains Mono', monospace",
+    lineNumbers: 'on',
+    scrollBeyondLastLine: false,
+    wordWrap: 'on',
+    tabSize: 2,
+    insertSpaces: true,
+    formatOnPaste: true,
+    bracketPairColorization: { enabled: true }
+  });
+
+  // Update hidden input before submit
+  const form = document.getElementById('schema-form');
+  form.addEventListener('htmx:configRequest', function(e) {
+    if (schemaEditor) {
+      const value = schemaEditor.getValue();
+      document.getElementById('document-input').value = value;
+      e.detail.parameters['json_schema'] = value;
+    }
+  });
+
+  // Validate JSON and update button state
+  schemaEditor.onDidChangeModelContent(function() {
+    validateSchema();
+  });
+
+  // Format on load
+  setTimeout(formatSchema, 100);
+}
+
+function formatSchema() {
+  if (schemaEditor) {
+    schemaEditor.getAction('editor.action.formatDocument').run();
+  }
+}
+
+function validateSchema() {
+  const submitBtn = document.getElementById('document-submit-btn');
+  if (!submitBtn) return;
+
+  try {
+    const value = schemaEditor.getValue().trim();
+    if (!value) {
+      submitBtn.disabled = true;
+      submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      return;
+    }
+    JSON.parse(value);
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+  } catch (e) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+  }
+}
+
+function regenerateSchema() {
+  if (!confirm('This will replace the current schema with one generated from the fields. Continue?')) {
+    return;
+  }
+
+  // Generate schema from fields
+  const schema = {
+    type: 'object',
+    properties: {},
+    required: []
+  };
+
+  fields.forEach(function(field) {
+    let prop = { type: 'string' };
+
+    if (field.type === 'gps') {
+      prop = {
+        type: 'object',
+        properties: {
+          lat: { type: 'number' },
+          lng: { type: 'number' }
+        }
+      };
+    } else if (['images', 'files', 'tags', 'multilist'].includes(field.type)) {
+      prop = { type: 'array', items: { type: 'string' } };
+    } else if (field.type === 'list' && field.options && field.options.length > 0) {
+      prop = { type: 'string', enum: field.options };
+    }
+
+    schema.properties[field.name] = prop;
+
+    if (field.required) {
+      schema.required.push(field.name);
+    }
+  });
+
+  if (schemaEditor) {
+    schemaEditor.setValue(JSON.stringify(schema, null, 2));
+    formatSchema();
+  }
+}
+</script>

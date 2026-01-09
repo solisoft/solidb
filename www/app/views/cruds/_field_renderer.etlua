@@ -1,0 +1,452 @@
+<% local prefix = prefix or "data_" %>
+<% local name = prefix .. field.name %>
+<% local label = field.label or field.name %>
+<% local placeholder = field.placeholder or "" %>
+<% local required = field.required %>
+
+<div class="space-y-2">
+  <label class="block text-sm font-medium text-text-muted">
+    <%= label %><% if required then %> <span class="text-error">*</span><% end %>
+  </label>
+
+  <% if field.type == "string" then %>
+    <!-- String Field -->
+    <input type="text" name="<%= name %>" value="<%= value or '' %>"
+           placeholder="<%= placeholder %>"
+           <%= required and 'required' or '' %>
+           class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+
+  <% elseif field.type == "text" then %>
+    <!-- Text Field -->
+    <textarea name="<%= name %>" rows="4"
+              placeholder="<%= placeholder %>"
+              <%= required and 'required' or '' %>
+              class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary resize-y"><%= value or '' %></textarea>
+
+  <% elseif field.type == "wysiwyg" then %>
+    <!-- WYSIWYG Field (Quill Editor) -->
+    <div class="wysiwyg-wrapper rounded-lg overflow-hidden border border-border/50 bg-bg-dark">
+      <div id="toolbar-<%= field.name %>" class="ql-toolbar-dark">
+        <span class="ql-formats">
+          <select class="ql-header">
+            <option value="1">Heading 1</option>
+            <option value="2">Heading 2</option>
+            <option value="3">Heading 3</option>
+            <option selected>Normal</option>
+          </select>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-bold"></button>
+          <button class="ql-italic"></button>
+          <button class="ql-underline"></button>
+          <button class="ql-strike"></button>
+        </span>
+        <span class="ql-formats">
+          <select class="ql-color"></select>
+          <select class="ql-background"></select>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-list" value="ordered"></button>
+          <button class="ql-list" value="bullet"></button>
+          <button class="ql-indent" value="-1"></button>
+          <button class="ql-indent" value="+1"></button>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-blockquote"></button>
+          <button class="ql-code-block"></button>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-link"></button>
+          <button class="ql-image"></button>
+          <button class="ql-video"></button>
+        </span>
+        <span class="ql-formats">
+          <select class="ql-align"></select>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-clean"></button>
+        </span>
+      </div>
+      <div id="editor-<%= field.name %>" class="quill-editor-dark" style="min-height: 200px;"><%- value or '' %></div>
+    </div>
+    <input type="hidden" name="<%= name %>" id="input-<%= field.name %>" value="">
+    <script>
+      (function(){
+        var quill = new Quill('#editor-<%= field.name %>', {
+          modules: {
+            toolbar: '#toolbar-<%= field.name %>'
+          },
+          theme: 'snow',
+          placeholder: '<%= placeholder ~= "" and placeholder or "Write something..." %>'
+        });
+        var hiddenInput = document.getElementById('input-<%= field.name %>');
+        hiddenInput.value = quill.root.innerHTML;
+        quill.on('text-change', function() {
+          hiddenInput.value = quill.root.innerHTML;
+        });
+      })();
+    </script>
+
+  <% elseif field.type == "gps" then %>
+    <!-- GPS Field -->
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <input type="number" step="any" name="<%= name %>_lat"
+               value="<%= value and value.lat or '' %>"
+               placeholder="Latitude"
+               class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <input type="number" step="any" name="<%= name %>_lng"
+               value="<%= value and value.lng or '' %>"
+               placeholder="Longitude"
+               class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+      </div>
+    </div>
+    <p class="text-xs text-text-muted">Enter latitude and longitude coordinates</p>
+
+  <% elseif field.type == "images" then %>
+    <!-- Images Field with Drag & Drop -->
+    <div class="space-y-3">
+      <div id="dropzone-<%= field.name %>"
+           class="relative border-2 border-dashed border-border/50 rounded-xl p-6 text-center transition-all duration-200 hover:border-primary/50 hover:bg-primary/5"
+           ondragover="handleDragOver(event, '<%= field.name %>')"
+           ondragleave="handleDragLeave(event, '<%= field.name %>')"
+           ondrop="handleImageDrop(event, '<%= field.name %>')">
+        <input type="file" accept="image/*" multiple
+               id="file-input-<%= field.name %>"
+               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+               onchange="handleImageSelect(this, '<%= field.name %>')">
+        <div class="pointer-events-none">
+          <i class="fas fa-cloud-upload-alt text-3xl text-text-muted mb-2"></i>
+          <p class="text-text-muted text-sm">Drag & drop images here or <span class="text-primary-light">browse</span></p>
+          <p class="text-text-muted/60 text-xs mt-1">PNG, JPG, GIF up to 10MB</p>
+        </div>
+      </div>
+      <div id="preview-<%= field.name %>" class="grid grid-cols-4 sm:grid-cols-6 gap-2">
+        <% if value and type(value) == "table" then %>
+          <% for i, img in ipairs(value) do %>
+            <%
+              local img_key = type(img) == "table" and img.key or img
+              local img_url = type(img) == "table" and img.url or (img:sub(1, 5) == "data:" and img or "/cruds/file/" .. img)
+            %>
+          <div class="image-item relative aspect-square bg-bg-dark rounded-lg overflow-hidden group" data-key="<%= img_key %>">
+            <img src="<%= img_url %>" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              <i class="fas fa-grip-vertical text-white/80 cursor-move"></i>
+              <button type="button" onclick="removeImage('<%= field.name %>', this.closest('.image-item'))" class="p-1 hover:text-error">
+                <i class="fas fa-trash text-white/80"></i>
+              </button>
+            </div>
+          </div>
+          <% end %>
+        <% end %>
+      </div>
+      <input type="hidden" name="<%= name %>" id="images-<%= field.name %>" value='<%= value and EncodeJson(value) or "[]" %>'>
+    </div>
+    <script>
+      (function() {
+        var container = document.getElementById('preview-<%= field.name %>');
+        if (container && typeof Sortable !== 'undefined') {
+          new Sortable(container, {
+            animation: 150,
+            ghostClass: 'opacity-50',
+            handle: '.fa-grip-vertical',
+            onEnd: function() { updateImagesOrder('<%= field.name %>'); }
+          });
+        }
+      })();
+    </script>
+
+  <% elseif field.type == "files" then %>
+    <!-- Files Field with Drag & Drop -->
+    <div class="space-y-3">
+      <div id="dropzone-files-<%= field.name %>"
+           class="relative border-2 border-dashed border-border/50 rounded-xl p-6 text-center transition-all duration-200 hover:border-primary/50 hover:bg-primary/5"
+           ondragover="handleDragOver(event, 'files-<%= field.name %>')"
+           ondragleave="handleDragLeave(event, 'files-<%= field.name %>')"
+           ondrop="handleFileDrop(event, '<%= field.name %>')">
+        <input type="file" multiple
+               id="file-input-files-<%= field.name %>"
+               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+               onchange="handleFileSelect(this, '<%= field.name %>')">
+        <div class="pointer-events-none">
+          <i class="fas fa-file-upload text-3xl text-text-muted mb-2"></i>
+          <p class="text-text-muted text-sm">Drag & drop files here or <span class="text-primary-light">browse</span></p>
+          <p class="text-text-muted/60 text-xs mt-1">Any file type up to 50MB</p>
+        </div>
+      </div>
+      <ul id="files-<%= field.name %>" class="space-y-2">
+        <% if value and type(value) == "table" then %>
+          <% for _, file in ipairs(value) do %>
+            <%
+              local file_key = type(file) == "table" and file.key or file
+              local file_url = type(file) == "table" and file.url or "/cruds/file/" .. file
+              local file_name = type(file) == "table" and file.name or file
+            %>
+          <li class="file-item flex items-center gap-3 p-2 bg-bg-dark/50 border border-border/30 rounded-lg group" data-key="<%= file_key %>">
+            <i class="fas fa-grip-vertical text-text-muted cursor-move"></i>
+            <i class="fas fa-file text-primary-light"></i>
+            <a href="<%= file_url %>" target="_blank" class="flex-1 text-sm truncate hover:text-primary-light"><%= file_name %></a>
+            <button type="button" onclick="removeFile('<%= field.name %>', this.closest('.file-item'))" class="p-1 opacity-0 group-hover:opacity-100 hover:text-error transition-opacity">
+              <i class="fas fa-times"></i>
+            </button>
+          </li>
+          <% end %>
+        <% end %>
+      </ul>
+      <input type="hidden" name="<%= name %>" id="files-data-<%= field.name %>" value='<%= value and EncodeJson(value) or "[]" %>'>
+    </div>
+    <script>
+      (function() {
+        var container = document.getElementById('files-<%= field.name %>');
+        if (container && typeof Sortable !== 'undefined') {
+          new Sortable(container, {
+            animation: 150,
+            ghostClass: 'opacity-50',
+            handle: '.fa-grip-vertical',
+            onEnd: function() { updateFilesOrder('<%= field.name %>'); }
+          });
+        }
+      })();
+    </script>
+
+  <% elseif field.type == "tags" then %>
+    <!-- Tags Field (Tagify) -->
+    <%
+      -- Query existing tags from other documents (fetch in Lua to avoid SDBQL complexity)
+      local existing_tags = {}
+      local debug_info = { tags = existing_tags, query = "", params = {} }
+      
+      local ok, err = pcall(function()
+        if datatype and datatype.slug then
+          local collection = datatype.collection_name
+          if not collection or collection == "" then
+            collection = "datasets"
+          end
+          local query
+          if collection == "datasets" then
+            query = "FOR doc IN datasets FILTER doc._type == @type AND doc." .. field.name .. " != null RETURN doc." .. field.name
+            debug_info.query = query
+            debug_info.params = { type = datatype.slug }
+            local result = Sdb:Sdbql(query, { type = datatype.slug })
+            if result and result.result then
+              local tags_set = {}
+              for _, tags_list in ipairs(result.result) do
+                if type(tags_list) == "table" then
+                  for _, tag in ipairs(tags_list) do
+                    if type(tag) == "string" and tag ~= "" then
+                      tags_set[tag] = true
+                    end
+                  end
+                end
+              end
+              for tag, _ in pairs(tags_set) do
+                table.insert(existing_tags, tag)
+              end
+              table.sort(existing_tags)
+            else 
+               debug_info.error = result and result.error or "No result"
+            end
+          else
+            query = "FOR doc IN `" .. collection .. "` FILTER doc." .. field.name .. " != null RETURN doc." .. field.name
+            debug_info.query = query
+            debug_info.params = {}
+            local result = Sdb:Sdbql(query, {})
+            if result and result.result then
+               local tags_set = {}
+              for _, tags_list in ipairs(result.result) do
+                if type(tags_list) == "table" then
+                  for _, tag in ipairs(tags_list) do
+                    if type(tag) == "string" and tag ~= "" then
+                      tags_set[tag] = true
+                    end
+                  end
+                end
+              end
+              for tag, _ in pairs(tags_set) do
+                table.insert(existing_tags, tag)
+              end
+              table.sort(existing_tags)
+            else
+               debug_info.error = result and result.error or "No result"
+            end
+          end
+        else
+          debug_info.error = "Datatype or slug missing"
+        end
+      end)
+      
+      if not ok then debug_info.pcall_error = err end
+      debug_info.tags = existing_tags -- update debug info with final tags
+      
+      -- Convert value array to comma-separated string for Tagify
+      local tags_value = ""
+      if value and type(value) == "table" then
+        tags_value = table.concat(value, ", ")
+      elseif value then
+        tags_value = tostring(value)
+      end
+    %>
+    <div class="space-y-2">
+      <input name="<%= name %>"
+             placeholder="<%= placeholder ~= '' and placeholder or 'Type and press Enter...' %>"
+             value="<%= tags_value %>"
+             <%= required and 'required' or '' %>
+             class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+      <p class="text-xs text-text-muted">Type and press Enter to add tags</p>
+    </div>
+    <script>
+      (function(){
+        var input = document.querySelector('input[name="<%= name %>"]');
+        if (input) {
+          var existingTagsRaw = <%- EncodeJson(existing_tags) %>;
+          
+          // Ensure whitelist is always an array of strings (extra safety)
+          var existingTags = Array.isArray(existingTagsRaw) ? existingTagsRaw : [];
+
+          var debugInfo = <%- EncodeJson(debug_info) %>;
+          console.log("Tagify Debug for " + input.name, debugInfo);
+          
+          if (debugInfo.pcall_error || debugInfo.error) {
+             console.error("Tagify Error:", debugInfo.pcall_error || debugInfo.error);
+          }
+
+          var tagify = new Tagify(input, {
+              originalInputValueFormat: valuesArr => JSON.stringify(valuesArr.map(item => item.value)),
+              duplicates: false,
+              whitelist: existingTags,
+              dropdown: {
+                enabled: 0,
+                maxItems: 20,
+                closeOnSelect: false,
+                highlightFirst: true
+              }
+          });
+          console.log("Tagify initialized for " + input.name, { whitelist: existingTags });
+
+          // Load initial value after Tagify is initialized
+          if (initialValue && initialValue.trim() !== '') {
+            // Parse comma-separated string into array
+            var tags = initialValue.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t !== ''; });
+            tagify.addTags(tags);
+          }
+
+          // Fix for the dark mode style
+          tagify.DOM.scope.classList.add('bg-bg-dark', 'border-border/50', 'rounded-lg', 'text-text');
+          tagify.DOM.scope.style.setProperty('--tag-bg', 'rgba(var(--primary), 0.2)');
+          tagify.DOM.scope.style.setProperty('--tag-text-color', 'rgb(var(--primary-light))');
+          tagify.DOM.scope.style.setProperty('--tag-remove-btn-color', 'rgb(var(--text-muted))');
+          tagify.DOM.scope.style.setProperty('--tags-border-color', 'rgba(var(--border), 0.5)');
+          tagify.DOM.scope.style.setProperty('--tags-focus-border-color', 'rgb(var(--primary))');
+        }
+      })();
+    </script>
+
+  <% elseif field.type == "list" then %>
+    <!-- List (Single Select) Field -->
+    <%
+      local list_options = field.options or {}
+      -- Execute SDBQL query if source_query is defined
+      if field.source_query and field.source_query ~= "" then
+        local bind_vars = {}
+        if doc_id then bind_vars.doc = doc_id end
+        local result = Sdb:Sdbql(field.source_query, bind_vars)
+        if result and result.result then
+          list_options = {}
+          for _, item in ipairs(result.result) do
+            if type(item) == "table" then
+              local opt_value = field.value_field and item[field.value_field] or item._key or item._id or tostring(item)
+              local opt_label = field.label_field and item[field.label_field] or opt_value
+              table.insert(list_options, { value = opt_value, label = opt_label })
+            else
+              table.insert(list_options, { value = tostring(item), label = tostring(item) })
+            end
+          end
+        end
+      else
+        -- Convert static options to { value, label } format
+        local temp = {}
+        for _, opt in ipairs(list_options) do
+          table.insert(temp, { value = opt, label = opt })
+        end
+        list_options = temp
+      end
+    %>
+    <%
+      local allow_blank = field.allow_blank
+      if allow_blank == nil then allow_blank = true end -- default to allowing blank
+    %>
+    <select name="<%= name %>" <%= required and 'required' or '' %>
+            class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+      <% if allow_blank then %>
+      <option value="">Select...</option>
+      <% end %>
+      <% for _, opt in ipairs(list_options) do %>
+      <option value="<%= opt.value %>" <%= value == opt.value and 'selected' or '' %>><%= opt.label %></option>
+      <% end %>
+    </select>
+    <% if field.source_query then %>
+    <p class="text-xs text-text-muted mt-1"><i class="fas fa-database mr-1"></i>Options loaded from query</p>
+    <% end %>
+
+  <% elseif field.type == "multilist" then %>
+    <!-- Multilist (Multiple Select) Field -->
+    <%
+      local multi_options = field.options or {}
+      -- Execute SDBQL query if source_query is defined
+      if field.source_query and field.source_query ~= "" then
+        local bind_vars = {}
+        if doc_id then bind_vars.doc = doc_id end
+        local result = Sdb:Sdbql(field.source_query, bind_vars)
+        if result and result.result then
+          multi_options = {}
+          for _, item in ipairs(result.result) do
+            if type(item) == "table" then
+              local opt_value = field.value_field and item[field.value_field] or item._key or item._id or tostring(item)
+              local opt_label = field.label_field and item[field.label_field] or opt_value
+              table.insert(multi_options, { value = opt_value, label = opt_label })
+            else
+              table.insert(multi_options, { value = tostring(item), label = tostring(item) })
+            end
+          end
+        end
+      else
+        -- Convert static options to { value, label } format
+        local temp = {}
+        for _, opt in ipairs(multi_options) do
+          table.insert(temp, { value = opt, label = opt })
+        end
+        multi_options = temp
+      end
+      local selected = value or {}
+    %>
+    <select name="<%= name %>" multiple
+            class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary h-32"
+            onchange="updateMultilist('<%= field.name %>')">
+      <% for _, opt in ipairs(multi_options) do %>
+        <% local is_selected = false %>
+        <% if type(selected) == "table" then %>
+          <% for _, sel in ipairs(selected) do %>
+            <% if sel == opt.value then is_selected = true; break end %>
+          <% end %>
+        <% end %>
+      <option value="<%= opt.value %>" <%= is_selected and 'selected' or '' %>><%= opt.label %></option>
+      <% end %>
+    </select>
+    <input type="hidden" name="<%= name %>" id="multilist-<%= field.name %>" value='<%= value and EncodeJson(value) or "[]" %>'>
+    <p class="text-xs text-text-muted">
+      <% if field.source_query then %>
+      <i class="fas fa-database mr-1"></i>Options loaded from query.
+      <% end %>
+      Hold Ctrl/Cmd to select multiple options
+    </p>
+
+  <% else %>
+    <!-- Default: String Field -->
+    <input type="text" name="<%= name %>" value="<%= value or '' %>"
+           placeholder="<%= placeholder %>"
+           <%= required and 'required' or '' %>
+           class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+  <% end %>
+</div>

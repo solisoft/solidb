@@ -1,0 +1,94 @@
+<%
+local color_classes = {
+  primary = "from-primary/20 to-primary/5 border-primary/30",
+  accent = "from-accent/20 to-accent/5 border-accent/30",
+  success = "from-success/20 to-success/5 border-success/30",
+  warning = "from-warning/20 to-warning/5 border-warning/30",
+  error = "from-error/20 to-error/5 border-error/30"
+}
+local icon_classes = {
+  primary = "text-primary",
+  accent = "text-accent",
+  success = "text-success",
+  warning = "text-warning",
+  error = "text-error"
+}
+local tag_colors = {
+  backend = "bg-purple-500/20 text-purple-400",
+  frontend = "bg-blue-500/20 text-blue-400",
+  ios = "bg-gray-500/20 text-gray-300",
+  android = "bg-green-500/20 text-green-400",
+  mobile = "bg-orange-500/20 text-orange-400"
+}
+local tag_labels = {
+  backend = "Backend",
+  frontend = "Frontend",
+  ios = "iOS",
+  android = "Android",
+  mobile = "Mobile"
+}
+local color_class = color_classes[feature.color] or color_classes.primary
+local icon_class = icon_classes[feature.color] or icon_classes.primary
+local progress = feature.task_count > 0 and math.floor((feature.done_count / feature.task_count) * 100) or 0
+local app_key = app and app._key or feature.app_id
+%>
+<a href="/projects/app/<%= app_key %>/feature/<%= feature._key %>"
+   id="feature-<%= feature._key %>"
+   class="group block bg-gradient-to-br <%= color_class %> rounded-xl border border-white/5 p-5 hover:border-white/10 transition-all hover:scale-[1.02]">
+  <div class="flex items-start justify-between mb-3">
+    <div class="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
+      <i class="fas fa-cube <%= icon_class %>"></i>
+    </div>
+    <div class="flex items-center gap-2">
+      <button hx-get="/projects/app/<%= app_key %>/feature/<%= feature._key %>/edit" hx-target="#modal-container"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              class="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text opacity-0 group-hover:opacity-100 transition-opacity">
+        <i class="fas fa-pen text-xs"></i>
+      </button>
+      <button hx-delete="/projects/app/<%= app_key %>/feature/<%= feature._key %>"
+              hx-confirm="Delete this feature and all its tasks?"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              class="w-7 h-7 rounded-lg bg-white/5 hover:bg-error/20 flex items-center justify-center text-text-dim hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+        <i class="fas fa-trash text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <h3 class="text-lg font-semibold text-text mb-1 group-hover:text-white transition-colors"><%= feature.name %></h3>
+  <% if feature.description and feature.description ~= "" then %>
+  <p class="text-sm text-text-muted line-clamp-2 mb-3"><%= feature.description %></p>
+  <% else %>
+  <p class="text-sm text-text-dim italic mb-3">No description</p>
+  <% end %>
+
+  <!-- Tags -->
+  <% if feature.tags and #feature.tags > 0 then %>
+  <div class="flex flex-wrap gap-1 mb-3">
+    <% for _, tag_id in ipairs(feature.tags) do %>
+    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded <%= tag_colors[tag_id] or 'bg-white/10 text-text-dim' %>">
+      <%= tag_labels[tag_id] or tag_id %>
+    </span>
+    <% end %>
+  </div>
+  <% end %>
+
+  <!-- Progress -->
+  <div class="mb-3">
+    <div class="flex justify-between text-xs text-text-dim mb-1">
+      <span>Progress</span>
+      <span><%= feature.done_count %>/<%= feature.task_count %> tasks</span>
+    </div>
+    <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+      <div class="h-full bg-success rounded-full transition-all" style="width: <%= progress %>%"></div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-between text-xs text-text-dim">
+    <span><i class="fas fa-calendar-alt mr-1"></i> <%= os.date("%b %d", feature.created_at or os.time()) %></span>
+    <span class="flex items-center gap-1">
+      <span class="w-2 h-2 rounded-full <%= feature.status == 'active' and 'bg-success' or 'bg-text-dim' %>"></span>
+      <%= feature.status == 'active' and 'Active' or 'Archived' %>
+    </span>
+  </div>
+</a>

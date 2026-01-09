@@ -1,31 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0f172a;
-  --color-bg-card: #1e293b;
+  /* Premium Dark Palette */
+  --color-bg: #030712; /* Very deep blue-black */
+  --color-bg-card: #111827; /* Rich dark gray-blue */
   --color-text: #f8fafc;
   --color-text-muted: #94a3b8;
   --color-text-dim: #64748b;
-  --color-border: #334155;
-  --color-bg-dark: #020617;
+  --color-border: #1f2937; /* Subtle border */
+  --color-bg-dark: #000000;
+  --color-bg-input: #1f2937;
 
+  /* Brand Colors */
   --color-primary: #8b5cf6;
+  --color-primary-hover: #7c3aed;
   --color-primary-light: #a78bfa;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-info: #06b6d4;
+  --color-error: #ef4444;
   --color-accent: #f43f5e;
   --color-accent-light: #fb7185;
 }
 
 :root {
-  --bg: #0f172a;
-  --bg-card: #1e293b;
+  --bg: #030712;
+  --bg-card: #111827;
   --text: #f8fafc;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
-  --border: #334155;
-  --bg-dark: #020617;
+  --border: #1f2937;
+  --bg-dark: #000000;
 
   /* Custom utility classes support */
   --color-bg: var(--bg);
@@ -36,4 +41,38 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glassmorphism Utilities */
+.glass {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+  background: rgba(31, 41, 55, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Custom Scrollbar for Webkit */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.4);
 }

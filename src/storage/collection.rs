@@ -1868,127 +1868,81 @@ impl Collection {
             .cf_handle(&self.name)
             .expect("Column family should exist");
 
-        // Collect all document keys
-        let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, prefix);
-        let mut keys_to_delete = Vec::new();
-
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(prefix) {
-                    keys_to_delete.push(key.to_vec());
-                }
+        // Helper to get range end for a prefix (assumes last byte < 255, which is true for ':')
+        let get_range_end = |prefix: &[u8]| -> Vec<u8> {
+            let mut end = prefix.to_vec();
+            if let Some(last) = end.last_mut() {
+                *last += 1;
             }
-        }
+            end
+        };
 
-        let count = keys_to_delete.len();
+        // 1. Delete all documents (doc:)
+        let doc_prefix = DOC_PREFIX.as_bytes();
+        let doc_end = get_range_end(doc_prefix);
+        db.delete_range_cf(cf, doc_prefix, &doc_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to truncate documents: {}", e)))?;
 
-        // Delete all documents
-        for key in keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Clear all index entries (but keep index metadata)
+        // 2. Clear index entries (idx:) - keep metadata
         let idx_prefix = IDX_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, idx_prefix);
-        let mut idx_keys_to_delete = Vec::new();
+        let idx_end = get_range_end(idx_prefix);
+        db.delete_range_cf(cf, idx_prefix, &idx_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear indexes: {}", e)))?;
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(idx_prefix) {
-                    idx_keys_to_delete.push(key.to_vec());
-                }
-            }
-        }
-
-        for key in idx_keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Clear fulltext index entries (but keep metadata)
+        // 3. Clear fulltext index entries (ft:) - keep metadata
         let ft_prefix = FT_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, ft_prefix);
-        let mut ft_keys_to_delete = Vec::new();
+        let ft_end = get_range_end(ft_prefix);
+        db.delete_range_cf(cf, ft_prefix, &ft_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear fulltext indexes: {}", e)))?;
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(ft_prefix) {
-                    ft_keys_to_delete.push(key.to_vec());
-                }
-            }
-        }
-
-        for key in ft_keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Clear fulltext term entries
+        // 4. Clear fulltext term entries (ft_term:)
         let ft_term_prefix = FT_TERM_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, ft_term_prefix);
-        let mut ft_term_keys_to_delete = Vec::new();
+        let ft_term_end = get_range_end(ft_term_prefix);
+        db.delete_range_cf(cf, ft_term_prefix, &ft_term_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear fulltext terms: {}", e)))?;
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(ft_term_prefix) {
-                    ft_term_keys_to_delete.push(key.to_vec());
-                }
-            }
-        }
-
-        for key in ft_term_keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Clear geo index entries (but keep metadata)
+        // 5. Clear geo index entries (geo:) - keep metadata
         let geo_prefix = GEO_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, geo_prefix);
-        let mut geo_keys_to_delete = Vec::new();
+        let geo_end = get_range_end(geo_prefix);
+        db.delete_range_cf(cf, geo_prefix, &geo_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear geo indexes: {}", e)))?;
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(geo_prefix) {
-                    geo_keys_to_delete.push(key.to_vec());
-                }
-            }
-        }
-
-        for key in geo_keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Clear blob chunks (for blob collections)
+        // 6. Clear blob chunks (blo:)
         let blo_prefix = BLO_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(cf, blo_prefix);
-        let mut blo_keys_to_delete = Vec::new();
+        let blo_end = get_range_end(blo_prefix);
+        db.delete_range_cf(cf, blo_prefix, &blo_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear blob chunks: {}", e)))?;
 
-        for result in iter {
-            if let Ok((key, _)) = result {
-                if key.starts_with(blo_prefix) {
-                    blo_keys_to_delete.push(key.to_vec());
-                }
-            }
+        // 7. Clear persisted Bloom filters (blo_idx:)
+        let blo_idx_prefix = BLO_IDX_PREFIX.as_bytes();
+        let blo_idx_end = get_range_end(blo_idx_prefix);
+        db.delete_range_cf(cf, blo_idx_prefix, &blo_idx_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear bloom filters: {}", e)))?;
+
+        // 8. Clear persisted Cuckoo filters (cfo_idx:)
+        let cfo_idx_prefix = CFO_IDX_PREFIX.as_bytes();
+        let cfo_idx_end = get_range_end(cfo_idx_prefix);
+        db.delete_range_cf(cf, cfo_idx_prefix, &cfo_idx_end)
+            .map_err(|e| DbError::InternalError(format!("Failed to clear cuckoo filters: {}", e)))?;
+
+        // 9. Clear in-memory filter caches
+        {
+            let mut blooms = self.bloom_filters.write().unwrap();
+            blooms.clear();
+        }
+        {
+            let mut cuckoos = self.cuckoo_filters.write().unwrap();
+            cuckoos.clear();
         }
 
-        for key in blo_keys_to_delete {
-            db.delete_cf(cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-        }
-
-        // Reset document count to 0 (both in-memory and on disk)
-        self.doc_count.store(0, Ordering::Relaxed);
+        // 10. Reset document and chunk counts
+        let old_count = self.doc_count.swap(0, Ordering::Relaxed);
+        self.chunk_count.store(0, Ordering::Relaxed);
         self.count_dirty.store(false, Ordering::Relaxed);
         db.put_cf(cf, STATS_COUNT_KEY.as_bytes(), "0".as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Trigger asynchronous compaction to reclaim space
-        // We clone self to move it into the background thread.
-        // Note: The background thread will acquire a read lock on the DB,
-        // so it will wait until this function returns and drops the write lock.
         let collection = self.clone();
         std::thread::spawn(move || {
             tracing::info!(
@@ -2004,7 +1958,7 @@ impl Collection {
             );
         });
 
-        Ok(count)
+        Ok(old_count)
     }
 
     // ==================== Index Operations ====================

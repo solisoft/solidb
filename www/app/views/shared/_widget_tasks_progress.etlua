@@ -1,0 +1,47 @@
+<% if tasks and #tasks > 0 then %>
+  <div class="space-y-2 animate-fade-in">
+    <% for _, task in ipairs(tasks) do %>
+    <% 
+      local feature = task:get_feature()
+      local app = task:get_app()
+      local link = "#"
+      local hierarchy = "Project"
+      if app and feature then
+        link = "/projects/app/" .. app._key .. "/feature/" .. feature._key .. "?task=" .. task._key
+        hierarchy = app.name .. " / " .. feature.name
+      end
+      
+      -- Priority Styling
+      local priority = task.priority or "low"
+      local bg_class = "bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/10"
+      local text_color = "text-blue-400"
+      local dot_color = "bg-blue-400"
+      
+      if priority == "high" then
+        bg_class = "bg-error/5 hover:bg-error/10 border-error/10"
+        text_color = "text-error"
+        dot_color = "bg-error"
+      elseif priority == "medium" then
+        bg_class = "bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/10"
+        text_color = "text-amber-500"
+        dot_color = "bg-amber-500"
+      end
+    %>
+    <a href="<%= link %>" class="block p-3 rounded-xl border transition-all group <%= bg_class %>">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[10px] font-bold uppercase tracking-wider truncate max-w-[70%] <%= text_color %>"><%= hierarchy %></span>
+        <span class="text-[10px] text-text-muted"><%= os.date("%b %d", task.updated_at or os.time()) %></span>
+      </div>
+      <h4 class="text-sm font-medium text-text group-hover:text-white truncate"><%= task.title %></h4>
+      <div class="mt-2 flex items-center gap-2">
+        <div class="h-1.5 w-1.5 rounded-full animate-pulse <%= dot_color %>"></div>
+        <span class="text-[10px] font-medium uppercase tracking-wide <%= text_color %>">In Progress</span>
+      </div>
+    </a>
+    <% end %>
+  </div>
+<% else %>
+  <div class="text-center py-4 text-text-dim text-xs">
+    No tasks in progress.
+  </div>
+<% end %>

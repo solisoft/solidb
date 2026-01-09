@@ -1,0 +1,960 @@
+<%
+local color_classes = {
+  primary = "text-primary",
+  accent = "text-accent",
+  success = "text-success",
+  warning = "text-warning",
+  error = "text-error",
+  ["text-dim"] = "text-text-dim"
+}
+local bg_classes = {
+  primary = "bg-primary",
+  accent = "bg-accent",
+  success = "bg-success",
+  warning = "bg-warning",
+  error = "bg-error",
+  ["text-dim"] = "bg-text-dim"
+}
+local badge_classes = {
+  primary = "bg-primary/10 text-primary",
+  accent = "bg-accent/10 text-accent",
+  success = "bg-success/10 text-success",
+  warning = "bg-warning/10 text-warning",
+  error = "bg-error/10 text-error",
+  ["text-dim"] = "bg-white/5 text-text-dim"
+}
+local feature_icon_class = color_classes[feature.color] or color_classes.primary
+local app_icon_class = color_classes[app.color] or color_classes.primary
+%>
+<!-- Board Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/projects/app/<%= app._key %>" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-sm">
+      <a href="/projects" class="text-text-dim hover:text-text transition-colors">Apps</a>
+      <i class="fas fa-chevron-right text-[10px] text-text-dim"></i>
+      <a href="/projects/app/<%= app._key %>" class="text-text-dim hover:text-text transition-colors flex items-center gap-1">
+        <i class="fas fa-rocket <%= app_icon_class %> text-xs"></i>
+        <%= app.name %>
+      </a>
+      <i class="fas fa-chevron-right text-[10px] text-text-dim"></i>
+      <span class="text-white font-medium flex items-center gap-1">
+        <i class="fas fa-cube <%= feature_icon_class %> text-xs"></i>
+        <%= feature.name %>
+      </span>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <!-- View Toggle -->
+    <div class="flex bg-white/5 rounded-lg p-0.5 mr-2">
+      <button onclick="switchView('kanban')" id="btn-kanban" class="px-3 py-1.5 rounded-md text-sm font-medium transition-all bg-white/10 text-white shadow-sm">
+        <i class="fas fa-columns mr-1"></i> Board
+      </button>
+      <button onclick="switchView('list')" id="btn-list" class="px-3 py-1.5 rounded-md text-sm font-medium text-text-dim hover:text-white transition-all">
+        <i class="fas fa-list mr-1"></i> List
+      </button>
+    </div>
+
+    <button hx-get="/projects/app/<%= app._key %>/feature/<%= feature._key %>/columns/modal" hx-target="#modal-container"
+            class="px-3 py-2 bg-white/5 hover:bg-white/10 text-text-dim hover:text-text rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-cog"></i> Columns
+    </button>
+    <button hx-get="/projects/app/<%= app._key %>/feature/<%= feature._key %>/task/modal/create" hx-target="#modal-container"
+            class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-plus"></i> New Task
+    </button>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="px-6 py-3 border-b border-white/5 bg-bg-card/20 flex items-center gap-4">
+  <!-- Search -->
+  <div class="relative flex-1 max-w-xs">
+    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-dim text-sm"></i>
+    <input type="text" id="task-search" placeholder="Search tasks..."
+           oninput="filterTasks()"
+           class="w-full pl-9 pr-4 py-2 bg-bg-input border border-border rounded-lg text-sm text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent">
+  </div>
+
+  <!-- Assignee Filter -->
+  <div class="relative">
+    <select id="assignee-filter" onchange="filterTasks()"
+            class="pl-3 pr-8 py-2 bg-bg-input border border-border rounded-lg text-sm text-text focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer">
+      <option value="">All assignees</option>
+      <option value="unassigned">Unassigned</option>
+      <% for _, u in ipairs(users) do %>
+      <option value="<%= u._key %>"><%= u.firstname %> <%= u.lastname or "" %></option>
+      <% end %>
+    </select>
+    <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-text-dim text-xs pointer-events-none"></i>
+  </div>
+
+  <!-- Clear Filters -->
+  <button type="button" onclick="clearFilters()" id="clear-filters-btn"
+          class="hidden px-3 py-2 text-sm text-text-dim hover:text-text hover:bg-white/5 rounded-lg transition-colors">
+    <i class="fas fa-times mr-1"></i> Clear
+  </button>
+</div>
+
+<!-- Kanban Board -->
+<div id="kanban-view" class="flex-1 overflow-x-auto overflow-y-hidden p-6" data-app-key="<%= app._key %>" data-feature-key="<%= feature._key %>" data-db-name="<%= db_name or '_system' %>">
+  <div class="flex h-full gap-4 min-w-max">
+    <% for _, col in ipairs(columns) do %>
+    <% local col_color = color_classes[col.color] or color_classes["text-dim"] %>
+    <% local col_bg = bg_classes[col.color] or bg_classes["text-dim"] %>
+    <% local col_badge = badge_classes[col.color] or badge_classes["text-dim"] %>
+    <% local col_tasks = tasks_by_column[col.id] or {} %>
+    <div class="w-80 flex flex-col bg-bg-card/30 rounded-xl border border-white/5 max-h-full">
+      <div class="p-4 border-b border-white/5 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full <%= col_bg %>"></div>
+          <h3 class="font-semibold <%= col_color %> text-sm"><%= col.name %></h3>
+        </div>
+        <span class="<%= col_badge %> text-xs px-2 py-0.5 rounded-full"><%= #col_tasks %></span>
+      </div>
+      <div id="column-<%= col.id %>" class="drop-zone p-2 flex-1 overflow-y-auto chat-scrollbar space-y-2" data-status="<%= col.id %>">
+        <% for _, task in ipairs(col_tasks) do %>
+        <%- partial("projects/task_card", { task = task }) %>
+        <% end %>
+        <% if #col_tasks == 0 then %>
+        <div class="empty-state text-center py-8 text-text-dim text-sm pointer-events-none">No tasks</div>
+        <% end %>
+      </div>
+    </div>
+    <% end %>
+  </div>
+</div>
+
+<!-- List View -->
+<div id="list-view" class="hidden flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="bg-bg-card/30 rounded-xl border border-white/5 overflow-hidden">
+    <table class="min-w-full divide-y divide-white/5">
+      <thead class="bg-white/5">
+        <tr>
+          <th scope="col" onclick="sortList('sequence-id', 'number')" class="px-6 py-3 text-left text-xs font-medium text-text-dim uppercase tracking-wider cursor-pointer hover:text-white transition-colors group select-none">
+            ID <i class="fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon"></i>
+          </th>
+          <th scope="col" onclick="sortList('title', 'string')" class="px-6 py-3 text-left text-xs font-medium text-text-dim uppercase tracking-wider cursor-pointer hover:text-white transition-colors group select-none">
+            Title <i class="fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon"></i>
+          </th>
+          <th scope="col" onclick="sortList('status', 'string')" class="px-6 py-3 text-left text-xs font-medium text-text-dim uppercase tracking-wider cursor-pointer hover:text-white transition-colors group select-none">
+            Status <i class="fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon"></i>
+          </th>
+          <th scope="col" onclick="sortList('priority', 'priority')" class="px-6 py-3 text-left text-xs font-medium text-text-dim uppercase tracking-wider cursor-pointer hover:text-white transition-colors group select-none">
+            Priority <i class="fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon"></i>
+          </th>
+          <th scope="col" onclick="sortList('assignee', 'string')" class="px-6 py-3 text-left text-xs font-medium text-text-dim uppercase tracking-wider cursor-pointer hover:text-white transition-colors group select-none">
+            Assignee <i class="fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon"></i>
+          </th>
+          <th scope="col" class="relative px-6 py-3">
+            <span class="sr-only">Actions</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-white/5">
+        <% 
+        -- Flatten tasks for list view
+        local all_tasks = {}
+        for _, col in ipairs(columns) do
+          local col_tasks = tasks_by_column[col.id] or {}
+          for _, task in ipairs(col_tasks) do
+            table.insert(all_tasks, task)
+          end
+        end
+        -- Sort by position (match Kanban order)
+        table.sort(all_tasks, function(a, b) return (a.position or 0) < (b.position or 0) end)
+        %>
+        <% for _, task in ipairs(all_tasks) do %>
+          <%- partial("projects/task_row", { task = task, columns = columns }) %>
+        <% end %>
+        <% if #all_tasks == 0 then %>
+        <tr>
+          <td colspan="6" class="px-6 py-8 text-center text-text-dim text-sm text-italic">No tasks found</td>
+        </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal Container -->
+<div id="modal-container"></div>
+
+<!-- Task panel is defined in layout when is_projects is true -->
+
+<script>
+(function() {
+  const APP_KEY = '<%= app._key %>';
+  const FEATURE_KEY = '<%= feature._key %>';
+  const DB_NAME = '<%= db_name or "_system" %>';
+  const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+  const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  let tasksLiveQueryWs = null;
+  let tasksData = {}; // Store task data by key for comparison
+  let isDragging = false;
+  let draggedElement = null;
+  let pendingLocalChanges = new Set(); // Track keys we just modified locally
+
+  // Clean up WebSocket on page unload
+  window.addEventListener('beforeunload', function() {
+    if (tasksLiveQueryWs) {
+      tasksLiveQueryWs.onclose = null; // Prevent reconnect
+      tasksLiveQueryWs.close();
+    }
+  });
+
+  // Mark a task as locally changed (skip next WS update for it)
+  window.markLocalChange = function(taskKey) {
+    pendingLocalChanges.add(taskKey);
+    setTimeout(() => pendingLocalChanges.delete(taskKey), 2000);
+  };
+
+  // Recalculate structure hash from DOM (for add/remove detection)
+  function getTaskKeysFromDOM() {
+    const keys = new Set();
+    document.querySelectorAll('.task-card').forEach(card => {
+      keys.add(card.dataset.taskKey);
+    });
+    return keys;
+  }
+
+  async function getToken() {
+    try {
+      const res = await fetch('/talks/livequery_token');
+      const data = await res.json();
+      return data.token;
+    } catch (e) {
+      console.error('Token fetch failed:', e);
+      return null;
+    }
+  }
+
+  async function connectTasksLiveQuery() {
+    const token = await getToken();
+    if (!token) return setTimeout(connectTasksLiveQuery, 5000);
+
+    const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+    tasksLiveQueryWs = new WebSocket(url);
+
+    tasksLiveQueryWs.onopen = () => {
+      // Subscribe to task changes for this feature
+      tasksLiveQueryWs.send(JSON.stringify({
+        type: 'subscribe',
+        database: DB_NAME,
+        query: `FOR t IN tasks FILTER t.feature_id == "${FEATURE_KEY}" RETURN t`
+      }));
+    };
+
+    tasksLiveQueryWs.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+
+        // Handle changefeed operations
+        if (data.operation === 'insert') {
+          const task = data.document || data.data;
+          if (task && task.feature_id === FEATURE_KEY) {
+            // New task - add to column
+            const targetColumn = document.querySelector(`[data-status="${task.status}"]`);
+            if (targetColumn) {
+              const emptyState = targetColumn.querySelector('.empty-state');
+              if (emptyState) emptyState.remove();
+              // Fetch and add the card
+              fetch('/projects/task/' + task._key + '/card')
+                .then(res => res.text())
+                .then(html => {
+                  targetColumn.insertAdjacentHTML('beforeend', html);
+                  updateColumnCounts();
+                });
+            }
+          }
+        }
+        else if (data.operation === 'update') {
+          const task = data.document || data.data;
+          if (task && !pendingLocalChanges.has(task._key)) {
+            const card = document.querySelector(`[data-task-key="${task._key}"]`);
+            if (card) {
+              const prevStatus = card.dataset.status;
+              // Status change - move card to new column
+              if (prevStatus !== task.status) {
+                const targetColumn = document.querySelector(`[data-status="${task.status}"]`);
+                if (targetColumn) {
+                  const emptyState = targetColumn.querySelector('.empty-state');
+                  if (emptyState) emptyState.remove();
+                  card.dataset.status = task.status;
+                  targetColumn.appendChild(card);
+                  updateColumnCounts();
+                }
+              }
+              // Refresh the card content
+              refreshTaskUI(task._key);
+            }
+          }
+        }
+        else if (data.operation === 'delete') {
+          const task = data.document || data.data;
+          if (task) {
+            const card = document.querySelector(`.task-card[data-task-key="${task._key}"]`);
+            if (card) {
+              card.remove();
+              updateColumnCounts();
+            }
+            const row = document.querySelector(`.task-row[data-task-key="${task._key}"]`);
+            if (row) row.remove();
+          }
+        }
+      } catch (err) { console.error('Tasks LiveQuery error:', err); }
+    };
+
+    tasksLiveQueryWs.onclose = () => setTimeout(connectTasksLiveQuery, 5000);
+  }
+
+  // Refresh a single task UI (card and/or row)
+  function refreshTaskUI(taskKey) {
+    const card = document.querySelector(`.task-card[data-task-key="${taskKey}"]`);
+    if (card) {
+      fetch('/projects/task/' + taskKey + '/card')
+        .then(res => res.text())
+        .then(html => {
+          const temp = document.createElement('div');
+          temp.innerHTML = html;
+          const newCard = temp.firstElementChild;
+          if (newCard) {
+            card.replaceWith(newCard);
+          }
+        });
+    }
+    
+    const row = document.querySelector(`.task-row[data-task-key="${taskKey}"]`);
+    if (row) {
+        fetch('/projects/task/' + taskKey + '/row')
+        .then(res => res.text())
+        .then(html => {
+            // Table rows need tbody container for parsing
+            const temp = document.createElement('tbody');
+            temp.innerHTML = html;
+            const newRow = temp.firstElementChild;
+            if (newRow) {
+                row.replaceWith(newRow);
+            }
+        });
+    }
+  }
+
+  connectTasksLiveQuery();
+
+  // Listen for column updates
+  document.body.addEventListener('columnsUpdated', function() {
+    if (tasksLiveQueryWs) {
+      tasksLiveQueryWs.onclose = null;
+      tasksLiveQueryWs.close();
+    }
+    window.location.reload();
+  });
+
+  // Drag and drop with event delegation
+  document.addEventListener('dragstart', function(e) {
+    const card = e.target.closest('.task-card');
+    if (!card) return;
+
+    isDragging = true;
+    draggedElement = card;
+    const taskKey = card.dataset.taskKey;
+    e.dataTransfer.setData('text/plain', taskKey);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('opacity-50');
+    card.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('dragend', function(e) {
+    if (draggedElement) {
+      draggedElement.classList.remove('opacity-50');
+      draggedElement.style.cursor = '';
+    }
+    setTimeout(() => {
+      isDragging = false;
+      draggedElement = null;
+    }, 100);
+    document.querySelectorAll('.drop-zone').forEach(zone => {
+      zone.classList.remove('bg-primary/5', 'ring-2', 'ring-primary/50');
+    });
+    // Clean up any placeholders
+    document.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+  });
+
+  document.addEventListener('dragover', function(e) {
+    const dropZone = e.target.closest('.drop-zone');
+    if (!dropZone || !draggedElement) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dropZone.classList.add('bg-primary/5', 'ring-2', 'ring-primary/50');
+
+    // Find insertion point based on mouse position
+    const cards = [...dropZone.querySelectorAll('.task-card:not(.opacity-50)')];
+    const insertBefore = cards.find(card => {
+      const rect = card.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    });
+
+    // Remove existing placeholder
+    dropZone.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+
+    // Add placeholder at insertion point
+    const placeholder = document.createElement('div');
+    placeholder.className = 'drop-placeholder h-1 bg-primary rounded-full my-1 transition-all';
+
+    if (insertBefore) {
+      dropZone.insertBefore(placeholder, insertBefore);
+    } else {
+      const emptyState = dropZone.querySelector('.empty-state');
+      if (emptyState) {
+        dropZone.insertBefore(placeholder, emptyState);
+      } else {
+        dropZone.appendChild(placeholder);
+      }
+    }
+  });
+
+  document.addEventListener('dragleave', function(e) {
+    const dropZone = e.target.closest('.drop-zone');
+    if (!dropZone) return;
+    const rect = dropZone.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top || e.clientY > rect.bottom) {
+      dropZone.classList.remove('bg-primary/5', 'ring-2', 'ring-primary/50');
+      dropZone.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+    }
+  });
+
+  document.addEventListener('drop', function(e) {
+    const dropZone = e.target.closest('.drop-zone');
+    if (!dropZone) return;
+    e.preventDefault();
+    dropZone.classList.remove('bg-primary/5', 'ring-2', 'ring-primary/50');
+
+    const taskKey = e.dataTransfer.getData('text/plain');
+    const newStatus = dropZone.dataset.status;
+    if (!taskKey || !newStatus) return;
+
+    const card = document.querySelector(`[data-task-key="${taskKey}"]`);
+    const placeholder = dropZone.querySelector('.drop-placeholder');
+
+    if (card) {
+      const emptyState = dropZone.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+
+      card.dataset.status = newStatus;
+
+      // Insert at placeholder position or append
+      if (placeholder) {
+        dropZone.insertBefore(card, placeholder);
+        placeholder.remove();
+      } else {
+        dropZone.appendChild(card);
+      }
+
+      updateColumnCounts();
+      markLocalChange(taskKey);
+
+      // Calculate new position between adjacent cards
+      const cardsInColumn = [...dropZone.querySelectorAll('.task-card')];
+      const cardIndex = cardsInColumn.indexOf(card);
+      const prevCard = cardsInColumn[cardIndex - 1];
+      const nextCard = cardsInColumn[cardIndex + 1];
+
+      let newPosition;
+      const prevPos = prevCard ? parseFloat(prevCard.dataset.position) || 0 : 0;
+      const nextPos = nextCard ? parseFloat(nextCard.dataset.position) || 0 : 0;
+
+      if (!prevCard && !nextCard) {
+        // Only card in column
+        newPosition = Date.now();
+      } else if (!prevCard) {
+        // First card - position before next
+        newPosition = nextPos - 1000;
+      } else if (!nextCard) {
+        // Last card - position after prev
+        newPosition = prevPos + 1000;
+      } else {
+        // Between two cards
+        newPosition = (prevPos + nextPos) / 2;
+      }
+
+      // Update the card's data attribute
+      card.dataset.position = newPosition;
+
+      fetch('/projects/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `key=${taskKey}&status=${newStatus}&position=${newPosition}`
+      }).catch(err => {
+        console.error('Failed to update status:', err);
+        window.location.reload();
+      });
+    }
+
+    // Clean up any remaining placeholders
+    document.querySelectorAll('.drop-placeholder').forEach(p => p.remove());
+  });
+
+  function updateColumnCounts() {
+    document.querySelectorAll('.drop-zone').forEach(zone => {
+      const count = zone.querySelectorAll('.task-card').length;
+      const header = zone.previousElementSibling;
+      if (header) {
+        const badge = header.querySelector('span:last-child');
+        if (badge) badge.textContent = count;
+      }
+      // Add/remove empty state
+      const emptyState = zone.querySelector('.empty-state');
+      if (count === 0 && !emptyState) {
+        zone.innerHTML = '<div class="empty-state text-center py-8 text-text-dim text-sm pointer-events-none">No tasks</div>';
+      }
+    });
+  }
+
+  document.addEventListener('click', function(e) {
+    if (isDragging) return;
+    // Don't open panel when clicking assignee dropdown
+    if (e.target.closest('.assignee-container')) return;
+
+    const card = e.target.closest('.task-card');
+    if (!card) return;
+
+    const taskKey = card.dataset.taskKey;
+    if (taskKey) {
+      openTaskPanel(taskKey);
+    }
+  });
+
+  // openTaskPanel and closeTaskPanel are defined in the layout
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeTaskPanel();
+      closeAllAssigneeDropdowns();
+    }
+  });
+
+  // Assignee dropdown functions
+  let activeDropdown = null;
+
+  window.toggleAssigneeDropdown = function(btn, taskKey) {
+    const container = btn.closest('.assignee-container');
+    const dropdown = container.querySelector('.assignee-dropdown');
+
+    // Close other dropdowns
+    if (activeDropdown && activeDropdown !== dropdown) {
+      activeDropdown.classList.add('hidden');
+    }
+
+    if (dropdown.classList.contains('hidden')) {
+      // Load assignee list
+      fetch('/projects/task/' + taskKey + '/assignees')
+        .then(res => res.text())
+        .then(html => {
+          dropdown.innerHTML = html;
+          dropdown.classList.remove('hidden');
+          
+          // Calculate position (fixed to avoid clipping)
+          const rect = btn.getBoundingClientRect();
+          dropdown.style.top = (rect.bottom + 4) + 'px';
+          dropdown.style.left = rect.left + 'px';
+          
+          // Ensure it doesn't go off screen
+          const dRect = dropdown.getBoundingClientRect();
+          if (dRect.bottom > window.innerHeight) {
+            dropdown.style.top = (rect.top - dRect.height - 4) + 'px';
+          }
+          if (dRect.right > window.innerWidth) {
+             dropdown.style.left = (window.innerWidth - dRect.width - 20) + 'px';
+          }
+
+          activeDropdown = dropdown;
+        });
+    } else {
+      dropdown.classList.add('hidden');
+      activeDropdown = null;
+    }
+  };
+
+  window.assignTask = function(taskKey, userId) {
+    closeAllAssigneeDropdowns();
+
+    fetch('/projects/task/' + taskKey + '/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'assignee_id=' + encodeURIComponent(userId)
+    })
+    .then(res => res.text())
+    .then(html => {
+      // Use standard refresh to update both card and row
+      refreshTaskUI(taskKey);
+    })
+    .catch(err => console.error('Failed to assign task:', err));
+  };
+
+  function closeAllAssigneeDropdowns() {
+    document.querySelectorAll('.assignee-dropdown').forEach(d => d.classList.add('hidden'));
+    activeDropdown = null;
+  }
+
+  // Status dropdown functions
+  window.toggleStatusDropdown = function(btn, taskKey) {
+    const container = btn.closest('.status-container');
+    const dropdown = container.querySelector('.status-dropdown');
+    
+    // Close other dropdowns
+    document.querySelectorAll('.status-dropdown, .assignee-dropdown, .priority-dropdown').forEach(d => {
+      if (d !== dropdown) d.classList.add('hidden');
+    });
+
+    if (dropdown.classList.contains('hidden')) {
+      // Show and position
+      dropdown.classList.remove('hidden');
+      
+      // Calculate position (fixed to avoid clipping)
+      const rect = btn.getBoundingClientRect();
+      dropdown.style.top = (rect.bottom + 4) + 'px';
+      dropdown.style.left = rect.left + 'px';
+      
+      // Ensure it doesn't go off screen
+      const dRect = dropdown.getBoundingClientRect();
+      if (dRect.bottom > window.innerHeight) {
+        dropdown.style.top = (rect.top - dRect.height - 4) + 'px';
+      }
+    } else {
+      dropdown.classList.add('hidden');
+    }
+  };
+
+  window.updateTaskStatus = function(taskKey, newStatus) {
+    // Close dropdowns
+    document.querySelectorAll('.status-dropdown').forEach(d => d.classList.add('hidden'));
+
+    // optimistic update in UI
+    const card = document.querySelector(`[data-task-key="${taskKey}"]`);
+    if (card) {
+      card.dataset.status = newStatus;
+      
+      // Update badge style if it's a list row (re-render or manual class update)
+      // Since styles are complex, easiest is to wait for LiveQuery or force a refresh
+      // But for responsiveness, we can try to update the badge text/color immediately
+      // The _task_row uses server-side logic for colors for now.
+      
+      const newPosition = Date.now(); // Move to end of new column
+      
+      fetch('/projects/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `key=${taskKey}&status=${newStatus}&position=${newPosition}`
+      })
+      .then(res => res.text()) // Expecting card HTML maybe?
+      .then(() => {
+          // LiveQuery should handle the update, but we can manually refresh if needed
+          refreshTaskUI(taskKey);
+      })
+      .catch(err => console.error('Failed to update status:', err));
+    }
+  };
+
+  // Priority dropdown functions
+  window.togglePriorityDropdown = function(btn, taskKey) {
+    const container = btn.closest('.priority-container');
+    const dropdown = container.querySelector('.priority-dropdown');
+    
+    // Close other dropdowns
+    document.querySelectorAll('.status-dropdown, .assignee-dropdown, .priority-dropdown').forEach(d => {
+      if (d !== dropdown) d.classList.add('hidden');
+    });
+
+    if (dropdown.classList.contains('hidden')) {
+      dropdown.classList.remove('hidden');
+      
+      // Calculate position
+      const rect = btn.getBoundingClientRect();
+      dropdown.style.top = (rect.bottom + 4) + 'px';
+      dropdown.style.left = rect.left + 'px';
+      
+      const dRect = dropdown.getBoundingClientRect();
+      if (dRect.bottom > window.innerHeight) {
+        dropdown.style.top = (rect.top - dRect.height - 4) + 'px';
+      }
+    } else {
+      dropdown.classList.add('hidden');
+    }
+  };
+
+  window.updateTaskPriority = function(taskKey, newPriority) {
+    document.querySelectorAll('.priority-dropdown').forEach(d => d.classList.add('hidden'));
+
+    // optimistic update
+    const card = document.querySelector(`[data-task-key="${taskKey}"]`);
+    if (card) {
+      card.dataset.priority = newPriority;
+      
+      fetch('/projects/priority', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `key=${taskKey}&priority=${newPriority}`
+      })
+      .then(() => refreshTaskUI(taskKey))
+      .catch(err => console.error('Failed to update priority:', err));
+    }
+  };
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.assignee-container')) {
+       closeAllAssigneeDropdowns();
+    }
+    if (!e.target.closest('.status-container')) {
+      document.querySelectorAll('.status-dropdown').forEach(d => d.classList.add('hidden'));
+    }
+    if (!e.target.closest('.priority-container')) {
+      document.querySelectorAll('.priority-dropdown').forEach(d => d.classList.add('hidden'));
+    }
+  });
+
+  // Filter functions
+  window.filterTasks = function() {
+    const searchTerm = document.getElementById('task-search').value.toLowerCase().trim();
+    const assigneeFilter = document.getElementById('assignee-filter').value;
+    const clearBtn = document.getElementById('clear-filters-btn');
+
+    // Show/hide clear button
+    if (searchTerm || assigneeFilter) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
+
+    // Filter Cards (Kanban)
+    document.querySelectorAll('.task-card').forEach(card => {
+      let show = matchTask(card, searchTerm, assigneeFilter);
+      card.style.display = show ? '' : 'none';
+    });
+    
+    // Filter Rows (List)
+    document.querySelectorAll('.task-row').forEach(row => {
+      let show = matchTask(row, searchTerm, assigneeFilter);
+      row.style.display = show ? '' : 'none';
+    });
+
+    // Update column counts based on visible tasks
+    updateFilteredColumnCounts();
+  };
+
+  function matchTask(el, term, assignee) {
+    if (term) {
+      const title = (el.dataset.title || '').toLowerCase(); // Note: _task_row doesn't have data attrs yet, need to add them
+      // Fallback to text content if data attrs missing
+      const text = el.innerText.toLowerCase(); 
+      if (!text.includes(term)) return false;
+    }
+    if (assignee) {
+       const elAssignee = el.dataset.assignee || '';
+       if (assignee === 'unassigned') {
+         if (elAssignee !== '') return false;
+       } else {
+         if (elAssignee !== assignee) return false;
+       }
+    }
+    return true;
+  }
+
+  window.clearFilters = function() {
+    document.getElementById('task-search').value = '';
+    document.getElementById('assignee-filter').value = '';
+    document.getElementById('clear-filters-btn').classList.add('hidden');
+
+    document.querySelectorAll('.task-card, .task-row').forEach(el => {
+      el.style.display = '';
+    });
+
+    updateColumnCounts();
+  };
+
+  function updateFilteredColumnCounts() {
+    document.querySelectorAll('.drop-zone').forEach(zone => {
+      const visibleCount = [...zone.querySelectorAll('.task-card')].filter(c => c.style.display !== 'none').length;
+      const totalCount = zone.querySelectorAll('.task-card').length;
+      const header = zone.previousElementSibling;
+      if (header) {
+        const badge = header.querySelector('span:last-child');
+        if (badge) {
+          if (visibleCount !== totalCount) {
+            badge.textContent = `${visibleCount}/${totalCount}`;
+          } else {
+            badge.textContent = totalCount;
+          }
+        }
+      }
+    });
+  }
+  // Sorting
+  let currentSort = { column: 'sequence-id', dir: 'desc' }; // Default sort
+  
+  window.sortList = function(column, type) {
+    console.log('Sorting by:', column, type);
+    const tbody = document.querySelector('#list-view table tbody');
+    if (!tbody) {
+      console.error('Tbody not found');
+      return;
+    }
+    const rows = Array.from(tbody.querySelectorAll('tr.task-row'));
+    
+    // Toggle direction
+    if (currentSort.column === column) {
+      currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSort.column = column;
+      currentSort.dir = 'asc'; 
+      if (column === 'sequence-id') currentSort.dir = 'desc'; 
+    }
+    console.log('Sort direction:', currentSort.dir);
+
+    // Update icons
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+      icon.className = 'fas fa-sort ml-1 opacity-0 group-hover:opacity-50 sort-icon';
+    });
+    const activeHeader = document.querySelector(`th[onclick*="'${column}'"]`);
+    if (activeHeader) {
+      const icon = activeHeader.querySelector('.sort-icon');
+      if (icon) {
+        icon.className = `fas fa-sort-${currentSort.dir === 'asc' ? 'up' : 'down'} ml-1 opacity-100 sort-icon`;
+      }
+    }
+
+    // Sort logic
+    rows.sort((a, b) => {
+      // Use getAttribute for consistency with raw HTML
+      let attrName = 'data-' + column;
+      let valA = a.getAttribute(attrName) || '';
+      let valB = b.getAttribute(attrName) || '';
+      
+      if (type === 'number') {
+        let numA = parseFloat(valA);
+        let numB = parseFloat(valB);
+        if (isNaN(numA)) numA = 0;
+        if (isNaN(numB)) numB = 0;
+        
+        return currentSort.dir === 'asc' ? numA - numB : numB - numA;
+      } else if (type === 'priority') {
+        const pMap = { high: 3, medium: 2, low: 1, '': 0 };
+        let scoreA = pMap[valA.toLowerCase()] || 0;
+        let scoreB = pMap[valB.toLowerCase()] || 0;
+        
+        return currentSort.dir === 'asc' ? scoreA - scoreB : scoreB - scoreA;
+      } else {
+         return currentSort.dir === 'asc'
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      }
+    });
+    
+    // Reorder DOM
+    rows.forEach(row => tbody.appendChild(row));
+  };
+  
+  // View Switching
+  window.switchView = function(view) {
+    const kanbanBtn = document.getElementById('btn-kanban');
+    const listBtn = document.getElementById('btn-list');
+    const kanbanView = document.getElementById('kanban-view');
+    const listView = document.getElementById('list-view');
+
+    if (view === 'list') {
+      kanbanView.classList.add('hidden');
+      listView.classList.remove('hidden');
+      
+      listBtn.classList.remove('text-text-dim', 'hover:text-white', 'bg-transparent');
+      listBtn.classList.add('bg-white/10', 'text-white', 'shadow-sm');
+      
+      kanbanBtn.classList.add('text-text-dim', 'hover:text-white', 'bg-transparent');
+      kanbanBtn.classList.remove('bg-white/10', 'text-white', 'shadow-sm');
+    } else {
+      listView.classList.add('hidden');
+      kanbanView.classList.remove('hidden');
+      
+      kanbanBtn.classList.remove('text-text-dim', 'hover:text-white', 'bg-transparent');
+      kanbanBtn.classList.add('bg-white/10', 'text-white', 'shadow-sm');
+      
+      listBtn.classList.add('text-text-dim', 'hover:text-white', 'bg-transparent');
+      listBtn.classList.remove('bg-white/10', 'text-white', 'shadow-sm');
+    }
+
+    // Save preference
+    localStorage.setItem('projects_view_mode', view);
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Initialize Sortable for List View
+    const listBody = document.querySelector('#list-view table tbody');
+    if (listBody) {
+      new Sortable(listBody, {
+        animation: 150,
+        handle: '.task-row', // Drag handle (whole row)
+        onEnd: function(evt) {
+          const item = evt.item;
+          const taskKey = item.dataset.taskKey;
+          const status = item.dataset.status;
+          
+          // Calculate new position
+          const prevItem = item.previousElementSibling;
+          const nextItem = item.nextElementSibling;
+          
+          let newPosition;
+          // Note: position in DOM might not match dataset.position because we haven't updated dataset yet
+          // But we need to use the dataset positions of neighbors to calculate ours
+          
+          const prevPos = prevItem ? parseFloat(prevItem.dataset.position) || 0 : 0;
+          const nextPos = nextItem ? parseFloat(nextItem.dataset.position) || 0 : 0;
+          
+          if (!prevItem && !nextItem) {
+             newPosition = Date.now();
+          } else if (!prevItem) {
+             // Moved to top
+             newPosition = nextPos - 1000;
+          } else if (!nextItem) {
+             // Moved to bottom
+             newPosition = prevPos + 1000;
+          } else {
+             // Between
+             newPosition = (prevPos + nextPos) / 2;
+          }
+          
+          // Update local data
+          item.dataset.position = newPosition;
+          
+          // Send update
+          fetch('/projects/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `key=${taskKey}&status=${status}&position=${newPosition}`
+          }).catch(err => console.error('Sort failed:', err));
+        }
+      });
+    }
+
+    // Restore view preference
+    const savedView = localStorage.getItem('projects_view_mode') || 'kanban';
+    switchView(savedView);
+    
+    // Check for task query param to open modal
+    const params = new URLSearchParams(window.location.search);
+    const taskKey = params.get('task');
+    if (taskKey && window.openTaskPanel) {
+      setTimeout(() => window.openTaskPanel(taskKey), 500);
+      // Clean URL
+      const url = new URL(window.location);
+      url.searchParams.delete('task');
+      window.history.replaceState({}, '', url);
+    }
+  });
+
+})();
+</script>

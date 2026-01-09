@@ -1,0 +1,115 @@
+<%
+local available_tags = {
+  { id = "backend", name = "Backend", color = "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  { id = "frontend", name = "Frontend", color = "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  { id = "ios", name = "iOS", color = "bg-gray-500/20 text-gray-300 border-gray-500/30" },
+  { id = "android", name = "Android", color = "bg-green-500/20 text-green-400 border-green-500/30" },
+  { id = "mobile", name = "Mobile", color = "bg-orange-500/20 text-orange-400 border-orange-500/30" }
+}
+%>
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card rounded-xl shadow-2xl w-full max-w-lg mx-4 border border-white/5" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-text">Create New Task</h2>
+      <button onclick="this.closest('.fixed').remove()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-post="/projects/app/<%= app_key %>/feature/<%= feature_key %>/task"
+          hx-target="this"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) { this.reset(); document.querySelector('.fixed.inset-0')?.remove(); }">
+      <div class="p-6 space-y-4">
+        <!-- Title -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Title *</label>
+          <input type="text" name="title" required autofocus
+                 class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent"
+                 placeholder="What needs to be done?">
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
+          <textarea name="description" rows="3"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                    placeholder="Add more details..."></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <!-- Priority -->
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Priority</label>
+            <select name="priority"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text focus:ring-2 focus:ring-primary focus:border-transparent">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+
+          <!-- Assignee -->
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Assignee</label>
+            <select name="assignee_id"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text focus:ring-2 focus:ring-primary focus:border-transparent">
+              <option value="">Unassigned</option>
+              <% for _, u in ipairs(users) do %>
+              <option value="<%= u._key %>"><%= u.firstname %> <%= u.lastname or "" %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tags -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Tags</label>
+          <input type="hidden" name="tags" id="task-tags-hidden" value="">
+          <div class="flex flex-wrap gap-2" id="task-tags-selector">
+            <% for _, tag in ipairs(available_tags) do %>
+            <button type="button" data-tag="<%= tag.id %>"
+                    onclick="toggleModalTag(this)"
+                    class="tag-btn px-2.5 py-1 text-xs font-medium rounded-full border <%= tag.color %> opacity-50 transition-all">
+              <%= tag.name %>
+            </button>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      function toggleModalTag(btn) {
+        btn.classList.toggle('opacity-50');
+        btn.classList.toggle('opacity-100');
+        btn.classList.toggle('ring-1');
+        btn.classList.toggle('ring-white/30');
+        updateTagsHidden();
+      }
+      function updateTagsHidden() {
+        const tags = [];
+        document.querySelectorAll('#task-tags-selector .tag-btn.opacity-100').forEach(btn => {
+          tags.push(btn.dataset.tag);
+        });
+        document.getElementById('task-tags-hidden').value = tags.join(',');
+      }
+      </script>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3">
+        <button type="button" onclick="this.closest('.fixed').remove()"
+                class="px-4 py-2 text-text-muted hover:text-text">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium">
+          Create Task
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

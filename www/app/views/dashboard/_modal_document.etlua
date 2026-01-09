@@ -15,6 +15,9 @@
           <% if mode == 'edit' then %>
           <i class="fas fa-pen text-primary-light"></i>
           Edit Document
+          <% if meta_fields and meta_fields._type then %>
+          <span class="text-sm font-normal text-text-muted">(<%= meta_fields._type %>)</span>
+          <% end %>
           <% else %>
           <i class="fas fa-plus-circle text-primary-light"></i>
           New Document
@@ -42,13 +45,37 @@
             class="flex flex-col flex-1 min-h-0">
       <% end %>
 
-          <% if mode == 'edit' and meta_fields then %>
+        <% if mode == 'edit' and meta_fields then %>
         <!-- System Fields (read-only) -->
-        <div class="px-6 py-3 bg-white/5 border-b border-border/30 flex flex-wrap gap-4">
-          <% for k, v in pairs(meta_fields) do %>
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-medium text-text-muted"><%= k %>:</span>
-            <span class="text-xs font-mono text-primary-light"><%= v %></span>
+        <div class="px-6 py-3 bg-white/5 border-b border-border/30">
+          <div class="flex flex-wrap gap-x-6 gap-y-2">
+            <% if meta_fields._id then %>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-text-muted">_id:</span>
+              <span class="text-xs font-mono text-primary-light"><%= meta_fields._id %></span>
+            </div>
+            <% end %>
+            <% if meta_fields._rev then %>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-text-muted">_rev:</span>
+              <span class="text-xs font-mono text-primary-light"><%= meta_fields._rev %></span>
+            </div>
+            <% end %>
+          </div>
+          <% if meta_fields._created_at or meta_fields._updated_at then %>
+          <div class="flex flex-wrap gap-x-6 gap-y-2 mt-2">
+            <% if meta_fields._created_at then %>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-text-muted">_created_at:</span>
+              <span class="text-xs font-mono text-text-dim"><%= meta_fields._created_at %></span>
+            </div>
+            <% end %>
+            <% if meta_fields._updated_at then %>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-text-muted">_updated_at:</span>
+              <span class="text-xs font-mono text-text-dim"><%= meta_fields._updated_at %></span>
+            </div>
+            <% end %>
           </div>
           <% end %>
         </div>
@@ -67,6 +94,16 @@
             <span>Enter valid JSON</span>
           </div>
           <div class="flex items-center gap-3">
+            <% if mode == 'edit' then %>
+            <button type="button"
+                    hx-get="/database/<%= db %>/documents/<%= collection %>/<%= key %>/edit"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">
+              <i class="fas fa-sync-alt mr-1"></i>
+              Refresh
+            </button>
+            <% end %>
             <button type="button" onclick="formatDocument()"
                     class="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">
               <i class="fas fa-magic mr-1"></i>

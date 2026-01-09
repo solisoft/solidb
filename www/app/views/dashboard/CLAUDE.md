@@ -1,0 +1,169 @@
+# Dashboard Views
+
+## Purpose
+Etlua templates for the SoliDB Dashboard web interface. Provides UI for database management, query execution, monitoring, and AI features.
+
+## Structure
+
+```
+views/dashboard/
+├── index.etlua              # Dashboard home (stats overview)
+├── collections.etlua        # Collections list
+├── _collections_table.etlua # HTMX partial for collections
+├── _modal_create_*.etlua    # Modal dialogs
+├── ai/                      # AI feature views
+│   ├── agents.etlua
+│   ├── contributions.etlua
+│   └── tasks.etlua
+└── ...
+```
+
+## Naming Conventions
+
+| Pattern | Usage |
+|---------|-------|
+| `name.etlua` | Full page (uses layout) |
+| `_name.etlua` | Partial (no layout, for HTMX) |
+| `_modal_*.etlua` | Modal dialog partials |
+| `_table.etlua` | Table body partial |
+| `_stats.etlua` | Stats section partial |
+
+## Etlua Syntax
+
+```html
+<%= var %>                    -- Output escaped
+<%- raw %>                    -- Output unescaped (HTML)
+<% code %>                    -- Execute Lua code
+<%- include("_partial") %>    -- Include partial
+
+<% for i, item in ipairs(items) do %>
+  <li><%= item.name %></li>
+<% end %>
+
+<% if condition then %>
+  <p>True</p>
+<% else %>
+  <p>False</p>
+<% end %>
+```
+
+## HTMX Patterns
+
+### Dynamic Table Loading
+```html
+<div id="table-container"
+     hx-get="/database/<%= db %>/collections/table"
+     hx-trigger="load">
+  Loading...
+</div>
+```
+
+### Form Submission
+```html
+<form hx-post="/database/<%= db %>/collections"
+      hx-target="#table-container"
+      hx-swap="innerHTML">
+  <input name="name" required>
+  <button type="submit">Create</button>
+</form>
+```
+
+### Modal Trigger
+```html
+<button hx-get="/database/<%= db %>/collections/modal/create"
+        hx-target="#modal-container"
+        hx-swap="innerHTML">
+  New Collection
+</button>
+<div id="modal-container"></div>
+```
+
+### Delete with Confirmation
+```html
+<button hx-delete="/database/<%= db %>/collections/<%= name %>"
+        hx-target="#table-container"
+        hx-confirm="Delete collection <%= name %>?">
+  Delete
+</button>
+```
+
+## Modal Structure
+
+Standard modal template (`_modal_*.etlua`):
+```html
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
+       onclick="event.stopPropagation()">
+    <div class="p-6">
+      <h3 class="text-lg font-semibold mb-4">Title</h3>
+      <form hx-post="..." hx-target="...">
+        <!-- Form fields -->
+        <div class="flex justify-end gap-2 mt-4">
+          <button type="button" onclick="this.closest('.fixed').remove()">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+```
+
+## Common Variables
+
+Views receive these from controllers:
+```lua
+db           -- Current database name
+collections  -- List of collections (on collections page)
+indexes      -- List of indexes (on indexes page)
+stats        -- Statistics object
+error        -- Error message if any
+```
+
+## Common Tasks
+
+### Adding a New Page
+1. Create `new_page.etlua` with full layout
+2. Include sidebar via layout
+3. Add HTMX containers for dynamic content
+4. Create corresponding `_*.etlua` partials
+
+### Adding a Table with Pagination
+```html
+<div id="table-container"
+     hx-get="/path/table?page=<%= page %>"
+     hx-trigger="load">
+</div>
+
+<!-- In _table.etlua partial -->
+<table>...</table>
+<div class="pagination">
+  <button hx-get="/path/table?page=<%= page - 1 %>"
+          hx-target="#table-container">Prev</button>
+  <button hx-get="/path/table?page=<%= page + 1 %>"
+          hx-target="#table-container">Next</button>
+</div>
+```
+
+### Styling
+- Uses TailwindCSS classes
+- Dark theme: `bg-gray-800 text-white`
+- Buttons: `bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded`
+- Tables: `table-auto w-full` with `border-b` rows
+
+## Shared Partials (views/shared/)
+
+| Partial | Description |
+|---------|-------------|
+| `_sidebar.etlua` | Dashboard navigation |
+| `_dashboard_nav.etlua` | Top navigation bar |
+| `_header.etlua` | Page header |
+| `_footer.etlua` | Footer |
+
+## Gotchas
+- Partials must be prefixed with `_` for includes
+- Use `<%- include() %>` (unescaped) for partials
+- HTMX requests return just the partial (no layout)
+- Modal close: use `this.closest('.fixed').remove()`
+- Form arrays need JavaScript workaround (see controllers CLAUDE.md)
+- Always escape user data with `<%= %>`, use `<%- %>` only for HTML

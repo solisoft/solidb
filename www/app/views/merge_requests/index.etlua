@@ -1,0 +1,133 @@
+<!-- Repository Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/repositories" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <i class="fas fa-code-branch text-primary text-sm"></i>
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <a href="/repositories/<%= repository.id %>" class="text-lg font-bold text-white hover:text-primary transition-colors"><%= repository.name %></a>
+        <% if repository.is_public then %>
+        <span class="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-globe text-[8px]"></i> Public
+        </span>
+        <% else %>
+        <span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-medium rounded-full flex items-center gap-1">
+          <i class="fas fa-lock text-[8px]"></i> Private
+        </span>
+        <% end %>
+      </div>
+      <span class="text-xs text-text-dim truncate max-w-md block"><%= repository.description or "No description provided" %></span>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <a href="/repositories/<%= repository.id %>/merge_requests/new" class="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors">
+      <i class="fas fa-code-pull-request"></i> New MR
+    </a>
+  </div>
+</div>
+
+<!-- Main Content Area -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-6xl mx-auto">
+    <!-- Tabs -->
+    <div class="border-b border-white/10 mb-6">
+      <nav class="flex gap-6" aria-label="Tabs">
+        <a href="/repositories/<%= repository.id %>/tree" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-folder-tree text-lg"></i>
+          Code
+        </a>
+        <a href="/repositories/<%= repository.id %>/commits" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-code-commit text-lg"></i>
+          Commits
+        </a>
+        <a href="/repositories/<%= repository.id %>/merge_requests" class="border-b-2 border-primary py-4 px-1 inline-flex items-center gap-2 text-primary font-bold text-sm" aria-current="page">
+          <i class="fas fa-code-pull-request text-lg"></i>
+          Merge Requests
+          <% if open_mrs_count and open_mrs_count > 0 then %>
+             <span class="ml-1 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full border border-primary/20"><%= open_mrs_count %></span>
+          <% end %>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Content Area -->
+    <% if #merge_requests == 0 then %>
+      <!-- Empty State -->
+      <div class="bg-surface rounded-xl p-12 border border-white/5 text-center shadow-sm max-w-2xl mx-auto mt-12">
+        <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 ring-1 ring-white/10">
+          <i class="fas fa-code-pull-request text-2xl text-text-dim opacity-50"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white mb-2">No merge requests yet</h3>
+        <p class="text-text-dim text-sm mb-6 max-w-sm mx-auto">Merge requests allow you to review and discuss changes before merging them into the main branch.</p>
+        <a href="/repositories/<%= repository.id %>/merge_requests/new" class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-hover text-white font-medium rounded-lg transition-all">
+          <i class="fas fa-plus"></i>
+          Create Merge Request
+        </a>
+      </div>
+    <% else %>
+      <!-- MR List -->
+      <div class="space-y-3">
+        <% for _, mr in ipairs(merge_requests) do %>
+        <a href="/repositories/<%= repository.id %>/merge_requests/<%= mr.id %>"
+           class="block bg-surface rounded-xl p-4 border border-white/5 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 group relative overflow-hidden">
+
+          <div class="flex items-start justify-between gap-4 relative z-10">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-3 mb-2">
+                <!-- Status Badge -->
+                <% if mr.status == "open" then %>
+                  <span class="px-2 py-0.5 bg-success/10 text-success border border-success/20 text-[10px] font-bold uppercase tracking-wider rounded-md flex items-center gap-1.5">
+                    <i class="fas fa-dot-circle text-[8px]"></i> Open
+                  </span>
+                <% elseif mr.status == "merged" then %>
+                  <span class="px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 text-[10px] font-bold uppercase tracking-wider rounded-md flex items-center gap-1.5">
+                    <i class="fas fa-check text-[8px]"></i> Merged
+                  </span>
+                <% else %>
+                  <span class="px-2 py-0.5 bg-white/5 text-text-dim border border-white/10 text-[10px] font-bold uppercase tracking-wider rounded-md flex items-center gap-1.5">
+                    <i class="fas fa-ban text-[8px]"></i> Closed
+                  </span>
+                <% end %>
+
+                <h3 class="text-base font-semibold text-white truncate group-hover:text-primary transition-colors"><%= mr.title %></h3>
+                <span class="text-xs text-text-dim font-mono">!<%= mr.id:sub(1,4) %></span>
+              </div>
+
+              <div class="flex items-center flex-wrap gap-x-4 gap-y-2 text-xs text-text-dim">
+                <div class="flex items-center gap-2 bg-black/20 px-2 py-1 rounded border border-white/5">
+                  <code class="text-primary font-mono"><%= mr.source_branch %></code>
+                  <i class="fas fa-arrow-right text-text-dim/50 text-[10px]"></i>
+                  <code class="text-text font-mono"><%= mr.target_branch %></code>
+                </div>
+
+                <% if mr.created_at then %>
+                <span class="flex items-center gap-1.5" title="<%= mr.created_at %>">
+                  <i class="far fa-clock"></i>
+                  Opened on <%= os.date("%b %d, %Y", mr.created_at) %>
+                </span>
+                <% end %>
+
+                <% if mr.author_name then %>
+                <span class="flex items-center gap-1.5">
+                  <i class="far fa-user"></i>
+                  <%= mr.author_name %>
+                </span>
+                <% end %>
+              </div>
+            </div>
+
+            <div class="self-center opacity-0 group-hover:opacity-100 transition-opacity -mr-2">
+              <i class="fas fa-chevron-right text-text-dim group-hover:text-white"></i>
+            </div>
+          </div>
+        </a>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>

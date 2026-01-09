@@ -9,18 +9,44 @@ local METHODS = { "GET", "POST", "PUT", "PATCH", "DELETE" }
 
 -- Convert route pattern to regex pattern and extract param names
 -- e.g., "/users/:id/posts/:post_id" -> "^/users/([^/]+)/posts/([^/]+)$", {"id", "post_id"}
+-- Supports wildcard: "/files/*path" -> "^/files/(.+)$", {"path"}
 local function compile_pattern(pattern)
   local params = {}
-  -- First, replace param placeholders with a temporary marker
-  local temp_pattern = pattern:gsub(":([%w_]+)", function(param)
-    table.insert(params, param)
-    return "\0PARAM\0"
-  end)
-  -- Escape special Lua pattern chars (hyphen is special in Lua patterns)
+
+  -- Process pattern character by character to extract params in order
+  local i = 1
+  while i <= #pattern do
+    local c = pattern:sub(i, i)
+    if c == ":" or c == "*" then
+      -- Extract param name
+      local name_start = i + 1
+      local name_end = name_start
+      while name_end <= #pattern and pattern:sub(name_end, name_end):match("[%w_]") do
+        name_end = name_end + 1
+      end
+      local name = pattern:sub(name_start, name_end - 1)
+      if #name > 0 then
+        table.insert(params, name)
+      end
+      i = name_end
+    else
+      i = i + 1
+    end
+  end
+
+  -- Build regex pattern
+  -- First replace splat (*name) with marker
+  local temp_pattern = pattern:gsub("%*[%w_]+", "\0SPLAT\0")
+  -- Then replace params (:name) with marker
+  temp_pattern = temp_pattern:gsub(":[%w_]+", "\0PARAM\0")
+  -- Escape special Lua pattern chars
   temp_pattern = temp_pattern:gsub("%-", "%%-")
-  -- Restore param placeholders with capture groups
-  local regex_pattern = temp_pattern:gsub("\0PARAM\0", "([^/]+)")
-  regex_pattern = "^" .. regex_pattern .. "$"
+  temp_pattern = temp_pattern:gsub("%.", "%%.")
+  -- Replace markers with capture groups
+  temp_pattern = temp_pattern:gsub("\0SPLAT\0", "(.+)")
+  temp_pattern = temp_pattern:gsub("\0PARAM\0", "([^/]+)")
+
+  local regex_pattern = "^" .. temp_pattern .. "$"
   return regex_pattern, params
 end
 

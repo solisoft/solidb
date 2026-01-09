@@ -1,0 +1,17 @@
+<% if #apps == 0 then %>
+<div class="px-2 py-4 text-xs text-text-dim text-center">
+  No apps yet
+</div>
+<% else %>
+<div class="space-y-0.5">
+  <% for _, app in ipairs(apps) do %>
+  <a href="/projects/app/<%= app._key %>"
+     class="flex items-center gap-2 px-2 py-2 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors group">
+    <div class="w-6 h-6 rounded bg-<%= app.color or 'primary' %>/20 flex items-center justify-center text-<%= app.color or 'primary' %> text-xs">
+      <i class="fas fa-<%= app.icon or 'cube' %>"></i>
+    </div>
+    <span class="text-sm truncate"><%= app.name %></span>
+  </a>
+  <% end %>
+</div>
+<% end %>

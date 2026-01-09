@@ -1,23 +1,30 @@
 <nav class="space-y-0.5">
-  <% for _, dm in ipairs(dmChannels or {}) do %>
-  <a href="/talks?channel=dm_<%= dm.user.firstname:lower() %>"
-     class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors">
-    <div class="relative">
+  <% if not dm_channels or #dm_channels == 0 then %>
+  <p class="px-2 py-4 text-xs text-text-dim text-center">No conversations</p>
+  <% else %>
+  <% for _, dm in ipairs(dm_channels) do
+    local other_user = dm.other_user or {}
+    local display_name = other_user.firstname or "Unknown"
+    if other_user.lastname then
+      display_name = display_name .. " " .. other_user.lastname
+    end
+    local initial = string.sub(display_name, 1, 1):upper()
+  %>
+  <a href="/talks?channel=<%= dm._key %>"
+     hx-get="/talks?channel=<%= dm._key %>"
+     hx-target="#main-content"
+     hx-push-url="true"
+     hx-on::after-request="window.TalksApp && window.TalksApp.switchChannel('<%= dm._key %>')"
+     data-channel-key="<%= dm._key %>"
+     class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-sm <%= current_channel == dm._key and 'bg-white/10 text-text' or 'text-text-muted hover:text-text hover:bg-white/5' %>">
+    <div class="flex items-center gap-2 min-w-0">
       <div class="w-6 h-6 rounded-md bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white text-xs font-medium">
-        <%= string.sub(dm.user.firstname, 1, 1) %>
+        <%= initial %>
       </div>
-      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-card <%= dm.user.online and 'bg-success' or 'bg-text-dim' %>"></span>
+      <span class="truncate"><%= display_name %></span>
     </div>
-    <span class="flex-1 truncate"><%= dm.user.firstname %> <%= dm.user.lastname %></span>
-    <% if dm.unread and dm.unread > 0 then %>
-    <span class="min-w-[20px] h-5 flex items-center justify-center bg-error text-white text-xs font-bold rounded-full px-1.5">
-      <%= dm.unread %>
-    </span>
-    <% end %>
+    <span id="unread-<%= dm._key %>" class="hidden min-w-5 h-5 px-1.5 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center"></span>
   </a>
   <% end %>
-
-  <% if not dmChannels or #dmChannels == 0 then %>
-  <p class="px-2 py-4 text-xs text-text-dim text-center">No direct messages yet</p>
   <% end %>
 </nav>

@@ -1,0 +1,6 @@
+<% for _, task in ipairs(tasks) do %>
+<%- partial("projects/task_card", { task = task }) %>
+<% end %>
+<% if #tasks == 0 then %>
+<div class="text-center py-8 text-text-dim text-sm">No tasks</div>
+<% end %>

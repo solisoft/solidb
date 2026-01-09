@@ -8,7 +8,6 @@ Model.__index = Model
 
 -- Create a new model class
 function Model.create(collection_name, options)
-  print("DEBUG: Model.create called for", collection_name)
   options = options or {}
 
   local ModelClass = {}
@@ -63,16 +62,6 @@ function Model.create(collection_name, options)
   -- Create a new model instance
   function ModelClass.new(s, d)
     local self, data = resolve(s, d)
-
-    -- Debug to file
-    local f = io.open("model_debug.txt", "a")
-    if f then
-      local json = data
-      if EncodeJson then json = EncodeJson(data) end
-      f:write(string.format("[%s] New model data: %s\n", os.date(), json))
-      f:close()
-    end
-
     local instance = SoliDBModel.new(data)
     instance.COLLECTION = self.COLLECTION
     instance.validations = self._validations
@@ -90,8 +79,6 @@ function Model.create(collection_name, options)
         if k == "id" then return t.data._key end
         if k == "key" then return t.data._key end
         if k == "uid" then return t.data._id end
-      else
-         print("DEBUG: Model instance missing data! Key:", k)
       end
 
       return nil
@@ -126,25 +113,28 @@ function Model.create(collection_name, options)
     return SoliDBModel.all(self, opts)
   end
 
-  function ModelClass.first()
-    local self = resolve()
-    if self.data then return SoliDBModel.first(self) end
-    local instance = self:new()
-    return SoliDBModel.first(instance)
+  function ModelClass.first(s)
+    local self = s
+    if not self or self == ModelClass then
+      self = ModelClass:new()
+    end
+    return SoliDBModel.first(self)
   end
 
-  function ModelClass.last()
-    local self = resolve()
-    if self.data then return SoliDBModel.last(self) end
-    local instance = self:new()
-    return SoliDBModel.last(instance)
+  function ModelClass.last(s)
+    local self = s
+    if not self or self == ModelClass then
+      self = ModelClass:new()
+    end
+    return SoliDBModel.last(self)
   end
 
-  function ModelClass.any()
-    local self = resolve()
-    if self.data then return SoliDBModel.any(self) end
-    local instance = self:new()
-    return SoliDBModel.any(instance)
+  function ModelClass.any(s)
+    local self = s
+    if not self or self == ModelClass then
+      self = ModelClass:new()
+    end
+    return SoliDBModel.any(self)
   end
 
   function ModelClass.create(s, d)

@@ -141,7 +141,8 @@
                 <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"live_query"</span>,
     <span class="text-purple-400">"database"</span>: <span class="text-green-400">"_system"</span>,
-    <span class="text-purple-400">"query"</span>: <span class="text-green-400">"FOR user IN users FILTER user.age > 21 RETURN user"</span>
+    <span class="text-purple-400">"query"</span>: <span class="text-green-400">"FOR user IN users FILTER user.age > 21 RETURN user"</span>,
+    <span class="text-purple-400">"id"</span>: <span class="text-green-400">"query_1"</span>
   }</code></pre>
               </div>
             </div>
@@ -160,6 +161,7 @@
               <div class="p-4">
                 <pre class="bg-transparent p-0 m-0"><code class="language-json text-sm text-gray-300">{
     <span class="text-purple-400">"type"</span>: <span class="text-green-400">"query_result"</span>,
+    <span class="text-purple-400">"id"</span>: <span class="text-green-400">"query_1"</span>,
     <span class="text-purple-400">"result"</span>: [
       { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Alice"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">25</span> },
       { <span class="text-purple-400">"name"</span>: <span class="text-green-400">"Bob"</span>, <span class="text-purple-400">"age"</span>: <span class="text-orange-400">30</span> }

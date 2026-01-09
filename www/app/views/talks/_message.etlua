@@ -1,75 +1,147 @@
-<div id="msg-<%= message._key %>"
-     class="message-hover group flex gap-3 px-2 py-2 -mx-2 rounded-lg transition-colors"
-     x-data="{ showActions: false }"
-     @mouseenter="showActions = true"
-     @mouseleave="showActions = false">
-  <!-- Avatar -->
-  <div class="shrink-0">
-    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
-      <%= string.sub(message.sender.firstname or message.sender.email or "?", 1, 1):upper() %>
-    </div>
+<%
+local sender = msg.sender or {}
+local sender_name = sender.firstname or msg.sender_name or "Unknown"
+local sender_initial = string.sub(sender_name, 1, 1):upper()
+local timestamp = msg.timestamp or os.time()
+local time_str = os.date("%H:%M", timestamp)
+local is_own = current_user and msg.user_key == current_user._key
+local is_continuous = is_continuous or false
+%>
+<!-- Message Row V6 (Slack Replica) -->
+<div id="msg-<%= msg._key %>" class="group flex w-full relative -mx-4 px-4 transition-colors <%= is_continuous and 'py-[2px] mt-0.5' or 'py-2 mt-2' %>">
+  
+  <!-- Left Gutter (56px approx - w-14) -->
+  <div class="w-14 shrink-0 -ml-1 flex flex-col items-end pr-3">
+    <% if not is_continuous then %>
+      <!-- Avatar (Rounded Square) -->
+      <div class="w-9 h-9 rounded bg-[#2D2D2D] flex items-center justify-center text-[#A0A0A0] font-bold text-sm select-none mt-0.5">
+        <%= sender_initial %>
+      </div>
+    <% else %>
+      <!-- Hover Timestamp (Right Aligned in Gutter) -->
+      <div class="text-[10px] text-[#555] opacity-0 group-hover:opacity-100 select-none pt-1.5 transition-opacity">
+        <%= time_str %>
+      </div>
+    <% end %>
   </div>
 
-  <!-- Content -->
+  <!-- Right Content -->
   <div class="flex-1 min-w-0">
+    
+    <!-- Header (Name & Time) - Only for start of burst -->
+    <% if not is_continuous then %>
     <div class="flex items-baseline gap-2 mb-0.5">
-      <span class="font-semibold text-text hover:underline cursor-pointer">
-        <%= message.sender.firstname and (message.sender.firstname .. " " .. message.sender.lastname) or message.sender.email %>
-      </span>
-      <span class="text-xs text-text-dim">
-        <%= os.date("%I:%M %p", message.timestamp) %>
-      </span>
+      <span class="text-[15px] font-bold text-[#E8E8E8] hover:underline cursor-pointer tracking-tight"><%= sender_name %></span>
+      <span class="text-[12px] text-[#6A6A6A] hover:underline cursor-pointer"><%= time_str %></span>
     </div>
+    <% end %>
 
-    <!-- Message Text -->
-    <div class="text-text text-sm prose prose-invert prose-sm max-w-none">
-      <%= message.text %>
+    <!-- Message Body -->
+    <% 
+      local is_big_emoji = TextHelper and TextHelper.is_only_emojis and TextHelper.is_only_emojis(msg.text)
+      -- Slack uses standard font size, relaxed leading
+      local text_class = "text-[15px] leading-relaxed text-[#DCDCDC] break-words tracking-[0.01em]"
+      if is_big_emoji then text_class = "text-5xl leading-tight py-1" end
+    %>
+    <div class="<%= text_class %>">
+      <% if TextHelper and TextHelper.format_message then %>
+      <%- TextHelper.format_message(msg.text or "") %>
+      <% else %>
+      <%= msg.text or "" %>
+      <% end %>
     </div>
 
     <!-- Reactions -->
-    <% if message.reactions and #message.reactions > 0 then %>
-    <div class="flex flex-wrap gap-1 mt-2">
-      <% for _, reaction in ipairs(message.reactions) do %>
-      <button class="inline-flex items-center gap-1 px-2 py-0.5 bg-bg-dark/50 hover:bg-bg-dark border border-border/30 rounded-full text-xs transition-colors">
-        <span><%= reaction.emoji %></span>
-        <span class="text-text-muted"><%= reaction.count %></span>
-      </button>
+    <% if (msg.reactions and next(msg.reactions)) or (msg.thread_count and msg.thread_count > 0) then %>
+    <div class="flex flex-wrap items-center gap-1.5 mt-1">
+      
+      <!-- Reactions Grid -->
+      <% if msg.reactions and next(msg.reactions) then %>
+        <% for emoji, users in pairs(msg.reactions) do
+          local count = type(users) == "table" and #users or 0
+          local has_reacted = false
+          if type(users) == "table" and current_user then
+              for _, u in ipairs(users) do if u == current_user._key then has_reacted = true break end end
+          end
+        %>
+        <% if count > 0 then %>
+        <button hx-post="/talks/react"
+                hx-vals='{"message_key": "<%= msg._key %>", "emoji": "<%= emoji %>"}'
+                hx-target="#msg-<%= msg._key %>"
+                hx-swap="outerHTML"
+                class="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-[12px] text-[11px] border transition-colors select-none <%= has_reacted and 'bg-[#1C2C3A] border-[#1D4E72] text-[#4A90E2]' or 'bg-[#1F1F1F] border-transparent text-[#A0A0A0] hover:bg-[#2A2A2A] hover:border-[#404040]' %>">
+          <span><%= emoji %></span><span class="font-semibold"><%= count %></span>
+        </button>
+        <% end %>
+        <% end %>
       <% end %>
+
+      <!-- Thread Reply Bar -->
+      <% if msg.thread_count and msg.thread_count > 0 then %>
+      <div class="mt-1 w-full">
+        <button hx-get="/talks/thread/<%= msg._key %>"
+                hx-target="#thread-content"
+                hx-swap="innerHTML"
+                onclick="document.getElementById('thread-panel').classList.remove('hidden')"
+                class="group/thread flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/5 transition-colors w-fit">
+          <i class="fas fa-comments text-primary/70 text-xs"></i>
+          <span class="text-xs font-medium text-primary group-hover/thread:underline">
+            <%= msg.thread_count %> <%= msg.thread_count == 1 and "reply" or "replies" %>
+          </span>
+          <i class="fas fa-chevron-right text-[10px] text-text-dim opacity-0 group-hover/thread:opacity-100 transition-opacity"></i>
+        </button>
+      </div>
+      <% end %>
+
     </div>
     <% end %>
 
-    <!-- Thread Preview -->
-    <% if message.thread_count and message.thread_count > 0 then %>
-    <button @click="$dispatch('open-thread', '<%= message._key %>')"
-            class="mt-2 flex items-center gap-2 text-xs text-primary-light hover:text-primary transition-colors">
-      <i class="fas fa-reply"></i>
-      <span><%= message.thread_count %> replies</span>
-      <span class="text-text-dim">Last reply <%= os.date("%I:%M %p", message.last_reply_at or message.timestamp) %></span>
-    </button>
-    <% end %>
   </div>
 
-  <!-- Actions (shown on hover) -->
-  <div x-show="showActions" x-cloak
-       x-transition:enter="transition ease-out duration-100"
-       x-transition:enter-start="opacity-0 scale-95"
-       x-transition:enter-end="opacity-100 scale-100"
-       class="shrink-0 flex items-start gap-1 bg-bg-card border border-border/30 rounded-lg p-1 shadow-lg">
-    <button class="w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10 transition-colors" title="Add reaction">
-      <i class="fas fa-smile text-sm"></i>
-    </button>
-    <button @click="$dispatch('open-thread', '<%= message._key %>')"
-            class="w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10 transition-colors" title="Reply in thread">
-      <i class="fas fa-comment text-sm"></i>
-    </button>
-    <button class="w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10 transition-colors" title="Share">
-      <i class="fas fa-share text-sm"></i>
-    </button>
-    <button class="w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10 transition-colors" title="Save">
-      <i class="fas fa-bookmark text-sm"></i>
-    </button>
-    <button class="w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text hover:bg-white/10 transition-colors" title="More">
-      <i class="fas fa-ellipsis-v text-sm"></i>
-    </button>
+  <!-- Floating Actions (Absolute Top Right) -->
+  <div class="absolute right-4 -top-3 opacity-0 group-hover:opacity-100 transition-opacity duration-100 z-10">
+    <div class="bg-[#222529] shadow-md border border-[#303030] rounded-md flex items-center p-0.5 space-x-1">
+      <!-- Emoji -->
+      <div class="relative">
+        <button hx-get="/talks/emoji_picker/<%= msg._key %>"
+                hx-target="#emoji-picker-<%= msg._key %>"
+                hx-swap="innerHTML"
+                class="w-8 h-8 flex items-center justify-center rounded hover:bg-[#303030] text-[#A0A0A0] hover:text-white transition-colors"
+                title="Add reaction">
+          <i class="far fa-smile text-sm"></i>
+        </button>
+        <div id="emoji-picker-<%= msg._key %>" class="absolute right-0 top-full mt-2 z-20"></div>
+      </div>
+
+      <!-- Quote -->
+      <button onclick="quoteMessage('<%= msg._key %>', `<%= (msg.text or ""):gsub("`", "\\`"):gsub("\n", "\\n") %>`, '<%= sender_name:gsub("'", "\\'") %>')"
+              class="w-8 h-8 flex items-center justify-center rounded hover:bg-[#303030] text-[#A0A0A0] hover:text-white transition-colors"
+              title="Quote">
+        <i class="fas fa-quote-right text-sm"></i>
+      </button>
+
+      <!-- Reply -->
+      <button hx-get="/talks/thread/<%= msg._key %>"
+              hx-target="#thread-content"
+              hx-swap="innerHTML"
+              onclick="document.getElementById('thread-panel').classList.remove('hidden')"
+              class="w-8 h-8 flex items-center justify-center rounded hover:bg-[#303030] text-[#A0A0A0] hover:text-white transition-colors"
+              title="Reply in thread">
+        <i class="fas fa-comment-dots text-sm"></i>
+      </button>
+
+      <!-- Delete -->
+      <% if is_own then %>
+      <div class="w-px h-4 bg-[#404040] mx-1"></div>
+      <button hx-delete="/talks/message/<%= msg._key %>"
+              hx-confirm="Delete this message?"
+              hx-target="#msg-<%= msg._key %>"
+              hx-swap="delete"
+              class="w-8 h-8 flex items-center justify-center rounded hover:bg-[#3A1E1E] text-[#A0A0A0] hover:text-error transition-colors"
+              title="Delete">
+        <i class="far fa-trash-alt text-sm"></i>
+      </button>
+      <% end %>
+    </div>
   </div>
 </div>

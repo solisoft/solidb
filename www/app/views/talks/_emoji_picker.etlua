@@ -1,0 +1,20 @@
+<div class="bg-bg-card border border-border rounded-lg shadow-xl p-2 w-64"
+     onclick="event.stopPropagation()"
+     onmouseleave="this.innerHTML=''">
+  <div class="grid grid-cols-8 gap-1">
+    <% local emojis = {
+      "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉",
+      "🔥", "👀", "💯", "✅", "❌", "⭐", "🚀", "💪",
+      "🤔", "👏", "🙌", "💡", "📝", "🐛", "✨", "🎯"
+    }
+    for _, emoji in ipairs(emojis) do %>
+    <button hx-post="/talks/react"
+            hx-vals='{"message_key": "<%= message_key %>", "emoji": "<%= emoji %>"}'
+            hx-target="#msg-<%= message_key %>"
+            hx-swap="outerHTML"
+            class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-base">
+      <%= emoji %>
+    </button>
+    <% end %>
+  </div>
+</div>

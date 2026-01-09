@@ -774,6 +774,18 @@ pub async fn auth_middleware(
         }
     }
 
+    // Check for "token" query parameter
+    if let Some(query) = req.uri().query() {
+        if let Ok(params) = serde_urlencoded::from_str::<HashMap<String, String>>(query) {
+            if let Some(token) = params.get("token") {
+                if let Ok(claims) = AuthService::validate_token(token) {
+                    req.extensions_mut().insert(claims);
+                    return Ok(next.run(req).await);
+                }
+            }
+        }
+    }
+
     Err(StatusCode::UNAUTHORIZED)
 }
 

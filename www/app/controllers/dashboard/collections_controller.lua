@@ -204,6 +204,54 @@ function CollectionsController:documents()
   })
 end
 
+-- Documents page with edit modal auto-open
+function CollectionsController:documents_with_edit()
+  local db = self:get_db()
+  local collection = self.params.collection
+  local edit_key = self.params.edit_key
+
+  -- Get API server URL from cookie
+  local api_server = GetCookie("sdb_server") or "http://localhost:6745"
+
+  -- Fetch collection type from list endpoint
+  local collection_type = "document"
+  local status, _, body = self:fetch_api("/_api/database/" .. db .. "/collection")
+  if status == 200 then
+    local ok, data = pcall(DecodeJson, body)
+    if ok and data then
+      local collections = data.collections or data or {}
+      for _, c in ipairs(collections) do
+        if c.name == collection then
+          collection_type = c.type or "document"
+          break
+        end
+      end
+    end
+  end
+
+  -- Check if schema exists
+  local has_schema = false
+  local status_schema, _, body_schema = self:fetch_api("/_api/database/" .. db .. "/collection/" .. collection .. "/schema")
+  if status_schema == 200 then
+    local ok, data = pcall(DecodeJson, body_schema)
+    if ok and data and data.schema and next(data.schema) ~= nil then
+      has_schema = true
+    end
+  end
+
+  self.layout = "dashboard"
+  self:render("dashboard/documents", {
+    title = "Edit " .. edit_key .. " - " .. db,
+    db = db,
+    collection = collection,
+    collection_type = collection_type,
+    has_schema = has_schema,
+    api_server = api_server,
+    current_page = "documents",
+    edit_key = edit_key
+  })
+end
+
 -- Documents table partial (HTMX)
 function CollectionsController:documents_table()
   local db = self:get_db()

@@ -1,0 +1,25 @@
+<% if mrs and #mrs > 0 then %>
+  <div class="space-y-2 animate-fade-in">
+    <% for _, mr in ipairs(mrs) do %>
+    <a href="/repositories/<%= mr.repo_id %>/merge_requests/<%= mr._key %>" class="block p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 transition-all group">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+          <i class="fas fa-code-branch text-xs"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h4 class="text-xs font-medium text-text group-hover:text-white truncate"><%= mr.title %></h4>
+          <div class="flex items-center gap-2 mt-1">
+            <span class="text-[10px] text-text-muted font-mono bg-white/5 px-1 rounded"><%= mr.source_branch %></span>
+            <i class="fas fa-arrow-right text-[8px] text-text-dim"></i>
+            <span class="text-[10px] text-text-muted font-mono bg-white/5 px-1 rounded"><%= mr.target_branch %></span>
+          </div>
+        </div>
+      </div>
+    </a>
+    <% end %>
+  </div>
+<% else %>
+  <div class="text-center py-4 text-text-dim text-xs">
+    No pending merge requests.
+  </div>
+<% end %>

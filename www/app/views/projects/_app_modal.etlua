@@ -1,0 +1,79 @@
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target === this) this.remove()">
+  <div class="bg-bg-card rounded-xl shadow-2xl w-full max-w-lg mx-4 border border-white/5" onclick="event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-text"><%= app and "Edit App" or "Create App" %></h2>
+      <button onclick="this.closest('.fixed').remove()"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form hx-<%= app and "put" or "post" %>="<%= app and ('/projects/app/' .. app._key) or '/projects/app' %>"
+          hx-target="this"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) document.querySelector('.fixed.inset-0')?.remove()">
+      <div class="p-6 space-y-4">
+        <!-- Name -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Name *</label>
+          <input type="text" name="name" required autofocus
+                 value="<%= app and app.name or '' %>"
+                 class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent"
+                 placeholder="App name">
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
+          <textarea name="description" rows="3"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                    placeholder="What is this app about?"><%= app and app.description or '' %></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <!-- Color -->
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Color</label>
+            <div class="flex gap-2">
+              <% local colors = {"primary", "accent", "success", "warning", "error"} %>
+              <% for _, c in ipairs(colors) do %>
+              <label class="cursor-pointer">
+                <input type="radio" name="color" value="<%= c %>" class="sr-only peer"
+                       <%= ((app and app.color == c) or (not app and c == "primary")) and "checked" or "" %>>
+                <div class="w-8 h-8 rounded-lg bg-<%= c %> opacity-50 peer-checked:opacity-100 peer-checked:ring-2 peer-checked:ring-white peer-checked:ring-offset-2 peer-checked:ring-offset-bg-card transition-all"></div>
+              </label>
+              <% end %>
+            </div>
+          </div>
+
+          <!-- Status (only for edit) -->
+          <% if app then %>
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Status</label>
+            <select name="status"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text focus:ring-2 focus:ring-primary focus:border-transparent">
+              <option value="active" <%= app.status == 'active' and 'selected' or '' %>>Active</option>
+              <option value="archived" <%= app.status == 'archived' and 'selected' or '' %>>Archived</option>
+            </select>
+          </div>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3">
+        <button type="button" onclick="this.closest('.fixed').remove()"
+                class="px-4 py-2 text-text-muted hover:text-text">
+          Cancel
+        </button>
+        <button type="submit"
+                class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium">
+          <%= app and "Save Changes" or "Create App" %>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

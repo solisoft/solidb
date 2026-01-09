@@ -4,6 +4,7 @@
 
 local Controller = require("controller")
 local DashboardController = Controller:extend()
+local AuthHelper = require("helpers.auth_helper")
 
 -- Login page
 function DashboardController:login()
@@ -102,6 +103,84 @@ function DashboardController:index()
     db = self:get_db(),
     current_page = "index"
   })
+end
+
+-- Sidebar Widgets
+function DashboardController:sidebar_tasks_progress()
+  local user = AuthHelper.get_current_user()
+  if not user then return self:html("") end
+
+  local Task = require("models.task")
+  local tasks = Task.in_progress_for_user(user._key, 5)
+
+  self.layout = false
+  self:render("shared/_widget_tasks_progress", { tasks = tasks })
+end
+
+function DashboardController:sidebar_tasks_priority()
+  local user = AuthHelper.get_current_user()
+  if not user then return self:html("") end
+
+  local Task = require("models.task")
+  -- Use model method to get high priority todos (strictly status == "todo")
+  local tasks = Task.todo_for_user(user._key, 5)
+
+  self.layout = false
+  self:render("shared/_widget_tasks_priority", { tasks = tasks })
+end
+
+function DashboardController:sidebar_pending_mrs()
+  local user = AuthHelper.get_current_user()
+  if not user then return self:html("") end
+
+  local MergeRequest = require("models.merge_request")
+  -- Fetch open MRs (global for now, or filtered by user's projects if needed)
+  local result = Sdb:Sdbql([[
+    FOR mr IN merge_requests
+      FILTER mr.status == "open"
+      SORT mr.created_at DESC
+      LIMIT 5
+      RETURN mr
+  ]], {})
+
+  local mrs = {}
+  if result and result.result then
+    for _, doc in ipairs(result.result) do
+      table.insert(mrs, MergeRequest:new(doc))
+    end
+  end
+
+  self.layout = false
+  self:render("shared/_widget_merge_requests", { mrs = mrs })
+end
+
+function DashboardController:sidebar_recent_messages()
+  local user = AuthHelper.get_current_user()
+  if not user then return self:html("") end
+
+  local Message = require("models.message")
+  -- Fetch recent messages from channels the user is in
+  -- (Complex query: User -> Channels -> Messages)
+  -- Simplified for MVP: Messages from any channel, assuming public or user has access
+  -- Ideally: Join with subscriptions/memberships
+
+  local result = Sdb:Sdbql([[
+    FOR m IN messages
+      SORT m.timestamp DESC
+      LIMIT 5
+      LET sender = (FOR u IN users FILTER u._key == m.user_key RETURN {firstname: u.firstname})[0]
+      RETURN MERGE(m, {sender_name: sender.firstname})
+  ]], {})
+
+  local messages = {}
+  if result and result.result then
+    for _, doc in ipairs(result.result) do
+      table.insert(messages, Message:new(doc))
+    end
+  end
+
+  self.layout = false
+  self:render("shared/_widget_recent_messages", { messages = messages })
 end
 
 return DashboardController

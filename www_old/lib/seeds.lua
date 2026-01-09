@@ -99,20 +99,23 @@ db:query([[
       db:CreateDocument("channels", { name = "development", type = "standard" })
       db:CreateDocument("channels", { name = "announcements", type = "standard" })
 
-      -- Insert demo messages with reactions (usernames list) and code samples
+      -- Insert demo messages with reactions and code samples
+      -- Using new message format: sender = { firstname, lastname, email }, user_key = "..."
       db:CreateDocument("messages", {
         channel_id = general_channel._id,
-        sender = "rust-bot",
+        sender = { firstname = "Rust", lastname = "Bot", email = "rust-bot@system" },
+        user_key = "system-rust-bot",
         text = "Welcome to #general! The SoliDB cluster is now connected and ready for action.",
         timestamp = os.time(),
         reactions = {
-          { emoji = "🚀", users = { "olivier.bonnaure", "antigravity", "rust-bot" } },
-          { emoji = "👍", users = { "antigravity", "olivier.bonnaure" } }
+          { emoji = "🚀", users = { "olivier.bonnaure", "antigravity", "system-rust-bot" }, count = 3 },
+          { emoji = "👍", users = { "antigravity", "olivier.bonnaure" }, count = 2 }
         }
       })
       db:CreateDocument("messages", {
         channel_id = general_channel._id,
-        sender = "antigravity",
+        sender = { firstname = "Anti", lastname = "Gravity", email = "antigravity@example.com" },
+        user_key = "antigravity",
         text = [[Here's a sample query optimization I've been working on:
 ```rust
 #[inline(always)]
@@ -129,21 +132,23 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 }
 ```]],
         timestamp = os.time() + 1,
-        reactions = { { emoji = "🔥", users = { "olivier.bonnaure", "rust-bot", "alice", "bob", "charlie" } } }
+        reactions = { { emoji = "🔥", users = { "olivier.bonnaure", "system-rust-bot", "alice", "bob", "charlie" }, count = 5 } }
       })
       db:CreateDocument("messages", {
         channel_id = general_channel._id,
-        sender = "olivier.bonnaure",
+        sender = { firstname = "Olivier", lastname = "Bonnaure", email = "olivier.bonnaure@example.com" },
+        user_key = "olivier.bonnaure",
         text = "The UI looks great! Let's start integrating real data. Love the dark theme 🌙",
         timestamp = os.time() + 2,
         reactions = {
-          { emoji = "❤️", users = { "antigravity", "rust-bot", "alice", "bob" } },
-          { emoji = "✨", users = { "antigravity", "charlie" } }
+          { emoji = "❤️", users = { "antigravity", "system-rust-bot", "alice", "bob" }, count = 4 },
+          { emoji = "✨", users = { "antigravity", "charlie" }, count = 2 }
         }
       })
       db:CreateDocument("messages", {
         channel_id = general_channel._id,
-        sender = "rust-bot",
+        sender = { firstname = "Rust", lastname = "Bot", email = "rust-bot@system" },
+        user_key = "system-rust-bot",
         text = [[System performance metrics for today:
 ```json
 {
@@ -154,7 +159,7 @@ pub fn optimize_query(query: &Query) -> Result<Plan, Error> {
 }
 ```]],
         timestamp = os.time() + 3,
-        reactions = { { emoji = "📊", users = { "olivier.bonnaure" } } }
+        reactions = { { emoji = "📊", users = { "olivier.bonnaure" }, count = 1 } }
       })
     end
 

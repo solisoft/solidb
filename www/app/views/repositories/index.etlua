@@ -1,0 +1,141 @@
+<!-- Repositories Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-white/5">
+      <i class="fas fa-book-bookmark text-primary text-sm"></i>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-white tracking-tight">Repositories</h1>
+      <span class="text-xs text-text-dim">Manage your source code</span>
+    </div>
+  </div>
+  
+  <div class="flex items-center gap-3">
+    <!-- Simple client-side search -->
+    <div class="relative hidden sm:block">
+      <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-xs"></i>
+      <input type="text" 
+             placeholder="Filter repositories..." 
+             class="bg-bg-dark border border-white/5 rounded-lg py-1.5 pl-8 pr-3 text-sm text-text focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all w-64"
+             onkeyup="filterRepos(this.value)">
+    </div>
+    
+    <a href="/repositories/new" class="px-4 py-2 bg-gradient-to-r from-primary to-primary-hover hover:to-primary text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30">
+      <i class="fas fa-plus"></i>
+      <span>New Repository</span>
+    </a>
+  </div>
+</div>
+
+<!-- Repositories Grid -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <% if #repositories == 0 then %>
+  <div class="flex flex-col items-center justify-center h-[60vh] text-center">
+    <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-white/5 to-transparent flex items-center justify-center mb-6 border border-white/5 shadow-xl">
+      <i class="fas fa-git-alt text-4xl text-text-dim/50"></i>
+    </div>
+    <h3 class="text-xl font-bold text-white mb-2">No repositories yet</h3>
+    <p class="text-text-dim text-sm mb-6 max-w-sm mx-auto">Create your first repository to start hosting your code, managing branches, and collaborating with your team.</p>
+    <a href="/repositories/new" class="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-sm font-medium transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5">
+      <i class="fas fa-plus mr-2"></i>Create First Repository
+    </a>
+  </div>
+  <% else %>
+  <div id="repos-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <% for _, repo in ipairs(repositories) do %>
+    <% local initials = repo.name:sub(1,1):upper() .. (repo.name:match("%-(%w)") or repo.name:sub(2,2)):upper() %>
+    <div class="repo-card bg-surface hover:bg-surface-hover rounded-xl border border-white/5 hover:border-primary/30 transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 group flex flex-col h-full relative overflow-hidden">
+      <!-- Gradient overlay on hover -->
+      <div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+      
+      <div class="p-6 flex-1 relative z-10">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-4">
+            <!-- Initials Avatar -->
+            <div class="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 text-xl font-bold tracking-wider shadow-inner
+                        <%= repo.is_public and 'bg-gradient-to-br from-blue-500/20 to-blue-600/5 text-blue-400 border border-blue-500/10' or 'bg-gradient-to-br from-amber-500/20 to-amber-600/5 text-amber-400 border border-amber-500/10' %>">
+              <%= initials %>
+            </div>
+            <div>
+              <a href="/repositories/<%= repo.id %>" class="text-lg font-bold text-white group-hover:text-primary transition-colors block leading-tight mb-1.5">
+                <%= repo.name %>
+              </a>
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded
+                             <%= repo.is_public and 'bg-blue-500/10 text-blue-400 border border-blue-500/20' or 'bg-amber-500/10 text-amber-400 border border-amber-500/20' %>">
+                  <i class="fas <%= repo.is_public and 'fa-globe-americas' or 'fa-lock' %> text-[10px]"></i>
+                  <%= repo.is_public and 'Public' or 'Private' %>
+                </span>
+                <% if repo.default_branch then %>
+                <span class="text-xs text-text-dim flex items-center gap-1">
+                   <i class="fas fa-code-branch text-[10px]"></i> <%= repo.default_branch %>
+                </span>
+                <% end %>
+              </div>
+            </div>
+          </div>
+          
+          <div class="flex opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+             <a href="/repositories/<%= repo.id %>/edit" class="w-8 h-8 flex items-center justify-center text-text-dim hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Settings">
+              <i class="fas fa-cog"></i>
+            </a>
+          </div>
+        </div>
+        
+        <% if repo.description and repo.description ~= "" then %>
+        <p class="text-text-dim text-sm line-clamp-3 mb-5 leading-relaxed min-h-[4.5rem]"><%= repo.description %></p>
+        <% else %>
+        <p class="text-text-dim/40 text-sm italic mb-5 min-h-[4.5rem] flex items-center">No description provided</p>
+        <% end %>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 gap-3 mt-auto">
+          <div class="bg-bg-dark/50 rounded-lg p-2.5 border border-white/5 flex flex-col items-center justify-center gap-1">
+             <span class="text-xs text-text-dim">Last Updated</span>
+             <span class="text-xs font-medium text-white">
+               <% if repo.last_activity_at then %>
+                 <%= time_ago_in_words(repo.last_activity_at) %>
+               <% else %>
+                 Never
+               <% end %>
+             </span>
+          </div>
+          <a href="/repositories/<%= repo.id %>/merge_requests" class="bg-bg-dark/50 hover:bg-primary/20 transition-colors rounded-lg p-2.5 border border-white/5 flex flex-col items-center justify-center gap-1 group/stat">
+             <span class="text-xs text-text-dim group-hover/stat:text-primary-light">Open MRs</span>
+             <span class="text-xs font-medium <%= (repo.open_mrs_count or 0) > 0 and 'text-green-400' or 'text-white' %>">
+               <%= repo.open_mrs_count or 0 %>
+             </span>
+          </a>
+        </div>
+      </div>
+      
+      <div class="px-6 py-4 border-t border-white/5 bg-white/[0.02] flex items-center justify-between relative z-10">
+        <a href="/repositories/<%= repo.id %>" class="text-xs font-medium text-text-dim hover:text-white transition-colors flex items-center gap-1.5 group/link">
+          <i class="fas fa-code text-text-dim group-hover/link:text-primary"></i>
+          View Code
+        </a>
+        <a href="/repositories/<%= repo.id %>/commits" class="text-xs font-medium text-text-dim hover:text-white transition-colors flex items-center gap-1.5 group/link">
+          <i class="fas fa-history text-text-dim group-hover/link:text-primary"></i>
+          History
+        </a>
+      </div>
+    </div>
+    <% end %>
+  </div>
+  <% end %>
+</div>
+
+<script>
+function filterRepos(term) {
+  term = term.toLowerCase();
+  const cards = document.querySelectorAll('.repo-card');
+  cards.forEach(card => {
+    const name = card.querySelector('a.text-base').textContent.toLowerCase();
+    if (name.includes(term)) {
+      card.style.display = 'flex';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+</script>

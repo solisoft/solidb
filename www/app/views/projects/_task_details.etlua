@@ -1,0 +1,662 @@
+<%
+local priority_colors = {
+  high = "bg-error/20 text-error",
+  medium = "bg-warning/20 text-warning",
+  low = "bg-success/20 text-success"
+}
+local status_colors = {
+  todo = "bg-text-dim/20 text-text-dim",
+  in_progress = "bg-primary/20 text-primary",
+  done = "bg-success/20 text-success"
+}
+local status_labels = {
+  todo = "To Do",
+  in_progress = "In Progress",
+  done = "Done"
+}
+
+local available_tags = {
+  { id = "backend", name = "Backend", color = "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  { id = "frontend", name = "Frontend", color = "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  { id = "ios", name = "iOS", color = "bg-gray-500/20 text-gray-300 border-gray-500/30" },
+  { id = "android", name = "Android", color = "bg-green-500/20 text-green-400 border-green-500/30" },
+  { id = "mobile", name = "Mobile", color = "bg-orange-500/20 text-orange-400 border-orange-500/30" }
+}
+
+-- Helper to check if tag is selected
+local task_tags = task.tags or {}
+local function has_tag(tag_id)
+  for _, t in ipairs(task_tags) do
+    if t == tag_id then return true end
+  end
+  return false
+end
+%>
+<script>
+// Simple markdown renderer - defined early so inline scripts can use it
+window.renderMarkdown = function(text) {
+  if (!text) return '';
+  let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
+    return '<pre class="bg-black/30 rounded-lg p-3 overflow-x-auto my-2"><code class="text-xs text-green-400">' + code.trim() + '</code></pre>';
+  });
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1.5 py-0.5 rounded text-xs text-green-400">$1</code>');
+  // Images ![alt](url)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-2 max-h-48 object-contain">');
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-primary hover:underline">$1</a>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-text">$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong class="font-bold text-text">$1</strong>');
+  // Italic
+  html = html.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
+  html = html.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
+  // Strikethrough
+  html = html.replace(/~~([^~]+)~~/g, '<del class="line-through text-text-dim">$1</del>');
+  html = html.replace(/--([^-]+)--/g, '<del class="line-through text-text-dim">$1</del>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+};
+</script>
+<div class="h-full flex flex-col">
+  <!-- Header -->
+  <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between shrink-0">
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-mono text-text-dim">Task-<%= task.sequence_id or "Pending" %></span>
+      <span class="text-xs px-2 py-0.5 rounded <%= status_colors[task.status] or status_colors.todo %>">
+        <%= status_labels[task.status] or "To Do" %>
+      </span>
+      <!-- Priority (editable) -->
+      <div class="relative">
+        <button type="button" onclick="toggleDetailsPriority()"
+                class="text-xs px-2 py-0.5 rounded <%= priority_colors[task.priority] or priority_colors.medium %> hover:ring-1 hover:ring-white/20 cursor-pointer">
+          <%= (task.priority or "medium"):upper() %> <i class="fas fa-chevron-down text-[8px] ml-0.5"></i>
+        </button>
+        <div id="details-priority-dropdown" class="hidden absolute top-full left-0 mt-1 w-32 bg-bg-card border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+          <div class="py-1">
+            <button type="button" onclick="updateTaskPriority('<%= task._key %>', 'high')"
+                    class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= task.priority == 'high' and 'bg-error/10' or '' %>">
+              <span class="w-2 h-2 rounded-full bg-error"></span>
+              <span class="text-error">High</span>
+              <% if task.priority == 'high' then %><i class="fas fa-check text-xs ml-auto text-error"></i><% end %>
+            </button>
+            <button type="button" onclick="updateTaskPriority('<%= task._key %>', 'medium')"
+                    class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= (task.priority == 'medium' or not task.priority) and 'bg-warning/10' or '' %>">
+              <span class="w-2 h-2 rounded-full bg-warning"></span>
+              <span class="text-warning">Medium</span>
+              <% if task.priority == 'medium' or not task.priority then %><i class="fas fa-check text-xs ml-auto text-warning"></i><% end %>
+            </button>
+            <button type="button" onclick="updateTaskPriority('<%= task._key %>', 'low')"
+                    class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= task.priority == 'low' and 'bg-success/10' or '' %>">
+              <span class="w-2 h-2 rounded-full bg-success"></span>
+              <span class="text-success">Low</span>
+              <% if task.priority == 'low' then %><i class="fas fa-check text-xs ml-auto text-success"></i><% end %>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button onclick="closeTaskPanel()"
+            class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto chat-scrollbar">
+    <div class="p-6 space-y-6">
+      <!-- Title -->
+      <div>
+        <h2 class="text-xl font-bold text-text"><%= task.title %></h2>
+      </div>
+
+      <!-- Meta -->
+      <div class="flex flex-wrap gap-4 text-sm">
+        <!-- Assignee (editable) -->
+        <div class="flex items-center gap-2">
+          <span class="text-text-dim">Assignee:</span>
+          <div class="relative">
+            <button type="button" onclick="toggleDetailsAssignee()"
+                    class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/10 transition-colors">
+              <% if task.assignee then %>
+              <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-[10px] text-white font-medium">
+                <%= string.sub(task.assignee.firstname or "?", 1, 1) %>
+              </div>
+              <span class="text-text"><%= task.assignee.firstname %></span>
+              <% else %>
+              <div class="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-text-dim">
+                <i class="fas fa-user"></i>
+              </div>
+              <span class="text-text-muted">Unassigned</span>
+              <% end %>
+              <i class="fas fa-chevron-down text-[8px] text-text-dim ml-1"></i>
+            </button>
+            <div id="details-assignee-dropdown" class="hidden absolute top-full left-0 mt-1 w-48 bg-bg-card border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+              <div class="py-1 max-h-48 overflow-y-auto chat-scrollbar">
+                <!-- Unassign option -->
+                <button type="button" onclick="assignTaskFromDetails('<%= task._key %>', '')"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= not task.assignee and 'bg-primary/10 text-primary' or 'text-text-dim' %>">
+                  <div class="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                    <i class="fas fa-user-slash"></i>
+                  </div>
+                  <span>Unassigned</span>
+                  <% if not task.assignee then %><i class="fas fa-check text-xs ml-auto"></i><% end %>
+                </button>
+                <% for _, u in ipairs(users or {}) do %>
+                <button type="button" onclick="assignTaskFromDetails('<%= task._key %>', '<%= u._key %>')"
+                        class="w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 <%= task.assignee and task.assignee._key == u._key and 'bg-primary/10 text-primary' or 'text-text' %>">
+                  <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-[10px] text-white font-medium">
+                    <%= string.sub(u.firstname or "?", 1, 1) %>
+                  </div>
+                  <span><%= u.firstname %> <%= u.lastname and string.sub(u.lastname, 1, 1) .. "." or "" %></span>
+                  <% if task.assignee and task.assignee._key == u._key then %><i class="fas fa-check text-xs ml-auto"></i><% end %>
+                </button>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reporter -->
+        <div class="flex items-center gap-2">
+          <span class="text-text-dim">Reporter:</span>
+          <% if task.reporter then %>
+          <span class="text-text"><%= task.reporter.firstname %></span>
+          <% else %>
+          <span class="text-text-muted">Unknown</span>
+          <% end %>
+        </div>
+
+        <!-- Created -->
+        <div class="flex items-center gap-2">
+          <span class="text-text-dim">Created:</span>
+          <span class="text-text"><%= os.date("%b %d, %Y", task.created_at or os.time()) %></span>
+        </div>
+      </div>
+
+      <!-- Tags (editable) -->
+      <div>
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider mb-2">Tags</h3>
+        <div class="flex flex-wrap gap-2" id="task-tags-container">
+          <% for _, tag in ipairs(available_tags) do %>
+          <button type="button"
+                  onclick="toggleTaskTag('<%= task._key %>', '<%= tag.id %>')"
+                  class="tag-btn px-2.5 py-1 text-xs font-medium rounded-full border <%= tag.color %> transition-all <%= has_tag(tag.id) and 'opacity-100 ring-1 ring-white/30' or 'opacity-50 hover:opacity-75' %>"
+                  data-tag="<%= tag.id %>"
+                  data-selected="<%= has_tag(tag.id) and 'true' or 'false' %>">
+            <%= tag.name %>
+          </button>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">Description</h3>
+          <button type="button" onclick="toggleDescriptionEdit('<%= task._key %>')" id="desc-edit-btn"
+                  class="text-xs text-text-dim hover:text-text">
+            <i class="fas fa-pen mr-1"></i> Edit
+          </button>
+        </div>
+        <!-- View mode -->
+        <div id="desc-view" class="bg-bg-input/50 rounded-lg p-4 border border-white/5">
+          <% if task.description and task.description ~= "" then %>
+          <div class="text-text-muted text-sm max-w-none" id="desc-rendered"></div>
+          <script id="desc-raw" type="text/plain"><%= task.description %></script>
+          <script>
+            document.getElementById('desc-rendered').innerHTML = renderMarkdown(document.getElementById('desc-raw').textContent);
+          </script>
+          <% else %>
+          <p class="text-text-dim text-sm italic">No description provided.</p>
+          <% end %>
+        </div>
+        <!-- Edit mode -->
+        <div id="desc-edit" class="hidden">
+          <textarea id="desc-textarea" rows="4"
+                    class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg text-text text-sm placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent resize-none"><%= task.description or '' %></textarea>
+          <div class="flex justify-end gap-2 mt-2">
+            <button type="button" onclick="cancelDescriptionEdit()"
+                    class="px-3 py-1.5 text-sm text-text-dim hover:text-text">Cancel</button>
+            <button type="button" onclick="saveDescription('<%= task._key %>')"
+                    class="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Attachments -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">
+            Attachments (<%= task.files and #task.files or 0 %>)
+          </h3>
+          <label class="text-xs text-text-dim hover:text-text cursor-pointer">
+            <i class="fas fa-paperclip mr-1"></i> Add file
+            <input type="file" class="hidden" multiple onchange="uploadTaskFiles('<%= task._key %>', this.files)">
+          </label>
+        </div>
+        <div id="task-files" class="space-y-2 min-h-[60px] rounded-lg transition-all"
+             ondragover="event.preventDefault(); this.classList.add('ring-2', 'ring-primary', 'ring-dashed', 'bg-primary/5')"
+             ondragleave="this.classList.remove('ring-2', 'ring-primary', 'ring-dashed', 'bg-primary/5')"
+             ondrop="event.preventDefault(); this.classList.remove('ring-2', 'ring-primary', 'ring-dashed', 'bg-primary/5'); uploadTaskFiles('<%= task._key %>', event.dataTransfer.files)">
+          <% if task.files and #task.files > 0 then %>
+            <% for _, file in ipairs(task.files) do %>
+            <div class="flex items-center gap-3 p-2 bg-bg-input/50 rounded-lg border border-white/5 group">
+              <div class="w-8 h-8 rounded bg-white/10 flex items-center justify-center text-text-dim">
+                <i class="fas fa-<%= (file.content_type and file.content_type:find('image')) and 'image' or 'file' %>"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <a href="/_api/blob/_system/files/<%= file.key %>" target="_blank"
+                   class="text-sm text-text hover:text-primary truncate block"><%= file.name %></a>
+                <span class="text-[10px] text-text-dim"><%= file.size and string.format("%.1f KB", file.size / 1024) or "" %></span>
+              </div>
+              <button type="button" onclick="removeTaskFile('<%= task._key %>', '<%= file.key %>')"
+                      class="w-6 h-6 rounded hover:bg-error/20 flex items-center justify-center text-text-dim hover:text-error opacity-0 group-hover:opacity-100 transition-opacity">
+                <i class="fas fa-times text-xs"></i>
+              </button>
+            </div>
+            <% end %>
+          <% else %>
+            <p class="text-sm text-text-dim text-center py-2">No attachments</p>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Comments -->
+      <div>
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider mb-3">
+          Comments (<%= task.comments and #task.comments or 0 %>)
+        </h3>
+
+        <!-- Comment List -->
+        <div class="space-y-3 mb-4">
+          <% if task.comments and #task.comments > 0 then %>
+            <% for _, comment in ipairs(task.comments) do %>
+            <div class="flex gap-3">
+              <div class="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center text-[10px] text-white font-medium shrink-0">
+                <%= comment.user and string.sub(comment.user.firstname or "?", 1, 1) or "?" %>
+              </div>
+              <div class="flex-1 bg-bg-input/50 rounded-lg p-3 border border-white/5">
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-sm font-medium text-text"><%= comment.user and comment.user.firstname or "User" %></span>
+                  <span class="text-[10px] text-text-dim"><%= os.date("%b %d, %H:%M", comment.created_at or os.time()) %></span>
+                </div>
+                <div class="text-sm text-text-muted comment-content"></div>
+                <script class="comment-raw" type="text/plain"><%= comment.text %></script>
+              </div>
+            </div>
+            <% end %>
+          <% else %>
+            <p class="text-sm text-text-dim text-center py-4">No comments yet</p>
+          <% end %>
+        </div>
+        <script>
+          document.querySelectorAll('.comment-content').forEach((el, i) => {
+            const raw = document.querySelectorAll('.comment-raw')[i];
+            if (raw) el.innerHTML = renderMarkdown(raw.textContent);
+          });
+        </script>
+
+        <!-- Add Comment -->
+        <form id="comment-form"
+              hx-post="/projects/task/<%= task._key %>/comment"
+              hx-target="#task-panel-content"
+              hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful) refreshTaskCard('<%= task._key %>')"
+              class="space-y-2">
+          <div class="relative"
+               ondragover="event.preventDefault(); this.classList.add('ring-2', 'ring-primary', 'ring-dashed')"
+               ondragleave="this.classList.remove('ring-2', 'ring-primary', 'ring-dashed')"
+               ondrop="event.preventDefault(); this.classList.remove('ring-2', 'ring-primary', 'ring-dashed'); uploadCommentFiles('<%= task._key %>', event.dataTransfer.files)">
+            <textarea id="comment-textarea" name="text" rows="2" placeholder="Add a comment... (drop files here)"
+                      class="w-full px-3 py-2 bg-bg-input border border-border rounded-lg text-text text-sm placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent resize-none"></textarea>
+          </div>
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-1.5 px-2 py-1 text-xs text-text-dim hover:text-text hover:bg-white/5 rounded cursor-pointer transition-colors">
+              <i class="fas fa-paperclip"></i>
+              <span>Attach file</span>
+              <input type="file" class="hidden" multiple onchange="uploadCommentFiles('<%= task._key %>', this.files)">
+            </label>
+            <button type="submit"
+                    class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm">
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Actions -->
+  <div class="px-6 py-4 border-t border-white/5 flex justify-between shrink-0">
+    <button hx-delete="/projects/task/<%= task._key %>"
+            hx-confirm="Are you sure you want to delete this task?"
+            class="px-3 py-1.5 text-error hover:bg-error/10 rounded-lg text-sm">
+      <i class="fas fa-trash mr-1"></i> Delete
+    </button>
+    <div class="flex gap-2">
+      <% if task.app and task.feature then %>
+      <a href="/projects/app/<%= task.app._key %>/feature/<%= task.feature._key %>"
+         class="px-4 py-2 bg-white/5 hover:bg-white/10 text-text rounded-lg text-sm">
+        <i class="fas fa-columns mr-1"></i> Board
+      </a>
+      <% end %>
+      <button onclick="closeTaskPanel()"
+              class="px-4 py-2 bg-white/5 hover:bg-white/10 text-text rounded-lg text-sm">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateTaskStatus(key, status) {
+  fetch('/projects/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `key=${key}&status=${status}`
+  }).then(res => {
+    if (res.ok) {
+      // Refresh panel
+      htmx.ajax('GET', '/projects/task/' + key, { target: '#task-panel-content', swap: 'innerHTML' });
+      // Move card to new column and refresh it
+      moveTaskCardToColumn(key, status);
+    }
+  });
+}
+
+// Move a task card to a different column
+function moveTaskCardToColumn(taskKey, newStatus) {
+  const card = document.querySelector(`[data-task-key="${taskKey}"]`);
+  const targetColumn = document.querySelector(`[data-status="${newStatus}"]`);
+
+  if (card && targetColumn) {
+    // Remove empty state if present
+    const emptyState = targetColumn.querySelector('.empty-state');
+    if (emptyState) emptyState.remove();
+
+    // Update card status and move it
+    card.dataset.status = newStatus;
+    targetColumn.appendChild(card);
+
+    // Update column counts
+    if (typeof updateColumnCounts === 'function') {
+      updateColumnCounts();
+    }
+
+    // Mark local change to prevent LiveQuery double-refresh
+    if (typeof markLocalChange === 'function') {
+      markLocalChange(taskKey);
+    }
+
+    // Refresh the card content
+    refreshTaskCard(taskKey);
+  }
+}
+
+function toggleDetailsAssignee() {
+  document.getElementById('details-priority-dropdown')?.classList.add('hidden');
+  const dropdown = document.getElementById('details-assignee-dropdown');
+  dropdown.classList.toggle('hidden');
+}
+
+function toggleDetailsPriority() {
+  document.getElementById('details-assignee-dropdown')?.classList.add('hidden');
+  const dropdown = document.getElementById('details-priority-dropdown');
+  dropdown.classList.toggle('hidden');
+}
+
+function updateTaskPriority(taskKey, priority) {
+  document.getElementById('details-priority-dropdown').classList.add('hidden');
+
+  fetch('/projects/task/' + taskKey, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'priority=' + encodeURIComponent(priority)
+  }).then(res => {
+    if (res.ok) {
+      // Refresh details panel
+      htmx.ajax('GET', '/projects/task/' + taskKey, { target: '#task-panel-content', swap: 'innerHTML' });
+      // Refresh the card on the board
+      refreshTaskCard(taskKey);
+    }
+  });
+}
+
+function assignTaskFromDetails(taskKey, userId) {
+  document.getElementById('details-assignee-dropdown').classList.add('hidden');
+
+  fetch('/projects/task/' + taskKey + '/assign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'assignee_id=' + encodeURIComponent(userId)
+  }).then(res => {
+    if (res.ok) {
+      // Refresh the details panel
+      htmx.ajax('GET', '/projects/task/' + taskKey, { target: '#task-panel-content', swap: 'innerHTML' });
+      // Refresh the card on the board
+      refreshTaskCard(taskKey);
+    }
+  });
+}
+
+// Refresh a single task card on the board
+function refreshTaskCard(taskKey) {
+  const card = document.querySelector(`[data-task-key="${taskKey}"]`);
+  if (card) {
+    fetch('/projects/task/' + taskKey + '/card')
+      .then(res => res.text())
+      .then(html => {
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const newCard = temp.firstElementChild;
+        if (newCard) {
+          card.replaceWith(newCard);
+          // Mark local change to prevent LiveQuery double-refresh
+          if (typeof markLocalChange === 'function') {
+            markLocalChange(taskKey);
+          }
+        }
+      });
+  }
+  // Also refresh the sidebar to update task lists
+  if (typeof refreshSidebar === 'function') {
+    refreshSidebar();
+  }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  const assigneeDropdown = document.getElementById('details-assignee-dropdown');
+  const priorityDropdown = document.getElementById('details-priority-dropdown');
+
+  if (assigneeDropdown && !e.target.closest('#details-assignee-dropdown') && !e.target.closest('[onclick="toggleDetailsAssignee()"]')) {
+    assigneeDropdown.classList.add('hidden');
+  }
+  if (priorityDropdown && !e.target.closest('#details-priority-dropdown') && !e.target.closest('[onclick="toggleDetailsPriority()"]')) {
+    priorityDropdown.classList.add('hidden');
+  }
+});
+
+// Toggle a tag on/off
+function toggleTaskTag(taskKey, tagId) {
+  // Get current tags from DOM
+  const container = document.getElementById('task-tags-container');
+  const buttons = container.querySelectorAll('.tag-btn');
+  const tags = [];
+
+  buttons.forEach(btn => {
+    const isTarget = btn.dataset.tag === tagId;
+    const isSelected = btn.dataset.selected === 'true';
+
+    // Toggle the target, keep others as-is
+    if (isTarget) {
+      if (!isSelected) {
+        tags.push(btn.dataset.tag);
+        btn.dataset.selected = 'true';
+        btn.classList.remove('opacity-50', 'hover:opacity-75');
+        btn.classList.add('opacity-100', 'ring-1', 'ring-white/30');
+      } else {
+        btn.dataset.selected = 'false';
+        btn.classList.add('opacity-50', 'hover:opacity-75');
+        btn.classList.remove('opacity-100', 'ring-1', 'ring-white/30');
+      }
+    } else if (isSelected) {
+      tags.push(btn.dataset.tag);
+    }
+  });
+
+  // Save to server (comma-separated)
+  fetch('/projects/task/' + taskKey + '/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'tags=' + encodeURIComponent(tags.join(','))
+  }).then(res => {
+    if (res.ok) {
+      // Refresh the card on the board
+      refreshTaskCard(taskKey);
+    }
+  });
+}
+
+// Description edit functions
+function toggleDescriptionEdit(taskKey) {
+  document.getElementById('desc-view').classList.add('hidden');
+  document.getElementById('desc-edit').classList.remove('hidden');
+  document.getElementById('desc-edit-btn').classList.add('hidden');
+  document.getElementById('desc-textarea').focus();
+}
+
+function cancelDescriptionEdit() {
+  document.getElementById('desc-view').classList.remove('hidden');
+  document.getElementById('desc-edit').classList.add('hidden');
+  document.getElementById('desc-edit-btn').classList.remove('hidden');
+}
+
+function saveDescription(taskKey) {
+  const description = document.getElementById('desc-textarea').value;
+
+  fetch('/projects/task/' + taskKey, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'description=' + encodeURIComponent(description)
+  }).then(res => {
+    if (res.ok) {
+      // Refresh the panel to show updated description
+      htmx.ajax('GET', '/projects/task/' + taskKey, { target: '#task-panel-content', swap: 'innerHTML' });
+      // Refresh the card on the board
+      if (typeof markLocalChange === 'function') markLocalChange(taskKey);
+      refreshTaskCard(taskKey);
+    }
+  });
+}
+
+// File upload functions
+async function uploadTaskFiles(taskKey, files) {
+  if (!files || files.length === 0) return;
+  for (const file of files) {
+    await uploadTaskFile(taskKey, file);
+  }
+}
+
+async function uploadTaskFile(taskKey, file) {
+  if (!file) return;
+
+  // Upload to blob storage
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/_api/blob/_system/files', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      // Add file reference to task
+      await fetch('/projects/task/' + taskKey + '/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'key=' + encodeURIComponent(data.key) +
+              '&name=' + encodeURIComponent(file.name) +
+              '&size=' + file.size +
+              '&content_type=' + encodeURIComponent(file.type)
+      });
+
+      // Refresh panel
+      htmx.ajax('GET', '/projects/task/' + taskKey, { target: '#task-panel-content', swap: 'innerHTML' });
+      if (typeof markLocalChange === 'function') markLocalChange(taskKey);
+      refreshTaskCard(taskKey);
+    }
+  } catch (err) {
+    console.error('File upload failed:', err);
+  }
+}
+
+async function removeTaskFile(taskKey, fileKey) {
+  try {
+    await fetch('/projects/task/' + taskKey + '/file/' + fileKey, {
+      method: 'DELETE'
+    });
+
+    // Refresh panel
+    htmx.ajax('GET', '/projects/task/' + taskKey, { target: '#task-panel-content', swap: 'innerHTML' });
+    if (typeof markLocalChange === 'function') markLocalChange(taskKey);
+    refreshTaskCard(taskKey);
+  } catch (err) {
+    console.error('File removal failed:', err);
+  }
+}
+
+// Upload files for comment and insert markdown links
+async function uploadCommentFiles(taskKey, files) {
+  if (!files || files.length === 0) return;
+
+  const textarea = document.getElementById('comment-textarea');
+  if (!textarea) return;
+
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/_api/blob/_system/files', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const fileUrl = '/_api/blob/_system/files/' + data.key;
+
+        // Insert markdown link at cursor position
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+
+        // Use image syntax for images, link for others
+        const isImage = file.type.startsWith('image/');
+        const markdown = isImage
+          ? `![${file.name}](${fileUrl})`
+          : `[${file.name}](${fileUrl})`;
+
+        // Add newline if there's existing text
+        const prefix = text.length > 0 && !text.endsWith('\n') ? '\n' : '';
+
+        textarea.value = text.substring(0, start) + prefix + markdown + text.substring(end);
+        textarea.focus();
+
+        // Move cursor after inserted text
+        const newPos = start + prefix.length + markdown.length;
+        textarea.setSelectionRange(newPos, newPos);
+      }
+    } catch (err) {
+      console.error('Comment file upload failed:', err);
+    }
+  }
+}
+</script>

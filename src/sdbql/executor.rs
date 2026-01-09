@@ -6335,19 +6335,31 @@ impl<'a> QueryExecutor<'a> {
                     | BinaryOperator::LessThanOrEqual
                     | BinaryOperator::GreaterThan
                     | BinaryOperator::GreaterThanOrEqual => {
-                        // Try left = field access, right = literal
+                        // Try left = field access, right = literal OR bind param
                         if let Some(field) = self.extract_field_path(left, var_name) {
-                            if let Expression::Literal(value) = right.as_ref() {
+                            let value_opt = match right.as_ref() {
+                                Expression::Literal(v) => Some(v.clone()),
+                                Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
+                                _ => None,
+                            };
+
+                            if let Some(value) = value_opt {
                                 return Some(IndexableCondition {
                                     field,
                                     op: op.clone(),
-                                    value: value.clone(),
+                                    value,
                                 });
                             }
                         }
-                        // Try right = field access, left = literal
+                        // Try right = field access, left = literal OR bind param
                         if let Some(field) = self.extract_field_path(right, var_name) {
-                            if let Expression::Literal(value) = left.as_ref() {
+                            let value_opt = match left.as_ref() {
+                                Expression::Literal(v) => Some(v.clone()),
+                                Expression::BindVariable(name) => self.bind_vars.get(name).cloned(),
+                                _ => None,
+                            };
+
+                            if let Some(value) = value_opt {
                                 let reversed_op = match op {
                                     BinaryOperator::LessThan => BinaryOperator::GreaterThan,
                                     BinaryOperator::LessThanOrEqual => {
@@ -6362,7 +6374,7 @@ impl<'a> QueryExecutor<'a> {
                                 return Some(IndexableCondition {
                                     field,
                                     op: reversed_op,
-                                    value: value.clone(),
+                                    value,
                                 });
                             }
                         }

@@ -1,0 +1,193 @@
+<%
+  local FileTypes = require("helpers.file_types")
+  local file_info = FileTypes.get_info(file_name)
+%>
+<!-- Repository Header -->
+<div class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-bg-card/30">
+  <div class="flex items-center gap-3">
+    <a href="/repositories" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-text-dim hover:text-text transition-colors">
+      <i class="fas fa-arrow-left"></i>
+    </a>
+    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <i class="fas fa-code-branch text-primary text-sm"></i>
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <a href="/repositories/<%= repository.id %>" class="text-lg font-bold text-white hover:text-primary transition-colors"><%= repository.name %></a>
+      </div>
+      <span class="text-xs text-text-dim truncate max-w-md block"><%= repository.description or "No description provided" %></span>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <a href="/repositories/<%= repository.id %>/raw/<%= file_path %>?ref=<%= ref %>"
+       class="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium flex items-center gap-2 transition-colors" target="_blank">
+      <i class="fas fa-download"></i> Raw
+    </a>
+  </div>
+</div>
+
+<!-- Main Content Area -->
+<div class="flex-1 overflow-y-auto chat-scrollbar p-6">
+  <div class="max-w-6xl mx-auto">
+    <!-- Tabs -->
+    <div class="border-b border-white/10 mb-6">
+      <nav class="flex gap-6" aria-label="Tabs">
+        <a href="/repositories/<%= repository.id %>/tree" class="border-b-2 border-primary py-4 px-1 inline-flex items-center gap-2 text-primary font-medium text-sm">
+          <i class="fas fa-folder-tree text-lg"></i>
+          Code
+        </a>
+        <a href="/repositories/<%= repository.id %>/commits" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-code-commit text-lg"></i>
+          Commits
+        </a>
+        <a href="/repositories/<%= repository.id %>/merge_requests" class="border-b-2 border-transparent py-4 px-1 inline-flex items-center gap-2 text-text-dim hover:text-white hover:border-white/20 font-medium text-sm transition-colors">
+          <i class="fas fa-code-pull-request text-lg"></i>
+          Merge Requests
+          <% if open_mrs_count and open_mrs_count > 0 then %>
+            <span class="ml-1 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full border border-primary/20"><%= open_mrs_count %></span>
+          <% end %>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Branch Selector & Breadcrumbs -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-3">
+        <!-- Branch Selector -->
+        <div class="relative">
+          <select onchange="window.location.href='/repositories/<%= repository.id %>/blob/<%= file_path %>?ref=' + this.value"
+                  class="appearance-none bg-surface border border-white/10 rounded-lg px-3 py-2 pr-8 text-sm text-white focus:outline-none focus:border-primary/50 cursor-pointer">
+            <% for _, branch in ipairs(branches) do %>
+            <option value="<%= branch %>" <%= branch == ref and 'selected' or '' %>><%= branch %></option>
+            <% end %>
+          </select>
+          <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-text-dim text-xs pointer-events-none"></i>
+        </div>
+
+        <!-- Breadcrumbs -->
+        <div class="flex items-center gap-1 text-sm">
+          <a href="/repositories/<%= repository.id %>/tree?ref=<%= ref %>" class="text-primary hover:underline font-medium">
+            <%= repository.name %>
+          </a>
+          <% for i, crumb in ipairs(breadcrumbs) do %>
+          <span class="text-text-dim">/</span>
+          <% if i == #breadcrumbs then %>
+          <span class="text-white font-medium"><%= crumb.name %></span>
+          <% else %>
+          <a href="/repositories/<%= repository.id %>/tree/<%= crumb.path %>?ref=<%= ref %>" class="text-primary hover:underline">
+            <%= crumb.name %>
+          </a>
+          <% end %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <!-- Last Commit Info -->
+    <% if last_commit then %>
+    <div class="bg-surface border border-white/10 rounded-t-xl px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-[10px] text-white font-bold uppercase">
+          <%= last_commit.author:sub(1,1) %>
+        </div>
+        <span class="text-sm text-white font-medium"><%= last_commit.author %></span>
+        <span class="text-sm text-text-dim truncate max-w-md"><%= last_commit.message %></span>
+      </div>
+      <div class="flex items-center gap-3">
+        <code class="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+          <%= last_commit.hash:sub(1, 7) %>
+        </code>
+        <span class="text-xs text-text-dim"><%= last_commit.date %></span>
+      </div>
+    </div>
+    <% end %>
+
+    <!-- File Header -->
+    <div class="bg-surface/50 border border-white/10 <%= last_commit and 'border-t-0' or 'rounded-t-xl' %> px-4 py-2 flex items-center justify-between">
+      <div class="flex items-center gap-4 text-xs text-text-dim">
+        <span class="flex items-center gap-2">
+          <i class="<%= FileTypes.get_icon(file_name) %> <%= FileTypes.get_color(file_name) %>"></i>
+          <span class="text-white font-medium"><%= file_name %></span>
+        </span>
+        <span>|</span>
+        <span><%= line_count %> lines</span>
+        <span>|</span>
+        <%
+          local size_str = ""
+          if file_size < 1024 then
+            size_str = file_size .. " B"
+          elseif file_size < 1024 * 1024 then
+            size_str = string.format("%.1f KB", file_size / 1024)
+          else
+            size_str = string.format("%.1f MB", file_size / (1024 * 1024))
+          end
+        %>
+        <span><%= size_str %></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="navigator.clipboard.writeText(document.getElementById('file-content').textContent)"
+                class="px-2 py-1 text-xs text-text-dim hover:text-white transition-colors" title="Copy file content">
+          <i class="fas fa-copy mr-1"></i> Copy
+        </button>
+      </div>
+    </div>
+
+    <!-- File Content -->
+    <div class="bg-surface border border-white/10 border-t-0 rounded-b-xl overflow-hidden">
+      <% if is_binary then %>
+        <% if is_image then %>
+        <!-- Image Preview -->
+        <div class="p-8 flex items-center justify-center bg-black/20">
+          <img src="/repositories/<%= repository.id %>/raw/<%= file_path %>?ref=<%= ref %>"
+               alt="<%= file_name %>"
+               class="max-w-full max-h-[600px] object-contain rounded shadow-lg" />
+        </div>
+        <% else %>
+        <!-- Binary File Notice -->
+        <div class="p-12 text-center">
+          <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-file-archive text-2xl text-text-dim"></i>
+          </div>
+          <h3 class="text-lg font-medium text-white mb-2">Binary File</h3>
+          <p class="text-text-dim mb-4">This file cannot be displayed as text.</p>
+          <a href="/repositories/<%= repository.id %>/raw/<%= file_path %>?ref=<%= ref %>"
+             class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium inline-flex items-center gap-2 transition-colors">
+            <i class="fas fa-download"></i> Download File
+          </a>
+        </div>
+        <% end %>
+      <% else %>
+      <!-- Code View with Line Numbers -->
+      <div class="overflow-x-auto flex">
+        <!-- Line Numbers -->
+        <div class="select-none text-right pr-4 pl-4 py-4 text-text-dim/50 border-r border-white/5 font-mono text-sm bg-surface/50 shrink-0">
+          <%
+            local line_num = 0
+            for _ in (content .. "\n"):gmatch("([^\n]*)\n") do
+              line_num = line_num + 1
+          %>
+          <a href="#L<%= line_num %>" id="L<%= line_num %>" class="block hover:text-primary leading-6"><%= line_num %></a>
+          <% end %>
+        </div>
+        <!-- Code Content -->
+        <div class="flex-1 overflow-x-auto">
+          <pre class="!m-0 !p-4 !bg-transparent"><code id="file-content" class="!bg-transparent !p-0 text-sm leading-6 language-<%= file_info.lang or 'plaintext' %>"><%= content %></code></pre>
+        </div>
+      </div>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Highlight code - retry until hljs is available
+  (function highlightWhenReady() {
+    const codeEl = document.getElementById('file-content');
+    if (codeEl && window.hljs) {
+      hljs.highlightElement(codeEl);
+    } else {
+      setTimeout(highlightWhenReady, 50);
+    }
+  })();
+</script>

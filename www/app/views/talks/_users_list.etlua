@@ -1,0 +1,29 @@
+<nav class="space-y-0.5 max-h-48 overflow-y-auto chat-scrollbar">
+  <% if not users or #users == 0 then %>
+  <p class="px-2 py-4 text-xs text-text-dim text-center">No team members</p>
+  <% else %>
+  <% for _, user in ipairs(users) do
+    local is_me = current_user and user._key == current_user._key
+    local is_online = is_me or user.status == "online" or (user.connection_count and user.connection_count > 0)
+    local display_name = user.firstname or user.email or "?"
+    local initial = string.sub(display_name, 1, 1):upper()
+  %>
+  <div hx-post="/talks/dm/start/<%= user._key %>"
+       hx-target="#main-content"
+       hx-push-url="true"
+       data-user-key="<%= user._key %>"
+       class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-text-muted hover:text-text hover:bg-white/5 cursor-pointer">
+    <div class="relative">
+      <div class="w-6 h-6 rounded-md bg-gradient-to-br <%= is_me and 'from-primary to-accent' or 'from-accent to-primary' %> flex items-center justify-center text-white text-xs font-medium">
+        <%= initial %>
+      </div>
+      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-card <%= is_online and 'bg-success' or 'bg-text-dim' %>"></span>
+    </div>
+    <span class="flex-1 truncate text-sm">
+      <%= display_name %><% if user.lastname then %> <%= user.lastname %><% end %>
+      <% if is_me then %><span class="text-xs text-text-dim">(you)</span><% end %>
+    </span>
+  </div>
+  <% end %>
+  <% end %>
+</nav>

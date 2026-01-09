@@ -1,0 +1,79 @@
+<aside class="w-[70px] bg-black/40 backdrop-blur-xl border-r border-white/5 flex flex-col items-center py-6 gap-6 z-30 shrink-0">
+  <!-- Logo/Home -->
+  <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg mb-2 hover:scale-105 transition-transform" title="Home">
+    <span class="font-bold text-lg">S</span>
+  </a>
+
+  <!-- Separator -->
+  <div class="w-8 h-px bg-white/10"></div>
+
+  <%
+  local current_path = GetPath() or ""
+  local is_active = function(pattern) return current_path:match(pattern) end
+  %>
+
+  <!-- Projects -->
+  <a href="/projects" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/projects") and 'bg-primary text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-tasks text-lg"></i>
+    </div>
+    <!-- Tooltip -->
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Projects
+    </div>
+    <!-- Active Indicator -->
+    <% if is_active("^/projects") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- Repositories -->
+  <a href="/repositories" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/repositories") or is_active("^/git") and 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-code-branch text-lg"></i>
+    </div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Repositories
+    </div>
+    <% if is_active("^/repositories") or is_active("^/git") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- Talks -->
+  <a href="/talks" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/talks") and 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-comments text-lg"></i>
+    </div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Talks
+    </div>
+    <% if is_active("^/talks") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- CRUDs -->
+  <a href="/cruds" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/cruds") and 'bg-amber-500 text-white shadow-[0_0_15px_rgba(245,158,11,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-cubes text-lg"></i>
+    </div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      CRUDs
+    </div>
+    <% if is_active("^/cruds") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-amber-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- Bottom Actions -->
+  <div class="mt-auto flex flex-col gap-4">
+    <a href="/dashboard/login" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-white/10 hover:text-white transition-all duration-300" title="Settings">
+      <i class="fas fa-cog text-lg"></i>
+    </a>
+    
+    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border border-white/10 flex items-center justify-center cursor-pointer hover:border-white/30 transition-colors shadow-lg">
+      <span class="text-xs font-bold text-white"><%= current_user and string.sub(current_user.firstname or "U", 1, 1) or "?" %></span>
+    </div>
+  </div>
+</aside>

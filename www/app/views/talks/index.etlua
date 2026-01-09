@@ -1,123 +1,462 @@
-<!-- Channel Header -->
-<div class="h-14 px-4 flex items-center justify-between border-b border-border/30 shrink-0">
+<!-- Channel Header (Floating) -->
+<div class="absolute top-4 left-4 right-4 h-16 bg-bg-card/60 backdrop-blur-xl border border-white/5 rounded-2xl flex items-center justify-between px-6 z-10 shadow-lg">
   <div class="flex items-center gap-3">
-    <span class="text-lg font-bold text-text">#<%= current_channel %></span>
-    <span class="text-text-dim">|</span>
-    <span class="text-sm text-text-muted truncate">Channel description goes here</span>
-  </div>
-  <div class="flex items-center gap-2">
-    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Members">
-      <i class="fas fa-users"></i>
-    </button>
-    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Search">
-      <i class="fas fa-search"></i>
-    </button>
-    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors" title="Pin">
-      <i class="fas fa-thumbtack"></i>
-    </button>
-  </div>
-</div>
-
-<!-- Messages Container with WebSocket -->
-<div id="messages-container"
-     class="flex-1 overflow-y-auto chat-scrollbar px-4 py-4"
-     hx-ext="ws"
-     ws-connect="/ws/talks?channel=<%= current_channel %>"
-     hx-swap="beforeend scroll:bottom">
-
-  <!-- Messages loaded via HTMX -->
-  <div hx-get="/talks/messages?channel=<%= current_channel %>"
-       hx-trigger="load"
-       hx-swap="outerHTML">
-    <div class="flex items-center justify-center h-32">
-      <i class="fas fa-spinner fa-spin text-2xl text-primary-light"></i>
+    <% if dm_user_name then %>
+    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white font-bold text-xs shadow-md">
+       <%= string.sub(dm_user_name, 1, 1) %>
     </div>
+    <div>
+      <h1 class="text-sm font-bold text-white leading-none">@ <%= dm_user_name %></h1>
+      <span class="text-[10px] text-success font-medium">Online</span>
+    </div>
+    <% else %>
+    <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-text-muted border border-white/5">
+       <i class="fas fa-hashtag text-xs"></i>
+    </div>
+    <div>
+      <h1 class="text-sm font-bold text-white leading-none"><%= channel and channel.name or "general" %></h1>
+      <span class="text-[10px] text-text-dim"><%= channel and channel.topic or "Welcome to the channel" %></span>
+    </div>
+    <% end %>
+  </div>
+  
+  <div class="flex items-center gap-2">
+    <%
+    local is_dm = channel and channel.type == "dm"
+    local active_participants = channel and channel.active_call_participants or {}
+    local has_active_call = #active_participants > 0
+    %>
+    <% if is_dm then %>
+    <!-- DM: Simple voice/video call buttons -->
+    <div class="flex bg-bg-card/50 rounded-lg p-0.5 border border-white/5">
+      <button onclick="TalksCall.startCall('<%= channel._key %>', 'audio')"
+              class="w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-success hover:bg-white/5 transition-colors" title="Voice Call">
+        <i class="fas fa-phone text-xs"></i>
+      </button>
+      <button onclick="TalksCall.startCall('<%= channel._key %>', 'video')"
+              class="w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-white/5 transition-colors" title="Video Call">
+        <i class="fas fa-video text-xs"></i>
+      </button>
+    </div>
+    <% else %>
+    <!-- Group Channel: Active Call - Join Button -->
+    <div id="channel-header-join-actions" class="<%= has_active_call and '' or 'hidden' %>">
+      <button onclick="TalksCall.startCall('<%= channel._key %>', 'audio')"
+              class="flex items-center gap-2 px-4 py-2 bg-success hover:bg-success/90 text-white text-sm font-medium rounded-lg shadow-lg shadow-success/30 transition-all animate-pulse">
+        <i class="fas fa-video"></i>
+        <span>Join Call <span id="active-huddle-avatars">(<%= #active_participants %>)</span></span>
+      </button>
+    </div>
+    
+    <!-- Group Channel: Call Controls -->
+    <div id="channel-header-start-actions" class="flex bg-bg-card/50 rounded-lg p-0.5 border border-white/5 <%= has_active_call and 'hidden' or '' %>">
+      <button onclick="TalksCall.startCall('<%= channel and channel._key or 'general' %>', 'audio')"
+              class="w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-success hover:bg-white/5 transition-colors" title="Voice Call">
+        <i class="fas fa-phone text-xs"></i>
+      </button>
+      <button onclick="TalksCall.startCall('<%= channel and channel._key or 'general' %>', 'video')"
+              class="w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-white/5 transition-colors" title="Video Call">
+        <i class="fas fa-video text-xs"></i>
+      </button>
+    </div>
+    <% end %>
+
+    <div class="w-px h-6 bg-white/10 mx-2"></div>
+
+    <!-- Search & Info -->
+    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors" title="Search">
+      <i class="fas fa-search text-xs"></i>
+    </button>
+    <button class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors" title="Channel Info">
+      <i class="fas fa-info-circle text-xs"></i>
+    </button>
   </div>
 </div>
 
-<!-- Message Input -->
-<div class="px-4 py-3 border-t border-border/30 shrink-0" x-data="messageComposer()">
-  <!-- Typing Indicator -->
-  <div x-show="typingUsers.length > 0" x-cloak class="text-xs text-text-muted mb-2 flex items-center gap-2">
-    <span class="flex gap-1">
-      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
-      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
-      <span class="typing-dot w-1.5 h-1.5 bg-text-muted rounded-full"></span>
-    </span>
-    <span x-text="typingUsers.join(', ') + ' is typing...'"></span>
-  </div>
+<!-- Messages Area -->
+<div id="messages-container"
+     class="flex-1 flex flex-col justify-start overflow-y-auto chat-scrollbar px-4 pb-4 pt-24 space-y-0"
+     data-channel-id="<%= channel and channel._id or "" %>"
+     data-channel-key="<%= channel and channel._key or "general" %>"
+     data-messages-loaded="true">
+  <%- partial("talks/messages", { messages = messages, current_user = current_user, TextHelper = TextHelper }) %>
+</div>
 
-  <!-- Input Form -->
-  <form hx-post="/talks/message"
-        hx-target="#messages-container"
-        hx-swap="beforeend"
-        hx-on::after-request="this.reset()"
-        class="relative">
-    <input type="hidden" name="channel" value="<%= current_channel %>">
+<!-- Message Input (Floating) -->
+<div class="p-6 pt-2">
+  <div id="drop-zone" class="glass rounded-2xl p-2 shadow-xl ring-1 ring-white/5 transition-all duration-200 relative"
+       ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
 
-    <div class="flex items-end gap-2 bg-bg-dark/50 border border-border/30 rounded-xl p-2 focus-within:border-primary/50 transition-colors">
-      <!-- Attachment Button -->
-      <button type="button"
-              class="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors shrink-0">
-        <i class="fas fa-plus"></i>
-      </button>
+    <!-- Drop overlay -->
+    <div id="drop-overlay" class="hidden absolute inset-0 bg-primary/20 backdrop-blur-sm rounded-2xl z-20 flex items-center justify-center border-2 border-dashed border-primary">
+      <div class="text-center">
+        <i class="fas fa-cloud-upload-alt text-3xl text-primary mb-2"></i>
+        <p class="text-sm font-medium text-primary">Drop files here</p>
+      </div>
+    </div>
 
-      <!-- Text Input -->
-      <div class="flex-1 min-w-0">
-        <textarea name="text"
-                  x-model="message"
-                  @keydown.enter.prevent="if(!$event.shiftKey) $el.form.requestSubmit()"
-                  @input="handleTyping()"
-                  rows="1"
-                  class="w-full bg-transparent border-none text-text placeholder-text-dim resize-none focus:outline-none text-sm py-2 max-h-32"
-                  placeholder="Message #<%= current_channel %>"
-                  style="field-sizing: content;"></textarea>
+    <form id="message-form" onsubmit="return handleSubmit(event)" class="relative">
+      <input type="hidden" name="channel_id" value="<%= channel and channel._id or "" %>">
+
+      <!-- Emoji Picker Popover -->
+      <div id="input-emoji-picker" class="hidden absolute bottom-full right-0 mb-2 bg-bg-card border border-white/10 rounded-xl shadow-xl p-2 w-64 z-50">
+        <div class="grid grid-cols-8 gap-1" id="emoji-grid"></div>
       </div>
 
-      <!-- Emoji Button -->
-      <button type="button"
-              @click="showEmojiPicker = !showEmojiPicker"
-              class="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-text hover:bg-white/5 transition-colors shrink-0">
-        <i class="fas fa-smile"></i>
-      </button>
+      <!-- Quote Preview -->
+      <div id="quote-preview" class="hidden px-2 pt-2">
+        <div class="flex items-start gap-2 p-2 bg-primary/5 border-l-4 border-primary rounded-r-lg">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <i class="fas fa-reply text-primary text-xs"></i>
+              <span id="quote-sender" class="text-xs font-semibold text-primary"></span>
+            </div>
+            <p id="quote-text" class="text-xs text-text-muted line-clamp-2 break-words"></p>
+          </div>
+          <button type="button" onclick="clearQuote()" class="text-text-dim hover:text-error transition-colors p-1">
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
+      </div>
 
-      <!-- Send Button -->
-      <button type="submit"
-              :disabled="!message.trim()"
-              :class="message.trim() ? 'bg-primary hover:bg-primary-light text-white' : 'bg-bg-dark text-text-dim cursor-not-allowed'"
-              class="w-9 h-9 flex items-center justify-center rounded-lg transition-colors shrink-0">
-        <i class="fas fa-paper-plane"></i>
-      </button>
-    </div>
-  </form>
+      <!-- File Preview -->
+      <div id="file-preview" class="hidden px-2 pt-2 mb-2">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] text-text-muted font-bold uppercase tracking-wider">Attachments</span>
+          <button type="button" onclick="clearFiles()" class="text-[10px] text-text-dim hover:text-error transition-colors">
+            Clear all
+          </button>
+        </div>
+        <div id="file-list" class="flex flex-wrap gap-2"></div>
+      </div>
 
-  <!-- Formatting Hint -->
-  <p class="text-xs text-text-dim mt-2">
-    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted">Shift+Enter</kbd> for new line
-    <span class="mx-2">|</span>
-    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted">**bold**</kbd>
-    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted ml-1">_italic_</kbd>
-    <kbd class="px-1.5 py-0.5 bg-bg-dark rounded text-text-muted ml-1">`code`</kbd>
-  </p>
+      <div class="flex items-end gap-2 bg-bg-card/50 rounded-xl p-1.5 border border-white/5">
+        <!-- Attach -->
+        <input type="file" id="file-input" multiple class="hidden" onchange="handleFileSelect(this)">
+        <button type="button" onclick="document.getElementById('file-input').click()"
+                class="w-9 h-9 flex items-center justify-center rounded-lg text-text-dim hover:text-white hover:bg-white/10 transition-colors shrink-0">
+          <i class="fas fa-plus text-sm"></i>
+        </button>
+
+        <!-- Text Input -->
+        <textarea id="message-text" name="text"
+                  rows="1"
+                  placeholder="Message <% if dm_user_name then %>@<%= dm_user_name %><% else %>#<%= channel and channel.name or 'general' %><% end %>..."
+                  class="flex-1 bg-transparent border-none text-text placeholder-text-dim text-sm py-2 px-2 focus:ring-0 focus:outline-none outline-none resize-none leading-relaxed"
+                  style="max-height: 50vh;"
+                  oninput="this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, window.innerHeight * 0.5) + 'px';"
+                  onkeydown="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); handleSubmit(event); }"></textarea>
+
+        <!-- Emoji Button -->
+        <button type="button" onclick="toggleEmojiPicker(event)" class="w-9 h-9 flex items-center justify-center rounded-lg text-text-dim hover:text-warning hover:bg-warning/10 transition-colors shrink-0">
+          <i class="far fa-smile text-sm"></i>
+        </button>
+
+        <!-- Send Button -->
+        <button type="submit" id="send-btn"
+                class="w-9 h-9 flex items-center justify-center rounded-lg bg-primary hover:bg-primary-hover text-white shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 shrink-0">
+          <i class="fas fa-paper-plane text-xs"></i>
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script>
-function messageComposer() {
-  return {
-    message: '',
-    showEmojiPicker: false,
-    typingUsers: [],
-    typingTimeout: null,
+(function() {
+  // Connect LiveQuery for this channel
+  if (window.TalksApp) {
+    setTimeout(function() { window.TalksApp.reconnectLiveQuery(); }, 50);
+  }
 
-    handleTyping() {
-      // TODO: Send typing indicator via WebSocket
-      if (this.typingTimeout) {
-        clearTimeout(this.typingTimeout);
-      }
-      this.typingTimeout = setTimeout(() => {
-        // Stop typing indicator
-      }, 3000);
+  // Check if we should auto-join a call (from accepting incoming call notification)
+  const urlParams = new URLSearchParams(window.location.search);
+  const joinCallType = urlParams.get('join_call');
+  if (joinCallType && window.TalksCall) {
+    const channelKey = '<%= channel and channel._key or "" %>';
+    if (channelKey) {
+      // Clean up URL
+      urlParams.delete('join_call');
+      const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+      window.history.replaceState({}, '', newUrl);
+      // Start call after a short delay
+      setTimeout(() => {
+        TalksCall.startCall(channelKey, joinCallType);
+      }, 500);
     }
   }
-}
+
+  const DB_NAME = '<%= db_name or "_system" %>';
+  const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+  let pendingFiles = [];
+
+  // Handle file selection
+  window.handleFileSelect = function(input) {
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    files.forEach(file => {
+      if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) return;
+      pendingFiles.push(file);
+    });
+    renderFilePreview();
+    input.value = '';
+  };
+
+  function renderFilePreview() {
+    const preview = document.getElementById('file-preview');
+    const fileList = document.getElementById('file-list');
+
+    if (pendingFiles.length === 0) {
+      preview.classList.add('hidden');
+      return;
+    }
+
+    preview.classList.remove('hidden');
+    fileList.innerHTML = '';
+
+    pendingFiles.forEach((file, idx) => {
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
+      const div = document.createElement('div');
+      div.className = 'relative group';
+
+      if (isImage) {
+        const url = URL.createObjectURL(file);
+        div.innerHTML = `
+          <img src="${url}" class="h-14 w-14 object-cover rounded-lg border border-white/10 shadow-sm">
+          <button type="button" onclick="removeFile(${idx})"
+                  class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-bg-card rounded-full text-text-muted border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:text-error shadow-lg">
+            <i class="fas fa-times text-[10px]"></i>
+          </button>
+        `;
+      } else {
+        div.innerHTML = `
+          <div class="flex items-center gap-2 px-3 py-2 bg-bg-card rounded-lg border border-white/10 hover:border-primary/30 transition-colors">
+            <i class="fas fa-file text-primary"></i>
+            <span class="text-xs text-text truncate max-w-32">${file.name}</span>
+            <button type="button" onclick="removeFile(${idx})"
+                    class="ml-2 text-text-dim hover:text-error transition-colors">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        `;
+      }
+      fileList.appendChild(div);
+    });
+  }
+
+  window.removeFile = function(idx) {
+    pendingFiles.splice(idx, 1);
+    renderFilePreview();
+  };
+
+  window.clearFiles = function() {
+    pendingFiles = [];
+    renderFilePreview();
+  };
+
+  // Drag & Drop
+  window.handleDragOver = function(e) {
+    e.preventDefault(); e.stopPropagation();
+    document.getElementById('drop-overlay').classList.remove('hidden');
+  };
+
+  window.handleDragLeave = function(e) {
+    e.preventDefault(); e.stopPropagation();
+    // Only hide if leaving the drop-zone entirely (not entering a child)
+    const rect = document.getElementById('drop-zone').getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+      document.getElementById('drop-overlay').classList.add('hidden');
+    }
+  };
+
+  window.handleDrop = function(e) {
+    e.preventDefault(); e.stopPropagation();
+    document.getElementById('drop-overlay').classList.add('hidden');
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    files.forEach(file => {
+      if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) return;
+      pendingFiles.push(file);
+    });
+    renderFilePreview();
+  };
+
+  // Handle form submit
+  window.handleSubmit = async function(e) {
+    e.preventDefault();
+    const textarea = document.getElementById('message-text');
+    const channelId = document.querySelector('input[name="channel_id"]').value;
+    const sendBtn = document.getElementById('send-btn');
+    let text = textarea.value.trim();
+
+    sendBtn.disabled = true;
+    const originalIcon = sendBtn.innerHTML;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+      if (pendingFiles.length > 0) {
+        const tokenRes = await fetch('/talks/livequery_token');
+        const tokenData = await tokenRes.json();
+        const uploadedRefs = [];
+        for (const file of pendingFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          const uploadRes = await fetch(`http://${DB_HOST}/_api/blob/${DB_NAME}/files`, {
+            method: 'POST',
+            body: formData,
+            headers: { 'Authorization': 'Bearer ' + tokenData.token }
+          });
+          if (uploadRes.ok) {
+            const data = await uploadRes.json();
+            const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
+            uploadedRefs.push(isImage ? `![${file.name}](/talks/file/${data._key})` : `[${file.name}](/talks/file/${data._key})`);
+          }
+        }
+        if (uploadedRefs.length > 0) {
+          text = uploadedRefs.join('\n') + (text ? '\n' + text : '');
+        }
+      }
+
+      // Prepend quote if exists
+      const quoteMarkdown = window.getQuoteMarkdown ? window.getQuoteMarkdown() : '';
+      if (quoteMarkdown) {
+        text = quoteMarkdown + text;
+      }
+
+      if (!text) throw new Error("Empty message");
+
+      const formData = new FormData();
+      formData.append('channel_id', channelId);
+      formData.append('text', text);
+      // Just send - LiveQuery will handle displaying the new message
+      await fetch('/talks/message', { method: 'POST', body: formData });
+
+      textarea.value = '';
+      textarea.style.height = 'auto';
+      pendingFiles = [];
+      renderFilePreview();
+      if (window.clearQuote) window.clearQuote();
+      setTimeout(() => {
+        const container = document.getElementById('messages-container');
+        if (container) container.scrollTop = container.scrollHeight;
+      }, 100);
+
+    } catch (err) {
+      console.error('Send failed:', err);
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = originalIcon;
+      // Keep focus
+      textarea.focus();
+    }
+    return false;
+  };
+  // Emoji Picker Logic
+  const emojiCategories = {
+    "Smileys & People": [
+      "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥", "😶", "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻"
+    ],
+    "Animals & Nature": [
+      "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "cow", "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌", "🐞", "🐜", "🪰", "🪲", "🪳", "蚊", "🦗", "🕷", "🕸", "🦂", "🐢", "🐍", "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳", "🐋", "🦈", "🦭", "🐊", "🐅", "🐆", "🦓", "🦍", "🦧", "🦣", "🐘", "🦛", "🦏", "🐪", "🐫", "🦒", "🦘", "🦬", "🐃", "🐂", "🐄", "🐎", "🐖", "🐏", "🐑", "🦙", "🐐", "🦌", "🐕", "🐩", "🦮", "🐕‍🦺", "🐈", "🐈‍⬛", "🐓", "🦃", "🦚", "🦜", "🦢", "🦩", "🕊", "🐇", "🦝", "🦨", "🦡", "🦫", "🦦", "🦥", "🐁", "🐀", "🐿", "🦔", "🐾", "🐉", "🐲", "🌵", "🎄", "🌲", "🌳", "🌴", "🪵", "🌱", "🌿", "☘️", "🍀", "🎍", "🪴", "🎋", "🍃", "🍂", "🍁", "🍄", "🐚", "🪨", "🌾", "💐", "🌷", "🌹", "🥀", "🌺", "🌸", "🌼", "🌻", "🌞", "🌝", "🌛", "🌜", "🌚", "🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔", "🌙", "🌎", "🌍", "🌏", "🪐", "💫", "⭐", "🌟", "✨", "⚡", "☄️", "💥", "🔥", "🌪", "🌈", "☀️", "🌤", "⛅", "🌥", "☁️", "🌦", "🌧", "⛈", "🌩", "🌨", "❄️", "☃️", "⛄", "🌬", "💨", "💧", "💦", "☔", "☂️", "🌊", "🌫"
+    ],
+    "Objects": [
+      "⌚", "📱", "📲", "💻", "⌨️", "🖥", "🖨", "🖱", "🖲", "🕹", "🗜", "💽", "💾", "💿", "📀", "📼", "📷", "📸", "📹", "🎥", "📽", "🎞", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙", "🎚", "🎛", "🧭", "⏱", "⏲", "⏰", "🕰", "⌛", "⏳", "📡", "🔋", "🔌", "💡", "🔦", "🕯", "🪔", "🧯", "🛢", "💸", "💵", "💴", "💶", "💷", "🪙", "💰", "💳", "💎", "⚖️", "🪜", "🧰", "🪛", "🔧", "🔨", "⚒", "🛠", "⛏", "🪚", "🔩", "⚙️", "🪤", "🧱", "⛓", "🧲", "🔫", "💣", "🧨", "🪓", "🔪", "🗡", "⚔️", "🛡", "🚬", "⚰️", "🪦", "⚱️", "🏺", "🔮", "📿", "🧿", "💈", "⚗️", "🔭", "🔬", "🕳", "🩹", "🩺", "💊", "💉", "🩸", "🧬", "🦠", "🧫", "🧪", "🌡", "🧹", "🪠", "🧺", "🧻", "🚽", "🚰", "🚿", "🛁", "🛀", "🧼", "🪥", "🪒", "🧽", "🪣", "🧴", "🛎", "🔑", "🗝", "🚪", "🪑", "🛋", "🛏", "🛌", "🧸", "🪆", "🖼", "🪞", "🪟", "🛍", "🛒", "🎁", "🎈", "🎏", "🎀", "🪄", "🪅", "🎊", "🎉", "🎎", "🏮", "🎐", "🧧", "✉️", "📩", "📨", "📧", "💌", "📥", "📤", "📦", "🏷", "🪧", "📪", "📫", "📬", "📭", "📮", "📯", "📜", "📃", "📄", "📑", "🧾", "📊", "📈", "📉", "🗒", "🗓", "📆", "📅", "🗑", "📇", "🗃", "🗳", "🗄", "📋", "📁", "📂", "🗂", "🗞", "📰", "📓", "📔", "📒", "📕", "📗", "📘", "📙", "📚", "📖", "🔖", "🧷", "🔗", "📎", "🖇", "📐", "📏", "🧮", "📌", "📍", "✂️", "🖊", "🖋", "✒️", "🖌", "🖍", "📝", "✏️", "🔍", "🔎", "🔏", "🔐", "🔒", "🔓"
+    ],
+    "Symbols": [
+      "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "❤️‍🔥", "❤️‍🩹", "💟", "☮️", "✝️", "☪️", "🕉", "☸️", "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "⛎", "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "🆔", "⚛️", "🉑", "☢️", "☣️", "📴", "📳", "🈶", "🈚", "🈸", "🈺", "🈷️", "✴️", "🆚", "🉑", "💮", "🉐", "㊙️", "㊗️", "🈴", "🈵", "🈹", "🈲", "🅰️", "🅱️", "🆎", "🆑", "🅾️", "🆘", "❌", "⭕", "🛑", "⛔", "📛", "🚫", "💯", "💢", "♨️", "🚷", "🚯", "🚳", "🚱", "🔞", "📵", "🚭", "❗", "❕", "❓", "❔", "‼️", "⁉️", "🔅", "🔆", "〽️", "⚠️", "🚸", "🔱", "⚜️", "🔰", "♻️", "✅", "🈯", "💹", "❇️", "✳️", "❎", "🌐", "💠", "Ⓜ️", "🌀", "💤", "🏧", "🚾", "♿", "🅿️", "🛗", "🈳", "🈂️", "🛂", "🛃", "🛄", "🛅", "🚹", "🚺", "🚼", "⚧", "🚻", "🚮", "🎦", "📶", "🈁", "🔣", "ℹ️", "🔤", "🔡", "🔠", "🆖", "🆗", "🆙", "🆒", "🆕", "🆓", "0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢", "#️⃣", "*️⃣", "⏏️", "▶️", "⏸", "⏯", "⏹", "⏺", "⏭", "⏮", "⏩", "⏪", "⏫", "⏬", "◀️", "🔼", "🔽", "➡️", "⬅️", "⬆️", "⬇️", "↗️", "↘️", "↙️", "↖️", "↕️", "↔️", "↪️", "↩️", "⤴️", "⤵️", "🔀", "🔁", "🔂", "🔄", "🔃", "🎵", "🎶", "➕", "➖", "➗", "✖️", "♾", "💲", "💱", "™️", "©️", "®️", "👁‍🗨", "🔚", "🔙", "🔛", "🔝", "🔜", "〰️", "➰", "➿", "✔️", "☑️", "🔘", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫", "⚪", "🟤", "🔺", "🔻", "🔸", "🔹", "🔶", "🔷", "🔳", "🔲", "▪️", "▫️", "◾", "◽", "◼️", "◻️", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "⬜", "🟫", "🔉", "🔊", "🔇", "🔈", "🔔", "🔕", "📢", "📣", "💬", "💭", "🗯", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🀄", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚", "🕛", "🕜", "🕝", "🕞", "🕟", "🕠", "🕡", "🕢", "🕣", "🕤", "🕥", "🕦", "🕧"
+    ]
+  };
+  let pickerInitialized = false;
+
+  window.toggleEmojiPicker = function(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    const picker = document.getElementById('input-emoji-picker');
+    
+    if (!pickerInitialized) {
+      const container = document.getElementById('emoji-grid');
+      // Reset grid styles for categorization
+      container.className = 'max-h-64 overflow-y-auto chat-scrollbar px-1'; // Remove grid class, make it a flex col container
+      
+      Object.keys(emojiCategories).forEach(category => {
+        // Category Header
+        const header = document.createElement('h3');
+        header.className = 'text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2 mt-3 sticky top-0 bg-bg-card py-1 z-10';
+        header.textContent = category;
+        container.appendChild(header);
+
+        // Grid for this category
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-8 gap-1 mb-2';
+        
+        emojiCategories[category].forEach(emoji => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-base transition-colors';
+          btn.textContent = emoji;
+          btn.onclick = (e) => { e.stopPropagation(); insertEmoji(emoji); };
+          grid.appendChild(btn);
+        });
+        container.appendChild(grid);
+      });
+      pickerInitialized = true;
+    }
+
+    if (picker.classList.contains('hidden')) {
+      picker.classList.remove('hidden');
+      document.addEventListener('click', closeEmojiPickerOutside);
+    } else {
+      picker.classList.add('hidden');
+      document.removeEventListener('click', closeEmojiPickerOutside);
+    }
+  };
+
+  function closeEmojiPickerOutside(e) {
+    const picker = document.getElementById('input-emoji-picker');
+    if (picker && !picker.contains(e.target)) {
+      picker.classList.add('hidden');
+      document.removeEventListener('click', closeEmojiPickerOutside);
+    }
+  }
+
+  function insertEmoji(emoji) {
+    const textarea = document.getElementById('message-text');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    
+    textarea.value = text.substring(0, start) + emoji + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+    textarea.focus();
+    
+    // Auto close
+    const picker = document.getElementById('input-emoji-picker');
+    picker.classList.add('hidden');
+    document.removeEventListener('click', closeEmojiPickerOutside);
+  }
+
+})();
+</script>
+
+<script>
+// Update sidebar highlighting for current channel/DM
+(function() {
+  const channelKey = '<%= channel and channel._key or "general" %>';
+  const dmUserKey = '<%= dm_user_key or "" %>';
+
+  // Update global state for highlighting (don't reconnect LiveQuery here - it's done via switchChannel)
+  if (window.TalksApp) {
+    window.TalksApp.currentChannelKey = channelKey;
+    window.TalksApp.currentDmUserKey = dmUserKey;
+    window.TalksApp.highlightChannel(channelKey);
+  }
+
+  // Highlight DM user if applicable
+  if (dmUserKey) {
+    const userEl = document.querySelector('[data-user-key="' + dmUserKey + '"]');
+    if (userEl) {
+      userEl.classList.remove('text-text-muted', 'hover:text-text', 'hover:bg-white/5');
+      userEl.classList.add('bg-white/10', 'text-text');
+    }
+  }
+})();
 </script>

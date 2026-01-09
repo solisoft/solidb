@@ -1,0 +1,91 @@
+<%
+local priority_colors = {
+  high = "bg-error/20 text-error border-error/30",
+  medium = "bg-warning/20 text-warning border-warning/30",
+  low = "bg-success/20 text-success border-success/30"
+}
+local priority_class = priority_colors[task.priority] or priority_colors.medium
+
+local tag_colors = {
+  backend = "bg-purple-500/20 text-purple-400",
+  frontend = "bg-blue-500/20 text-blue-400",
+  ios = "bg-gray-500/20 text-gray-300",
+  android = "bg-green-500/20 text-green-400",
+  mobile = "bg-orange-500/20 text-orange-400"
+}
+local tag_labels = {
+  backend = "Backend",
+  frontend = "Frontend",
+  ios = "iOS",
+  android = "Android",
+  mobile = "Mobile"
+}
+%>
+<div id="task-<%= task._key %>"
+     class="task-card bg-bg-card/50 p-3 rounded-lg border border-white/5 hover:border-primary/30 cursor-grab group transition-all"
+     draggable="true"
+     data-task-key="<%= task._key %>"
+     data-status="<%= task.status or 'todo' %>"
+     data-position="<%= task.position or 0 %>"
+     data-assignee="<%= task.assignee_id or '' %>"
+     data-title="<%= (task.title or ''):lower() %>"
+     data-description="<%= (task.description or ''):lower() %>">
+
+  <!-- Priority Badge & Key -->
+  <div class="flex items-center justify-between mb-2">
+    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border <%= priority_class %>">
+      <%= (task.priority or "medium"):upper() %>
+    </span>
+    <span class="text-[10px] text-text-dim font-mono">Task-<%= task.sequence_id or "Pending" %></span>
+  </div>
+
+  <!-- Title -->
+  <h4 class="task-title text-sm font-medium text-text mb-2">
+    <%= task.title %>
+  </h4>
+
+  <!-- Tags -->
+  <% if task.tags and #task.tags > 0 then %>
+  <div class="flex flex-wrap gap-1 mb-2">
+    <% for _, tag_id in ipairs(task.tags) do %>
+    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded <%= tag_colors[tag_id] or 'bg-white/10 text-text-dim' %>">
+      <%= tag_labels[tag_id] or tag_id %>
+    </span>
+    <% end %>
+  </div>
+  <% end %>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-between">
+    <!-- Assignee (clickable) -->
+    <div class="relative assignee-container">
+      <button type="button"
+              class="assignee-btn flex items-center gap-1.5 px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-white/10 transition-colors"
+              onclick="event.stopPropagation(); toggleAssigneeDropdown(this, '<%= task._key %>')">
+        <% if task.assignee then %>
+        <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-[10px] text-white font-medium">
+          <%= string.sub(task.assignee.firstname or "?", 1, 1) %>
+        </div>
+        <span class="text-xs text-text-dim"><%= task.assignee.firstname %></span>
+        <% else %>
+        <div class="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-text-dim">
+          <i class="fas fa-user"></i>
+        </div>
+        <span class="text-xs text-text-dim">Unassigned</span>
+        <% end %>
+        <i class="fas fa-chevron-down text-[8px] text-text-dim opacity-0 group-hover:opacity-100 transition-opacity"></i>
+      </button>
+      <div class="assignee-dropdown hidden absolute bottom-full left-0 mb-1 w-48 bg-bg-card border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+        <!-- Loaded via HTMX -->
+      </div>
+    </div>
+
+    <!-- Comments count -->
+    <% if task.comments and #task.comments > 0 then %>
+    <div class="flex items-center gap-1 text-text-dim">
+      <i class="fas fa-comment text-[10px]"></i>
+      <span class="text-[10px]"><%= #task.comments %></span>
+    </div>
+    <% end %>
+  </div>
+</div>

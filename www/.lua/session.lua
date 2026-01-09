@@ -10,7 +10,7 @@ Session.DEFAULT_TTL = 60 -- minutes
 
 -- Get secret key with validation
 local function get_secret_key()
-  local key = os.getenv("SECRET_KEY")
+  local key = _G.ENV["SECRET_KEY"]
   if not key or key == "" then
     error("SECRET_KEY environment variable is required for sessions")
   end
@@ -44,6 +44,8 @@ end
 ---@return nil
 function SetSession(data, ttl)
   ttl = ttl or Session.DEFAULT_TTL
+  if(type(ttl) ~= "number") then ttl = Session.DEFAULT_TTL end
+
   local secret = get_secret_key()
 
   local json_data = EncodeJson(data) or "{}"
