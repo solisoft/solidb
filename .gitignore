@@ -5,3 +5,5 @@
 www/deploy.sh
 tmp
 node_modules
+.env
+www/.env
