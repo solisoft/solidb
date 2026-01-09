@@ -14,8 +14,8 @@ end
 
 function AuthHelper.get_current_user()
   -- Check cache first
-  if _request_cache.current_user then 
-      return _request_cache.current_user 
+  if _request_cache.current_user then
+      return _request_cache.current_user
   end
 
   local session = GetSession()
@@ -26,13 +26,24 @@ function AuthHelper.get_current_user()
 
   -- Optimization: Could cache in session too, but simple DB lookup by ID is fast
   local res = db:Sdbql("FOR u IN users FILTER u._id == @id RETURN u", { id = session.user_id })
-  
+
   if res and res.result and #res.result > 0 then
     local user = res.result[1]
+
+    -- Auto-promote first user to admin if not already set
+    if user.is_admin == nil then
+      local count_res = db:Sdbql("RETURN LENGTH(users)")
+      local user_count = count_res and count_res.result and count_res.result[1] or 0
+      if user_count == 1 then
+        db:Sdbql("UPDATE @key WITH { is_admin: true } IN users", { key = user._key })
+        user.is_admin = true
+      end
+    end
+
     _request_cache.current_user = user
     return user
   end
-  
+
   return nil
 end
 

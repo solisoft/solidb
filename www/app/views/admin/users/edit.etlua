@@ -1,0 +1,114 @@
+<!-- Admin Edit User -->
+<div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+  <!-- Header -->
+  <div class="absolute top-4 left-4 right-4 h-16 bg-bg-card/60 backdrop-blur-xl border border-white/5 rounded-2xl flex items-center justify-between px-6 z-10 shadow-lg">
+    <div class="flex items-center gap-3">
+      <a href="/admin/users" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+        <i class="fas fa-arrow-left text-xs"></i>
+      </a>
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xs shadow-md">
+        <%= string.sub(user.firstname or "?", 1, 1):upper() %>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold text-white leading-none">Edit User</h1>
+        <span class="text-[10px] text-text-dim"><%= user.firstname %> <%= user.lastname %></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Form -->
+  <div class="flex-1 overflow-y-auto chat-scrollbar px-6 pb-6 pt-24">
+    <div class="max-w-xl mx-auto">
+      <div class="glass-card rounded-xl border border-white/5 p-6">
+        <form hx-put="/admin/users/<%= user._key %>" hx-swap="none">
+          <!-- Name Fields -->
+          <div class="grid grid-cols-2 gap-4 mb-6">
+            <div>
+              <label class="block text-xs font-medium text-text-muted mb-2">First Name</label>
+              <input type="text" name="firstname" value="<%= user.firstname %>"
+                     class="w-full px-4 py-3 bg-bg-input border border-white/10 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-text-muted mb-2">Last Name</label>
+              <input type="text" name="lastname" value="<%= user.lastname %>"
+                     class="w-full px-4 py-3 bg-bg-input border border-white/10 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent text-sm">
+            </div>
+          </div>
+
+          <!-- Email (Read-only) -->
+          <div class="mb-6">
+            <label class="block text-xs font-medium text-text-muted mb-2">Email</label>
+            <input type="email" value="<%= user.email %>" readonly
+                   class="w-full px-4 py-3 bg-bg-input/50 border border-white/5 rounded-lg text-text-muted cursor-not-allowed text-sm">
+            <p class="text-[10px] text-text-dim mt-1">Email cannot be changed</p>
+          </div>
+
+          <!-- Admin Toggle -->
+          <div class="mb-6">
+            <label class="block text-xs font-medium text-text-muted mb-3">Role</label>
+            <div class="flex items-center gap-4">
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="radio" name="is_admin" value="false" <%= not user.is_admin and 'checked' or '' %>
+                       class="w-4 h-4 text-primary border-white/20 focus:ring-primary focus:ring-offset-0 focus:ring-offset-bg-card">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-text-muted group-hover:text-white transition-colors">
+                    <i class="fas fa-user text-xs"></i>
+                  </div>
+                  <span class="text-sm text-text-muted group-hover:text-white transition-colors">User</span>
+                </div>
+              </label>
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="radio" name="is_admin" value="true" <%= user.is_admin and 'checked' or '' %>
+                       class="w-4 h-4 text-primary border-white/20 focus:ring-primary focus:ring-offset-0 focus:ring-offset-bg-card">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary group-hover:bg-primary/30 transition-colors">
+                    <i class="fas fa-shield-alt text-xs"></i>
+                  </div>
+                  <span class="text-sm text-text-muted group-hover:text-white transition-colors">Admin</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- User Info -->
+          <div class="mb-6 p-4 bg-white/5 rounded-lg border border-white/5">
+            <h3 class="text-xs font-medium text-text-muted mb-3">User Information</h3>
+            <div class="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <span class="text-text-dim">Created</span>
+                <p class="text-text"><%= user.created_at and os.date("%b %d, %Y at %H:%M", user.created_at) or "N/A" %></p>
+              </div>
+              <div>
+                <span class="text-text-dim">Status</span>
+                <p class="text-text">
+                  <% if user.status == "online" then %>
+                  <span class="inline-flex items-center gap-1.5 text-success">
+                    <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+                    Online
+                  </span>
+                  <% else %>
+                  <span class="inline-flex items-center gap-1.5 text-text-dim">
+                    <span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
+                    Offline
+                  </span>
+                  <% end %>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-between pt-4 border-t border-white/5">
+            <a href="/admin/users" class="px-4 py-2 text-sm text-text-muted hover:text-white transition-colors">
+              Cancel
+            </a>
+            <button type="submit"
+                    class="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

@@ -144,9 +144,12 @@ function View.render(template, locals, options)
   -- Add helper functions to locals
   locals.partial = function(partial_name, partial_locals)
     partial_locals = partial_locals or {}
-    -- Forward content_for and t to partials to share context
-    partial_locals.content_for = locals.content_for
-    partial_locals.t = partial_locals.t or locals.t
+    -- Forward parent locals to partials (so current_user, etc. are available)
+    for k, v in pairs(locals) do
+      if partial_locals[k] == nil and k ~= "partial" then
+        partial_locals[k] = v
+      end
+    end
     return View.partial(partial_name, partial_locals)
   end
 

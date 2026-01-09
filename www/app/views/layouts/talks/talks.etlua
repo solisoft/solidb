@@ -35,7 +35,8 @@
       local current_path = GetPath() or ""
       local is_projects = current_path:match("^/projects")
       local is_repos = current_path:match("^/repositories") or current_path:match("^/git")
-      local is_talks = not is_projects and not is_repos
+      local is_admin = current_path:match("^/admin")
+      local is_talks = not is_projects and not is_repos and not is_admin
     %>
 
     <!-- Sidebar (Visible only for Talks) -->

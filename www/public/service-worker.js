@@ -1,4 +1,4 @@
-const CACHE_NAME = "talks-v22";
+const CACHE_NAME = "talks-v23";
 const STATIC_ASSETS = [
   "/favicon.png",
   "/manifest.json",
@@ -58,7 +58,11 @@ self.addEventListener("fetch", (event) => {
   // For navigation, just go to network
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/talks"))
+      fetch(event.request).catch(() => {
+        return caches.match("/talks").then(response => {
+          return response || new Response("Offline", { status: 503, statusText: "Service Unavailable" });
+        });
+      })
     );
     return;
   }
@@ -77,6 +81,10 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        return caches.match(event.request).then(response => {
+          return response || new Response("Not Found", { status: 404, statusText: "Not Found" });
+        });
+      })
   );
 });

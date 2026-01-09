@@ -212,6 +212,21 @@ router.scope("/database/_system", { middleware = { "dashboard_admin_auth" } }, f
   router.get("/monitoring", "dashboard/monitoring#index")
 end)
 
+-- Admin Users Management - requires session auth + admin
+router.scope("/admin", { middleware = { "session_auth" } }, function()
+  -- Users
+  router.get("/users", "admin/users#index")
+  router.get("/users/:key", "admin/users#show")
+  router.get("/users/:key/edit", "admin/users#edit")
+  router.put("/users/:key", "admin/users#update")
+  router.delete("/users/:key", "admin/users#destroy")
+
+  -- Invitations
+  router.get("/invitations", "admin/users#invitations")
+  router.post("/invitations", "admin/users#create_invitation")
+  router.delete("/invitations/:key", "admin/users#delete_invitation")
+end)
+
 -- Talks (Chat App) routes - requires session auth
 router.scope("/talks", { middleware = { "session_auth" } }, function()
   router.get("", "talks#index")
@@ -281,6 +296,12 @@ router.scope("/repositories", { middleware = { "session_auth" } }, function()
   router.get("/:id/raw/*path", "repositories#raw")
   router.get("/:id/commits", "repositories#commits")
 
+  -- Collaborators
+  router.get("/:id/collaborators", "repositories#collaborators")
+  router.get("/:id/collaborators/search", "repositories#collaborators_search")
+  router.post("/:id/collaborators", "repositories#add_collaborator")
+  router.delete("/:id/collaborators/:user_key", "repositories#remove_collaborator")
+
   -- Merge requests
   router.get("/:repo_id/merge_requests", "merge_requests#index")
   router.get("/:repo_id/merge_requests/new", "merge_requests#new_form")
@@ -296,7 +317,7 @@ router.scope("/repositories", { middleware = { "session_auth" } }, function()
   router.post("/:repo_id/merge_requests/:id/merge", "merge_requests#merge")
 end)
 
--- Git Smart HTTP (public - uses git's own authentication)
+-- Git Smart HTTP (uses HTTP Basic Auth with user credentials)
 router.get("/git/:repo_path/info/refs", "git_http#info_refs")
 router.post("/git/:repo_path/git-upload-pack", "git_http#upload_pack")
 router.post("/git/:repo_path/git-receive-pack", "git_http#receive_pack")

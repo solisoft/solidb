@@ -373,4 +373,153 @@ function RepositoriesController:raw()
   self.response.body = content
 end
 
+-- Collaborators management page (HTMX partial)
+function RepositoriesController:collaborators()
+  local current_user = get_current_user()
+  local repository = Repository:find(self.params.id)
+
+  if not repository then
+    return self:html('<div class="p-4 text-center text-text-dim">Repository not found</div>')
+  end
+
+  -- Check ownership
+  if repository.owner_id ~= current_user._key then
+    return self:html('<div class="p-4 text-center text-red-400">Only the owner can manage collaborators</div>')
+  end
+
+  local collaborators = repository:collaborators_with_info()
+
+  self.layout = false
+  self:render("repositories/_collaborators", {
+    repository = repository,
+    collaborators = collaborators
+  })
+end
+
+-- Search users for adding as collaborators
+function RepositoriesController:collaborators_search()
+  local current_user = get_current_user()
+  local repository = Repository:find(self.params.id)
+
+  if not repository or repository.owner_id ~= current_user._key then
+    return self:json({ users = {} })
+  end
+
+  local query = self.params.q or ""
+  -- If query is empty, list all users (limit 20)
+  -- if query == "" then
+  --   return self:json({ users = {} })
+  -- end
+
+  -- Get current collaborators to exclude
+  local collaborators = repository.collaborators or repository.data.collaborators or {}
+  local owner_id = repository.owner_id or repository.data.owner_id
+
+  -- Search users by name or email
+  -- DEBUG: Print info about the search
+  print("DEBUG: User Search - Query: '" .. tostring(query) .. "', Owner ID: " .. tostring(owner_id))
+  
+  -- Check total user count for debugging
+  local count_result = Sdb:Sdbql("RETURN LENGTH(users)")
+  print("DEBUG: Total users in DB: " .. tostring(count_result and count_result.result and count_result.result[1] or "error"))
+
+  local result
+  if query == "" then
+     result = Sdb:Sdbql([[
+      FOR u IN users
+      FILTER u._key != @owner_id
+      RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname, email: u.email }
+    ]], { owner_id = owner_id })
+  else
+    result = Sdb:Sdbql([[
+      FOR u IN users
+      FILTER u._key != @owner_id
+      FILTER LOWER(u.email) LIKE CONCAT('%', LOWER(@query), '%')
+          OR LOWER(u.firstname) LIKE CONCAT('%', LOWER(@query), '%')
+          OR LOWER(u.lastname) LIKE CONCAT('%', LOWER(@query), '%')
+      LIMIT 10
+      RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname, email: u.email }
+    ]], { query = query, owner_id = owner_id })
+  end
+
+  local users = result and result.result or {}
+
+  -- Filter out existing collaborators
+  local filtered = {}
+  for _, user in ipairs(users) do
+    local is_collaborator = false
+    for _, collab_key in ipairs(collaborators) do
+      -- Handle both string keys and object representations just in case
+      local key_to_check = type(collab_key) == "table" and collab_key.user_key or collab_key
+      
+      if tostring(key_to_check) == tostring(user._key) then
+        is_collaborator = true
+        break
+      end
+    end
+    if not is_collaborator then
+      table.insert(filtered, user)
+    end
+  end
+
+  self.layout = false
+  self:render("repositories/_search_results", { 
+    users = filtered, 
+    repository = repository,
+    query = query 
+  })
+end
+
+-- Add collaborator
+function RepositoriesController:add_collaborator()
+  local current_user = get_current_user()
+  local repository = Repository:find(self.params.id)
+
+  if not repository then
+    return self:json({ error = "Repository not found" }, 404)
+  end
+
+  if repository.owner_id ~= current_user._key then
+    return self:json({ error = "Only the owner can add collaborators" }, 403)
+  end
+
+  local user_key = self.params.user_key
+  if not user_key or user_key == "" then
+    return self:json({ error = "User key required" }, 400)
+  end
+
+  repository:add_collaborator(user_key)
+
+  if self:is_htmx_request() then
+    self:set_header("HX-Trigger", "collaboratorsChanged")
+    return self:html("")
+  end
+
+  self:json({ success = true })
+end
+
+-- Remove collaborator
+function RepositoriesController:remove_collaborator()
+  local current_user = get_current_user()
+  local repository = Repository:find(self.params.id)
+
+  if not repository then
+    return self:json({ error = "Repository not found" }, 404)
+  end
+
+  if repository.owner_id ~= current_user._key then
+    return self:json({ error = "Only the owner can remove collaborators" }, 403)
+  end
+
+  local user_key = self.params.user_key
+  repository:remove_collaborator(user_key)
+
+  if self:is_htmx_request() then
+    self:set_header("HX-Trigger", "collaboratorsChanged")
+    return self:html("")
+  end
+
+  self:json({ success = true })
+end
+
 return RepositoriesController

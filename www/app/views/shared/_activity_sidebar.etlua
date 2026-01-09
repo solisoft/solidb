@@ -66,12 +66,37 @@
     <% end %>
   </a>
 
+  <!-- Admin (only for admins) -->
+  <% if current_user and current_user.is_admin then %>
+  <a href="/admin/users" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/admin") and 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-users-cog text-lg"></i>
+    </div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Admin
+    </div>
+    <% if is_active("^/admin") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-rose-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+  <% end %>
+
   <!-- Bottom Actions -->
   <div class="mt-auto flex flex-col gap-4">
-    <a href="/dashboard/login" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-white/10 hover:text-white transition-all duration-300" title="Settings">
-      <i class="fas fa-cog text-lg"></i>
+    <a href="/dashboard/login" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-white/10 hover:text-white transition-all duration-300 relative group" title="Database">
+      <i class="fas fa-database text-lg"></i>
+      <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+        Database
+      </div>
     </a>
-    
+
+    <a href="/auth/logout" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-error/10 hover:text-error transition-all duration-300 relative group" title="Logout">
+      <i class="fas fa-sign-out-alt text-lg"></i>
+      <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+        Logout
+      </div>
+    </a>
+
     <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border border-white/10 flex items-center justify-center cursor-pointer hover:border-white/30 transition-colors shadow-lg">
       <span class="text-xs font-bold text-white"><%= current_user and string.sub(current_user.firstname or "U", 1, 1) or "?" %></span>
     </div>

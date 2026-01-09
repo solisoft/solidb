@@ -1,0 +1,169 @@
+<!-- Admin Invitations -->
+<div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+  <!-- Header -->
+  <div class="absolute top-4 left-4 right-4 h-16 bg-bg-card/60 backdrop-blur-xl border border-white/5 rounded-2xl flex items-center justify-between px-6 z-10 shadow-lg">
+    <div class="flex items-center gap-3">
+      <a href="/admin/users" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+        <i class="fas fa-arrow-left text-xs"></i>
+      </a>
+      <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-500 border border-amber-500/30">
+        <i class="fas fa-ticket-alt text-xs"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold text-white leading-none">Invitations</h1>
+        <span class="text-[10px] text-text-dim"><%= #invitations %> invitations</span>
+      </div>
+    </div>
+
+    <button hx-get="/admin/invitations/modal/create" hx-target="#modal-container"
+            class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+      <i class="fas fa-plus text-xs"></i>
+      <span>Create Invitation</span>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto chat-scrollbar px-6 pb-6 pt-24">
+    <div class="max-w-4xl mx-auto">
+      <!-- New Invitation Result -->
+      <div id="invitation-result"></div>
+
+      <!-- Create Invitation Form -->
+      <div class="glass-card rounded-xl border border-white/5 p-6 mb-6">
+        <h2 class="text-sm font-semibold text-white mb-4">Create New Invitation</h2>
+        <form hx-post="/admin/invitations" hx-target="#invitation-result" hx-swap="innerHTML" class="flex flex-wrap gap-4 items-end">
+          <div class="flex-1 min-w-48">
+            <label class="block text-xs font-medium text-text-muted mb-2">Email (optional)</label>
+            <input type="email" name="email" placeholder="user@example.com"
+                   class="w-full px-4 py-2.5 bg-bg-input border border-white/10 rounded-lg text-text placeholder-text-dim focus:ring-2 focus:ring-primary focus:border-transparent text-sm">
+            <p class="text-[10px] text-text-dim mt-1">Leave empty for open invitation</p>
+          </div>
+          <div class="w-32">
+            <label class="block text-xs font-medium text-text-muted mb-2">Expires in</label>
+            <select name="expires_in_days"
+                    class="w-full px-4 py-2.5 bg-bg-input border border-white/10 rounded-lg text-text focus:ring-2 focus:ring-primary focus:border-transparent text-sm">
+              <option value="1">1 day</option>
+              <option value="3">3 days</option>
+              <option value="7" selected>7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+            </select>
+          </div>
+          <button type="submit"
+                  class="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-lg shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+            Create
+          </button>
+        </form>
+      </div>
+
+      <!-- Invitations Table -->
+      <div class="glass-card rounded-xl overflow-hidden border border-white/5">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-white/5 bg-white/5">
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Token</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Email</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Created By</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3 text-left text-[10px] font-bold text-text-dim uppercase tracking-wider">Expires</th>
+              <th class="px-4 py-3 text-right text-[10px] font-bold text-text-dim uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="invitations-list" class="divide-y divide-white/5">
+            <% for _, inv in ipairs(invitations) do %>
+            <%
+            local now = os.time()
+            local is_used = inv.used_at ~= nil
+            local is_expired = inv.expires_at and inv.expires_at < now
+            local status = is_used and "used" or (is_expired and "expired" or "pending")
+            local status_color = is_used and "success" or (is_expired and "error" or "amber")
+            %>
+            <tr id="inv-row-<%= inv._key %>" class="hover:bg-white/5 transition-colors">
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <code class="text-xs font-mono text-text-muted bg-black/20 px-2 py-1 rounded"><%= string.sub(inv.token, 1, 12) %>...</code>
+                  <button onclick="navigator.clipboard.writeText('/auth/signup?token=<%= inv.token %>')"
+                          class="w-6 h-6 flex items-center justify-center rounded text-text-dim hover:text-white hover:bg-white/10 transition-colors"
+                          title="Copy signup link">
+                    <i class="fas fa-copy text-[10px]"></i>
+                  </button>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <% if inv.email then %>
+                <span class="text-sm text-text-muted"><%= inv.email %></span>
+                <% else %>
+                <span class="text-xs text-text-dim italic">Open invitation</span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3">
+                <% if inv.creator then %>
+                <span class="text-sm text-text-muted"><%= inv.creator.firstname %> <%= inv.creator.lastname %></span>
+                <% else %>
+                <span class="text-xs text-text-dim">-</span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3">
+                <% if status == "used" then %>
+                <span class="inline-flex items-center gap-1 px-2 py-1 bg-success/20 text-success text-[10px] font-medium rounded-full">
+                  <i class="fas fa-check text-[8px]"></i>
+                  Used
+                </span>
+                <% elseif status == "expired" then %>
+                <span class="inline-flex items-center gap-1 px-2 py-1 bg-error/20 text-error text-[10px] font-medium rounded-full">
+                  <i class="fas fa-times text-[8px]"></i>
+                  Expired
+                </span>
+                <% else %>
+                <span class="inline-flex items-center gap-1 px-2 py-1 bg-amber-500/20 text-amber-500 text-[10px] font-medium rounded-full">
+                  <i class="fas fa-clock text-[8px]"></i>
+                  Pending
+                </span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3">
+                <span class="text-xs text-text-dim">
+                  <% if inv.expires_at then %>
+                  <%= os.date("%b %d, %Y", inv.expires_at) %>
+                  <% else %>
+                  Never
+                  <% end %>
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex items-center justify-end gap-1">
+                  <% if status == "pending" then %>
+                  <button hx-delete="/admin/invitations/<%= inv._key %>"
+                          hx-confirm="Are you sure you want to delete this invitation?"
+                          hx-target="#inv-row-<%= inv._key %>"
+                          hx-swap="outerHTML"
+                          class="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
+                          title="Delete">
+                    <i class="fas fa-trash text-xs"></i>
+                  </button>
+                  <% end %>
+                </div>
+              </td>
+            </tr>
+            <% end %>
+
+            <% if #invitations == 0 then %>
+            <tr>
+              <td colspan="6" class="px-4 py-12 text-center">
+                <div class="text-text-dim">
+                  <i class="fas fa-ticket-alt text-2xl mb-2 opacity-50"></i>
+                  <p class="text-sm">No invitations yet</p>
+                  <p class="text-xs mt-1">Create an invitation to let new users sign up</p>
+                </div>
+              </td>
+            </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Container -->
+<div id="modal-container"></div>

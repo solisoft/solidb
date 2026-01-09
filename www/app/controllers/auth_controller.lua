@@ -1,9 +1,17 @@
 local Controller = require("controller")
 local AuthController = Controller:extend()
 local argon2 = require("argon2")
+local InvitationToken = require("models.invitation_token")
 
 local function get_db()
   return _G.Sdb
+end
+
+-- Check if any users exist in database
+local function has_users()
+  local db = get_db()
+  local result = db:Sdbql("RETURN LENGTH(users)")
+  return result and result.result and result.result[1] and result.result[1] > 0
 end
 
 -- Login Form (GET /auth/login)
@@ -63,6 +71,7 @@ function AuthController:do_login()
       email = user.email,
       firstname = user.firstname,
       lastname = user.lastname,
+      is_admin = user.is_admin or false,
       channel_last_seen = user.channel_last_seen or {}
     }
   }, 24 * 60)
@@ -80,10 +89,45 @@ end
 function AuthController:signup()
   self.layout = "auth"
   local redirect_to = self.params.redirect or "/talks"
+  local token = self.params.token or ""
   local flash = GetFlash()
+
+  -- Check if this is first user (no token required)
+  local is_first_user = not has_users()
+
+  -- If not first user and no token provided, show error
+  if not is_first_user and (not token or token == "") then
+    self:render("auth/signup", {
+      redirect_to = redirect_to,
+      error = "An invitation token is required to sign up",
+      token_required = true,
+      is_first_user = false
+    })
+    return
+  end
+
+  -- If token provided, validate it
+  local invitation = nil
+  if token and token ~= "" then
+    invitation = InvitationToken.find_valid(token)
+    if not invitation then
+      self:render("auth/signup", {
+        redirect_to = redirect_to,
+        error = "Invalid or expired invitation token",
+        token_required = true,
+        is_first_user = false
+      })
+      return
+    end
+  end
+
   self:render("auth/signup", {
     redirect_to = redirect_to,
-    error = flash.error
+    error = flash.error,
+    token = token,
+    token_required = not is_first_user,
+    is_first_user = is_first_user,
+    invitation_email = invitation and (invitation.email or invitation.data.email) or nil
   })
 end
 
@@ -93,8 +137,42 @@ function AuthController:do_signup()
   local lastname = self.params.lastname
   local email = self.params.email
   local password = self.params.password
+  local token = self.params.token or ""
   local redirect_to = self.params.redirect or "/talks"
   local db = get_db()
+
+  -- Check if this is first user
+  local is_first_user = not has_users()
+
+  -- Token validation (unless first user)
+  local invitation = nil
+  if not is_first_user then
+    if not token or token == "" then
+      if self:is_htmx_request() then
+        return self:html('<div class="text-red-400 text-sm mt-2">An invitation token is required</div>')
+      end
+      self:set_flash("error", "An invitation token is required")
+      return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    end
+
+    invitation = InvitationToken.find_valid(token)
+    if not invitation then
+      if self:is_htmx_request() then
+        return self:html('<div class="text-red-400 text-sm mt-2">Invalid or expired invitation token</div>')
+      end
+      self:set_flash("error", "Invalid or expired invitation token")
+      return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    end
+
+    -- Check if token is for specific email
+    if not invitation:valid_for_email(email) then
+      if self:is_htmx_request() then
+        return self:html('<div class="text-red-400 text-sm mt-2">This invitation is for a different email address</div>')
+      end
+      self:set_flash("error", "This invitation is for a different email address")
+      return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
+    end
+  end
 
   -- Validation
   if not firstname or not lastname or not email or not password or
@@ -103,7 +181,7 @@ function AuthController:do_signup()
       return self:html('<div class="text-red-400 text-sm mt-2">All fields are required</div>')
     end
     self:set_flash("error", "All fields are required")
-    return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
   end
 
   if #password < 8 then
@@ -111,7 +189,7 @@ function AuthController:do_signup()
       return self:html('<div class="text-red-400 text-sm mt-2">Password must be at least 8 characters</div>')
     end
     self:set_flash("error", "Password must be at least 8 characters")
-    return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
   end
 
   -- Check if email exists
@@ -121,7 +199,7 @@ function AuthController:do_signup()
       return self:html('<div class="text-red-400 text-sm mt-2">Email already registered</div>')
     end
     self:set_flash("error", "Email already registered")
-    return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
   end
 
   -- Hash password
@@ -132,7 +210,7 @@ function AuthController:do_signup()
       return self:html('<div class="text-red-400 text-sm mt-2">Registration failed, please try again</div>')
     end
     self:set_flash("error", "Registration failed")
-    return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
   end
 
   -- Create user
@@ -142,7 +220,9 @@ function AuthController:do_signup()
     email = email,
     password_hash = hash,
     connection_count = 0,
-    status = "offline"
+    status = "offline",
+    is_admin = is_first_user, -- First user is admin
+    created_at = os.time()
   }
 
   local insertRes = db:Sdbql("INSERT @user INTO users RETURN NEW", { user = user })
@@ -151,10 +231,15 @@ function AuthController:do_signup()
       return self:html('<div class="text-red-400 text-sm mt-2">Registration failed, please try again</div>')
     end
     self:set_flash("error", "Registration failed")
-    return self:redirect("/auth/signup?redirect=" .. redirect_to)
+    return self:redirect("/auth/signup?token=" .. token .. "&redirect=" .. redirect_to)
   end
 
   local newUser = insertRes.result[1]
+
+  -- Mark invitation token as used
+  if invitation then
+    invitation:mark_used()
+  end
 
   -- Set session (24 hours = 1440 minutes)
   self:set_session({
@@ -165,6 +250,7 @@ function AuthController:do_signup()
       email = newUser.email,
       firstname = newUser.firstname,
       lastname = newUser.lastname,
+      is_admin = newUser.is_admin or is_first_user,
       channel_last_seen = {}
     }
   }, 24 * 60)

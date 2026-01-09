@@ -1,0 +1,67 @@
+<div class="px-8 pb-8 space-y-6">
+  <!-- Current collaborators -->
+  <% if #collaborators > 0 then %>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <% for _, collab in ipairs(collaborators) do %>
+    <div class="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5 group hover:border-white/10 transition-all">
+      <div class="flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold shadow-inner">
+          <%= (collab.firstname or "?"):sub(1,1):upper() %>
+        </div>
+        <div>
+          <div class="text-sm font-bold text-white"><%= collab.firstname %> <%= collab.lastname %></div>
+          <div class="text-xs text-text-dim"><%= collab.email %></div>
+        </div>
+      </div>
+      <button type="button"
+              hx-delete="/repositories/<%= repository.id or repository._key %>/collaborators/<%= collab._key %>"
+              hx-target="#collaborators-list"
+              hx-swap="innerHTML"
+              hx-confirm="Remove <%= collab.firstname %> from collaborators?"
+              class="w-8 h-8 flex items-center justify-center text-text-dim hover:text-error hover:bg-error/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+              title="Remove collaborator">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <% end %>
+  </div>
+  <% else %>
+  <div class="text-center py-8 px-4 border-2 border-dashed border-white/5 rounded-2xl bg-white/5">
+    <div class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4 text-text-dim">
+      <i class="fas fa-user-plus text-2xl opacity-50"></i>
+    </div>
+    <h3 class="text-white font-medium mb-1">No collaborators yet</h3>
+    <p class="text-sm text-text-dim">Add team members to give them push access to this repository.</p>
+  </div>
+  <% end %>
+
+  <!-- Add collaborator form -->
+  <div class="pt-6 border-t border-white/5">
+    <label class="block text-sm font-bold text-white mb-3">Add Team Member</label>
+    <div class="relative">
+      <div class="relative group">
+        <div class="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-primary transition-colors">
+          <i class="fas fa-search"></i>
+        </div>
+        <input type="text"
+               name="q"
+               hx-get="/repositories/<%= repository.id or repository._key %>/collaborators/search"
+               hx-trigger="input changed delay:300ms, search"
+               hx-target="#search-results"
+               hx-indicator="#search-indicator"
+               autocomplete="off"
+               placeholder="Search by name or email..."
+               class="w-full pl-11 pr-10 py-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-text-dim/50 focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all">
+        
+        <div id="search-indicator" class="htmx-indicator absolute right-4 top-1/2 -translate-y-1/2 text-primary">
+          <i class="fas fa-circle-notch fa-spin"></i>
+        </div>
+      </div>
+
+      <!-- Search results container -->
+      <div id="search-results"></div>
+    </div>
+  </div>
+</div>
+
+

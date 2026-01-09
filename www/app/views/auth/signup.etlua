@@ -1,18 +1,42 @@
 <div class="w-full max-w-md">
   <div class="bg-bg-card rounded-lg shadow-xl p-8">
     <div class="text-center mb-8">
+      <% if is_first_user then %>
+      <div class="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
+        <i class="fas fa-shield-alt text-2xl text-primary"></i>
+      </div>
+      <h1 class="text-2xl font-bold text-text">Create Admin Account</h1>
+      <p class="text-text-muted mt-2">Set up the first administrator account</p>
+      <% else %>
       <h1 class="text-2xl font-bold text-text">Create Account</h1>
       <p class="text-text-muted mt-2">Join us today</p>
+      <% end %>
     </div>
 
     <% if error and type(error) == "string" then %>
-    <div class="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded mb-6">
-      <%= error %>
+    <div class="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded mb-6 flex items-start gap-3">
+      <i class="fas fa-exclamation-circle mt-0.5"></i>
+      <span><%= error %></span>
     </div>
     <% end %>
 
+    <% if token_required and (not token or token == "") then %>
+    <!-- No token provided - show invitation required message -->
+    <div class="text-center py-8">
+      <div class="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+        <i class="fas fa-ticket-alt text-3xl text-yellow-500"></i>
+      </div>
+      <h2 class="text-lg font-semibold text-text mb-2">Invitation Required</h2>
+      <p class="text-text-muted mb-6">You need an invitation token to sign up. Please contact an administrator to get one.</p>
+      <a href="/auth/login" class="text-primary hover:underline">Back to Login</a>
+    </div>
+    <% else %>
+    <!-- Signup form -->
     <form hx-post="/auth/signup" hx-target="#form-error" hx-swap="innerHTML">
       <input type="hidden" name="redirect" value="<%= redirect_to %>">
+      <% if token and token ~= "" then %>
+      <input type="hidden" name="token" value="<%= token %>">
+      <% end %>
 
       <div class="grid grid-cols-2 gap-4 mb-4">
         <div>
@@ -31,9 +55,18 @@
 
       <div class="mb-4">
         <label for="email" class="block text-sm font-medium text-text-muted mb-2">Email</label>
+        <% if invitation_email then %>
+        <input type="email" id="email" name="email" required readonly
+               value="<%= invitation_email %>"
+               class="w-full px-4 py-3 bg-bg-input/50 border border-border rounded-lg text-text cursor-not-allowed opacity-75">
+        <p class="text-xs text-text-muted mt-1">
+          <i class="fas fa-lock mr-1"></i> This invitation is linked to this email
+        </p>
+        <% else %>
         <input type="email" id="email" name="email" required
                class="w-full px-4 py-3 bg-bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-text"
                placeholder="you@example.com">
+        <% end %>
       </div>
 
       <div class="mb-6">
@@ -46,8 +79,13 @@
       <div id="form-error"></div>
 
       <button type="submit"
-              class="w-full bg-primary hover:bg-primary-hover text-white font-medium py-3 px-4 rounded-lg transition-colors">
+              class="w-full bg-primary hover:bg-primary-hover text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+        <% if is_first_user then %>
+        <i class="fas fa-shield-alt"></i>
+        Create Admin Account
+        <% else %>
         Create Account
+        <% end %>
       </button>
     </form>
 
@@ -57,5 +95,6 @@
         <a href="/auth/login?redirect=<%= redirect_to %>" class="text-primary hover:underline">Sign in</a>
       </p>
     </div>
+    <% end %>
   </div>
 </div>
