@@ -7,3 +7,4 @@ tmp
 node_modules
 .env
 www/.env
+www/config/database.json
