@@ -156,28 +156,6 @@ router.scope("/database/:db", { middleware = { "dashboard_auth" } }, function()
   router.get("/roles/table", "dashboard/admin#roles_table")
   router.get("/apikeys/table", "dashboard/admin#apikeys_table")
 
-  -- AI routes
-  router.get("/ai/contributions", "dashboard/ai#contributions")
-  router.get("/ai/contributions/table", "dashboard/ai#contributions_table")
-  router.get("/ai/contributions/stats", "dashboard/ai#contributions_stats")
-  router.get("/ai/contributions/modal/create", "dashboard/ai#contributions_modal_create")
-  router.post("/ai/contributions", "dashboard/ai#create_contribution")
-  router.post("/ai/contributions/:contribution_id/cancel", "dashboard/ai#cancel_contribution")
-
-  router.get("/ai/tasks", "dashboard/ai#tasks")
-  router.get("/ai/tasks/stats", "dashboard/ai#tasks_stats")
-  router.get("/ai/tasks/table", "dashboard/ai#tasks_table")
-  router.delete("/ai/tasks/:task_id", "dashboard/ai#cancel_task")
-
-  -- AI Agents
-  router.get("/ai-agents", "dashboard/ai_dashboard#agents")
-  router.get("/ai-agents/table", "dashboard/ai_dashboard#agents_table")
-  router.get("/ai-agents/modal/create", "dashboard/ai_dashboard#modal_create_agent")
-  router.post("/ai-agents", "dashboard/ai_dashboard#create_agent")
-  router.put("/ai-agents/:key", "dashboard/ai_dashboard#update_agent")
-  router.delete("/ai-agents/:key", "dashboard/ai_dashboard#delete_agent")
-
-
 end)
 
 -- System database specific routes (admin only)

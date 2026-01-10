@@ -90,6 +90,7 @@
       </div>
     </a>
 
+    <% if current_user then %>
     <a href="/auth/logout" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-error/10 hover:text-error transition-all duration-300 relative group" title="Logout">
       <i class="fas fa-sign-out-alt text-lg"></i>
       <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
@@ -100,5 +101,13 @@
     <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 border border-white/10 flex items-center justify-center cursor-pointer hover:border-white/30 transition-colors shadow-lg">
       <span class="text-xs font-bold text-white"><%= current_user and string.sub(current_user.firstname or "U", 1, 1) or "?" %></span>
     </div>
+    <% else %>
+    <a href="/auth/login" class="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:bg-white/10 hover:text-white transition-all duration-300 relative group" title="Login">
+      <i class="fas fa-sign-in-alt text-lg"></i>
+      <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+        Login
+      </div>
+    </a>
+    <% end %>
   </div>
 </aside>

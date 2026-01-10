@@ -1,6 +1,10 @@
 use axum::http::Method;
 use axum::{
+    body::Body,
     extract::DefaultBodyLimit,
+    http::Request,
+    middleware::Next,
+    response::Response,
     routing::{delete, get, post, put},
     Router,
 };
@@ -8,6 +12,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+
+/// Middleware to count incoming requests
+async fn request_counter_middleware(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    state.request_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    next.run(request).await
+}
 
 use super::handlers::*;
 use crate::server::cursor_store::CursorStore;
@@ -402,6 +416,7 @@ pub fn create_router(
         .route("/api/custom/{*path}", delete(super::script_handlers::execute_script_handler))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), crate::server::auth::permissive_auth_middleware))
         .merge(api_routes)
+        .layer(axum::middleware::from_fn_with_state(state.clone(), request_counter_middleware))
         .with_state(state)
         // Global request body limit: 10MB default (import/blob have 500MB override)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))

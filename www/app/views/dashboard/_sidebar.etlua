@@ -101,29 +101,6 @@ end
     <span class="text-sm">Environment</span>
   </a>
 
-  <!-- AI section -->
-  <div class="px-3 pt-4 pb-1">
-    <h3 class="text-xs font-semibold text-text-dim uppercase tracking-wider">AI Admin</h3>
-  </div>
-
-  <a href="/database/<%= db %>/ai/contributions"
-     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_contributions') %>">
-    <i class="fas fa-flask w-5 text-center text-accent-light"></i>
-    <span class="text-sm">Contributions</span>
-  </a>
-
-  <a href="/database/<%= db %>/ai/tasks"
-     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_tasks') %>">
-    <i class="fas fa-clipboard-list w-5 text-center text-info"></i>
-    <span class="text-sm">Tasks</span>
-  </a>
-
-  <a href="/database/<%= db %>/ai/agents"
-     class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 <%= nav_class('ai_agents') %>">
-    <i class="fas fa-robot w-5 text-center text-success"></i>
-    <span class="text-sm">Agents</span>
-  </a>
-
   <!-- Distributed section -->
   <% if db == "_system" then %>
   <div class="px-3 pt-4 pb-1">

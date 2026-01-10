@@ -156,17 +156,17 @@
           </div>
         </a>
 
-        <!-- AI Agents -->
-        <a href="/database/<%= db %>/ai/agents" class="group relative p-1 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-success/10">
+        <!-- Scripts -->
+        <a href="/database/<%= db %>/scripts" class="group relative p-1 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-success/10">
           <div class="absolute inset-0 bg-gradient-to-br from-success/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <div class="relative bg-bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg p-5 group-hover:border-success/30 transition-colors">
             <div class="flex items-start gap-4">
               <div class="p-3 bg-success/10 rounded-xl text-success group-hover:bg-success group-hover:text-white transition-all duration-300">
-                <i class="fas fa-robot text-xl"></i>
+                <i class="fas fa-code text-xl"></i>
               </div>
               <div>
-                <h3 class="font-semibold text-text group-hover:text-success transition-colors">AI Agents</h3>
-                <p class="text-sm text-text-muted mt-1 leading-relaxed">Manage autonomous agents and tasks.</p>
+                <h3 class="font-semibold text-text group-hover:text-success transition-colors">Scripts</h3>
+                <p class="text-sm text-text-muted mt-1 leading-relaxed">Create and manage Lua scripts and APIs.</p>
               </div>
             </div>
           </div>

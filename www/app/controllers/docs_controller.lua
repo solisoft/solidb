@@ -27,9 +27,7 @@ local PAGE_TITLES = {
   ["clients"] = "Official Clients",
   ["comparison"] = "Database Comparison",
   ["security"] = "Security",
-  ["tooling"] = "Command-Line Tools",
-  ["ai_features"] = "AI Engine",
-  ["ai_agents"] = "Build AI Agents"
+  ["tooling"] = "Command-Line Tools"
 }
 
 -- Documentation landing page

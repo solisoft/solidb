@@ -51,13 +51,6 @@ local sections = {
     }
   },
   {
-    title = "AI",
-    items = {
-      { slug = "ai_features", label = "AI Engine", icon = "fa-brain", color = "accent" },
-      { slug = "ai_agents", label = "Build AI Agents", icon = "fa-robot", color = "success" },
-    }
-  },
-  {
     title = "Reference",
     items = {
       { slug = "architecture", label = "Architecture", icon = "fa-layer-group", color = "info" },
