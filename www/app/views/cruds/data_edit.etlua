@@ -35,110 +35,126 @@
   </div>
 
   <!-- Form -->
-  <form hx-put="/cruds/data/<%= dt.slug %>/<%= record._key %>" hx-swap="none" class="space-y-6">
-    <!-- Fields -->
+  <form id="edit-form" hx-put="/cruds/data/<%= dt.slug %>/<%= record._key %>" hx-swap="none" class="space-y-6">
     <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
-      <h2 class="text-lg font-semibold mb-4">Fields</h2>
+      <div class="space-y-8">
+        <% 
+          -- Combine fields and relations into a single list for ordered rendering
+          local elements = {}
+          for _, field in ipairs(fields) do
+            table.insert(elements, { type = "field", data = field })
+          end
+          for _, rel in ipairs(relations) do
+            if rel.storage == "embedded" then
+              table.insert(elements, { type = "relation", data = rel })
+            end
+          end
+        %>
 
-      <div class="space-y-4">
-        <% for _, field in ipairs(fields) do %>
-          <%- partial("cruds/field_renderer", { field = field, value = record[field.name], prefix = "data_", doc_id = record._id or record._key, datatype = dt }) %>
+        <% for _, element in ipairs(elements) do %>
+          <% if element.type == "field" then %>
+            <% local field = element.data %>
+            <div class="p-4 bg-white/5 rounded-xl border border-white/5">
+              <%- partial("cruds/field_renderer", { field = field, value = record[field.name], prefix = "data_", doc_id = record._id or record._key, datatype = dt }) %>
+            </div>
+          <% else %>
+            <% local rel = element.data %>
+            <% local rel_dt = relation_datatypes[rel.name] or { fields = {}, name = rel.name } %>
+            <% local rel_items = record[rel.name] or {} %>
+            <% if type(rel_items) ~= "table" then rel_items = {} end %>
+            <div class="bg-bg-dark/30 border border-border/50 rounded-xl overflow-hidden">
+              <!-- Relation Header -->
+              <div class="flex items-center justify-between p-4 border-b border-border/30 bg-white/5">
+                <div>
+                  <h2 class="text-lg font-semibold flex items-center gap-2">
+                    <i class="fas fa-link text-success text-sm"></i>
+                    <%= rel.name %>
+                  </h2>
+                  <p class="text-[10px] text-text-muted uppercase tracking-widest mt-1">
+                    <span id="embedded-count-<%= rel.name %>"><%= #rel_items %></span> items &bull; <%= rel_dt.name %>
+                  </p>
+                </div>
+                <button type="button" onclick="openEmbeddedModal('<%= rel.name %>', null)"
+                        class="px-4 py-2 bg-success/20 hover:bg-success/30 text-success-light border border-success/30 rounded-lg transition-colors text-sm font-bold">
+                  <i class="fas fa-plus mr-2"></i> Add <%= rel_dt.name %>
+                </button>
+              </div>
+
+              <!-- Items Table/List -->
+              <div id="embedded-list-<%= rel.name %>">
+                <% if #rel_items == 0 then %>
+                <div class="p-8 text-center text-text-muted">
+                  <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                  <p class="text-sm">No items yet.</p>
+                </div>
+                <% else %>
+                <table class="w-full">
+                  <thead class="bg-bg-dark/50 text-left text-sm text-text-muted">
+                    <tr>
+                      <th class="px-4 py-2 font-medium w-10"></th>
+                      <th class="px-4 py-2 font-medium">#</th>
+                      <% for i, f in ipairs(rel_dt.fields) do %>
+                        <% if i <= 3 then %>
+                        <th class="px-4 py-2 font-medium"><%= f.label or f.name %></th>
+                        <% end %>
+                      <% end %>
+                      <th class="px-4 py-2 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="embedded-tbody-<%= rel.name %>" class="divide-y divide-border/30">
+                    <% for idx, item in ipairs(rel_items) do %>
+                    <tr class="hover:bg-white/5 transition-colors" data-index="<%= idx - 1 %>">
+                      <td class="px-4 py-3 text-text-muted cursor-move drag-handle">
+                        <i class="fas fa-grip-vertical"></i>
+                      </td>
+                      <td class="px-4 py-3 text-text-muted text-sm row-number"><%= idx %></td>
+                      <% for i, f in ipairs(rel_dt.fields) do %>
+                        <% if i <= 3 then %>
+                        <td class="px-4 py-3 text-sm">
+                          <% local val = item[f.name] %>
+                          <% if val == nil or val == "" then %>
+                            <span class="text-text-muted">-</span>
+                          <% elseif type(val) == "table" then %>
+                            <span class="text-text-muted font-mono text-xs"><%= EncodeJson(val) %></span>
+                          <% else %>
+                            <span class="truncate max-w-xs block"><%= tostring(val):sub(1, 50) %><%= #tostring(val) > 50 and "..." or "" %></span>
+                          <% end %>
+                        </td>
+                        <% end %>
+                      <% end %>
+                      <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-1">
+                          <button type="button" onclick="openEmbeddedModal('${relName}', ${idx})"
+                                  class="p-2 hover:bg-primary/20 text-primary-light rounded-lg transition-colors" title="Edit">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button type="button" onclick="deleteEmbeddedItem('${relName}', ${idx})"
+                                  class="p-2 hover:bg-error/20 text-error rounded-lg transition-colors" title="Delete">
+                            <i class="fas fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <% end %>
+                  </tbody>
+                </table>
+                <% end %>
+              </div>
+
+              <input type="hidden" name="rel_<%= rel.name %>" id="rel-json-<%= rel.name %>" value="<%- EncodeJson(rel_items) %>">
+
+              <!-- Store field definitions for JavaScript -->
+              <script>
+                window.embeddedFieldDefs = window.embeddedFieldDefs || {};
+                window.embeddedFieldDefs['<%= rel.name %>'] = <%- EncodeJson(rel_dt.fields) %>;
+                window.embeddedRelNames = window.embeddedRelNames || {};
+                window.embeddedRelNames['<%= rel.name %>'] = '<%= rel_dt.name %>';
+              </script>
+            </div>
+          <% end %>
         <% end %>
       </div>
     </div>
-
-    <!-- Embedded Relations -->
-    <% for _, rel in ipairs(relations) do %>
-      <% if rel.storage == "embedded" then %>
-      <% local rel_dt = relation_datatypes[rel.name] or { fields = {}, name = rel.name } %>
-      <% local rel_items = record[rel.name] or {} %>
-      <% if type(rel_items) ~= "table" then rel_items = {} end %>
-      <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl overflow-hidden">
-        <!-- Relation Header -->
-        <div class="flex items-center justify-between p-4 border-b border-border/30">
-          <div>
-            <h2 class="text-lg font-semibold"><%= rel.name %></h2>
-            <p class="text-sm text-text-muted"><%= #rel_items %> item(s) - <%= rel_dt.name %></p>
-          </div>
-          <button type="button" onclick="openEmbeddedModal('<%= rel.name %>', null)"
-                  class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors text-sm">
-            <i class="fas fa-plus mr-2"></i> Add <%= rel_dt.name %>
-          </button>
-        </div>
-
-        <!-- Items Table/List -->
-        <div id="embedded-list-<%= rel.name %>">
-          <% if #rel_items == 0 then %>
-          <div class="p-8 text-center text-text-muted">
-            <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-            <p>No items yet. Click "Add" to create one.</p>
-          </div>
-          <% else %>
-          <table class="w-full">
-            <thead class="bg-bg-dark/50 text-left text-sm text-text-muted">
-              <tr>
-                <th class="px-4 py-2 font-medium w-10"></th>
-                <th class="px-4 py-2 font-medium">#</th>
-                <% for i, f in ipairs(rel_dt.fields) do %>
-                  <% if i <= 3 then %>
-                  <th class="px-4 py-2 font-medium"><%= f.label or f.name %></th>
-                  <% end %>
-                <% end %>
-                <th class="px-4 py-2 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="embedded-tbody-<%= rel.name %>" class="divide-y divide-border/30">
-              <% for idx, item in ipairs(rel_items) do %>
-              <tr class="hover:bg-white/5 transition-colors" data-index="<%= idx - 1 %>">
-                <td class="px-4 py-3 text-text-muted cursor-move drag-handle">
-                  <i class="fas fa-grip-vertical"></i>
-                </td>
-                <td class="px-4 py-3 text-text-muted text-sm row-number"><%= idx %></td>
-                <% for i, f in ipairs(rel_dt.fields) do %>
-                  <% if i <= 3 then %>
-                  <td class="px-4 py-3 text-sm">
-                    <% local val = item[f.name] %>
-                    <% if val == nil or val == "" then %>
-                      <span class="text-text-muted">-</span>
-                    <% elseif type(val) == "table" then %>
-                      <span class="text-text-muted font-mono text-xs"><%= EncodeJson(val) %></span>
-                    <% else %>
-                      <span class="truncate max-w-xs block"><%= tostring(val):sub(1, 50) %><%= #tostring(val) > 50 and "..." or "" %></span>
-                    <% end %>
-                  </td>
-                  <% end %>
-                <% end %>
-                <td class="px-4 py-3 text-right">
-                  <div class="flex items-center justify-end gap-1">
-                    <button type="button" onclick="openEmbeddedModal('<%= rel.name %>', <%= idx - 1 %>)"
-                            class="p-2 hover:bg-primary/20 text-primary-light rounded-lg transition-colors" title="Edit">
-                      <i class="fas fa-edit"></i>
-                    </button>
-                    <button type="button" onclick="deleteEmbeddedItem('<%= rel.name %>', <%= idx - 1 %>)"
-                            class="p-2 hover:bg-error/20 text-error rounded-lg transition-colors" title="Delete">
-                      <i class="fas fa-trash"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <% end %>
-            </tbody>
-          </table>
-          <% end %>
-        </div>
-
-        <input type="hidden" name="rel_<%= rel.name %>" id="rel-json-<%= rel.name %>" value="<%- EncodeJson(rel_items) %>">
-
-        <!-- Store field definitions for JavaScript -->
-        <script>
-          window.embeddedFieldDefs = window.embeddedFieldDefs || {};
-          window.embeddedFieldDefs['<%= rel.name %>'] = <%- EncodeJson(rel_dt.fields) %>;
-          window.embeddedRelNames = window.embeddedRelNames || {};
-          window.embeddedRelNames['<%= rel.name %>'] = '<%= rel_dt.name %>';
-        </script>
-      </div>
-      <% end %>
-    <% end %>
 
     <!-- Metadata -->
     <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">

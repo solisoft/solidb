@@ -52,45 +52,30 @@
       </div>
     </div>
 
-    <!-- Fields Builder -->
+    <!-- Structure Builder -->
     <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Fields</h2>
-        <button type="button" onclick="addField()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
-          <i class="fas fa-plus mr-1"></i> Add Field
-        </button>
+        <h2 class="text-lg font-semibold">Datatype Structure</h2>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="addField()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
+            <i class="fas fa-plus mr-1"></i> Add Field
+          </button>
+          <button type="button" onclick="addRelation()" class="px-3 py-1.5 bg-success/20 hover:bg-success/30 text-success rounded-lg transition-colors text-sm">
+            <i class="fas fa-link mr-1"></i> Add Relation
+          </button>
+        </div>
       </div>
 
-      <div id="fields-container" class="space-y-3">
-        <!-- Fields will be populated dynamically -->
+      <div id="structure-container" class="space-y-3">
+        <!-- Elements will be populated dynamically -->
       </div>
 
       <input type="hidden" name="fields" id="fields-json" value="[]">
-
-      <p class="text-xs text-text-muted mt-4">
-        <i class="fas fa-info-circle mr-1"></i>
-        Drag fields to reorder. Click the gear icon to configure options.
-      </p>
-    </div>
-
-    <!-- Relations -->
-    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Relations</h2>
-        <button type="button" onclick="addRelation()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
-          <i class="fas fa-plus mr-1"></i> Add Relation
-        </button>
-      </div>
-
-      <div id="relations-container" class="space-y-3">
-        <!-- Relations will be populated dynamically -->
-      </div>
-
       <input type="hidden" name="relations" id="relations-json" value="[]">
 
       <p class="text-xs text-text-muted mt-4">
         <i class="fas fa-info-circle mr-1"></i>
-        Has-many relations can be embedded (nested array) or referenced (foreign key).
+        Drag elements to reorder. Fields and relations can be mixed freely.
       </p>
     </div>
 
@@ -122,211 +107,288 @@
 // Field types available
 const FIELD_TYPES = <%- EncodeJson(field_types or {"string", "text", "wysiwyg", "gps", "images", "files", "tags", "list", "multilist"}) %>;
 
+// Unified elements data
+let elements = [];
+let elementIndex = 0;
+
 // Initialize from existing data
-let fields = <%- EncodeJson(dt.fields or {}) %>.map((f, i) => ({...f, id: 'field_' + i}));
-let relations = <%- EncodeJson(dt.relations or {}) %>.map((r, i) => ({...r, id: 'relation_' + i}));
-let fieldIndex = fields.length;
-let relationIndex = relations.length;
-
-// Render existing fields on load and initialize Sortable
 document.addEventListener('DOMContentLoaded', function() {
-  fields.forEach(field => renderField(field));
-  relations.forEach(rel => renderRelation(rel));
-  updateFieldsJson();
-  updateRelationsJson();
-
-  // Initialize Sortable for drag & drop
-  new Sortable(document.getElementById('fields-container'), {
-    animation: 150,
-    handle: '.fa-grip-vertical',
-    ghostClass: 'opacity-50',
-    onEnd: function(evt) {
-      const newOrder = [];
-      document.querySelectorAll('#fields-container > div').forEach(el => {
-        const field = fields.find(f => f.id === el.id);
-        if (field) newOrder.push(field);
-      });
-      fields = newOrder;
-      updateFieldsJson();
-    }
+  const existingFields = <%- EncodeJson(dt.fields or {}) %>;
+  const existingRelations = <%- EncodeJson(dt.relations or {}) %>;
+  
+  // Note: We don't know the original mixed order from backend,
+  // so we show fields then relations initially.
+  existingFields.forEach(f => {
+    const id = 'element_' + elementIndex++;
+    elements.push({ id, type: 'field', data: f });
+    renderFieldElement(id, f);
+  });
+  
+  existingRelations.forEach(r => {
+    const id = 'element_' + elementIndex++;
+    elements.push({ id, type: 'relation', data: r });
+    renderRelationElement(id, r);
   });
 
-  new Sortable(document.getElementById('relations-container'), {
+  updateJsonInputs();
+
+  // Initialize Sortable
+  new Sortable(document.getElementById('structure-container'), {
     animation: 150,
     handle: '.fa-grip-vertical',
     ghostClass: 'opacity-50',
     onEnd: function(evt) {
-      const newOrder = [];
-      document.querySelectorAll('#relations-container > div').forEach(el => {
-        const rel = relations.find(r => r.id === el.id);
-        if (rel) newOrder.push(rel);
-      });
-      relations = newOrder;
-      updateRelationsJson();
+      updateJsonInputs();
     }
   });
 });
 
 // Render a field element
-function renderField(field) {
-  const container = document.getElementById('fields-container');
+function renderFieldElement(id, field) {
+  const container = document.getElementById('structure-container');
+  const html = `
+    <div id="${id}" data-element-type="field" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-white/5 hover:border-white/10 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+          <i class="fas fa-grip-vertical"></i>
+        </div>
+        
+        <div class="w-8 h-8 flex items-center justify-center bg-primary/10 text-primary rounded-lg" title="Field">
+          <i class="fas fa-font text-xs"></i>
+        </div>
 
-  const fieldHtml = `
-    <div id="${field.id}" class="flex items-center gap-3 p-3 bg-bg-dark/50 border border-border/30 rounded-lg group">
-      <i class="fas fa-grip-vertical text-text-muted cursor-move"></i>
+        <input type="text" placeholder="Field name" data-field="name" value="${field.name || ''}"
+               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               onchange="updateElementData('${id}')">
+      </div>
 
-      <input type="text" placeholder="Field name" data-field="name" value="${field.name || ''}"
-             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
-             onchange="updateFieldData('${field.id}')">
+      <div class="flex flex-1 items-center gap-3 w-full">
+        <select data-field="field_type" onchange="updateElementData('${id}')"
+                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
+          ${FIELD_TYPES.map(t => `<option value="${t}" ${t === field.type ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
+        </select>
 
-      <select data-field="type" onchange="updateFieldData('${field.id}')"
-              class="px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm">
-        ${FIELD_TYPES.map(t => `<option value="${t}" ${t === field.type ? 'selected' : ''}>${t}</option>`).join('')}
-      </select>
+        <input type="text" placeholder="Label" data-field="label" value="${field.label || ''}"
+               class="flex-1 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               onchange="updateElementData('${id}')">
+               
+        <select data-field="width" onchange="updateElementData('${id}')"
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
+          <option value="1/1" ${field.width === '1/1' ? 'selected' : ''}>FULL</option>
+          <option value="1/2" ${field.width === '1/2' ? 'selected' : ''}>1/2</option>
+          <option value="1/3" ${field.width === '1/3' ? 'selected' : ''}>1/3</option>
+          <option value="1/4" ${field.width === '1/4' ? 'selected' : ''}>1/4</option>
+        </select>
+      </div>
 
-      <input type="text" placeholder="Label" data-field="label" value="${field.label || ''}"
-             class="w-32 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
-             onchange="updateFieldData('${field.id}')">
+      <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+        <label class="flex items-center gap-2 cursor-pointer group/label">
+          <input type="checkbox" data-field="required" ${field.required ? 'checked' : ''} onchange="updateElementData('${id}')" 
+                 class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
+          <span class="text-xs font-bold text-text-muted group-hover/label:text-white transition-colors">Required</span>
+        </label>
 
-      <label class="flex items-center gap-1 text-sm">
-        <input type="checkbox" data-field="required" ${field.required ? 'checked' : ''} onchange="updateFieldData('${field.id}')" class="rounded">
-        <span class="text-text-muted">Required</span>
-      </label>
+        <div class="flex items-center gap-1">
+          <button type="button" onclick="configureField('${id}')" 
+                  class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary/20 text-text-dim hover:text-primary rounded-xl transition-all" title="Configure">
+            <i class="fas fa-cog"></i>
+          </button>
 
-      <button type="button" onclick="configureField('${field.id}')" class="p-1.5 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100" title="Configure">
-        <i class="fas fa-cog text-text-muted"></i>
-      </button>
-
-      <button type="button" onclick="removeField('${field.id}')" class="p-1.5 hover:bg-error/20 rounded transition-colors opacity-0 group-hover:opacity-100" title="Remove">
-        <i class="fas fa-times text-error"></i>
-      </button>
+          <button type="button" onclick="removeElement('${id}')" 
+                  class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all" title="Remove">
+            <i class="fas fa-trash-alt text-xs"></i>
+          </button>
+        </div>
+      </div>
     </div>
   `;
-
-  container.insertAdjacentHTML('beforeend', fieldHtml);
+  container.insertAdjacentHTML('beforeend', html);
 }
 
 // Render a relation element
-function renderRelation(rel) {
-  const container = document.getElementById('relations-container');
+function renderRelationElement(id, rel) {
+  const container = document.getElementById('structure-container');
+  const html = `
+    <div id="${id}" data-element-type="relation" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-success/5 hover:border-success/20 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+          <i class="fas fa-grip-vertical"></i>
+        </div>
+        
+        <div class="w-8 h-8 flex items-center justify-center bg-success/10 text-success rounded-lg" title="Relation">
+          <i class="fas fa-link text-xs"></i>
+        </div>
 
-  const relationHtml = `
-    <div id="${rel.id}" class="flex items-center gap-3 p-3 bg-bg-dark/50 border border-border/30 rounded-lg group">
-      <i class="fas fa-grip-vertical text-text-muted cursor-move"></i>
+        <input type="text" placeholder="Relation name" data-relation="name" value="${rel.name || ''}"
+               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               onchange="updateElementData('${id}')">
+      </div>
 
-      <input type="text" placeholder="Relation name" data-relation="name" value="${rel.name || ''}"
-             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
-             onchange="updateRelationData('${rel.id}')">
+      <div class="flex flex-1 items-center gap-3 w-full">
+        <div class="relative flex-1">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <i class="fas fa-database text-text-dim text-xs"></i>
+          </div>
+          <input type="text" placeholder="Target slug" data-relation="target_datatype" value="${rel.target_datatype || ''}"
+                 class="w-full pl-9 pr-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+                 onchange="updateElementData('${id}')">
+        </div>
 
-      <input type="text" placeholder="Target datatype slug" data-relation="target_datatype" value="${rel.target_datatype || ''}"
-             class="flex-1 px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm"
-             onchange="updateRelationData('${rel.id}')">
+        <select data-relation="storage" onchange="updateElementData('${id}')"
+                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
+          <option value="embedded" ${rel.storage === 'embedded' ? 'selected' : ''}>EMBEDDED</option>
+          <option value="referenced" ${rel.storage === 'referenced' ? 'selected' : ''}>REFERENCED</option>
+        </select>
+        
+        <select data-relation="width" onchange="updateElementData('${id}')"
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
+          <option value="1/1" ${rel.width === '1/1' ? 'selected' : ''}>FULL</option>
+          <option value="1/2" ${rel.width === '1/2' ? 'selected' : ''}>1/2</option>
+          <option value="1/3" ${rel.width === '1/3' ? 'selected' : ''}>1/3</option>
+          <option value="1/4" ${rel.width === '1/4' ? 'selected' : ''}>1/4</option>
+        </select>
+      </div>
 
-      <select data-relation="storage" onchange="updateRelationData('${rel.id}')"
-              class="px-3 py-1.5 bg-bg-dark border border-border/50 rounded focus:outline-none focus:border-primary text-sm">
-        <option value="embedded" ${rel.storage === 'embedded' ? 'selected' : ''}>Embedded</option>
-        <option value="referenced" ${rel.storage === 'referenced' ? 'selected' : ''}>Referenced</option>
-      </select>
-
-      <button type="button" onclick="removeRelation('${rel.id}')" class="p-1.5 hover:bg-error/20 rounded transition-colors opacity-0 group-hover:opacity-100" title="Remove">
-        <i class="fas fa-times text-error"></i>
+      <button type="button" onclick="removeElement('${id}')" 
+              class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all" title="Remove">
+        <i class="fas fa-trash-alt text-xs"></i>
       </button>
     </div>
   `;
-
-  container.insertAdjacentHTML('beforeend', relationHtml);
+  container.insertAdjacentHTML('beforeend', html);
 }
 
 // Add a new field
 function addField() {
-  const id = 'field_' + fieldIndex++;
+  const id = 'element_' + elementIndex++;
   const field = {
-    id: id,
     name: '',
     type: 'string',
     label: '',
     required: false,
     placeholder: '',
+    width: '1/1',
     options: []
   };
-  fields.push(field);
-  renderField(field);
-  updateFieldsJson();
+  elements.push({ id, type: 'field', data: field });
+  renderFieldElement(id, field);
+  updateJsonInputs();
 }
 
-// Update field data from inputs
-function updateFieldData(id) {
+// Add a new relation
+function addRelation() {
+  const id = 'element_' + elementIndex++;
+  const rel = {
+    name: '',
+    target_datatype: '',
+    storage: 'embedded',
+    width: '1/1'
+  };
+  elements.push({ id, type: 'relation', data: rel });
+  renderRelationElement(id, rel);
+  updateJsonInputs();
+}
+
+// Update data from inputs
+function updateElementData(id) {
   const el = document.getElementById(id);
-  const field = fields.find(f => f.id === id);
-  if (!field) return;
+  const element = elements.find(e => e.id === id);
+  if (!element) return;
 
-  field.name = el.querySelector('[data-field="name"]').value;
-  field.type = el.querySelector('[data-field="type"]').value;
-  field.label = el.querySelector('[data-field="label"]').value;
-  field.required = el.querySelector('[data-field="required"]').checked;
+  if (element.type === 'field') {
+    element.data.name = el.querySelector('[data-field="name"]').value;
+    element.data.type = el.querySelector('[data-field="field_type"]').value;
+    element.data.label = el.querySelector('[data-field="label"]').value;
+    element.data.width = el.querySelector('[data-field="width"]').value;
+    element.data.required = el.querySelector('[data-field="required"]').checked;
+  } else {
+    element.data.name = el.querySelector('[data-relation="name"]').value;
+    element.data.target_datatype = el.querySelector('[data-relation="target_datatype"]').value;
+    element.data.storage = el.querySelector('[data-relation="storage"]').value;
+    element.data.width = el.querySelector('[data-relation="width"]').value;
+  }
 
-  updateFieldsJson();
+  updateJsonInputs();
 }
 
-// Remove a field
-function removeField(id) {
-  document.getElementById(id).remove();
-  fields = fields.filter(f => f.id !== id);
-  updateFieldsJson();
+// Remove element
+function removeElement(id) {
+  const el = document.getElementById(id);
+  el.style.transform = 'scale(0.95)';
+  el.style.opacity = '0';
+  setTimeout(() => {
+    el.remove();
+    elements = elements.filter(e => e.id !== id);
+    updateJsonInputs();
+  }, 200);
 }
 
 // Configure field options (modal)
 function configureField(id) {
-  const field = fields.find(f => f.id === id);
-  if (!field) return;
+  const element = elements.find(e => e.id === id);
+  if (!element || element.type !== 'field') return;
+  const field = element.data;
 
   let optionsHtml = '';
   if (field.type === 'list' || field.type === 'multilist') {
     optionsHtml = `
-      <div class="mt-4">
+      <div class="mt-6 space-y-4">
         ${field.type === 'list' ? `
-        <div class="mb-4 p-3 bg-bg-dark/50 rounded-lg">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="field-allow-blank" ${field.allow_blank !== false ? 'checked' : ''} class="rounded">
-            <span class="text-sm">Allow blank value</span>
+        <div class="p-4 bg-white/5 rounded-2xl border border-white/5">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" id="field-allow-blank" ${field.allow_blank !== false ? 'checked' : ''} 
+                   class="w-5 h-5 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary">
+            <div>
+              <span class="text-sm font-bold text-white block">Allow blank value</span>
+              <span class="text-xs text-text-dim">When unchecked, user must select a value</span>
+            </div>
           </label>
-          <p class="text-xs text-text-muted mt-1 ml-6">When unchecked, user must select a value</p>
         </div>
         ` : ''}
-        <label class="block text-sm font-medium text-text-muted mb-2">Options Source</label>
-        <div class="flex gap-2 mb-3">
-          <button type="button" onclick="toggleOptionsSource('static')" id="btn-static"
-                  class="px-3 py-1.5 rounded-lg text-sm transition-colors ${field.source_query ? 'bg-white/5 text-text-muted' : 'bg-primary/20 text-primary-light'}">
-            Static List
-          </button>
-          <button type="button" onclick="toggleOptionsSource('query')" id="btn-query"
-                  class="px-3 py-1.5 rounded-lg text-sm transition-colors ${field.source_query ? 'bg-primary/20 text-primary-light' : 'bg-white/5 text-text-muted'}">
-            SDBQL Query
-          </button>
-        </div>
-        <div id="static-options" class="${field.source_query ? 'hidden' : ''}">
-          <label class="block text-sm font-medium text-text-muted mb-2">Options (one per line)</label>
-          <textarea id="field-options" rows="4" class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary font-mono text-sm">${(field.options || []).join('\\n')}</textarea>
-        </div>
-        <div id="query-options" class="${field.source_query ? '' : 'hidden'}">
-          <label class="block text-sm font-medium text-text-muted mb-2">SDBQL Query</label>
-          <textarea id="field-source-query" rows="4" placeholder="FOR doc IN collection RETURN doc.name"
-                    class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary font-mono text-sm">${field.source_query || ''}</textarea>
-          <p class="text-xs text-text-muted mt-2">
-            <i class="fas fa-info-circle mr-1"></i>
-            Use <code class="px-1 py-0.5 bg-white/10 rounded">@doc</code> to reference the current document's _id
-          </p>
-          <div class="mt-3">
-            <label class="block text-sm font-medium text-text-muted mb-2">Label Field (optional)</label>
-            <input type="text" id="field-label-field" value="${field.label_field || ''}" placeholder="e.g., name or title"
-                   class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary text-sm">
-            <p class="text-xs text-text-muted mt-1">Field to display as label (if query returns objects)</p>
+        
+        <div class="space-y-2">
+          <label class="block text-xs font-black text-text-dim uppercase tracking-widest ml-1">Options Source</label>
+          <div class="flex p-1 bg-bg-dark rounded-xl border border-white/5">
+            <button type="button" onclick="toggleOptionsSource('static')" id="btn-static"
+                    class="flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${field.source_query ? 'text-text-dim hover:text-white' : 'bg-primary text-white shadow-lg'}">
+              Static List
+            </button>
+            <button type="button" onclick="toggleOptionsSource('query')" id="btn-query"
+                    class="flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${field.source_query ? 'bg-primary text-white shadow-lg' : 'text-text-dim hover:text-white'}">
+              SDBQL Query
+            </button>
           </div>
-          <div class="mt-3">
-            <label class="block text-sm font-medium text-text-muted mb-2">Value Field (optional)</label>
-            <input type="text" id="field-value-field" value="${field.value_field || ''}" placeholder="e.g., _key or _id"
-                   class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary text-sm">
-            <p class="text-xs text-text-muted mt-1">Field to use as value (if query returns objects)</p>
+        </div>
+
+        <div id="static-options" class="${field.source_query ? 'hidden' : ''} space-y-2">
+          <label class="block text-sm font-bold text-text-muted ml-1">Options (one per line)</label>
+          <textarea id="field-options" rows="5" 
+                    placeholder="Option 1\\nOption 2\\nOption 3"
+                    class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white">${(field.options || []).join('\\n')}</textarea>
+        </div>
+
+        <div id="query-options" class="${field.source_query ? '' : 'hidden'} space-y-4">
+          <div class="space-y-2">
+            <label class="block text-sm font-bold text-text-muted ml-1">SDBQL Query</label>
+            <textarea id="field-source-query" rows="4" placeholder="FOR doc IN collection RETURN doc.name"
+                      class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white">${field.source_query || ''}</textarea>
+            <p class="text-[10px] text-text-dim px-1 italic">
+              <i class="fas fa-info-circle mr-1"></i>
+              Returns labels or objects. Use <code class="px-1 bg-white/10 rounded text-primary-light">@doc</code> for context.
+            </p>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-text-muted ml-1">Label Field</label>
+              <input type="text" id="field-label-field" value="${field.label_field || ''}" placeholder="e.g. name"
+                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white">
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-text-muted ml-1">Value Field</label>
+              <input type="text" id="field-value-field" value="${field.value_field || ''}" placeholder="e.g. _key"
+                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white">
+            </div>
           </div>
         </div>
       </div>
@@ -334,21 +396,43 @@ function configureField(id) {
   }
 
   const modalHtml = `
-    <div class="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) closeModal()">
-      <div class="bg-bg-card border border-border/50 rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h3 class="text-lg font-semibold mb-4">Configure Field: ${field.name || 'Unnamed'}</h3>
-
-        <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Placeholder</label>
-          <input type="text" id="field-placeholder" value="${field.placeholder || ''}"
-                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+    <div class="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in" onclick="if(event.target===this) closeModal()">
+      <div class="bg-bg-card border border-white/10 rounded-3xl p-8 w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-2xl font-black text-white tracking-tight">Configure Field</h3>
+          <button type="button" onclick="closeModal()" class="text-text-dim hover:text-white transition-colors">
+            <i class="fas fa-times text-xl"></i>
+          </button>
         </div>
 
-        ${optionsHtml}
+        <div class="flex-1 overflow-y-auto pr-2 scrollbar-thin">
+          <div class="space-y-6">
+            <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
+              <div class="flex items-center gap-3 mb-1">
+                <span class="text-xs font-black text-primary uppercase tracking-widest">Selected Type</span>
+                <span class="px-2 py-0.5 bg-primary/20 text-primary-light rounded text-[10px] font-bold uppercase">${field.type}</span>
+              </div>
+              <p class="text-lg font-bold text-white">${field.label || field.name || 'Unnamed Field'}</p>
+            </div>
 
-        <div class="flex justify-end gap-3 mt-6">
-          <button type="button" onclick="closeModal()" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</button>
-          <button type="button" onclick="saveFieldConfig('${id}')" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">Save</button>
+            <div class="space-y-2">
+              <label class="block text-sm font-bold text-text-muted ml-1">Placeholder Text</label>
+              <input type="text" id="field-placeholder" value="${field.placeholder || ''}"
+                     placeholder="Text shown when field is empty"
+                     class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-white transition-all">
+            </div>
+
+            ${optionsHtml}
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-white/5">
+          <button type="button" onclick="closeModal()" 
+                  class="px-6 py-2.5 text-sm font-bold text-text-muted hover:text-white transition-colors">Discard</button>
+          <button type="button" onclick="saveFieldConfig('${id}')" 
+                  class="px-8 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all transform active:scale-95">
+            Apply Changes
+          </button>
         </div>
       </div>
     </div>
@@ -367,24 +451,25 @@ function toggleOptionsSource(type) {
   if (type === 'static') {
     staticDiv.classList.remove('hidden');
     queryDiv.classList.add('hidden');
-    btnStatic.classList.remove('bg-white/5', 'text-text-muted');
-    btnStatic.classList.add('bg-primary/20', 'text-primary-light');
-    btnQuery.classList.remove('bg-primary/20', 'text-primary-light');
-    btnQuery.classList.add('bg-white/5', 'text-text-muted');
+    btnStatic.classList.remove('text-text-dim', 'hover:text-white');
+    btnStatic.classList.add('bg-primary', 'text-white', 'shadow-lg');
+    btnQuery.classList.remove('bg-primary', 'text-white', 'shadow-lg');
+    btnQuery.classList.add('text-text-dim', 'hover:text-white');
   } else {
     staticDiv.classList.add('hidden');
     queryDiv.classList.remove('hidden');
-    btnQuery.classList.remove('bg-white/5', 'text-text-muted');
-    btnQuery.classList.add('bg-primary/20', 'text-primary-light');
-    btnStatic.classList.remove('bg-primary/20', 'text-primary-light');
-    btnStatic.classList.add('bg-white/5', 'text-text-muted');
+    btnQuery.classList.remove('text-text-dim', 'hover:text-white');
+    btnQuery.classList.add('bg-primary', 'text-white', 'shadow-lg');
+    btnStatic.classList.remove('bg-primary', 'text-white', 'shadow-lg');
+    btnStatic.classList.add('text-text-dim', 'hover:text-white');
   }
 }
 
 // Save field configuration
 function saveFieldConfig(id) {
-  const field = fields.find(f => f.id === id);
-  if (!field) return;
+  const element = elements.find(e => e.id === id);
+  if (!element || element.type !== 'field') return;
+  const field = element.data;
 
   field.placeholder = document.getElementById('field-placeholder').value;
 
@@ -405,66 +490,49 @@ function saveFieldConfig(id) {
     field.allow_blank = allowBlankEl.checked;
   }
 
-  updateFieldsJson();
+  updateJsonInputs();
   closeModal();
 }
 
-// Add a new relation
-function addRelation() {
-  const id = 'relation_' + relationIndex++;
-  const rel = {
-    id: id,
-    name: '',
-    target_datatype: '',
-    storage: 'embedded'
-  };
-  relations.push(rel);
-  renderRelation(rel);
-  updateRelationsJson();
-}
-
-// Update relation data from inputs
-function updateRelationData(id) {
-  const el = document.getElementById(id);
-  const rel = relations.find(r => r.id === id);
-  if (!rel) return;
-
-  rel.name = el.querySelector('[data-relation="name"]').value;
-  rel.target_datatype = el.querySelector('[data-relation="target_datatype"]').value;
-  rel.storage = el.querySelector('[data-relation="storage"]').value;
-
-  updateRelationsJson();
-}
-
-// Remove a relation
-function removeRelation(id) {
-  document.getElementById(id).remove();
-  relations = relations.filter(r => r.id !== id);
-  updateRelationsJson();
-}
-
 // Update hidden JSON inputs
-function updateFieldsJson() {
-  const cleanFields = fields.map(f => ({
-    name: f.name,
-    type: f.type,
-    label: f.label,
-    required: f.required,
-    placeholder: f.placeholder,
-    options: f.options
-  })).filter(f => f.name);
+function updateJsonInputs() {
+  const fields = [];
+  const relations = [];
 
-  document.getElementById('fields-json').value = JSON.stringify(cleanFields);
-}
+  document.querySelectorAll('#structure-container > div[id^="element_"]').forEach(el => {
+    const element = elements.find(e => e.id === el.id);
+    if (!element) return;
 
-function updateRelationsJson() {
-  const cleanRelations = relations.map(r => ({
-    name: r.name,
-    target_datatype: r.target_datatype,
-    storage: r.storage
-  })).filter(r => r.name && r.target_datatype);
+    if (element.type === 'field') {
+      if (element.data.name) {
+        fields.push({
+          name: element.data.name,
+          type: element.data.type,
+          label: element.data.label,
+          required: element.data.required,
+          placeholder: element.data.placeholder,
+          width: element.data.width,
+          options: element.data.options,
+          allow_blank: element.data.allow_blank,
+          source_query: element.data.source_query,
+          label_field: element.data.label_field,
+          value_field: element.data.value_field
+        });
+      }
+    } else {
+      if (element.data.name && element.data.target_datatype) {
+        relations.push({
+          name: element.data.name,
+          target_datatype: element.data.target_datatype,
+          storage: element.data.storage,
+          width: element.data.width
+        });
+      }
+    }
+  });
 
-  document.getElementById('relations-json').value = JSON.stringify(cleanRelations);
+  document.getElementById('fields-json').value = JSON.stringify(fields);
+  document.getElementById('relations-json').value = JSON.stringify(relations);
 }
 
 // Confirm delete

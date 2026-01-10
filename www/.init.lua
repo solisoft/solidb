@@ -7,7 +7,7 @@ package.path = package.path .. ";.lua/?.lua;.lua/db/?.lua;app/?.lua;app/controll
 ProgramMaxPayloadSize(10485760 * 10) -- 100 MB
 
 -- Environment (default to development)
-local BEANS_ENV = os.getenv("BEANS_ENV") or "development"
+BEANS_ENV = os.getenv("BEANS_ENV") or "development"
 
 function RefreshPageForDevMode()
 	if BEANS_ENV == "development" then
