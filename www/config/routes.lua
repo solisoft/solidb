@@ -261,6 +261,48 @@ router.scope("/talks", { middleware = { "session_auth" } }, function()
   router.delete("/call/signal/:key", "talks#call_signal_delete")
 end)
 
+-- MailBox (Internal Webmail + Calendar) routes - requires session auth
+router.scope("/mailbox", { middleware = { "session_auth" } }, function()
+  -- Main dashboard
+  router.get("", "mailbox#index")
+
+  -- Messages
+  router.get("/messages", "mailbox#inbox")
+  router.get("/messages/:folder", "mailbox#folder")
+  router.get("/messages/view/:id", "mailbox#view_message")
+  router.get("/messages/table", "mailbox#messages_table")
+  router.get("/compose", "mailbox#compose")
+  router.get("/compose/reply/:id", "mailbox#compose_reply")
+  router.post("/send", "mailbox#send")
+  router.post("/draft", "mailbox#save_draft")
+  router.post("/messages/:id/star", "mailbox#toggle_star")
+  router.post("/messages/:id/read", "mailbox#mark_read")
+  router.post("/messages/:id/archive", "mailbox#archive")
+  router.delete("/messages/:id", "mailbox#delete_message")
+
+  -- Recipients search (HTMX autocomplete)
+  router.get("/recipients/search", "mailbox#search_recipients")
+
+  -- Calendar
+  router.get("/calendar", "mailbox/calendar#index")
+  router.get("/calendar/events", "mailbox/calendar#events")
+  router.get("/calendar/event/:id", "mailbox/calendar#show")
+  router.get("/calendar/event/modal/create", "mailbox/calendar#modal_create")
+  router.get("/calendar/event/:id/modal/edit", "mailbox/calendar#modal_edit")
+  router.post("/calendar/event", "mailbox/calendar#create")
+  router.put("/calendar/event/:id", "mailbox/calendar#update")
+  router.delete("/calendar/event/:id", "mailbox/calendar#delete")
+  router.post("/calendar/event/:id/respond", "mailbox/calendar#respond")
+
+  -- Contacts
+  router.get("/contacts", "mailbox/contacts#index")
+  router.get("/contacts/search", "mailbox/contacts#search")
+
+  -- Settings
+  router.get("/settings", "mailbox/settings#index")
+  router.post("/settings", "mailbox/settings#update")
+end)
+
 -- Repositories - requires session auth
 router.scope("/repositories", { middleware = { "session_auth" } }, function()
   router.get("", "repositories#index")

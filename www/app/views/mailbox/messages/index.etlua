@@ -1,0 +1,165 @@
+<div class="flex h-full">
+  <!-- Sidebar -->
+  <%- partial("mailbox/sidebar") %>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+    <!-- Header -->
+    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
+      <div class="flex items-center gap-3">
+        <% local folder_icons = { inbox = "fa-inbox", sent = "fa-paper-plane", drafts = "fa-file-alt", archive = "fa-archive", starred = "fa-star" } %>
+        <i class="fas <%= folder_icons[current_folder] or 'fa-inbox' %> text-primary-light text-xl"></i>
+        <h1 class="text-xl font-bold text-white capitalize"><%= current_folder %></h1>
+        <span id="live-indicator" class="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Live updates active"></span>
+      </div>
+    </header>
+
+    <!-- Messages List -->
+    <div id="messages-container"
+         class="flex-1 overflow-y-auto"
+         data-folder="<%= current_folder %>"
+         data-user-key="<%= current_user._key %>">
+      <%- partial("mailbox/messages/list") %>
+    </div>
+  </main>
+</div>
+
+<script>
+(function() {
+  const DB_NAME = '<%= db_name or "_system" %>';
+  const DB_HOST = window.location.host.replace(/:\d+$/, '') + ':6745';
+  const USER_KEY = '<%= current_user._key %>';
+  const CURRENT_FOLDER = '<%= current_folder %>';
+  const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  let liveQueryWs = null;
+  let tokenCache = { token: null, expiry: 0 };
+  let knownMessageKeys = new Set();
+
+  // Track existing message keys
+  document.querySelectorAll('[data-message-key]').forEach(el => {
+    knownMessageKeys.add(el.dataset.messageKey);
+  });
+
+  async function getToken() {
+    if (tokenCache.token && Date.now() < tokenCache.expiry - 5000) {
+      return tokenCache.token;
+    }
+    try {
+      const res = await fetch('/talks/livequery_token');
+      const data = await res.json();
+      tokenCache.token = data.token;
+      tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;
+      return data.token;
+    } catch (e) {
+      console.error('Token fetch failed:', e);
+      return null;
+    }
+  }
+
+  async function connectLiveQuery() {
+    const token = await getToken();
+    if (!token) return setTimeout(connectLiveQuery, 5000);
+
+    const url = `${WS_PROTOCOL}//${DB_HOST}/_api/ws/changefeed?token=${token}`;
+    liveQueryWs = new WebSocket(url);
+
+    liveQueryWs.onopen = () => {
+      console.log('[MAILBOX] LiveQuery connected');
+      // Update live indicator
+      const indicator = document.getElementById('live-indicator');
+      if (indicator) indicator.classList.add('bg-green-400');
+
+      // Subscribe to messages for this user
+      liveQueryWs.send(JSON.stringify({
+        type: 'subscribe',
+        database: DB_NAME,
+        query: `FOR m IN mailbox_messages FILTER @user_key IN m.recipients OR m.sender_key == @user_key RETURN m`,
+        bindVars: { user_key: USER_KEY }
+      }));
+
+      // Keep-alive ping
+      setInterval(() => {
+        if (liveQueryWs.readyState === WebSocket.OPEN) {
+          liveQueryWs.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 30000);
+    };
+
+    liveQueryWs.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+
+        if (data.operation === 'insert' && (data.document || data.data)) {
+          const msg = data.document || data.data;
+
+          // Check if message belongs to current folder view
+          const msgFolder = msg.folder || 'inbox';
+          const isRelevant = (
+            (CURRENT_FOLDER === 'inbox' && msgFolder === 'inbox' && msg.recipients && msg.recipients.includes(USER_KEY)) ||
+            (CURRENT_FOLDER === 'sent' && msgFolder === 'sent' && msg.sender_key === USER_KEY) ||
+            (CURRENT_FOLDER === 'drafts' && msgFolder === 'drafts' && msg.sender_key === USER_KEY) ||
+            (CURRENT_FOLDER === 'archive' && msgFolder === 'archive') ||
+            (CURRENT_FOLDER === 'starred' && msg.starred && msg.recipients && msg.recipients.includes(USER_KEY))
+          );
+
+          if (isRelevant && !knownMessageKeys.has(msg._key)) {
+            console.log('[MAILBOX] New message:', msg._key);
+            knownMessageKeys.add(msg._key);
+            // Refresh the messages list
+            htmx.ajax('GET', '/mailbox/messages/' + CURRENT_FOLDER, {
+              target: '#messages-container',
+              swap: 'innerHTML'
+            });
+          }
+        }
+
+        if (data.operation === 'update' && (data.document || data.data)) {
+          const msg = data.document || data.data;
+          // Refresh if message was starred/archived (might appear/disappear from view)
+          if (knownMessageKeys.has(msg._key) || CURRENT_FOLDER === 'starred' || CURRENT_FOLDER === 'archive') {
+            htmx.ajax('GET', '/mailbox/messages/' + CURRENT_FOLDER, {
+              target: '#messages-container',
+              swap: 'innerHTML'
+            });
+          }
+        }
+
+        if (data.operation === 'delete' && (data.key || (data.document && data.document._key))) {
+          const key = data.key || data.document._key;
+          const el = document.querySelector(`[data-message-key="${key}"]`);
+          if (el) {
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+            knownMessageKeys.delete(key);
+          }
+        }
+      } catch (err) {
+        console.error('[MAILBOX] LiveQuery error:', err);
+      }
+    };
+
+    liveQueryWs.onclose = () => {
+      console.log('[MAILBOX] LiveQuery disconnected, reconnecting...');
+      const indicator = document.getElementById('live-indicator');
+      if (indicator) indicator.classList.remove('bg-green-400');
+      setTimeout(connectLiveQuery, 5000);
+    };
+
+    liveQueryWs.onerror = (e) => {
+      console.error('[MAILBOX] LiveQuery error:', e);
+    };
+  }
+
+  // Start connection
+  connectLiveQuery();
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    if (liveQueryWs) {
+      liveQueryWs.onclose = null;
+      liveQueryWs.close();
+    }
+  });
+})();
+</script>

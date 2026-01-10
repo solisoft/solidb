@@ -1,0 +1,29 @@
+<% if not events or #events == 0 then %>
+<div class="text-center py-8 text-text-muted">
+  <i class="fas fa-calendar-times text-3xl mb-3 opacity-50"></i>
+  <p>No events this month</p>
+</div>
+<% else %>
+<div class="space-y-2">
+  <% for _, event in ipairs(events) do %>
+  <button hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-left group">
+    <div class="w-1 h-10 rounded-full shrink-0" style="background-color: <%= event.color or event.data.color or '#3b82f6' %>"></div>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-medium text-white group-hover:text-primary-light transition-colors truncate">
+        <%= event.title or event.data.title %>
+      </p>
+      <p class="text-xs text-text-muted">
+        <%= event:formatted_date() %>
+        <% if not (event.all_day or event.data.all_day) then %>
+        at <%= event:formatted_time() %>
+        <% end %>
+      </p>
+    </div>
+    <i class="fas fa-chevron-right text-text-dim group-hover:text-text-muted transition-colors opacity-0 group-hover:opacity-100"></i>
+  </button>
+  <% end %>
+</div>
+<% end %>

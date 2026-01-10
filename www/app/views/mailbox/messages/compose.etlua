@@ -1,0 +1,222 @@
+<div class="flex h-full">
+  <!-- Sidebar -->
+  <%- partial("mailbox/sidebar") %>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+    <!-- Header -->
+    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
+      <div class="flex items-center gap-3">
+        <a href="/mailbox/messages/inbox"
+           class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          <i class="fas fa-arrow-left"></i>
+        </a>
+        <h1 class="text-xl font-bold text-white">
+          <% if reply_to then %>Reply<% else %>New Message<% end %>
+        </h1>
+      </div>
+    </header>
+
+    <!-- Compose Form -->
+    <div class="flex-1 overflow-y-auto p-6">
+      <div class="max-w-3xl mx-auto">
+        <form hx-post="/mailbox/send" hx-swap="none" class="space-y-4">
+          <!-- Recipients -->
+          <div class="relative">
+            <label class="block text-sm font-medium text-text-muted mb-2">To</label>
+            <div class="relative">
+              <div id="recipients-tags" class="flex flex-wrap gap-2 mb-2"></div>
+              <input type="hidden" name="recipients" id="recipients-hidden"
+                     <% if reply_to then %>
+                     <% local sender = reply_to:sender_info() %>
+                     value="<%= sender._key or '' %>"
+                     <% end %>>
+              <input type="text"
+                     id="recipients-input"
+                     class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+                     placeholder="Search for recipients..."
+                     autocomplete="off"
+                     hx-get="/mailbox/recipients/search"
+                     hx-trigger="keyup changed delay:200ms"
+                     hx-target="#recipients-dropdown"
+                     hx-include="this">
+              <div id="recipients-dropdown" class="absolute z-50 w-full mt-1 bg-bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden hidden"></div>
+            </div>
+          </div>
+
+          <!-- CC -->
+          <div class="relative">
+            <label class="block text-sm font-medium text-text-muted mb-2">CC <span class="text-text-dim">(optional)</span></label>
+            <div class="relative">
+              <div id="cc-tags" class="flex flex-wrap gap-2 mb-2"></div>
+              <input type="hidden" name="cc" id="cc-hidden">
+              <input type="text"
+                     id="cc-input"
+                     class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+                     placeholder="Add CC recipients..."
+                     autocomplete="off"
+                     hx-get="/mailbox/recipients/search"
+                     hx-trigger="keyup changed delay:200ms"
+                     hx-target="#cc-dropdown"
+                     hx-include="this">
+              <div id="cc-dropdown" class="absolute z-50 w-full mt-1 bg-bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden hidden"></div>
+            </div>
+          </div>
+
+          <!-- Subject -->
+          <div>
+            <label class="block text-sm font-medium text-text-muted mb-2">Subject</label>
+            <input type="text"
+                   name="subject"
+                   class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+                   placeholder="Message subject"
+                   <% if reply_to then %>
+                   <% local subject = reply_to.subject or reply_to.data.subject or "" %>
+                   value="<%= subject:match("^Re:") and subject or ("Re: " .. subject) %>"
+                   <% end %>
+                   required>
+          </div>
+
+          <!-- Body with formatting help -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-sm font-medium text-text-muted">Message</label>
+              <div class="flex items-center gap-2 text-xs text-text-dim">
+                <span class="px-1.5 py-0.5 bg-white/5 rounded">**bold**</span>
+                <span class="px-1.5 py-0.5 bg-white/5 rounded">*italic*</span>
+                <span class="px-1.5 py-0.5 bg-white/5 rounded">`code`</span>
+                <span class="px-1.5 py-0.5 bg-white/5 rounded">> quote</span>
+              </div>
+            </div>
+            <textarea name="body"
+                      rows="12"
+                      class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 resize-none font-mono text-sm"
+                      placeholder="Write your message... (supports **bold**, *italic*, `code`, > quote, ```code blocks```)"
+                      required><% if reply_to then %>
+
+---
+On <%= reply_to:formatted_date() %>, <%= (reply_to:sender_info().firstname or "") .. " " .. (reply_to:sender_info().lastname or "") %> wrote:
+
+> <%= (reply_to.body or reply_to.data.body or ""):gsub("\n", "\n> ") %><% end %></textarea>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-between pt-4">
+            <button type="button"
+                    hx-post="/mailbox/draft"
+                    hx-include="closest form"
+                    class="flex items-center gap-2 px-4 py-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+              <i class="fas fa-save"></i>
+              <span>Save Draft</span>
+            </button>
+
+            <div class="flex items-center gap-3">
+              <a href="/mailbox/messages/inbox"
+                 class="px-4 py-2 text-text-muted hover:text-white transition-colors">
+                Cancel
+              </a>
+              <button type="submit"
+                      class="flex items-center gap-2 px-6 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
+                <i class="fas fa-paper-plane"></i>
+                <span>Send</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function() {
+  // Recipient management
+  const recipientsData = {
+    selected: new Map(), // key -> {key, name, email}
+    inputEl: document.getElementById('recipients-input'),
+    tagsEl: document.getElementById('recipients-tags'),
+    hiddenEl: document.getElementById('recipients-hidden'),
+    dropdownEl: document.getElementById('recipients-dropdown')
+  };
+
+  const ccData = {
+    selected: new Map(),
+    inputEl: document.getElementById('cc-input'),
+    tagsEl: document.getElementById('cc-tags'),
+    hiddenEl: document.getElementById('cc-hidden'),
+    dropdownEl: document.getElementById('cc-dropdown')
+  };
+
+  // Initialize with reply_to recipient if exists
+  <% if reply_to then %>
+  <% local sender = reply_to:sender_info() %>
+  <% if sender._key then %>
+  recipientsData.selected.set('<%= sender._key %>', {
+    key: '<%= sender._key %>',
+    name: '<%= (sender.firstname or "") .. " " .. (sender.lastname or "") %>',
+    email: '<%= sender.email or "" %>'
+  });
+  renderTags(recipientsData);
+  <% end %>
+  <% end %>
+
+  function renderTags(data) {
+    data.tagsEl.innerHTML = '';
+    data.selected.forEach((user, key) => {
+      const tag = document.createElement('span');
+      tag.className = 'inline-flex items-center gap-1 px-3 py-1 bg-primary/20 text-primary-light rounded-full text-sm';
+      tag.innerHTML = `
+        <span>${user.name || user.email}</span>
+        <button type="button" onclick="removeRecipient('${data === recipientsData ? 'recipients' : 'cc'}', '${key}')" class="hover:text-white">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      `;
+      data.tagsEl.appendChild(tag);
+    });
+    updateHiddenInput(data);
+  }
+
+  function updateHiddenInput(data) {
+    data.hiddenEl.value = Array.from(data.selected.keys()).join(',');
+  }
+
+  window.selectRecipient = function(type, key, name, email) {
+    const data = type === 'recipients' ? recipientsData : ccData;
+    if (!data.selected.has(key)) {
+      data.selected.set(key, { key, name, email });
+      renderTags(data);
+    }
+    data.inputEl.value = '';
+    data.dropdownEl.classList.add('hidden');
+    data.inputEl.focus();
+  };
+
+  window.removeRecipient = function(type, key) {
+    const data = type === 'recipients' ? recipientsData : ccData;
+    data.selected.delete(key);
+    renderTags(data);
+  };
+
+  // Handle dropdown visibility
+  document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'recipients-dropdown' || e.detail.target.id === 'cc-dropdown') {
+      const dropdown = e.detail.target;
+      if (dropdown.innerHTML.trim()) {
+        dropdown.classList.remove('hidden');
+      } else {
+        dropdown.classList.add('hidden');
+      }
+    }
+  });
+
+  // Close dropdowns on click outside
+  document.addEventListener('click', function(e) {
+    if (!recipientsData.dropdownEl.contains(e.target) && e.target !== recipientsData.inputEl) {
+      recipientsData.dropdownEl.classList.add('hidden');
+    }
+    if (!ccData.dropdownEl.contains(e.target) && e.target !== ccData.inputEl) {
+      ccData.dropdownEl.classList.add('hidden');
+    }
+  });
+})();
+</script>

@@ -1,0 +1,91 @@
+<% if not messages or #messages == 0 then %>
+<div class="flex flex-col items-center justify-center h-64 text-text-muted">
+  <i class="fas fa-inbox text-4xl mb-4 opacity-50"></i>
+  <p class="text-lg">No messages in <%= current_folder %></p>
+  <% if current_folder == "inbox" then %>
+  <p class="text-sm mt-2">Messages you receive will appear here</p>
+  <% end %>
+</div>
+<% else %>
+<div class="divide-y divide-white/5">
+  <% for _, message in ipairs(messages) do %>
+  <% local sender = message:sender_info() %>
+  <% local is_read = message.read or message.data.read %>
+  <% local is_starred = message.starred or message.data.starred %>
+  <a href="/mailbox/messages/view/<%= message._key or message.data._key %>"
+     data-message-key="<%= message._key or message.data._key %>"
+     class="flex items-center gap-4 px-6 py-4 hover:bg-white/5 transition-all group <%= not is_read and 'bg-primary/5' or '' %>">
+
+    <!-- Star Button -->
+    <button class="shrink-0 text-lg <%= is_starred and 'text-yellow-400' or 'text-text-dim hover:text-yellow-400' %> transition-colors"
+            hx-post="/mailbox/messages/<%= message._key or message.data._key %>/star"
+            hx-swap="outerHTML"
+            onclick="event.preventDefault(); event.stopPropagation();">
+      <i class="fas fa-star"></i>
+    </button>
+
+    <!-- Sender Avatar -->
+    <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+      <span class="text-sm font-medium text-primary-light">
+        <%= string.upper(string.sub(sender.firstname or sender.email or "?", 1, 1)) %>
+      </span>
+    </div>
+
+    <!-- Message Info -->
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="font-medium text-white truncate <%= not is_read and 'font-semibold' or '' %>">
+          <%= sender.firstname and sender.lastname and (sender.firstname .. " " .. sender.lastname) or sender.email or "Unknown" %>
+        </span>
+        <span class="text-xs text-text-dim shrink-0"><%= message:short_date() %></span>
+      </div>
+      <p class="text-sm text-text-muted truncate <%= not is_read and 'text-text font-medium' or '' %>">
+        <%= message.subject or message.data.subject or "(No subject)" %>
+      </p>
+      <p class="text-xs text-text-dim truncate mt-0.5">
+        <%= TextHelper and TextHelper.truncate(message.body or message.data.body or "", 80) or string.sub(message.body or message.data.body or "", 1, 80) %>
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <button class="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              hx-post="/mailbox/messages/<%= message._key or message.data._key %>/archive"
+              hx-swap="outerHTML swap:1s"
+              hx-target="closest a"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              title="Archive">
+        <i class="fas fa-archive"></i>
+      </button>
+      <button class="p-2 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+              hx-delete="/mailbox/messages/<%= message._key or message.data._key %>"
+              hx-confirm="Delete this message?"
+              hx-swap="outerHTML swap:1s"
+              hx-target="closest a"
+              onclick="event.preventDefault(); event.stopPropagation();"
+              title="Delete">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+  </a>
+  <% end %>
+</div>
+
+<!-- Pagination -->
+<% if page and page > 1 then %>
+<div class="p-4 flex justify-center gap-2">
+  <button class="px-4 py-2 text-sm text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          hx-get="/mailbox/messages/<%= current_folder %>?page=<%= page - 1 %>"
+          hx-target="#messages-container"
+          hx-swap="innerHTML">
+    <i class="fas fa-chevron-left mr-2"></i>Previous
+  </button>
+  <button class="px-4 py-2 text-sm text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          hx-get="/mailbox/messages/<%= current_folder %>?page=<%= page + 1 %>"
+          hx-target="#messages-container"
+          hx-swap="innerHTML">
+    Next<i class="fas fa-chevron-right ml-2"></i>
+  </button>
+</div>
+<% end %>
+<% end %>

@@ -1,0 +1,111 @@
+<!-- Modal Backdrop -->
+<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+     onclick="if (event.target === this) document.getElementById('modal-container').innerHTML = '';">
+  <div class="bg-bg-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg">
+    <!-- Color Header -->
+    <div class="h-2 rounded-t-2xl" style="background-color: <%= event.color or event.data.color or '#3b82f6' %>"></div>
+
+    <!-- Header -->
+    <div class="flex items-start justify-between px-6 py-4 border-b border-white/5">
+      <div>
+        <h2 class="text-xl font-semibold text-white"><%= event.title or event.data.title %></h2>
+        <p class="text-sm text-text-muted mt-1">
+          <%= event:formatted_date() %> <% if not (event.all_day or event.data.all_day) then %>at <%= event:formatted_time() %><% end %>
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <% local organizer_key = event.organizer_key or event.data.organizer_key %>
+        <% if organizer_key == current_user._key then %>
+        <button hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>/modal/edit"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          <i class="fas fa-edit"></i>
+        </button>
+        <% end %>
+        <button onclick="document.getElementById('modal-container').innerHTML = ''"
+                class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="p-6 space-y-4">
+      <!-- Location -->
+      <% if event.location or event.data.location and (event.location or event.data.location) ~= "" then %>
+      <div class="flex items-start gap-3">
+        <i class="fas fa-map-marker-alt text-text-dim mt-1"></i>
+        <div>
+          <p class="text-sm text-text-muted">Location</p>
+          <p class="text-white"><%= event.location or event.data.location %></p>
+        </div>
+      </div>
+      <% end %>
+
+      <!-- Description -->
+      <% if event.description or event.data.description and (event.description or event.data.description) ~= "" then %>
+      <div class="flex items-start gap-3">
+        <i class="fas fa-align-left text-text-dim mt-1"></i>
+        <div>
+          <p class="text-sm text-text-muted">Description</p>
+          <p class="text-white whitespace-pre-wrap"><%= event.description or event.data.description %></p>
+        </div>
+      </div>
+      <% end %>
+
+      <!-- Organizer -->
+      <% local organizer = event:organizer_info() %>
+      <div class="flex items-start gap-3">
+        <i class="fas fa-user text-text-dim mt-1"></i>
+        <div>
+          <p class="text-sm text-text-muted">Organizer</p>
+          <p class="text-white">
+            <%= organizer.firstname and organizer.lastname and (organizer.firstname .. " " .. organizer.lastname) or organizer.email or "Unknown" %>
+          </p>
+        </div>
+      </div>
+
+      <!-- Attendees -->
+      <% if attendees and #attendees > 0 then %>
+      <div class="flex items-start gap-3">
+        <i class="fas fa-users text-text-dim mt-1"></i>
+        <div class="flex-1">
+          <p class="text-sm text-text-muted mb-2">Attendees (<%= #attendees %>)</p>
+          <div class="space-y-2">
+            <% for _, attendee in ipairs(attendees) do %>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                  <span class="text-xs font-medium text-primary-light">
+                    <%= string.upper(string.sub(attendee.firstname or attendee.email or "?", 1, 1)) %>
+                  </span>
+                </div>
+                <span class="text-sm text-white">
+                  <%= attendee.firstname and attendee.lastname and (attendee.firstname .. " " .. attendee.lastname) or attendee.email %>
+                </span>
+              </div>
+              <span class="text-xs px-2 py-1 rounded-full
+                <% if attendee.status == 'accepted' then %>bg-green-500/20 text-green-400
+                <% elseif attendee.status == 'declined' then %>bg-red-500/20 text-red-400
+                <% elseif attendee.status == 'tentative' then %>bg-yellow-500/20 text-yellow-400
+                <% else %>bg-white/10 text-text-muted<% end %>">
+                <%= attendee.status or "pending" %>
+              </span>
+            </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+      <% end %>
+
+      <!-- Response Buttons (if user is attendee) -->
+      <% if user_status and user_status ~= "organizer" then %>
+      <div class="pt-4 border-t border-white/5">
+        <p class="text-sm text-text-muted mb-3">Your response</p>
+        <%- partial("mailbox/calendar/respond_buttons") %>
+      </div>
+      <% end %>
+    </div>
+  </div>
+</div>

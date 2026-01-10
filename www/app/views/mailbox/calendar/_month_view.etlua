@@ -1,0 +1,61 @@
+<div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl overflow-hidden">
+  <!-- Day headers -->
+  <div class="grid grid-cols-7 border-b border-white/5">
+    <% local day_names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" } %>
+    <% for _, day_name in ipairs(day_names) do %>
+    <div class="px-3 py-2 text-center text-sm font-medium text-text-muted border-r border-white/5 last:border-r-0">
+      <%= day_name %>
+    </div>
+    <% end %>
+  </div>
+
+  <!-- Calendar grid -->
+  <% for week_idx, week in ipairs(calendar.weeks) do %>
+  <div class="grid grid-cols-7 border-b border-white/5 last:border-b-0">
+    <% for day_idx, day_data in ipairs(week) do %>
+    <div class="min-h-[120px] p-2 border-r border-white/5 last:border-r-0 <%= day_data.is_today and 'bg-primary/5' or '' %> <%= not day_data.day and 'bg-white/[0.02]' or '' %>">
+      <% if day_data.day then %>
+      <!-- Day number -->
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium <%= day_data.is_today and 'text-primary-light' or 'text-text' %>">
+          <% if day_data.is_today then %>
+          <span class="w-6 h-6 inline-flex items-center justify-center bg-primary text-white rounded-full">
+            <%= day_data.day %>
+          </span>
+          <% else %>
+          <%= day_data.day %>
+          <% end %>
+        </span>
+        <button hx-get="/mailbox/calendar/event/modal/create?date=<%= day_data.date %>"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="opacity-0 hover:opacity-100 p-1 text-text-dim hover:text-primary-light transition-all">
+          <i class="fas fa-plus text-xs"></i>
+        </button>
+      </div>
+
+      <!-- Events for this day -->
+      <div class="space-y-1">
+        <% for event_idx, event in ipairs(day_data.events) do %>
+        <% if event_idx <= 3 then %>
+        <button hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="w-full text-left px-2 py-1 text-xs rounded truncate transition-colors hover:ring-1 hover:ring-white/20"
+                style="background-color: <%= (event.color or event.data.color or '#3b82f6') %>20; color: <%= event.color or event.data.color or '#3b82f6' %>">
+          <% if not (event.all_day or event.data.all_day) then %>
+          <span class="opacity-70"><%= os.date("%H:%M", event.start_time or event.data.start_time) %></span>
+          <% end %>
+          <%= event.title or event.data.title %>
+        </button>
+        <% elseif event_idx == 4 then %>
+        <span class="text-xs text-text-dim">+<%= #day_data.events - 3 %> more</span>
+        <% end %>
+        <% end %>
+      </div>
+      <% end %>
+    </div>
+    <% end %>
+  </div>
+  <% end %>
+</div>

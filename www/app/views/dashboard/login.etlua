@@ -133,24 +133,26 @@
         if (recent.length === 0) {
             container.classList.remove('max-w-4xl');
             container.classList.add('max-w-md');
-            list.innerHTML = `
-                <div class="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-gray-700/50 rounded-lg opacity-50">
-                    <svg class="w-8 h-8 text-gray-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p class="text-xs text-gray-500 italic">No history yet.</p>
-                </div>
-            `;
-            // Keep it hidden on small screens if empty? 
-            // The user said "do not hide it just display a message when no history"
-            // So we show the message. 
-            // If we want it "packed", we should only use max-w-4xl when there's history.
+            // Hide the recent connections section entirely when empty
+            document.getElementById('recent-connections').classList.add('hidden');
+            // Remove the right border from the form section
+            var formSection = document.querySelector('#login-form').closest('.flex-1');
+            if (formSection) {
+                formSection.classList.remove('md:border-r', 'md:border-gray-700/50', 'md:pr-8');
+            }
             return;
         }
         
         container.classList.remove('max-w-md');
         container.classList.add('max-w-4xl');
-        
+        // Show the recent connections section
+        document.getElementById('recent-connections').classList.remove('hidden');
+        // Restore the right border on the form section
+        var formSection = document.querySelector('#login-form').closest('.flex-1');
+        if (formSection) {
+            formSection.classList.add('md:border-r', 'md:border-gray-700/50', 'md:pr-8');
+        }
+
         list.innerHTML = recent.map((conn, idx) => `
             <div onclick="fillCredentials('${conn.server_url}', '${conn.username}')" class="group flex items-center justify-between p-3 rounded-lg bg-gray-900/30 border border-gray-700/30 hover:bg-gray-800/50 hover:border-indigo-500/30 cursor-pointer transition-all">
                 <div class="flex items-center gap-3 overflow-hidden">

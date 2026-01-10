@@ -20,128 +20,173 @@
       end
     end
   end
+
+  -- Heuristic to split fields into Main and Sidebar
+  local main_fields = {}
+  local side_fields = {}
+  
+  for _, field in ipairs(fields) do
+    if field.type == "wysiwyg" or field.type == "text" or (field.type == "string" and (field.name:match("description") or field.name:match("content") or field.name:match("body"))) then
+      table.insert(main_fields, field)
+    else
+      table.insert(side_fields, field)
+    end
+  end
+
+  -- If sidebar is too empty, move some fields back
+  if #side_fields == 0 and #main_fields > 4 then
+     -- keep everything in main
+  elseif #main_fields == 0 then
+     main_fields = side_fields
+     side_fields = {}
+  end
 %>
 
-<div class="max-w-4xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex items-center gap-4">
-    <a href="/cruds/data/<%= dt.slug %>" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
-      <i class="fas fa-arrow-left"></i>
-    </a>
-    <div>
-      <h1 class="text-2xl font-bold text-gradient">Edit <%= dt.name %></h1>
-      <p class="text-text-muted mt-1">Record: <span class="font-mono"><%= record._key %></span></p>
+<div class="h-full flex flex-col">
+  <!-- Top Header -->
+  <div class="flex items-center justify-between px-8 py-4 bg-bg-card/30 backdrop-blur-md border-b border-white/5 sticky top-0 z-20">
+    <div class="flex items-center gap-4">
+      <a href="/cruds/data/<%= dt.slug %>" class="p-2 hover:bg-white/10 rounded-lg transition-colors text-text-muted hover:text-white">
+        <i class="fas fa-arrow-left"></i>
+      </a>
+      <div>
+        <h1 class="text-xl font-bold text-white tracking-tight">Edit <%= dt.name %></h1>
+        <div class="flex items-center gap-2 text-xs text-text-muted mt-0.5">
+          <span class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium border border-blue-500/20 font-mono text-[10px]"><%= record._key %></span>
+          <span>Editing record in <%= dt.name %></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="button"
+              hx-delete="/cruds/data/<%= dt.slug %>/<%= record._key %>"
+              hx-confirm="Are you sure you want to delete this record?"
+              class="px-4 py-2 text-sm font-medium text-error hover:bg-error/10 rounded-lg transition-colors mr-2">
+        <i class="fas fa-trash mr-2"></i> Delete
+      </button>
+      <a href="/cruds/data/<%= dt.slug %>" class="px-4 py-2 text-sm font-medium text-text-muted hover:text-white transition-colors">Cancel</a>
+      <button type="submit" form="edit-form" class="px-5 py-2 bg-gradient-to-r from-primary to-primary-dark hover:from-primary-dark hover:to-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 transition-all flex items-center gap-2">
+        <i class="fas fa-save"></i>
+        <span>Save Changes</span>
+      </button>
     </div>
   </div>
 
-  <!-- Form -->
-  <form id="edit-form" hx-put="/cruds/data/<%= dt.slug %>/<%= record._key %>" hx-swap="none" class="space-y-6">
-    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
-      <div class="space-y-8">
-        <% 
-          -- Combine fields and relations into a single list for ordered rendering
-          local elements = {}
-          for _, field in ipairs(fields) do
-            table.insert(elements, { type = "field", data = field })
-          end
-          for _, rel in ipairs(relations) do
-            if rel.storage == "embedded" then
-              table.insert(elements, { type = "relation", data = rel })
-            end
-          end
-        %>
-
-        <% for _, element in ipairs(elements) do %>
-          <% if element.type == "field" then %>
-            <% local field = element.data %>
-            <div class="p-4 bg-white/5 rounded-xl border border-white/5">
-              <%- partial("cruds/field_renderer", { field = field, value = record[field.name], prefix = "data_", doc_id = record._id or record._key, datatype = dt }) %>
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-8">
+    <form id="edit-form" hx-put="/cruds/data/<%= dt.slug %>/<%= record._key %>" hx-swap="none" class="max-w-[1200px] mx-auto">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Main Area (2/3) -->
+        <div class="lg:col-span-2 space-y-6">
+          <!-- Content Fields -->
+          <div class="bg-bg-card/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm">
+            <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest mb-6 flex items-center gap-2">
+              <i class="fas fa-file-alt text-primary"></i>
+              Primary Content
+            </h2>
+            <div class="space-y-6">
+              <% for _, field in ipairs(main_fields) do %>
+                <%- partial("cruds/field_renderer", { field = field, value = record[field.name], prefix = "data_", doc_id = record._id or record._key, datatype = dt }) %>
+              <% end %>
+              
+              <% if #main_fields == 0 then %>
+                <div class="text-center py-8 text-text-muted italic text-sm">
+                  No primary content fields defined.
+                </div>
+              <% end %>
             </div>
-          <% else %>
-            <% local rel = element.data %>
+          </div>
+
+          <!-- Embedded Relations -->
+          <% for _, rel in ipairs(relations) do %>
+            <% if rel.storage == "embedded" then %>
             <% local rel_dt = relation_datatypes[rel.name] or { fields = {}, name = rel.name } %>
             <% local rel_items = record[rel.name] or {} %>
             <% if type(rel_items) ~= "table" then rel_items = {} end %>
-            <div class="bg-bg-dark/30 border border-border/50 rounded-xl overflow-hidden">
+            <div class="bg-bg-card/50 backdrop-blur-xl border border-white/5 rounded-2xl overflow-hidden shadow-sm">
               <!-- Relation Header -->
-              <div class="flex items-center justify-between p-4 border-b border-border/30 bg-white/5">
+              <div class="flex items-center justify-between p-4 border-b border-white/5 bg-white/5">
                 <div>
-                  <h2 class="text-lg font-semibold flex items-center gap-2">
-                    <i class="fas fa-link text-success text-sm"></i>
+                  <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest flex items-center gap-2">
+                    <i class="fas fa-link text-primary"></i>
                     <%= rel.name %>
                   </h2>
-                  <p class="text-[10px] text-text-muted uppercase tracking-widest mt-1">
+                  <p class="text-[10px] text-text-muted mt-1 uppercase tracking-tighter">
                     <span id="embedded-count-<%= rel.name %>"><%= #rel_items %></span> items &bull; <%= rel_dt.name %>
                   </p>
                 </div>
                 <button type="button" onclick="openEmbeddedModal('<%= rel.name %>', null)"
-                        class="px-4 py-2 bg-success/20 hover:bg-success/30 text-success-light border border-success/30 rounded-lg transition-colors text-sm font-bold">
-                  <i class="fas fa-plus mr-2"></i> Add <%= rel_dt.name %>
+                        class="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary-light border border-primary/20 rounded-lg transition-colors text-xs font-bold flex items-center gap-2">
+                  <i class="fas fa-plus"></i> Add <%= rel_dt.name %>
                 </button>
               </div>
 
               <!-- Items Table/List -->
-              <div id="embedded-list-<%= rel.name %>">
+              <div id="embedded-list-<%= rel.name %>" class="min-h-[100px]">
                 <% if #rel_items == 0 then %>
                 <div class="p-8 text-center text-text-muted">
-                  <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-                  <p class="text-sm">No items yet.</p>
+                  <i class="fas fa-inbox text-2xl mb-2 opacity-30"></i>
+                  <p class="text-xs">No items yet. Click "Add" to create one.</p>
                 </div>
                 <% else %>
-                <table class="w-full">
-                  <thead class="bg-bg-dark/50 text-left text-sm text-text-muted">
-                    <tr>
-                      <th class="px-4 py-2 font-medium w-10"></th>
-                      <th class="px-4 py-2 font-medium">#</th>
-                      <% for i, f in ipairs(rel_dt.fields) do %>
-                        <% if i <= 3 then %>
-                        <th class="px-4 py-2 font-medium"><%= f.label or f.name %></th>
-                        <% end %>
-                      <% end %>
-                      <th class="px-4 py-2 font-medium text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="embedded-tbody-<%= rel.name %>" class="divide-y divide-border/30">
-                    <% for idx, item in ipairs(rel_items) do %>
-                    <tr class="hover:bg-white/5 transition-colors" data-index="<%= idx - 1 %>">
-                      <td class="px-4 py-3 text-text-muted cursor-move drag-handle">
-                        <i class="fas fa-grip-vertical"></i>
-                      </td>
-                      <td class="px-4 py-3 text-text-muted text-sm row-number"><%= idx %></td>
-                      <% for i, f in ipairs(rel_dt.fields) do %>
-                        <% if i <= 3 then %>
-                        <td class="px-4 py-3 text-sm">
-                          <% local val = item[f.name] %>
-                          <% if val == nil or val == "" then %>
-                            <span class="text-text-muted">-</span>
-                          <% elseif type(val) == "table" then %>
-                            <span class="text-text-muted font-mono text-xs"><%= EncodeJson(val) %></span>
-                          <% else %>
-                            <span class="truncate max-w-xs block"><%= tostring(val):sub(1, 50) %><%= #tostring(val) > 50 and "..." or "" %></span>
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                      <thead class="bg-white/5 text-[10px] text-text-dim uppercase tracking-widest">
+                        <tr>
+                          <th class="px-4 py-3 font-bold w-10"></th>
+                          <th class="px-4 py-3 font-bold w-12">#</th>
+                          <% for i, f in ipairs(rel_dt.fields) do %>
+                            <% if i <= 3 then %>
+                            <th class="px-4 py-3 font-bold"><%= f.label or f.name %></th>
+                            <% end %>
                           <% end %>
-                        </td>
+                          <th class="px-4 py-3 font-bold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="embedded-tbody-<%= rel.name %>" class="divide-y divide-white/5">
+                        <% for idx, item in ipairs(rel_items) do %>
+                        <tr class="hover:bg-white/5 transition-colors group" data-index="<%= idx - 1 %>">
+                          <td class="px-4 py-3 text-text-muted cursor-move drag-handle opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-grip-vertical"></i>
+                          </td>
+                          <td class="px-4 py-3 text-text-muted text-xs font-mono row-number"><%= idx %></td>
+                          <% for i, f in ipairs(rel_dt.fields) do %>
+                            <% if i <= 3 then %>
+                            <td class="px-4 py-3 text-xs text-text-muted">
+                              <% local val = item[f.name] %>
+                              <% if val == nil or val == "" then %>
+                                <span class="text-text-muted/30">-</span>
+                              <% elseif type(val) == "table" then %>
+                                <span class="text-text-muted font-mono text-[10px]"><%= EncodeJson(val) %></span>
+                              <% else %>
+                                <span class="truncate max-w-xs block"><%= tostring(val):sub(1, 50) %><%= #tostring(val) > 50 and "..." or "" %></span>
+                              <% end %>
+                            </td>
+                            <% end %>
+                          <% end %>
+                          <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-1">
+                              <button type="button" onclick="openEmbeddedModal('<%= rel.name %>', <%= idx - 1 %>)"
+                                      class="p-1.5 hover:bg-primary/20 text-text-muted hover:text-primary-light rounded-lg transition-colors" title="Edit">
+                                <i class="fas fa-edit"></i>
+                              </button>
+                              <button type="button" onclick="deleteEmbeddedItem('<%= rel.name %>', <%= idx - 1 %>)"
+                                      class="p-1.5 hover:bg-error/20 text-text-muted hover:text-error rounded-lg transition-colors" title="Delete">
+                                <i class="fas fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                         <% end %>
-                      <% end %>
-                      <td class="px-4 py-3 text-right">
-                        <div class="flex items-center justify-end gap-1">
-                          <button type="button" onclick="openEmbeddedModal('${relName}', ${idx})"
-                                  class="p-2 hover:bg-primary/20 text-primary-light rounded-lg transition-colors" title="Edit">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <button type="button" onclick="deleteEmbeddedItem('${relName}', ${idx})"
-                                  class="p-2 hover:bg-error/20 text-error rounded-lg transition-colors" title="Delete">
-                            <i class="fas fa-trash"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    <% end %>
-                  </tbody>
-                </table>
+                      </tbody>
+                    </table>
+                  </div>
                 <% end %>
               </div>
 
-              <input type="hidden" name="rel_<%= rel.name %>" id="rel-json-<%= rel.name %>" value="<%- EncodeJson(rel_items) %>">
+              <input type="hidden" name="rel_<%= rel.name %>" id="rel-json-<%= rel.name %>" value='<%- EncodeJson(rel_items) %>'>
 
               <!-- Store field definitions for JavaScript -->
               <script>
@@ -151,71 +196,94 @@
                 window.embeddedRelNames['<%= rel.name %>'] = '<%= rel_dt.name %>';
               </script>
             </div>
+            <% end %>
           <% end %>
-        <% end %>
-      </div>
-    </div>
-
-    <!-- Metadata -->
-    <div class="bg-bg-card/30 border border-border/30 rounded-xl p-4">
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        <div>
-          <span class="text-text-muted">Key:</span>
-          <span class="font-mono ml-1"><%= record._key %></span>
         </div>
-        <% if record.created_at then %>
-        <div>
-          <span class="text-text-muted">Created:</span>
-          <span class="ml-1"><%= os.date("%Y-%m-%d %H:%M", record.created_at) %></span>
-        </div>
-        <% end %>
-        <% if record.updated_at then %>
-        <div>
-          <span class="text-text-muted">Updated:</span>
-          <span class="ml-1"><%= os.date("%Y-%m-%d %H:%M", record.updated_at) %></span>
-        </div>
-        <% end %>
-      </div>
-    </div>
 
-    <!-- Submit -->
-    <div class="flex items-center justify-between">
-      <button type="button"
-              hx-delete="/cruds/data/<%= dt.slug %>/<%= record._key %>"
-              hx-confirm="Are you sure you want to delete this record?"
-              class="px-4 py-2 text-error hover:bg-error/20 rounded-lg transition-colors">
-        <i class="fas fa-trash mr-2"></i> Delete
-      </button>
+        <!-- Sidebar (1/3) -->
+        <div class="space-y-6">
+          <!-- Metadata Fields -->
+          <div class="bg-bg-card/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm">
+            <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest mb-6 flex items-center gap-2">
+              <i class="fas fa-info-circle text-primary"></i>
+              Details & Meta
+            </h2>
+            <div class="space-y-5">
+              <% for _, field in ipairs(side_fields) do %>
+                <%- partial("cruds/field_renderer", { field = field, value = record[field.name], prefix = "data_", doc_id = record._id or record._key, datatype = dt }) %>
+              <% end %>
+              
+              <% if #side_fields == 0 then %>
+                <div class="text-center py-4 text-text-muted italic text-xs">
+                  All fields are in the main area.
+                </div>
+              <% end %>
+            </div>
+          </div>
 
-      <div class="flex items-center gap-3">
-        <a href="/cruds/data/<%= dt.slug %>" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</a>
-        <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-          <i class="fas fa-save mr-2"></i> Save Changes
-        </button>
+          <!-- Record Stats Card -->
+          <div class="bg-bg-card/50 backdrop-blur-xl border border-white/5 rounded-2xl p-5 shadow-sm">
+            <h3 class="text-xs font-bold text-text-dim uppercase tracking-widest mb-4">Record Information</h3>
+            <div class="space-y-3 text-[11px]">
+              <div class="flex justify-between items-center py-2 border-b border-white/5">
+                <span class="text-text-muted">Key</span>
+                <span class="font-mono text-white"><%= record._key %></span>
+              </div>
+              <% if record.created_at then %>
+              <div class="flex justify-between items-center py-2 border-b border-white/5">
+                <span class="text-text-muted">Created</span>
+                <span class="text-white"><%= os.date("%Y-%m-%d %H:%M", record.created_at) %></span>
+              </div>
+              <% end %>
+              <% if record.updated_at then %>
+              <div class="flex justify-between items-center py-2 border-b border-white/5">
+                <span class="text-text-muted">Last Updated</span>
+                <span class="text-white"><%= os.date("%Y-%m-%d %H:%M", record.updated_at) %></span>
+              </div>
+              <% end %>
+              <% if record._rev then %>
+              <div class="flex justify-between items-center py-2">
+                <span class="text-text-muted">Revision</span>
+                <span class="font-mono text-text-muted"><%= record._rev %></span>
+              </div>
+              <% end %>
+            </div>
+          </div>
+
+          <!-- Help Card -->
+          <div class="p-5 bg-gradient-to-br from-primary/5 to-primary-dark/10 border border-primary/10 rounded-2xl">
+            <h3 class="text-primary font-bold text-xs uppercase tracking-wider mb-2">Editor Notes</h3>
+            <p class="text-[11px] text-text-muted leading-relaxed">
+              Changes are not saved until you click "Save Changes". Embedded relations can be managed independently but also require a final save.
+            </p>
+          </div>
+        </div>
+
       </div>
-    </div>
-  </form>
+    </form>
+  </div>
 </div>
 
 <!-- Embedded Item Modal -->
-<div id="embedded-modal" class="fixed inset-0 z-50 hidden">
-  <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeEmbeddedModal()"></div>
-  <div class="absolute inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-2xl md:max-h-[90vh] bg-bg-card border border-border/50 rounded-xl shadow-2xl flex flex-col">
-    <div class="flex items-center justify-between p-4 border-b border-border/30">
-      <h3 id="embedded-modal-title" class="text-lg font-semibold">Add Item</h3>
-      <button type="button" onclick="closeEmbeddedModal()" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+<div id="embedded-modal" class="fixed inset-0 z-[100] hidden">
+  <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeEmbeddedModal()"></div>
+  <div class="absolute inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-2xl md:max-h-[90vh] bg-bg-card border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between p-5 border-b border-white/5 bg-white/5">
+      <h3 id="embedded-modal-title" class="text-lg font-bold text-white tracking-tight">Add Item</h3>
+      <button type="button" onclick="closeEmbeddedModal()" class="p-2 hover:bg-white/10 rounded-lg transition-colors text-text-muted">
         <i class="fas fa-times"></i>
       </button>
     </div>
-    <div id="embedded-modal-body" class="p-4 overflow-y-auto flex-1">
+    <div id="embedded-modal-body" class="p-6 overflow-y-auto flex-1 custom-scrollbar">
       <!-- Form fields will be rendered here -->
     </div>
-    <div class="flex items-center justify-end gap-3 p-4 border-t border-border/30">
-      <button type="button" onclick="closeEmbeddedModal()" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">
+    <div class="flex items-center justify-end gap-3 p-5 border-t border-white/5 bg-white/5">
+      <button type="button" onclick="closeEmbeddedModal()" class="px-4 py-2 text-sm font-medium text-text-muted hover:text-white transition-colors">
         Cancel
       </button>
-      <button type="button" onclick="saveEmbeddedItem()" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-        <i class="fas fa-check mr-2"></i> <span id="embedded-modal-save-text">Save</span>
+      <button type="button" onclick="saveEmbeddedItem()" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2">
+        <i class="fas fa-check"></i>
+        <span id="embedded-modal-save-text">Save</span>
       </button>
     </div>
   </div>
@@ -228,7 +296,7 @@ const embeddedSortables = {};
 let currentModalRel = null;
 let currentModalIndex = null;
 
-// Auto-save document function
+// Auto-save document function (used for relation changes)
 function saveDocument(successMessage) {
   const form = document.querySelector('form[hx-put]');
   if (!form) return;
@@ -345,15 +413,15 @@ function openEmbeddedModal(relName, index) {
   saveText.textContent = isEdit ? 'Update' : 'Create';
 
   // Render form fields
-  let html = '<div class="space-y-4">';
+  let html = '<div class="space-y-5">';
   if (fields.length > 0) {
     fields.forEach(field => {
       html += renderModalField(field, data[field.name]);
     });
   } else {
     html += `<div class="space-y-2">
-      <label class="block text-sm font-medium text-text-muted">JSON Data</label>
-      <textarea id="modal-json-data" rows="6" class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary font-mono text-sm">${JSON.stringify(data, null, 2)}</textarea>
+      <label class="block text-xs font-bold text-text-dim uppercase tracking-widest">JSON Data</label>
+      <textarea id="modal-json-data" rows="6" class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-xs text-text-muted">${JSON.stringify(data, null, 2)}</textarea>
     </div>`;
   }
   html += '</div>';
@@ -362,7 +430,7 @@ function openEmbeddedModal(relName, index) {
   // Add Enter key support for form submission
   body.querySelectorAll('input, select').forEach(el => {
     el.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
         e.preventDefault();
         saveEmbeddedItem();
       }
@@ -374,7 +442,7 @@ function openEmbeddedModal(relName, index) {
 
   // Focus first input
   const firstInput = body.querySelector('input, select, textarea');
-  if (firstInput) firstInput.focus();
+  if (firstInput) setTimeout(() => firstInput.focus(), 100);
 }
 
 function closeEmbeddedModal() {
@@ -397,31 +465,31 @@ function renderModalField(field, value) {
     case 'text':
     case 'wysiwyg':
       inputHtml = `<textarea id="${fieldId}" rows="4" placeholder="${placeholder}"
-        class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">${value || ''}</textarea>`;
+        class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm">${value || ''}</textarea>`;
       break;
 
     case 'list':
       const options = (field.options || []).map(opt =>
         `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`
       ).join('');
-      inputHtml = `<select id="${fieldId}" class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+      inputHtml = `<select id="${fieldId}" class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm">
         <option value="">Select...</option>${options}</select>`;
       break;
 
     case 'tags':
       const tagsValue = Array.isArray(value) ? value.join(', ') : (value || '');
       inputHtml = `<input type="text" id="${fieldId}" value="${tagsValue}" placeholder="tag1, tag2, tag3"
-        class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
-        <p class="text-xs text-text-muted mt-1">Separate tags with commas</p>`;
+        class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm">
+        <p class="text-[10px] text-text-muted mt-1 uppercase tracking-tighter italic">Separate tags with commas</p>`;
       break;
 
     default: // string
       inputHtml = `<input type="text" id="${fieldId}" value="${value || ''}" placeholder="${placeholder}"
-        class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">`;
+        class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm">`;
   }
 
   return `<div class="space-y-2">
-    <label class="block text-sm font-medium text-text-muted">${label} ${required}</label>
+    <label class="block text-xs font-bold text-text-dim uppercase tracking-widest">${label} ${required}</label>
     ${inputHtml}
   </div>`;
 }
@@ -489,62 +557,61 @@ function refreshEmbeddedList(relName) {
   const container = document.getElementById('embedded-list-' + relName);
   const items = embeddedData[relName];
   const fields = window.embeddedFieldDefs[relName] || [];
-  const relDisplayName = window.embeddedRelNames[relName] || relName;
 
   if (items.length === 0) {
     container.innerHTML = `<div class="p-8 text-center text-text-muted">
-      <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-      <p>No items yet. Click "Add" to create one.</p>
+      <i class="fas fa-inbox text-2xl mb-2 opacity-30"></i>
+      <p class="text-xs">No items yet. Click "Add" to create one.</p>
     </div>`;
     return;
   }
 
   // Build table with drag handle
-  let html = '<table class="w-full">';
-  html += '<thead class="bg-bg-dark/50 text-left text-sm text-text-muted"><tr>';
-  html += '<th class="px-4 py-2 font-medium w-10"></th>';
-  html += '<th class="px-4 py-2 font-medium">#</th>';
+  let html = '<div class="overflow-x-auto"><table class="w-full text-left">';
+  html += '<thead class="bg-white/5 text-[10px] text-text-dim uppercase tracking-widest"><tr>';
+  html += '<th class="px-4 py-3 font-bold w-10"></th>';
+  html += '<th class="px-4 py-3 font-bold w-12">#</th>';
   fields.slice(0, 3).forEach(f => {
-    html += `<th class="px-4 py-2 font-medium">${f.label || f.name}</th>`;
+    html += `<th class="px-4 py-3 font-bold">${f.label || f.name}</th>`;
   });
-  html += '<th class="px-4 py-2 font-medium text-right">Actions</th>';
+  html += '<th class="px-4 py-3 font-bold text-right">Actions</th>';
   html += '</tr></thead>';
 
-  html += `<tbody id="embedded-tbody-${relName}" class="divide-y divide-border/30">`;
+  html += `<tbody id="embedded-tbody-${relName}" class="divide-y divide-white/5">`;
   items.forEach((item, idx) => {
-    html += `<tr class="hover:bg-white/5 transition-colors" data-index="${idx}">`;
-    html += `<td class="px-4 py-3 text-text-muted cursor-move drag-handle"><i class="fas fa-grip-vertical"></i></td>`;
-    html += `<td class="px-4 py-3 text-text-muted text-sm row-number">${idx + 1}</td>`;
+    html += `<tr class="hover:bg-white/5 transition-colors group" data-index="${idx}">`;
+    html += `<td class="px-4 py-3 text-text-muted cursor-move drag-handle opacity-0 group-hover:opacity-100 transition-opacity"><i class="fas fa-grip-vertical"></i></td>`;
+    html += `<td class="px-4 py-3 text-text-muted text-xs font-mono row-number">${idx + 1}</td>`;
     fields.slice(0, 3).forEach(f => {
       const val = item[f.name];
       let display = '-';
       if (val !== null && val !== undefined && val !== '') {
         if (typeof val === 'object') {
-          display = `<span class="text-text-muted font-mono text-xs">${JSON.stringify(val)}</span>`;
+          display = `<span class="text-text-muted font-mono text-[10px]">${JSON.stringify(val)}</span>`;
         } else {
           const str = String(val);
           display = str.length > 50 ? str.substring(0, 50) + '...' : str;
         }
       } else {
-        display = '<span class="text-text-muted">-</span>';
+        display = '<span class="text-text-muted/30">-</span>';
       }
-      html += `<td class="px-4 py-3 text-sm">${display}</td>`;
+      html += `<td class="px-4 py-3 text-xs text-text-muted">${display}</td>`;
     });
     html += `<td class="px-4 py-3 text-right">
       <div class="flex items-center justify-end gap-1">
         <button type="button" onclick="openEmbeddedModal('${relName}', ${idx})"
-                class="p-2 hover:bg-primary/20 text-primary-light rounded-lg transition-colors" title="Edit">
+                class="p-1.5 hover:bg-primary/20 text-text-muted hover:text-primary-light rounded-lg transition-colors" title="Edit">
           <i class="fas fa-edit"></i>
         </button>
         <button type="button" onclick="deleteEmbeddedItem('${relName}', ${idx})"
-                class="p-2 hover:bg-error/20 text-error rounded-lg transition-colors" title="Delete">
+                class="p-1.5 hover:bg-error/20 text-text-muted hover:text-error rounded-lg transition-colors" title="Delete">
           <i class="fas fa-trash"></i>
         </button>
       </div>
     </td>`;
     html += '</tr>';
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
 
   container.innerHTML = html;
 
@@ -556,7 +623,9 @@ function refreshEmbeddedList(relName) {
 function updateMultilist(fieldName) {
   const select = document.querySelector(`select[name="data_${fieldName}"]`);
   const hiddenInput = document.getElementById('multilist-' + fieldName);
-  const selected = Array.from(select.selectedOptions).map(opt => opt.value);
-  hiddenInput.value = JSON.stringify(selected);
+  if (select && hiddenInput) {
+    const selected = Array.from(select.selectedOptions).map(opt => opt.value);
+    hiddenInput.value = JSON.stringify(selected);
+  }
 }
 </script>

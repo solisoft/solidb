@@ -1,0 +1,187 @@
+<!-- Modal Backdrop -->
+<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+     onclick="if (event.target === this) document.getElementById('modal-container').innerHTML = '';">
+  <div class="bg-bg-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-white/5">
+      <h2 class="text-lg font-semibold text-white">
+        <% if event then %>Edit Event<% else %>Create Event<% end %>
+      </h2>
+      <button onclick="document.getElementById('modal-container').innerHTML = ''"
+              class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form <% if event then %>
+          hx-put="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+          <% else %>
+          hx-post="/mailbox/calendar/event"
+          <% end %>
+          hx-swap="none"
+          class="p-6 space-y-4">
+
+      <!-- Title -->
+      <div>
+        <label class="block text-sm font-medium text-text-muted mb-2">Title</label>
+        <input type="text"
+               name="title"
+               value="<%= event and (event.title or event.data.title) or '' %>"
+               class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+               placeholder="Event title"
+               required>
+      </div>
+
+      <!-- Date & Time -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Start Date</label>
+          <input type="date"
+                 name="start_date"
+                 value="<%= event and os.date('%Y-%m-%d', event.start_time or event.data.start_time) or (start_time and os.date('%Y-%m-%d', start_time) or os.date('%Y-%m-%d')) %>"
+                 class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+                 required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">Start Time</label>
+          <input type="time"
+                 name="start_time"
+                 value="<%= event and os.date('%H:%M', event.start_time or event.data.start_time) or '09:00' %>"
+                 class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">End Date</label>
+          <input type="date"
+                 name="end_date"
+                 value="<%= event and os.date('%Y-%m-%d', event.end_time or event.data.end_time) or (start_time and os.date('%Y-%m-%d', start_time) or os.date('%Y-%m-%d')) %>"
+                 class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-text-muted mb-2">End Time</label>
+          <input type="time"
+                 name="end_time"
+                 value="<%= event and os.date('%H:%M', event.end_time or event.data.end_time) or '10:00' %>"
+                 class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50">
+        </div>
+      </div>
+
+      <!-- All Day -->
+      <div class="flex items-center gap-3">
+        <input type="checkbox"
+               name="all_day"
+               value="true"
+               id="all_day"
+               <%= event and (event.all_day or event.data.all_day) and 'checked' or '' %>
+               class="w-4 h-4 rounded border-white/20 bg-bg/50 text-primary focus:ring-primary/50">
+        <label for="all_day" class="text-sm text-text-muted">All day event</label>
+      </div>
+
+      <!-- Location -->
+      <div>
+        <label class="block text-sm font-medium text-text-muted mb-2">Location</label>
+        <input type="text"
+               name="location"
+               value="<%= event and (event.location or event.data.location) or '' %>"
+               class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+               placeholder="Add location (optional)">
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
+        <textarea name="description"
+                  rows="3"
+                  class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 resize-none"
+                  placeholder="Add description (optional)"><%= event and (event.description or event.data.description) or '' %></textarea>
+      </div>
+
+      <!-- Color -->
+      <div>
+        <label class="block text-sm font-medium text-text-muted mb-2">Color</label>
+        <div class="flex items-center gap-2">
+          <% for _, color in ipairs(colors) do %>
+          <label class="cursor-pointer">
+            <input type="radio"
+                   name="color"
+                   value="<%= color %>"
+                   class="hidden peer"
+                   <%= (event and (event.color or event.data.color) == color) or (not event and color == colors[1]) and 'checked' or '' %>>
+            <div class="w-8 h-8 rounded-full border-2 border-transparent peer-checked:border-white transition-all"
+                 style="background-color: <%= color %>"></div>
+          </label>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Attendees -->
+      <div>
+        <label class="block text-sm font-medium text-text-muted mb-2">Attendees</label>
+        <select name="attendees"
+                multiple
+                class="w-full px-4 py-3 bg-bg/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50">
+          <% for _, user in ipairs(users or {}) do %>
+          <% if user._key ~= current_user._key then %>
+          <option value="<%= user._key %>"
+                  <% if event then %>
+                  <% local attendees = event.attendees or event.data.attendees or {} %>
+                  <% for _, a in ipairs(attendees) do %>
+                  <% if a.user_key == user._key then %>selected<% end %>
+                  <% end %>
+                  <% end %>>
+            <%= user.firstname and user.lastname and (user.firstname .. " " .. user.lastname) or user.email %>
+          </option>
+          <% end %>
+          <% end %>
+        </select>
+        <p class="text-xs text-text-dim mt-1">Hold Ctrl/Cmd to select multiple</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center justify-between pt-4 border-t border-white/5">
+        <% if event then %>
+        <button type="button"
+                hx-delete="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                hx-confirm="Delete this event?"
+                hx-swap="none"
+                class="px-4 py-2 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg transition-colors">
+          <i class="fas fa-trash mr-2"></i>Delete
+        </button>
+        <% else %>
+        <div></div>
+        <% end %>
+
+        <div class="flex items-center gap-3">
+          <button type="button"
+                  onclick="document.getElementById('modal-container').innerHTML = ''"
+                  class="px-4 py-2 text-text-muted hover:text-white transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-6 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
+            <% if event then %>Save Changes<% else %>Create Event<% end %>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Handle multiple select for attendees
+document.querySelector('select[name="attendees"]').addEventListener('change', function(e) {
+  const selected = Array.from(this.selectedOptions).map(opt => opt.value);
+  // Create a hidden input with comma-separated values
+  let hidden = this.parentElement.querySelector('input[name="attendees"]');
+  if (!hidden) {
+    hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'attendees';
+    this.parentElement.appendChild(hidden);
+  }
+  hidden.value = selected.join(',');
+});
+</script>

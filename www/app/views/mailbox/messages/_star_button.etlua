@@ -1,0 +1,6 @@
+<button class="shrink-0 text-lg <%= starred and 'text-yellow-400' or 'text-text-dim hover:text-yellow-400' %> transition-colors"
+        hx-post="/mailbox/messages/<%= message._key or message.data._key %>/star"
+        hx-swap="outerHTML"
+        onclick="event.preventDefault(); event.stopPropagation();">
+  <i class="fas fa-star"></i>
+</button>

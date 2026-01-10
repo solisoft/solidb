@@ -1,0 +1,84 @@
+<div class="flex h-full">
+  <!-- Sidebar -->
+  <%- partial("mailbox/sidebar") %>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+    <!-- Header -->
+    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
+      <div class="flex items-center gap-4">
+        <i class="fas fa-calendar text-accent-light text-xl"></i>
+        <h1 class="text-xl font-bold text-white"><%= month_name %> <%= year %></h1>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- Navigation -->
+        <div class="flex items-center gap-1">
+          <%
+            local prev_month = month - 1
+            local prev_year = year
+            if prev_month < 1 then
+              prev_month = 12
+              prev_year = year - 1
+            end
+            local next_month = month + 1
+            local next_year = year
+            if next_month > 12 then
+              next_month = 1
+              next_year = year + 1
+            end
+          %>
+          <a href="/mailbox/calendar?year=<%= prev_year %>&month=<%= prev_month %>"
+             class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            <i class="fas fa-chevron-left"></i>
+          </a>
+          <a href="/mailbox/calendar"
+             class="px-3 py-1.5 text-sm text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            Today
+          </a>
+          <a href="/mailbox/calendar?year=<%= next_year %>&month=<%= next_month %>"
+             class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            <i class="fas fa-chevron-right"></i>
+          </a>
+        </div>
+
+        <!-- Create Event Button -->
+        <button hx-get="/mailbox/calendar/event/modal/create"
+                hx-target="#modal-container"
+                hx-swap="innerHTML"
+                class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
+          <i class="fas fa-plus"></i>
+          <span>New Event</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Calendar Content -->
+    <div id="calendar-container" class="flex-1 overflow-y-auto p-6">
+      <%- partial("mailbox/calendar/month_view") %>
+    </div>
+  </main>
+</div>
+
+<!-- Modal Container -->
+<div id="modal-container"></div>
+
+<script>
+// Listen for event changes
+document.body.addEventListener('eventCreated', function() {
+  location.reload();
+});
+document.body.addEventListener('eventUpdated', function() {
+  location.reload();
+});
+document.body.addEventListener('eventDeleted', function() {
+  location.reload();
+});
+
+// Close modal on escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('modal-container').innerHTML = '';
+  }
+});
+</script>

@@ -1,0 +1,25 @@
+<% if users and #users > 0 then %>
+<div class="py-2 max-h-64 overflow-y-auto">
+  <% for _, user in ipairs(users) do %>
+  <button type="button"
+          onclick="selectRecipient('<%= dropdown_type or 'recipients' %>', '<%= user._key %>', '<%= ((user.firstname or '') .. ' ' .. (user.lastname or '')):gsub("'", "\\'") %>', '<%= (user.email or ''):gsub("'", "\\'") %>')"
+          class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left">
+    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
+      <span class="text-sm font-bold text-white">
+        <%= string.upper(string.sub(user.firstname or user.email or "?", 1, 1)) %>
+      </span>
+    </div>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-medium text-white truncate">
+        <%= user.firstname and user.lastname and (user.firstname .. " " .. user.lastname) or user.email %>
+      </p>
+      <p class="text-xs text-text-muted truncate"><%= user.email %></p>
+    </div>
+  </button>
+  <% end %>
+</div>
+<% else %>
+<div class="px-4 py-3 text-sm text-text-muted text-center">
+  No users found
+</div>
+<% end %>

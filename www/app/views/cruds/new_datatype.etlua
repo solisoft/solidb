@@ -99,9 +99,9 @@
           </div>
         </div>
 
-        <div id="structure-container" class="space-y-4">
+        <div id="structure-container" class="grid grid-cols-12 gap-4">
           <!-- Structure elements will be added here dynamically -->
-          <div id="no-structure-msg" class="py-12 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-2xl opacity-40">
+          <div id="no-structure-msg" class="col-span-12 py-12 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-2xl opacity-40">
             <i class="fas fa-stream text-4xl mb-4"></i>
             <p class="text-sm">No fields or relations added yet. Click above to start building.</p>
           </div>
@@ -159,46 +159,34 @@ function checkEmptyStates() {
   }
 }
 
+function getWidthClass(width) {
+  if (width === '1/2') return 'col-span-12 md:col-span-6';
+  if (width === '1/3') return 'col-span-12 md:col-span-4';
+  if (width === '1/4') return 'col-span-12 sm:col-span-6 md:col-span-3';
+  return 'col-span-12';
+}
+
 // Add a new field
 function addField() {
   const container = document.getElementById('structure-container');
   const id = 'element_' + elementIndex++;
 
   const html = `
-    <div id="${id}" data-element-type="field" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-white/5 hover:border-white/10 rounded-2xl group transition-all">
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+    <div id="${id}" data-element-type="field" class="col-span-12 flex flex-col gap-3 p-4 bg-bg-dark/40 border border-white/5 hover:border-white/10 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors shrink-0">
           <i class="fas fa-grip-vertical"></i>
         </div>
         
-        <div class="w-8 h-8 flex items-center justify-center bg-accent/10 text-accent rounded-lg" title="Field">
+        <div class="w-8 h-8 flex items-center justify-center bg-accent/10 text-accent rounded-lg shrink-0" title="Field">
           <i class="fas fa-font text-xs"></i>
         </div>
 
         <input type="text" placeholder="Field ID" data-field="name"
-               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               class="flex-1 min-w-0 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
                onchange="updateElementData('${id}')">
-      </div>
-
-      <div class="flex flex-1 items-center gap-3 w-full">
-        <select data-field="field_type" onchange="updateElementData('${id}')"
-                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
-          ${FIELD_TYPES.map(t => `<option value="${t}">${t.toUpperCase()}</option>`).join('')}
-        </select>
-
-        <input type="text" placeholder="Display Label" data-field="label"
-               class="flex-1 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
-               onchange="updateElementData('${id}')">
-      </div>
-
-      <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-        <label class="flex items-center gap-2 cursor-pointer group/label">
-          <input type="checkbox" data-field="required" onchange="updateElementData('${id}')" 
-                 class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
-          <span class="text-xs font-bold text-text-muted group-hover/label:text-white transition-colors">Required</span>
-        </label>
-
-        <div class="flex items-center gap-1">
+               
+        <div class="flex items-center gap-1 shrink-0">
           <button type="button" onclick="configureField('${id}')" 
                   class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary/20 text-text-dim hover:text-primary rounded-xl transition-all" title="Configure">
             <i class="fas fa-cog"></i>
@@ -209,6 +197,31 @@ function addField() {
             <i class="fas fa-trash-alt text-xs"></i>
           </button>
         </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 w-full">
+        <select data-field="field_type" onchange="updateElementData('${id}')"
+                class="flex-1 min-w-[100px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
+          ${FIELD_TYPES.map(t => `<option value="${t}">${t.toUpperCase()}</option>`).join('')}
+        </select>
+
+        <input type="text" placeholder="Display Label" data-field="label"
+               class="flex-[2] min-w-[150px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               onchange="updateElementData('${id}')">
+               
+        <select data-field="width" onchange="updateElementData('${id}')"
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
+          <option value="1/1">FULL</option>
+          <option value="1/2">1/2</option>
+          <option value="1/3">1/3</option>
+          <option value="1/4">1/4</option>
+        </select>
+
+        <label class="flex items-center gap-2 cursor-pointer group/label shrink-0 ml-auto">
+          <input type="checkbox" data-field="required" onchange="updateElementData('${id}')" 
+                 class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
+          <span class="text-xs font-bold text-text-muted group-hover/label:text-white transition-colors">Required</span>
+        </label>
       </div>
     </div>
   `;
@@ -224,6 +237,7 @@ function addField() {
       label: '',
       required: false,
       placeholder: '',
+      width: '1/1',
       options: []
     }
   });
@@ -238,23 +252,28 @@ function addRelation() {
   const id = 'element_' + elementIndex++;
 
   const html = `
-    <div id="${id}" data-element-type="relation" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-success/5 hover:border-success/20 rounded-2xl group transition-all">
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+    <div id="${id}" data-element-type="relation" class="col-span-12 flex flex-col gap-3 p-4 bg-bg-dark/40 border border-success/5 hover:border-success/20 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors shrink-0">
           <i class="fas fa-grip-vertical"></i>
         </div>
         
-        <div class="w-8 h-8 flex items-center justify-center bg-success/10 text-success rounded-lg" title="Relation">
+        <div class="w-8 h-8 flex items-center justify-center bg-success/10 text-success rounded-lg shrink-0" title="Relation">
           <i class="fas fa-link text-xs"></i>
         </div>
 
         <input type="text" placeholder="Relation Name" data-relation="name"
-               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               class="flex-1 min-w-0 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
                onchange="updateElementData('${id}')">
+               
+        <button type="button" onclick="removeElement('${id}')" 
+                class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all shrink-0" title="Remove">
+          <i class="fas fa-trash-alt text-xs"></i>
+        </button>
       </div>
 
-      <div class="flex flex-1 items-center gap-3 w-full">
-        <div class="relative flex-1">
+      <div class="flex flex-wrap items-center gap-3 w-full">
+        <div class="relative flex-1 min-w-[150px]">
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <i class="fas fa-database text-text-dim text-xs"></i>
           </div>
@@ -264,16 +283,19 @@ function addRelation() {
         </div>
 
         <select data-relation="storage" onchange="updateElementData('${id}')"
-                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
+                class="flex-1 min-w-[120px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
           <option value="embedded">EMBEDDED</option>
           <option value="referenced">REFERENCED</option>
         </select>
+        
+        <select data-relation="width" onchange="updateElementData('${id}')"
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
+          <option value="1/1">FULL</option>
+          <option value="1/2">1/2</option>
+          <option value="1/3">1/3</option>
+          <option value="1/4">1/4</option>
+        </select>
       </div>
-
-      <button type="button" onclick="removeElement('${id}')" 
-              class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all" title="Remove">
-        <i class="fas fa-trash-alt text-xs"></i>
-      </button>
     </div>
   `;
 
@@ -285,7 +307,8 @@ function addRelation() {
     data: {
       name: '',
       target_datatype: '',
-      storage: 'embedded'
+      storage: 'embedded',
+      width: '1/1'
     }
   });
 
@@ -303,11 +326,13 @@ function updateElementData(id) {
     element.data.name = el.querySelector('[data-field="name"]').value;
     element.data.type = el.querySelector('[data-field="field_type"]').value;
     element.data.label = el.querySelector('[data-field="label"]').value;
+    element.data.width = el.querySelector('[data-field="width"]').value;
     element.data.required = el.querySelector('[data-field="required"]').checked;
   } else {
     element.data.name = el.querySelector('[data-relation="name"]').value;
     element.data.target_datatype = el.querySelector('[data-relation="target_datatype"]').value;
     element.data.storage = el.querySelector('[data-relation="storage"]').value;
+    element.data.width = el.querySelector('[data-relation="width"]').value;
   }
 
   updateJsonInputs();
@@ -514,6 +539,7 @@ function updateJsonInputs() {
           label: element.data.label,
           required: element.data.required,
           placeholder: element.data.placeholder,
+          width: element.data.width,
           options: element.data.options,
           allow_blank: element.data.allow_blank,
           source_query: element.data.source_query,
@@ -526,7 +552,8 @@ function updateJsonInputs() {
         relations.push({
           name: element.data.name,
           target_datatype: element.data.target_datatype,
-          storage: element.data.storage
+          storage: element.data.storage,
+          width: element.data.width
         });
       }
     }
