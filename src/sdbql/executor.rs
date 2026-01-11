@@ -214,7 +214,11 @@ fn format_expression(expr: &Expression) -> String {
             format!("{}({})", name, args_str)
         }
         Expression::Pipeline { left, right } => {
-            format!("{} |> {}", format_expression(left), format_expression(right))
+            format!(
+                "{} |> {}",
+                format_expression(left),
+                format_expression(right)
+            )
         }
         Expression::Lambda { params, body } => {
             if params.len() == 1 {
@@ -2619,6 +2623,13 @@ impl<'a> QueryExecutor<'a> {
                     let right_val = self.evaluate_expr_with_context(right, ctx)?;
                     Ok(Value::Bool(to_bool(&right_val)))
                 }
+                BinaryOperator::NullCoalesce => {
+                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                    if !left_val.is_null() {
+                        return Ok(left_val);
+                    }
+                    self.evaluate_expr_with_context(right, ctx)
+                }
                 _ => {
                     let left_val = self.evaluate_expr_with_context(left, ctx)?;
                     let right_val = self.evaluate_expr_with_context(right, ctx)?;
@@ -2723,9 +2734,8 @@ impl<'a> QueryExecutor<'a> {
                 match right.as_ref() {
                     Expression::FunctionCall { name, args } => {
                         // Check if any arg is a lambda - if so, use HOF evaluation
-                        let has_lambda = args
-                            .iter()
-                            .any(|a| matches!(a, Expression::Lambda { .. }));
+                        let has_lambda =
+                            args.iter().any(|a| matches!(a, Expression::Lambda { .. }));
 
                         if has_lambda {
                             // Pass left_val as first evaluated arg, keep original args for lambda
@@ -2780,7 +2790,12 @@ impl<'a> QueryExecutor<'a> {
                     name, other
                 )))
             }
-            None => return Err(DbError::ExecutionError(format!("{} requires arguments", name))),
+            None => {
+                return Err(DbError::ExecutionError(format!(
+                    "{} requires arguments",
+                    name
+                )))
+            }
         };
 
         // Find the lambda in original args (skip first which is the piped value)
@@ -2877,8 +2892,13 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Bool(false))
             }
             "REDUCE" => {
-                // REDUCE needs initial value as third arg
-                let initial = evaluated_args.get(1).cloned().unwrap_or(Value::Null);
+                // REDUCE needs initial value - find non-lambda arg in original_args
+                let initial = original_args
+                    .iter()
+                    .find(|arg| !matches!(arg, Expression::Lambda { .. }))
+                    .map(|arg| self.evaluate_expr_with_context(arg, ctx))
+                    .transpose()?
+                    .unwrap_or(Value::Null);
                 let mut acc = initial;
 
                 // Lambda should have 2 params: (acc, item)
@@ -2984,11 +3004,7 @@ impl<'a> QueryExecutor<'a> {
             }
             "FLATTEN" => {
                 if let Some(Value::Array(arr)) = args.first() {
-                    let depth = args
-                        .get(1)
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(1)
-                        .max(0) as usize;
+                    let depth = args.get(1).and_then(|v| v.as_i64()).unwrap_or(1).max(0) as usize;
                     Ok(Value::Array(flatten_arr(arr, depth)))
                 } else {
                     Ok(Value::Null)
@@ -7494,6 +7510,16 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                 Err(DbError::ExecutionError(
                     "Cannot exponentiate non-numbers".to_string(),
                 ))
+            }
+        }
+
+        BinaryOperator::NullCoalesce => {
+            // Short-circuit evaluation is handled in evaluate_expr_with_context
+            // This branch is here for exhaustiveness but shouldn't be reached
+            if left.is_null() {
+                Ok(right.clone())
+            } else {
+                Ok(left.clone())
             }
         }
     }

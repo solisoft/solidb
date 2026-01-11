@@ -72,8 +72,9 @@ pub enum Token {
     RightShift, // >>
 
     // Pipeline operators
-    PipeRight, // |> (pipeline)
-    Arrow,     // -> (lambda)
+    PipeRight,    // |> (pipeline)
+    Arrow,        // -> (lambda)
+    NullCoalesce, // ?? (null coalescing)
 
     // Delimiters
     Dot,          // .
@@ -456,7 +457,12 @@ impl Lexer {
             }
             Some('?') => {
                 self.advance();
-                Token::Question
+                if self.current_char == Some('?') {
+                    self.advance();
+                    Token::NullCoalesce
+                } else {
+                    Token::Question
+                }
             }
 
             Some(ch) => {
@@ -638,6 +644,7 @@ mod tests {
         assert_eq!(tokenize(")")[0], Token::RightParen);
         assert_eq!(tokenize(":")[0], Token::Colon);
         assert_eq!(tokenize("?")[0], Token::Question);
+        assert_eq!(tokenize("??")[0], Token::NullCoalesce);
     }
 
     #[test]

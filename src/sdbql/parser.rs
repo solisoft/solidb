@@ -830,7 +830,7 @@ impl Parser {
     /// Parse ternary expression: condition ? true_expr : false_expr
     /// Lowest precedence, right-associative
     fn parse_ternary_expression(&mut self) -> DbResult<Expression> {
-        let condition = self.parse_pipeline_expression()?;
+        let condition = self.parse_null_coalesce_expression()?;
 
         if matches!(self.current_token(), Token::Question) {
             self.advance(); // consume '?'
@@ -847,8 +847,27 @@ impl Parser {
         }
     }
 
+    /// Parse null coalescing expression: left ?? right
+    /// Returns left if left is not null, otherwise evaluates and returns right
+    /// Left-associative, precedence between ternary and pipeline
+    fn parse_null_coalesce_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_pipeline_expression()?;
+
+        while matches!(self.current_token(), Token::NullCoalesce) {
+            self.advance(); // consume ??
+            let right = self.parse_pipeline_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::NullCoalesce,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
     /// Parse pipeline expression: expr |> FUNC(args) |> FUNC2(args)
-    /// Left-associative, precedence between ternary and OR
+    /// Left-associative, precedence between null coalesce and OR
     fn parse_pipeline_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_or_expression()?;
 

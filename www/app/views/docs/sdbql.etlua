@@ -275,13 +275,24 @@ users |> MAP(u -> u.name)</code></pre>
 [1, 2, 3] |> ALL(x -> x > 0)  // true</code></pre>
                   </div>
                   <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
-                    <h5 class="text-purple-300 font-bold mb-2 text-sm">Chaining</h5>
-                    <pre><code class="language-sql text-xs">orders
+                    <h5 class="text-purple-300 font-bold mb-2 text-sm">REDUCE</h5>
+                    <pre><code class="language-sql text-xs">// Sum: (accumulator, item) -> expr, initial
+[1, 2, 3, 4, 5] |> REDUCE((acc, x) -> acc + x, 0)
+// Result: 15
+
+// Concatenate strings
+["a", "b", "c"] |> REDUCE((acc, x) -> CONCAT(acc, x), "")
+// Result: "abc"</code></pre>
+                  </div>
+                </div>
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-purple-300 font-bold mb-2 text-sm">Chaining Pipeline Operations</h5>
+                  <pre><code class="language-sql text-xs">// Filter, transform, and aggregate in one chain
+orders
   |> FILTER(o -> o.status == "pending")
   |> MAP(o -> o.total)
-  |> SORTED()
-  |> FIRST()</code></pre>
-                  </div>
+  |> REDUCE((sum, t) -> sum + t, 0)
+// Returns total of pending orders</code></pre>
                 </div>
 
                 <div class="bg-gray-800/40 rounded-lg p-4 border border-white/5 mt-4">
@@ -290,6 +301,72 @@ users |> MAP(u -> u.name)</code></pre>
                     FIRST, LAST, LENGTH, REVERSE, SORTED, UNIQUE, FLATTEN, UPPER, LOWER, TRIM, SPLIT,
                     ROUND, ABS, FLOOR, CEIL, TO_STRING, TO_NUMBER, FILTER, MAP, ANY, ALL, FIND, REDUCE
                   </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Null Coalescing Operator -->
+            <div
+              class="bg-gradient-to-r from-cyan-500/10 to-teal-500/10 rounded-xl border border-cyan-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-cyan-500/20 bg-cyan-500/5">
+                <h3 class="text-lg font-bold text-cyan-300 flex items-center">
+                  <span
+                    class="bg-cyan-500/20 text-cyan-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >??</span
+                  >
+                  Null Coalescing Operator
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  The <code class="text-cyan-300">??</code> operator returns the left operand if it's not null,
+                  otherwise evaluates and returns the right operand. Provides a concise way to handle null values.
+                </p>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">-- Basic usage
+RETURN null ?? "default"       -- Result: "default"
+RETURN "value" ?? "default"    -- Result: "value"
+
+-- Chaining multiple fallbacks
+RETURN null ?? null ?? "last"  -- Result: "last"
+
+-- With object fields
+FOR doc IN users
+  RETURN doc.nickname ?? doc.name ?? "Anonymous"</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-cyan-300 font-bold mb-2 text-sm">Difference from COALESCE()</h5>
+                    <p class="text-xs text-gray-400 mb-2">
+                      <code class="text-cyan-300">??</code> is syntax sugar for the COALESCE function
+                      but with short-circuit evaluation.
+                    </p>
+                    <pre><code class="language-sql text-xs">-- These are equivalent:
+doc.field ?? "default"
+COALESCE(doc.field, "default")</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-cyan-300 font-bold mb-2 text-sm">Non-null Falsy Values</h5>
+                    <p class="text-xs text-gray-400 mb-2">
+                      Only <code class="text-cyan-300">null</code> triggers fallback. Other falsy values pass through.
+                    </p>
+                    <pre><code class="language-sql text-xs">0 ?? 42         -- Result: 0
+"" ?? "default" -- Result: ""
+false ?? true   -- Result: false</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-cyan-300 font-bold mb-2 text-sm">Combine with Pipeline</h5>
+                  <pre><code class="language-sql text-xs">-- Get first item or default to 0
+RETURN ([] |> FIRST()) ?? 0    -- Result: 0
+
+-- Process with fallback
+items |> FILTER(x -> x.active) |> FIRST() ?? { name: "None" }</code></pre>
                 </div>
               </div>
             </div>

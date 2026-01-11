@@ -295,6 +295,9 @@ pub enum BinaryOperator {
     BitwiseXor,
     LeftShift,
     RightShift,
+
+    // Null coalescing
+    NullCoalesce,
 }
 
 #[derive(Debug, Clone, PartialEq)]
