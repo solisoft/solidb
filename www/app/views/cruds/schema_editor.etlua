@@ -1,122 +1,135 @@
 <!-- JSON Schema Editor -->
 <% local dt = datatype.data or datatype %>
-<div class="max-w-4xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex items-center gap-4">
-    <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
-      <i class="fas fa-arrow-left"></i>
-    </a>
-    <div>
-      <h1 class="text-2xl font-bold text-gradient">JSON Schema</h1>
-      <p class="text-text-muted mt-1"><%= dt.name %></p>
-    </div>
-  </div>
-
-  <!-- Info -->
-  <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-    <div class="flex items-start gap-3">
-      <i class="fas fa-info-circle text-blue-400 mt-0.5"></i>
-      <div>
-        <p class="text-sm">The JSON schema is used to validate data when creating or updating records.</p>
-        <p class="text-sm text-text-muted mt-1">The schema is auto-generated from field definitions, but you can manually edit it for advanced validation rules.</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Schema Reference -->
-  <div class="bg-bg-card/50 border border-border/50 rounded-xl overflow-hidden">
-    <button type="button" onclick="toggleReference()" class="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
-      <div class="flex items-center gap-3">
-        <i class="fas fa-book text-primary"></i>
-        <span class="font-medium">Schema Reference & Options</span>
-      </div>
-      <i id="ref-icon" class="fas fa-chevron-down transition-transform"></i>
-    </button>
-    <div id="ref-content" class="hidden border-t border-border/30 bg-bg-dark/30 p-4 space-y-4 text-sm">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Types -->
-        <div>
-          <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Supported Types</h3>
-          <ul class="space-y-1 text-text-muted">
-            <li><code class="text-primary-light">string</code> - Text values</li>
-            <li><code class="text-primary-light">number</code> - Floating point numbers</li>
-            <li><code class="text-primary-light">integer</code> - Whole numbers</li>
-            <li><code class="text-primary-light">boolean</code> - true/false</li>
-            <li><code class="text-primary-light">object</code> - Key-value maps</li>
-            <li><code class="text-primary-light">array</code> - Lists of items</li>
-            <li><code class="text-primary-light">null</code> - Null value</li>
-          </ul>
+<div class="flex h-full">
+  <%- partial("cruds/sidebar") %>
+  
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
+    <!-- Header -->
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 group">
+            <i class="fas fa-arrow-left text-text-muted group-hover:text-text transition-colors"></i>
+          </a>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">JSON Schema</h1>
+            <p class="text-xs text-text-muted"><%= dt.name %></p>
+          </div>
         </div>
-
-        <!-- Validation -->
-        <div>
-          <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Validation Rules</h3>
-          <ul class="space-y-2 text-text-muted">
-            <li>
-              <code class="text-accent">required</code>
-              <span class="text-xs block">Array of required field names (Object)</span>
-            </li>
-            <li>
-              <code class="text-accent">minLength</code>, <code class="text-accent">maxLength</code>
-              <span class="text-xs block">Character count limits (String)</span>
-            </li>
-            <li>
-              <code class="text-accent">pattern</code>
-              <span class="text-xs block">Lua pattern string (e.g. <code class="text-xs">^%d+$</code>)</span>
-            </li>
-            <li>
-              <code class="text-accent">format</code>
-              <span class="text-xs block">Predefined formats: <code class="text-xs">email</code>, <code class="text-xs">date</code> (YYYY-MM-DD)</span>
-            </li>
-             <li>
-              <code class="text-accent">enum</code>
-              <span class="text-xs block">Array of allowed values</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <div class="text-xs text-text-dim italic mt-2 border-t border-white/5 pt-2">
-        Note: The <code>pattern</code> property uses Lua patterns, not full RegEx.
-      </div>
-    </div>
-  </div>
-
-  <script>
-    function toggleReference() {
-      const content = document.getElementById('ref-content');
-      const icon = document.getElementById('ref-icon');
-      content.classList.toggle('hidden');
-      icon.classList.toggle('rotate-180');
-    }
-  </script>
-
-  <!-- Editor -->
-  <form hx-put="/cruds/datatypes/<%= dt.slug %>/schema" hx-swap="none" id="schema-form" class="space-y-6">
-    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-bg-dark/50">
-        <span class="text-sm font-medium">JSON Schema</span>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="regenerateSchema()" class="px-3 py-1.5 bg-warning/20 hover:bg-warning/30 text-warning rounded-lg transition-colors text-sm">
-            <i class="fas fa-sync mr-1"></i> Regenerate from Fields
-          </button>
-          <button type="button" onclick="formatSchema()" class="px-3 py-1.5 hover:bg-white/10 rounded-lg transition-colors text-sm">
-            <i class="fas fa-align-left mr-1"></i> Format
+        
+        <div class="flex items-center gap-3">
+          <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="px-4 py-2 text-sm font-medium text-text-muted hover:text-white transition-colors">Cancel</a>
+          <button type="submit" form="schema-form" id="document-submit-btn" class="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center gap-2">
+            <i class="fas fa-save"></i>
+            <span>Save Schema</span>
           </button>
         </div>
       </div>
-
-      <div id="monaco-editor-container" style="height: 500px;"></div>
-      <input type="hidden" name="json_schema" id="document-input" value="">
     </div>
 
-    <!-- Submit -->
-    <div class="flex items-center justify-end gap-3">
-      <a href="/cruds/datatypes/<%= dt.slug %>/edit" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</a>
-      <button type="submit" id="document-submit-btn" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-        <i class="fas fa-save mr-2"></i> Save Schema
-      </button>
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <!-- Info -->
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+          <div class="flex items-start gap-3">
+            <i class="fas fa-info-circle text-blue-400 mt-0.5"></i>
+            <div>
+              <p class="text-sm">The JSON schema is used to validate data when creating or updating records.</p>
+              <p class="text-sm text-text-muted mt-1">The schema is auto-generated from field definitions, but you can manually edit it for advanced validation rules.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Schema Reference -->
+        <div class="bg-bg-card/50 border border-border/50 rounded-xl overflow-hidden">
+          <button type="button" onclick="toggleReference()" class="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+            <div class="flex items-center gap-3">
+              <i class="fas fa-book text-primary"></i>
+              <span class="font-medium">Schema Reference & Options</span>
+            </div>
+            <i id="ref-icon" class="fas fa-chevron-down transition-transform"></i>
+          </button>
+          <div id="ref-content" class="hidden border-t border-border/30 bg-bg-dark/30 p-4 space-y-4 text-sm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Types -->
+              <div>
+                <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Supported Types</h3>
+                <ul class="space-y-1 text-text-muted">
+                  <li><code class="text-primary-light">string</code> - Text values</li>
+                  <li><code class="text-primary-light">number</code> - Floating point numbers</li>
+                  <li><code class="text-primary-light">integer</code> - Whole numbers</li>
+                  <li><code class="text-primary-light">boolean</code> - true/false</li>
+                  <li><code class="text-primary-light">object</code> - Key-value maps</li>
+                  <li><code class="text-primary-light">array</code> - Lists of items</li>
+                  <li><code class="text-primary-light">null</code> - Null value</li>
+                </ul>
+              </div>
+
+              <!-- Validation -->
+              <div>
+                <h3 class="font-bold text-text-dim uppercase text-xs mb-2">Validation Rules</h3>
+                <ul class="space-y-2 text-text-muted">
+                  <li>
+                    <code class="text-accent">required</code>
+                    <span class="text-xs block">Array of required field names (Object)</span>
+                  </li>
+                  <li>
+                    <code class="text-accent">minLength</code>, <code class="text-accent">maxLength</code>
+                    <span class="text-xs block">Character count limits (String)</span>
+                  </li>
+                  <li>
+                    <code class="text-accent">pattern</code>
+                    <span class="text-xs block">Lua pattern string (e.g. <code class="text-xs">^%d+$</code>)</span>
+                  </li>
+                  <li>
+                    <code class="text-accent">format</code>
+                    <span class="text-xs block">Predefined formats: <code class="text-xs">email</code>, <code class="text-xs">date</code> (YYYY-MM-DD)</span>
+                  </li>
+                   <li>
+                    <code class="text-accent">enum</code>
+                    <span class="text-xs block">Array of allowed values</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div class="text-xs text-text-dim italic mt-2 border-t border-white/5 pt-2">
+              Note: The <code>pattern</code> property uses Lua patterns, not full RegEx.
+            </div>
+          </div>
+        </div>
+
+        <script>
+          function toggleReference() {
+            const content = document.getElementById('ref-content');
+            const icon = document.getElementById('ref-icon');
+            content.classList.toggle('hidden');
+            icon.classList.toggle('rotate-180');
+          }
+        </script>
+
+        <!-- Editor -->
+        <form hx-put="/cruds/datatypes/<%= dt.slug %>/schema" hx-swap="none" id="schema-form" class="space-y-6">
+          <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-bg-dark/50">
+              <span class="text-sm font-medium">JSON Schema</span>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="regenerateSchema()" class="px-3 py-1.5 bg-warning/20 hover:bg-warning/30 text-warning rounded-lg transition-colors text-sm">
+                  <i class="fas fa-sync mr-1"></i> Regenerate from Fields
+                </button>
+                <button type="button" onclick="formatSchema()" class="px-3 py-1.5 hover:bg-white/10 rounded-lg transition-colors text-sm">
+                  <i class="fas fa-align-left mr-1"></i> Format
+                </button>
+              </div>
+            </div>
+
+            <div id="monaco-editor-container" style="height: 500px;"></div>
+            <input type="hidden" name="json_schema" id="document-input" value="">
+          </div>
+        </form>
+      </div>
     </div>
-  </form>
+  </div>
 </div>
 
 <script>

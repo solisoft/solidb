@@ -9,6 +9,20 @@
 
   <div class="flex-1 overflow-y-auto chat-scrollbar p-4 space-y-6">
     
+    <!-- Pending Invitations -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-2">
+        <h3 class="text-xs font-bold text-text-dim uppercase tracking-wider">Invitations</h3>
+        <a href="/mailbox/calendar" class="text-[10px] text-orange-400 hover:text-orange-300 transition-colors">Calendar</a>
+      </div>
+      <div id="sidebar-calendar-invites" 
+           hx-get="/sidebar/calendar_invites" 
+           hx-trigger="load, every 60s, sidebar:invites from:body" 
+           hx-swap="innerHTML">
+        <div class="py-4 flex justify-center"><i class="fas fa-spinner fa-spin text-white/20"></i></div>
+      </div>
+    </div>
+
     <!-- Tasks in Progress -->
     <div class="space-y-3">
       <div class="flex items-center justify-between px-2">

@@ -3,58 +3,62 @@
   <%- partial("mailbox/sidebar") %>
 
   <!-- Main Content -->
-  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
     <!-- Header -->
-    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
-      <div class="flex items-center gap-3">
-        <i class="fas fa-inbox text-primary-light text-xl"></i>
-        <h1 class="text-xl font-bold text-white">MailBox</h1>
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 flex items-center justify-center bg-primary/10 rounded-xl border border-primary/10">
+            <i class="fas fa-inbox text-primary text-lg"></i>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Mailbox</h1>
+            <p class="text-xs text-text-muted">Welcome back, <%= current_user.firstname or current_user.email %></p>
+          </div>
+        </div>
       </div>
-      <div class="flex items-center gap-3">
-        <span class="text-sm text-text-muted">Welcome, <%= current_user.firstname or current_user.email %></span>
-      </div>
-    </header>
+    </div>
 
     <!-- Dashboard Content -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <div class="max-w-[1600px] mx-auto space-y-8 pb-20">
         <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <!-- Unread Messages -->
-          <div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5">
+          <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm group hover:border-primary/20 transition-all">
             <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <i class="fas fa-envelope text-primary-light text-xl"></i>
+              <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <i class="fas fa-envelope text-primary text-xl"></i>
               </div>
               <div>
                 <p class="text-3xl font-bold text-white"><%= folder_counts.unread or 0 %></p>
-                <p class="text-sm text-text-muted">Unread Messages</p>
+                <p class="text-xs font-bold text-text-dim uppercase tracking-widest">Unread Messages</p>
               </div>
             </div>
           </div>
 
           <!-- Total Inbox -->
-          <div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5">
+          <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm group hover:border-info/20 transition-all">
             <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
+              <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center group-hover:bg-info/20 transition-colors">
                 <i class="fas fa-inbox text-info text-xl"></i>
               </div>
               <div>
                 <p class="text-3xl font-bold text-white"><%= folder_counts.inbox or 0 %></p>
-                <p class="text-sm text-text-muted">Inbox Messages</p>
+                <p class="text-xs font-bold text-text-dim uppercase tracking-widest">Total Inbox</p>
               </div>
             </div>
           </div>
 
           <!-- Drafts -->
-          <div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5">
+          <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm group hover:border-warning/20 transition-all">
             <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
+              <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center group-hover:bg-warning/20 transition-colors">
                 <i class="fas fa-file-alt text-warning text-xl"></i>
               </div>
               <div>
                 <p class="text-3xl font-bold text-white"><%= folder_counts.drafts or 0 %></p>
-                <p class="text-sm text-text-muted">Drafts</p>
+                <p class="text-xs font-bold text-text-dim uppercase tracking-widest">Drafts</p>
               </div>
             </div>
           </div>
@@ -62,25 +66,27 @@
 
         <!-- Upcoming Events -->
         <% if upcoming_events and #upcoming_events > 0 then %>
-        <div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5">
-          <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <i class="fas fa-calendar text-accent-light"></i>
+        <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-sm">
+          <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest mb-6 flex items-center gap-2">
+            <i class="fas fa-calendar text-accent"></i>
             Upcoming Events
           </h2>
-          <div class="space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <% for _, event in ipairs(upcoming_events) do %>
             <a href="/mailbox/calendar/event/<%= event._key or event.data._key %>"
-               class="flex items-center gap-4 p-3 rounded-lg hover:bg-white/5 transition-colors group">
-              <div class="w-2 h-10 rounded-full" style="background-color: <%= event.color or event.data.color or '#3b82f6' %>"></div>
+               class="flex items-center gap-4 p-4 rounded-xl bg-bg-dark/40 border border-white/5 hover:border-white/10 hover:bg-bg-dark/60 transition-all group">
+              <div class="w-1 h-10 rounded-full shrink-0" style="background-color: <%= event.color or event.data.color or '#3b82f6' %>"></div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-white group-hover:text-primary-light transition-colors truncate">
+                <p class="text-sm font-bold text-white group-hover:text-primary-light transition-colors truncate">
                   <%= event.title or event.data.title %>
                 </p>
-                <p class="text-xs text-text-muted">
-                  <%= event:formatted_date() %> - <%= event:formatted_time() %>
+                <p class="text-xs text-text-muted mt-0.5">
+                  <%= event:formatted_date() %> &bull; <%= event:formatted_time() %>
                 </p>
               </div>
-              <i class="fas fa-chevron-right text-text-dim group-hover:text-text-muted transition-colors"></i>
+              <div class="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 text-text-dim group-hover:text-white transition-colors">
+                <i class="fas fa-chevron-right text-xs"></i>
+              </div>
             </a>
             <% end %>
           </div>
@@ -88,32 +94,44 @@
         <% end %>
 
         <!-- Quick Actions -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <a href="/mailbox/compose" class="group bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5 hover:border-primary/30 transition-all">
-            <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-xl bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                <i class="fas fa-pen text-primary-light text-xl"></i>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <a href="/mailbox/compose" class="group bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-primary/50 transition-all relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
+               <i class="fas fa-pen text-9xl"></i>
+            </div>
+            <div class="flex items-center gap-5 relative z-10">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors shadow-lg shadow-primary/10">
+                <i class="fas fa-pen text-primary text-2xl"></i>
               </div>
               <div>
-                <p class="font-semibold text-white group-hover:text-primary-light transition-colors">Compose Message</p>
-                <p class="text-sm text-text-muted">Write a new message</p>
+                <p class="text-lg font-bold text-white group-hover:text-primary-light transition-colors">Compose Message</p>
+                <p class="text-sm text-text-muted mt-1">Start a new conversation or reply</p>
+              </div>
+              <div class="ml-auto">
+                 <i class="fas fa-arrow-right text-white/20 group-hover:text-primary transition-colors"></i>
               </div>
             </div>
           </a>
 
-          <a href="/mailbox/calendar" class="group bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-5 hover:border-accent/30 transition-all">
-            <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-xl bg-accent/10 group-hover:bg-accent/20 flex items-center justify-center transition-colors">
-                <i class="fas fa-calendar-plus text-accent-light text-xl"></i>
+          <a href="/mailbox/calendar" class="group bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-accent/50 transition-all relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
+               <i class="fas fa-calendar-plus text-9xl"></i>
+            </div>
+            <div class="flex items-center gap-5 relative z-10">
+              <div class="w-14 h-14 rounded-2xl bg-accent/10 group-hover:bg-accent/20 flex items-center justify-center transition-colors shadow-lg shadow-accent/10">
+                <i class="fas fa-calendar-plus text-accent text-2xl"></i>
               </div>
               <div>
-                <p class="font-semibold text-white group-hover:text-accent-light transition-colors">Schedule Event</p>
-                <p class="text-sm text-text-muted">Create a calendar event</p>
+                <p class="text-lg font-bold text-white group-hover:text-accent-light transition-colors">Schedule Event</p>
+                <p class="text-sm text-text-muted mt-1">Add a new meeting or reminder</p>
+              </div>
+              <div class="ml-auto">
+                 <i class="fas fa-arrow-right text-white/20 group-hover:text-accent transition-colors"></i>
               </div>
             </div>
           </a>
         </div>
       </div>
     </div>
-  </main>
+  </div>
 </div>

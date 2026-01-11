@@ -3,7 +3,7 @@ local Model = require("model")
 local MailboxMessage = Model.create("mailbox_messages", {
   permitted_fields = {
     "sender_key", "recipients", "cc", "subject", "body",
-    "folder", "read", "starred", "thread_id", "attachments"
+    "folder", "read", "starred", "thread_id", "attachments", "owner_key"
   },
   validations = {
     subject = { presence = true },
@@ -68,54 +68,94 @@ local function bulk_fetch_senders(messages)
 end
 
 -- Get messages for a user in a specific folder
-function MailboxMessage.for_folder(folder, user_key, limit, offset)
+-- Get messages for a user in a specific folder
+function MailboxMessage.for_folder(folder, user_key, limit, offset, search_query)
   limit = limit or 50
   offset = offset or 0
 
-  local query
+  local query_filters = ""
+  local sort_field = "m._created_at"
   local params = { user_key = user_key, limit = limit, offset = offset }
 
-  if folder == "sent" then
-    -- Sent: messages where user is sender
-    query = [[
-      FOR m IN mailbox_messages
-      FILTER m.sender_key == @user_key AND m.folder == "sent"
-      SORT m._created_at DESC
+  if search_query and search_query ~= "" then
+    -- Use Fulltext indices
+    params.search_query = "prefix:" .. search_query
+    
+    local base_query = [[
+      FOR m IN UNION_DISTINCT(
+        FULLTEXT(mailbox_messages, "subject", @search_query),
+        FULLTEXT(mailbox_messages, "body", @search_query)
+      )
+      FILTER m.owner_key == @user_key
+    ]]
+
+    if folder == "sent" then
+      base_query = base_query .. ' AND m.folder == "sent"'
+    elseif folder == "starred" then
+      base_query = base_query .. ' AND m.starred == true'
+    elseif folder == "drafts" then
+      base_query = base_query .. ' AND m.folder == "drafts"'
+      sort_field = "m._updated_at"
+    else
+      base_query = base_query .. ' AND m.folder == @folder'
+      params.folder = folder or "inbox"
+    end
+
+    local query = base_query .. [[
+      SORT ]] .. sort_field .. [[ DESC
       LIMIT @offset, @limit
       RETURN m
     ]]
-  elseif folder == "starred" then
-    -- Starred: messages where user is recipient AND starred
-    query = [[
-      FOR m IN mailbox_messages
-      FILTER @user_key IN m.recipients AND m.starred == true
-      SORT m._created_at DESC
-      LIMIT @offset, @limit
-      RETURN m
-    ]]
-  elseif folder == "drafts" then
-    -- Drafts: messages where user is sender AND folder is drafts
-    query = [[
-      FOR m IN mailbox_messages
-      FILTER m.sender_key == @user_key AND m.folder == "drafts"
-      SORT m._updated_at DESC
-      LIMIT @offset, @limit
-      RETURN m
-    ]]
-  else
-    -- Inbox/Archive: messages where user is recipient
-    params.folder = folder or "inbox"
-    query = [[
-      FOR m IN mailbox_messages
-      FILTER @user_key IN m.recipients AND m.folder == @folder
-      SORT m._created_at DESC
-      LIMIT @offset, @limit
-      RETURN m
-    ]]
+
+    if P then
+      P("DEBUG QUERY:", query)
+      P("DEBUG PARAMS:", params)
+    else
+      print("DEBUG QUERY: " .. query)
+      if _G.EncodeJson then
+        print("DEBUG PARAMS: " .. _G.EncodeJson(params))
+      else
+        for k,v in pairs(params) do print("PARAM:", k, v) end
+      end
+    end
+
+    local result = Sdb:Sdbql(query, params)
+    
+    local messages = {}
+    if result and result.result then
+      for _, doc in ipairs(result.result) do
+        table.insert(messages, MailboxMessage:new(doc))
+      end
+      bulk_fetch_senders(messages)
+    end
+    return messages
   end
 
-  local result = Sdb:Sdbql(query, params)
+  local base_query = [[
+    FOR m IN mailbox_messages
+    FILTER m.owner_key == @user_key
+  ]]
 
+  if folder == "sent" then
+    base_query = base_query .. ' AND m.folder == "sent"'
+  elseif folder == "starred" then
+    base_query = base_query .. ' AND m.starred == true'
+  elseif folder == "drafts" then
+    base_query = base_query .. ' AND m.folder == "drafts"'
+    sort_field = "m._updated_at"
+  else
+    base_query = base_query .. ' AND m.folder == @folder'
+    params.folder = folder or "inbox"
+  end
+
+  local query = base_query .. [[
+    SORT ]] .. sort_field .. [[ DESC
+    LIMIT @offset, @limit
+    RETURN m
+  ]]
+
+  local result = Sdb:Sdbql(query, params)
+  
   local messages = {}
   if result and result.result then
     for _, doc in ipairs(result.result) do
@@ -130,7 +170,7 @@ end
 function MailboxMessage.unread_count(user_key)
   local result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER @user_key IN m.recipients AND m.folder == "inbox" AND m.read == false
+    FILTER m.owner_key == @user_key AND m.folder == "inbox" AND m.read == false
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -154,8 +194,10 @@ function MailboxMessage.folder_counts(user_key)
 
   -- Inbox count
   local result = Sdb:Sdbql([[
+  -- Inbox count
+  local result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER @user_key IN m.recipients AND m.folder == "inbox"
+    FILTER m.owner_key == @user_key AND m.folder == "inbox"
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -166,7 +208,7 @@ function MailboxMessage.folder_counts(user_key)
   -- Unread count
   result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER @user_key IN m.recipients AND m.folder == "inbox" AND m.read == false
+    FILTER m.owner_key == @user_key AND m.folder == "inbox" AND m.read == false
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -177,7 +219,7 @@ function MailboxMessage.folder_counts(user_key)
   -- Sent count
   result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER m.sender_key == @user_key AND m.folder == "sent"
+    FILTER m.owner_key == @user_key AND m.folder == "sent"
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -188,7 +230,7 @@ function MailboxMessage.folder_counts(user_key)
   -- Drafts count
   result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER m.sender_key == @user_key AND m.folder == "drafts"
+    FILTER m.owner_key == @user_key AND m.folder == "drafts"
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -199,7 +241,7 @@ function MailboxMessage.folder_counts(user_key)
   -- Archive count
   result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER @user_key IN m.recipients AND m.folder == "archive"
+    FILTER m.owner_key == @user_key AND m.folder == "archive"
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -210,7 +252,7 @@ function MailboxMessage.folder_counts(user_key)
   -- Starred count
   result = Sdb:Sdbql([[
     FOR m IN mailbox_messages
-    FILTER @user_key IN m.recipients AND m.starred == true
+    FILTER m.owner_key == @user_key AND m.starred == true
     COLLECT WITH COUNT INTO count
     RETURN count
   ]], { user_key = user_key })
@@ -223,22 +265,31 @@ end
 
 -- Send a new message
 function MailboxMessage.send(sender, recipients, cc, subject, body, attachments)
-  -- Create message in recipients' inbox
-  local msg = MailboxMessage:create({
-    sender_key = sender._key,
-    recipients = recipients,
-    cc = cc or {},
-    subject = subject,
-    body = body,
-    folder = "inbox",
-    read = false,
-    starred = false,
-    thread_id = nil,
-    attachments = attachments or {}
-  })
+  -- Collect all unique recipients (To and CC)
+  local all_recipients = {}
+  local unique_keys = {}
+  
+  if recipients then
+    for _, r in ipairs(recipients) do
+      if not unique_keys[r] and r ~= sender._key then
+        unique_keys[r] = true
+        table.insert(all_recipients, r)
+      end
+    end
+  end
+  
+  if cc then
+    for _, r in ipairs(cc) do
+      if not unique_keys[r] and r ~= sender._key then
+        unique_keys[r] = true
+        table.insert(all_recipients, r)
+      end
+    end
+  end
 
-  -- Also save to sender's sent folder
-  MailboxMessage:create({
+  -- 1. Create message for Sender (Sent folder)
+  local sender_msg = MailboxMessage:create({
+    owner_key = sender._key,
     sender_key = sender._key,
     recipients = recipients,
     cc = cc or {},
@@ -251,8 +302,25 @@ function MailboxMessage.send(sender, recipients, cc, subject, body, attachments)
     attachments = attachments or {}
   })
 
-  msg.data.sender = { _key = sender._key, firstname = sender.firstname, lastname = sender.lastname, email = sender.email }
-  return msg
+  -- 2. Create message for each Recipient (Inbox)
+  for _, recipient_key in ipairs(all_recipients) do
+    MailboxMessage:create({
+      owner_key = recipient_key,
+      sender_key = sender._key,
+      recipients = recipients,
+      cc = cc or {},
+      subject = subject,
+      body = body,
+      folder = "inbox",
+      read = false,
+      starred = false,
+      thread_id = nil,
+      attachments = attachments or {}
+    })
+  end
+
+  sender_msg.data.sender = { _key = sender._key, firstname = sender.firstname, lastname = sender.lastname, email = sender.email }
+  return sender_msg
 end
 
 -- Save as draft
@@ -260,7 +328,7 @@ function MailboxMessage.save_draft(sender, recipients, cc, subject, body, existi
   if existing_key then
     -- Update existing draft
     local draft = MailboxMessage:find(existing_key)
-    if draft and draft.data.sender_key == sender._key then
+    if draft and draft.data.sender_key == sender._key and draft.data.owner_key == sender._key then
       draft:update({
         recipients = recipients or {},
         cc = cc or {},
@@ -273,6 +341,7 @@ function MailboxMessage.save_draft(sender, recipients, cc, subject, body, existi
 
   -- Create new draft
   return MailboxMessage:create({
+    owner_key = sender._key,
     sender_key = sender._key,
     recipients = recipients or {},
     cc = cc or {},
@@ -352,16 +421,22 @@ function MailboxMessage:reply(sender, body)
   )
 end
 
+-- Helper to get numeric timestamp
+local function get_timestamp(msg)
+  local ts = msg._created_at or msg.data._created_at
+  return tonumber(ts) or os.time()
+end
+
 -- Format date for display
 function MailboxMessage:formatted_date()
-  local timestamp = self._created_at or self.data._created_at
+  local timestamp = get_timestamp(self)
   if not timestamp then return "" end
   return os.date("%b %d, %Y %H:%M", timestamp)
 end
 
 -- Check if message is from today
 function MailboxMessage:is_today()
-  local timestamp = self._created_at or self.data._created_at
+  local timestamp = get_timestamp(self)
   if not timestamp then return false end
   local today = os.date("%Y-%m-%d")
   local msg_date = os.date("%Y-%m-%d", timestamp)
@@ -370,7 +445,7 @@ end
 
 -- Short date for list view
 function MailboxMessage:short_date()
-  local timestamp = self._created_at or self.data._created_at
+  local timestamp = get_timestamp(self)
   if not timestamp then return "" end
 
   if self:is_today() then

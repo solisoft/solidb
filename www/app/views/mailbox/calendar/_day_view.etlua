@@ -1,0 +1,151 @@
+<div class="flex flex-col flex-1 min-h-0 bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl overflow-hidden shadow-sm">
+  <!-- Day Header -->
+  <div class="p-6 border-b border-white/5 bg-white/5 flex items-center justify-center">
+    <div class="text-center">
+      <div class="text-text-dim text-sm font-bold uppercase tracking-wider mb-1">
+        <%= os.date("%A", os.time(current_date)) %>
+      </div>
+      <div class="text-4xl font-bold text-white">
+        <%= os.date("%d", os.time(current_date)) %>
+      </div>
+    </div>
+  </div>
+
+  <!-- All Day Row (Fixed) -->
+  <div class="flex border-b border-white/5 bg-white/5 min-h-[50px]">
+    <div class="w-20 border-r border-white/5 p-2 text-text-dim text-xs font-bold uppercase tracking-wider text-right flex items-center justify-end">All Day</div>
+    <div class="flex-1 p-2 relative">
+      <div class="flex flex-col gap-1">
+         <% 
+           -- Re-use event filtering loop logic from below for local filtering
+           local c_year = calendar.year
+           local c_month = calendar.month
+           local c_day = calendar.day
+           
+           for _, event in ipairs(events) do
+             local st = event.start_time or event.data.start_time
+             local e_y = tonumber(os.date("%Y", st))
+             local e_m = tonumber(os.date("%m", st))
+             local e_d = tonumber(os.date("%d", st))
+             
+             if e_y == c_year and e_m == c_month and e_d == c_day then
+               if event.all_day or event.data.all_day then
+         %>
+            <div class="rounded px-3 py-2 text-sm text-white font-medium cursor-pointer hover:brightness-110 transition-all shadow-sm border-l-4"
+                 style="background-color: <%= (event.color or event.data.color) %>40; border-color: <%= (event.color or event.data.color) %>;"
+                 hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                 hx-target="#modal-container"
+                 hx-swap="innerHTML">
+              <%= event.title or event.data.title %>
+            </div>
+         <% 
+               end
+             end
+           end
+         %>
+      </div>
+    </div>
+  </div>
+
+  <!-- Time Grid -->
+  <div id="day-scroll-container" class="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth">
+    <!-- Auto-scroll script -->
+    <script>
+      (function() {
+        setTimeout(function() {
+          var container = document.getElementById('day-scroll-container');
+          if (container) {
+            var hour = <%= tonumber(os.date("%H")) %>;
+            // Scroll to hour, minus 1 hour context, clamped to 0
+            container.scrollTop = Math.max(0, (hour * 60) - 60);
+          }
+        }, 100);
+      })();
+    </script>
+    <!-- Grid Lines & Hours -->
+    <% for hour = 0, 23 do %>
+      <div class="flex min-h-[60px] border-b border-white/5 group relative">
+        <!-- Time Label -->
+        <div class="w-20 border-r border-white/5 p-4 text-xs text-text-dim text-right -mt-2 group-first:mt-0 flex-shrink-0">
+          <%= hour == 0 and "12 AM" or (hour < 12 and hour .. " AM") or (hour == 12 and "12 PM") or ((hour - 12) .. " PM") %>
+        </div>
+        
+        <!-- Day Column -->
+        <div class="flex-1 relative h-full">
+           <div class="absolute inset-x-0 top-1/2 border-t border-white/5 border-dashed"></div>
+        </div>
+      </div>
+    <% end %>
+
+    <!-- Events Overlay -->
+    <div class="absolute top-0 left-20 right-0 bottom-0 pointer-events-none">
+       <% 
+         -- In day view, calendar object contains single day events?
+         -- Controller returns calendar = { year, month, day }
+         -- We need to fetch events for this day actually. 
+         -- In index action using `build_calendar_week` for week, but for day it was just {..}
+         -- AH, I see in index action: `elseif view == "day" then ... calendar = { ... }`
+         -- Wait, I didn't actually fetch ONLY today's events into `calendar.events`.
+         -- The `events` local variable in `index` has events for the *month*.
+         -- So I can iterate `events` and filter for today.
+         
+         local c_year = calendar.year
+         local c_month = calendar.month
+         local c_day = calendar.day
+         
+         for _, event in ipairs(events) do
+           local st = event.start_time or event.data.start_time
+           local et = event.end_time or event.data.end_time
+           local e_y = tonumber(os.date("%Y", st))
+           local e_m = tonumber(os.date("%m", st))
+           local e_d = tonumber(os.date("%d", st))
+           
+           if e_y == c_year and e_m == c_month and e_d == c_day then
+             -- Only process if NOT all day
+             if not (event.all_day or event.data.all_day) then
+             
+             local start_h = tonumber(os.date("%H", st))
+             local start_m = tonumber(os.date("%M", st))
+             local top_px = (start_h * 60) + start_m
+             
+             local dur = 60
+             if et then dur = math.floor((et - st) / 60) end
+             if dur < 30 then dur = 30 end
+       %>
+          <div class="absolute left-4 right-4 rounded-lg p-3 text-sm border-l-4 shadow-md cursor-pointer hover:brightness-110 hover:shadow-lg transition-all pointer-events-auto overflow-hidden
+                      flex flex-col gap-1 z-10"
+               style="top: <%= top_px %>px; height: <%= dur %>px; background-color: <%= (event.color or event.data.color) %>20; border-color: <%= (event.color or event.data.color) %>;"
+               hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+               hx-target="#modal-container"
+               hx-swap="innerHTML">
+             <div class="font-bold text-white"><%= event.title or event.data.title %></div>
+             <div class="flex items-center gap-2 text-xs opacity-90 text-white/80">
+               <i class="far fa-clock"></i>
+               <span><%= os.date("%I:%M %p", st) %> - <%= os.date("%I:%M %p", et) %></span>
+             </div>
+             <% if (event.location or event.data.location) ~= "" then %>
+             <div class="flex items-center gap-2 text-xs opacity-80 text-white/70">
+                <i class="fas fa-map-marker-alt"></i>
+                <span class="truncate"><%= event.location or event.data.location %></span>
+             </div>
+             <% end %>
+          </div>
+       <% 
+             end -- end if not all_day
+           end 
+         end
+       %>
+    </div>
+    
+    <!-- Current Time Indicator (if today) -->
+    <% 
+      local today = os.date("*t")
+      if calendar.year == today.year and calendar.month == today.month and calendar.day == today.day then
+        local now_min = (today.hour * 60) + today.min
+    %>
+       <div class="absolute left-20 right-0 h-0.5 bg-red-500 z-20 pointer-events-none flex items-center" style="top: <%= now_min %>px;">
+          <div class="w-3 h-3 rounded-full bg-red-500 -ml-1.5 shadow-sm"></div>
+       </div>
+    <% end %>
+  </div>
+</div>

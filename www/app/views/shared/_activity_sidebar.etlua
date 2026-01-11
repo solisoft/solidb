@@ -1,4 +1,4 @@
-<aside class="w-[70px] bg-black/40 backdrop-blur-xl border-r border-white/5 flex flex-col items-center py-6 gap-6 z-30 shrink-0">
+<aside class="w-[70px] bg-black/40 backdrop-blur-xl border-r border-white/5 flex flex-col items-center py-6 gap-4 z-30 shrink-0">
   <!-- Logo/Home -->
   <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg mb-2 hover:scale-105 transition-transform" title="Home">
     <span class="font-bold text-lg">S</span>
@@ -50,6 +50,21 @@
     </div>
     <% if is_active("^/talks") then %>
     <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-500 rounded-r-full"></div>
+    <% end %>
+  </a>
+
+  <!-- Mailbox -->
+  <a href="/mailbox" class="relative group">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 <%= is_active("^/mailbox") and 'bg-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.3)]' or 'text-text-muted hover:bg-white/10 hover:text-white' %>">
+      <i class="fas fa-inbox text-lg"></i>
+    </div>
+    <!-- Global Badge -->
+    <div id="global-mailbox-badge" class="absolute -top-1 -right-1 hidden items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border border-gray-900 z-10 shadow-sm pointer-events-none"></div>
+    <div class="absolute left-14 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10 shadow-xl z-50">
+      Mailbox
+    </div>
+    <% if is_active("^/mailbox") then %>
+    <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-500 rounded-r-full"></div>
     <% end %>
   </a>
 
@@ -111,3 +126,125 @@
     <% end %>
   </div>
 </aside>
+
+<!-- Global Mailbox Live Query -->
+<% if current_user then %>
+<script type="module">
+  import { getServerConfig, getAuthToken } from '<%= public_path("/api-config.js") %>'
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Only run if we're not properly in the mailbox view receiving updates already
+    // Actually, we want this badge to update ANYWHERE, so we run it always.
+    
+    // Find badge element - we need to inject it first if not present
+    // It's injected via server-side template below
+    const badge = document.getElementById('global-mailbox-badge');
+    if (!badge) return;
+
+    const config = getServerConfig();
+    const token = getAuthToken();
+    const userKey = "<%= current_user._key %>";
+    
+    // Use current DB or fallback
+    const dbName = "<%= params.db or (Sdb and Sdb._db_config and Sdb._db_config.db_name) or '_system' %>";
+
+    if (config && config.host && token) {
+      const protocol = config.host.startsWith('https') ? 'wss:' : 'ws:';
+      const host = config.host.replace(/^https?:\/\//, '');
+      const baseUrl = config.port ? `${host}:${config.port}` : host;
+      
+      let ws = null;
+      let reconnectTimer = null;
+      let tokenCache = { token: null, expiry: 0 };
+
+      const getToken = async () => {
+        if (tokenCache.token && Date.now() < tokenCache.expiry - 5000) {
+          return tokenCache.token;
+        }
+        try {
+          const res = await fetch('/talks/livequery_token');
+          const data = await res.json();
+          tokenCache.token = data.token;
+          tokenCache.expiry = Date.now() + (data.expires_in || 30) * 1000;
+          return data.token;
+        } catch (e) {
+          console.error('Global Mailbox Token fetch failed:', e);
+          return null;
+        }
+      };
+
+       const connect = async () => {
+          if (ws) return;
+          
+          const lqToken = await getToken();
+          if (!lqToken) {
+             if (!reconnectTimer) reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 5000);
+             return;
+          }
+
+          const wsUrl = `${protocol}//${baseUrl}/_api/ws/changefeed?token=${lqToken}`;
+          
+          ws = new WebSocket(wsUrl);
+
+          ws.onopen = () => {
+             // Subscribe to unread count
+             const query = `
+               FOR m IN mailbox_messages 
+               FILTER m.owner_key == @user_key AND m.folder == "inbox" AND m.read == false 
+               COLLECT WITH COUNT INTO count 
+               RETURN count
+             `;
+             
+             ws.send(JSON.stringify({
+               type: 'subscribe',
+               database: dbName,
+               collection: 'mailbox_messages',
+               id: 'global-mailbox-counter',
+               query: query,
+               bindVars: { user_key: userKey }
+             }));
+          };
+
+          ws.onmessage = (event) => {
+             try {
+               const data = JSON.parse(event.data);
+               // Handle subscription result
+               if (data.type === 'result' && data.id === 'global-mailbox-counter') {
+                   // Initial or update
+                   const count = data.result && data.result[0] !== undefined ? data.result[0] : 0;
+                   updateBadge(count);
+               }
+               // Handle insert/delete/update events if subscription returns raw events
+               // But our query is aggregate, so LiveQuery usually sends updated result set diffs? 
+               // Actually Arango/Solidb LiveQuery on aggregate sends new result.
+               if (data.result && Array.isArray(data.result)) {
+                   const count = data.result[0];
+                   updateBadge(count);
+               }
+             } catch (e) {
+               console.error("Global Mailbox WS error", e);
+             }
+          };
+
+          ws.onclose = () => {
+             ws = null;
+             if (!reconnectTimer) reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 5000);
+          };
+       }
+       
+       const updateBadge = (count) => {
+         if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+         } else {
+            badge.classList.add('hidden');
+            badge.classList.remove('flex');
+         }
+       };
+
+       connect();
+    }
+  });
+</script>
+<% end %>

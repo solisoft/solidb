@@ -1,0 +1,129 @@
+<div class="flex flex-col flex-1 min-h-0 bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl overflow-hidden shadow-sm">
+  <!-- Week Header -->
+  <div class="grid grid-cols-8 border-b border-white/5 bg-white/5">
+     <div class="p-4 border-r border-white/5 text-text-dim text-xs font-bold uppercase tracking-wider text-center pt-12">Time</div>
+     <% for _, day_info in ipairs(calendar) do %>
+       <a href="/mailbox/calendar?view=day&year=<%= day_info.year %>&month=<%= day_info.month %>&day=<%= day_info.day %>" 
+          class="p-4 border-r border-white/5 text-center hover:bg-white/5 transition-colors group <%= day_info.is_today and 'bg-primary/5' or '' %>">
+         <div class="text-xs uppercase font-bold <%= day_info.is_today and 'text-primary' or 'text-text-dim' %> mb-1 group-hover:text-white">
+           <%= os.date("%a", os.time({year=day_info.year, month=day_info.month, day=day_info.day, hour=12})) %>
+         </div>
+         <div class="text-2xl font-bold <%= day_info.is_today and 'text-primary' or 'text-white' %> group-hover:text-white">
+           <%= day_info.day %>
+         </div>
+       </a>
+     <% end %>
+  </div>
+
+  <!-- All Day Row (Fixed) -->
+  <div class="grid grid-cols-8 border-b border-white/5 bg-white/5 min-h-[40px]">
+    <div class="p-2 border-r border-white/5 text-text-dim text-[10px] font-bold uppercase tracking-wider text-right flex items-center justify-end">All Day</div>
+    <% for _, day_info in ipairs(calendar) do %>
+      <div class="border-r border-white/5 p-1 relative">
+        <div class="flex flex-col gap-1">
+          <% for _, event in ipairs(day_info.events) do %>
+            <% if event.all_day or event.data.all_day then %>
+              <div class="rounded px-2 py-1 text-xs text-white truncate cursor-pointer hover:brightness-110 transition-all shadow-sm border-l-2"
+                   style="background-color: <%= (event.color or event.data.color) %>40; border-color: <%= (event.color or event.data.color) %>;"
+                   hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                   hx-target="#modal-container"
+                   hx-swap="innerHTML">
+                <%= event.title or event.data.title %>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <!-- Time Grid -->
+  <div id="week-scroll-container" class="flex-1 overflow-y-auto chat-scrollbar relative scroll-smooth">
+    <!-- Auto-scroll script -->
+    <script>
+      (function() {
+        setTimeout(function() {
+          var container = document.getElementById('week-scroll-container');
+          if (container) {
+            var hour = <%= tonumber(os.date("%H")) %>;
+            // Scroll to hour, minus 1 hour context, clamped to 0
+            container.scrollTop = Math.max(0, (hour * 60) - 60);
+          }
+        }, 100);
+      })();
+    </script>
+    <!-- Grid Lines & Hours -->
+    <% for hour = 0, 23 do %>
+      <div class="grid grid-cols-8 min-h-[60px] border-b border-white/5 group">
+        <!-- Time Label -->
+        <div class="border-r border-white/5 p-2 text-xs text-text-dim text-right -mt-2 group-first:mt-0">
+          <%= hour == 0 and "12 AM" or (hour < 12 and hour .. " AM") or (hour == 12 and "12 PM") or ((hour - 12) .. " PM") %>
+        </div>
+        
+        <!-- Day Columns -->
+        <% for i = 1, 7 do %>
+          <div class="border-r border-white/5 relative h-full"></div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <!-- Events Overlay -->
+    <div class="absolute top-0 left-0 right-0 bottom-0 grid grid-cols-8 pointer-events-none">
+       <div class="border-r border-transparent"></div> <!-- Time spacer -->
+       
+       <% for col_idx, day_info in ipairs(calendar) do %>
+         <div class="relative h-full">
+            <% for _, event in ipairs(day_info.events) do %>
+              <% if not (event.all_day or event.data.all_day) then %>
+              <% 
+                 local st = event.start_time or event.data.start_time
+                 local et = event.end_time or event.data.end_time
+                 local start_h = tonumber(os.date("%H", st))
+                 local start_m = tonumber(os.date("%M", st))
+                 local top_px = (start_h * 60) + start_m
+                 
+                 local dur = 60
+                 if et then dur = math.floor((et - st) / 60) end
+                 if dur < 30 then dur = 30 end
+              %>
+              <div class="absolute left-1 right-1 rounded-md p-2 text-xs border-l-2 shadow-sm cursor-pointer hover:brightness-110 hover:shadow-md transition-all pointer-events-auto overflow-hidden
+                          flex flex-col gap-0.5 leading-tight z-10"
+                   style="top: <%= top_px %>px; height: <%= dur %>px; background-color: <%= (event.color or event.data.color) %>20; border-color: <%= (event.color or event.data.color) %>;"
+                   hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                   hx-target="#modal-container"
+                   hx-swap="innerHTML">
+                 <div class="font-bold truncate text-white"><%= event.title or event.data.title %></div>
+                 <div class="text-[10px] opacity-80 truncate text-white/70">
+                   <%= os.date("%I:%M %p", st) %> - <%= os.date("%I:%M %p", et) %>
+                 </div>
+              </div>
+              <% end %>
+            <% end %>
+         </div>
+       <% end %>
+    </div>
+    
+    <!-- Current Time Indicator -->
+    <% 
+      local today_info = os.date("*t")
+      -- Find which column (if any) is today
+      local today_col = nil
+      for col_idx, day_info in ipairs(calendar) do
+        if day_info.year == today_info.year and day_info.month == today_info.month and day_info.day == today_info.day then
+          today_col = col_idx
+          break
+        end
+      end
+      
+      if today_col then
+        local now_min = (today_info.hour * 60) + today_info.min
+        -- Calculate left position: col 1 is time label (12.5%), cols 2-8 are days (each 12.5%)
+        local left_pct = 12.5 + ((today_col - 1) * 12.5)
+    %>
+    <div class="absolute right-0 h-0.5 bg-red-500 z-30 pointer-events-none flex items-center" 
+         style="top: <%= now_min %>px; left: <%= left_pct %>%; width: 12.5%;">
+      <div class="w-3 h-3 rounded-full bg-red-500 -ml-1.5 shadow-lg shadow-red-500/50"></div>
+    </div>
+    <% end %>
+  </div>
+</div>

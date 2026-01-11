@@ -23,10 +23,21 @@ function CalendarController:index()
   local current_user = get_current_user()
 
   -- Get current month/year from params or use today
+  if P then
+    P("DEBUG PARAMS DUMP:")
+    P("Path: " .. tostring(GetPath()))
+    -- Dump params
+    for k, v in pairs(self.params) do
+       P("Param [" .. tostring(k) .. "] = " .. tostring(v))
+    end
+    -- Try direct retrieval
+    P("Direct view check: " .. tostring(GetParam("view")))
+  end
+
   local now = os.date("*t")
-  local year = tonumber(self.params.year) or now.year
-  local month = tonumber(self.params.month) or now.month
-  local view = self.params.view or "month"
+  local year = tonumber(self.params.year) or tonumber(GetParam("year")) or now.year
+  local month = tonumber(self.params.month) or tonumber(GetParam("month")) or now.month
+  local view = self.params.view or GetParam("view") or "month"
 
   -- Get events for the month
   local events = MailboxEvent.for_month(current_user._key, year, month)
@@ -34,8 +45,48 @@ function CalendarController:index()
   -- Get folder counts for sidebar
   local folder_counts = MailboxMessage.folder_counts(current_user._key)
 
+  -- Sanitize view parameter
+  local valid_views = { month = true, week = true, day = true, year = true }
+  if not valid_views[view] then
+    view = "month"
+  end
+  
   -- Build calendar data
-  local calendar = build_calendar_month(year, month, events)
+  -- Determine effective day for current_date object
+  local view_day = tonumber(self.params.day) or tonumber(GetParam("day")) or now.day
+  if view == "month" or view == "year" then
+    -- For month/year view nav, default to 1 if not specified, or clamp to valid day?
+    -- Actually, keeping today's day number is fine unless it exceeds max days in target month.
+    local last_day = os.time({ year = year, month = month + 1, day = 0 }) -- Month rollover trick in Lua? No, standard Date trick.
+    local d = os.date("*t", last_day) -- Wait, let's use standard max day calc.
+    local next_m_ts = os.time({ year = year, month = month + 1, day = 1 })
+    local last_day_ts = next_m_ts - 86400
+    local max_day = tonumber(os.date("%d", last_day_ts))
+    if view_day > max_day then view_day = max_day end
+  end
+
+  local current_date = { year = year, month = month, day = view_day, hour = 12, min = 0, sec = 0 }
+  
+  if view == "month" then
+    calendar = build_calendar_month(year, month, events)
+  elseif view == "week" then
+    local day = tonumber(self.params.day) or tonumber(GetParam("day")) or now.day
+    -- Removed restriction on month match
+    
+    calendar = build_calendar_week(year, month, day, events)
+    -- current_date already set
+  elseif view == "day" then
+    local day = tonumber(self.params.day) or tonumber(GetParam("day")) or now.day
+    calendar = { year = year, month = month, day = day }
+    -- current_date already set
+  elseif view == "year" then
+    calendar = { year = year }
+  end
+  
+  if not calendar then
+    P("ERROR: Calendar is nil for view: " .. tostring(view))
+    calendar = {} -- Fallback to empty table to prevent crash
+  end
 
   local view_data = {
     current_user = current_user,
@@ -46,20 +97,23 @@ function CalendarController:index()
     month_name = os.date("%B", os.time({ year = year, month = month, day = 1 })),
     view = view,
     calendar = calendar,
+    current_date = current_date,
     events = events,
     today = now
   }
 
+  -- Print debug info
+  if P then
+    P("DEBUG: Calendar view=" .. tostring(view) .. " year=" .. tostring(year) .. " calendar exists=" .. tostring(calendar ~= nil))
+  end
+
   if self:is_htmx_request() then
     self.layout = false
-    if view == "week" then
-      return self:render("mailbox/calendar/_week_view", view_data)
-    else
-      return self:render("mailbox/calendar/_month_view", view_data)
-    end
+    return self:render("mailbox/calendar/_main_content", view_data)
   end
 
   self.layout = "application"
+  self.full_height = true
   self:render("mailbox/calendar/index", view_data)
 end
 
@@ -241,8 +295,8 @@ function CalendarController:create()
   )
 
   if self:is_htmx_request() then
-    SetHeader("HX-Trigger", "eventCreated")
-    SetHeader("HX-Redirect", "/mailbox/calendar")
+    self:set_header("HX-Trigger", "eventCreated")
+    self:set_header("HX-Redirect", "/mailbox/calendar")
     return self:html("")
   end
 
@@ -317,8 +371,8 @@ function CalendarController:update()
   event:update(updates)
 
   if self:is_htmx_request() then
-    SetHeader("HX-Trigger", "eventUpdated")
-    SetHeader("HX-Redirect", "/mailbox/calendar")
+    self:set_header("HX-Trigger", "eventUpdated")
+    self:set_header("HX-Redirect", "/mailbox/calendar")
     return self:html("")
   end
 
@@ -344,39 +398,101 @@ function CalendarController:delete()
   event:destroy()
 
   if self:is_htmx_request() then
-    SetHeader("HX-Trigger", "eventDeleted")
+    self:set_header("HX-Trigger", "eventDeleted")
     return self:html("")
   end
 
   return self:json({ success = true })
 end
 
--- Respond to event invitation
 function CalendarController:respond()
-  local current_user = get_current_user()
-  local event_id = self.params.id
+  local event_key = self.params.id
   local status = self.params.status
+  local current_user = AuthHelper.get_current_user()
 
-  if not status or not (status == "accepted" or status == "declined" or status == "tentative") then
+  if not current_user then
+    return self:json({ error = "Unauthorized" }, 401)
+  end
+
+  if status ~= "accepted" and status ~= "declined" and status ~= "tentative" then
     return self:json({ error = "Invalid status" }, 400)
   end
 
-  local event = MailboxEvent:find(event_id)
+  local event = MailboxEvent:find(event_key)
   if not event then
     return self:json({ error = "Event not found" }, 404)
   end
 
-  local updated = event:respond(current_user._key, status)
-
-  if self:is_htmx_request() then
-    self.layout = false
-    return self:render("mailbox/calendar/_respond_buttons", {
-      event = event,
-      user_status = status
-    })
+  local attendees = event.attendees or event.data.attendees or {}
+  local found = false
+  for i, attendee in ipairs(attendees) do
+    if attendee.user_key == current_user._key then
+      attendee.status = status
+      found = true
+      break
+    end
   end
 
-  return self:json({ success = updated, status = status })
+  if found then
+    event:update({ attendees = attendees })
+    
+    if self:is_htmx_request() then
+      self:set_header("HX-Trigger", '{"sidebar:invites": "true", "eventUpdated": "true"}')
+      return self:html("")
+    end
+    
+    return self:json({ success = true })
+  else
+    return self:json({ error = "User is not an attendee" }, 403)
+  end
+end
+
+
+
+-- Helper: Build calendar week grid
+function build_calendar_week(year, month, day, events)
+  local reference_date = os.time({ year = year, month = month, day = day, hour = 12 })
+  local weekday = tonumber(os.date("%w", reference_date)) -- 0 = Sunday
+  
+  -- Calculate start of week (Sunday)
+  -- Lua os.time handles negative offsets correctly to go back to prev month
+  local start_of_week = reference_date - (weekday * 86400)
+  
+  local week_days = {}
+  local events_by_date = {}
+  
+  -- Pre-process events for quicker lookup (key: "YYYY-MM-DD")
+  for _, event in ipairs(events) do
+    local start_time = event.start_time or event.data.start_time
+    if start_time then
+      local date_key = os.date("%Y-%m-%d", start_time)
+      if not events_by_date[date_key] then events_by_date[date_key] = {} end
+      table.insert(events_by_date[date_key], event)
+    end
+  end
+
+  for i = 0, 6 do
+    local current_day_time = start_of_week + (i * 86400)
+    local d_year = tonumber(os.date("%Y", current_day_time))
+    local d_month = tonumber(os.date("%m", current_day_time))
+    local d_day = tonumber(os.date("%d", current_day_time))
+    local date_key = string.format("%04d-%02d-%02d", d_year, d_month, d_day)
+    
+    local today = os.date("*t")
+    local is_today = (d_year == today.year and d_month == today.month and d_day == today.day)
+    
+    table.insert(week_days, {
+      year = d_year,
+      month = d_month,
+      day = d_day,
+      weekday = i, -- 0-6
+      is_today = is_today,
+      date_key = date_key,
+      events = events_by_date[date_key] or {}
+    })
+  end
+  
+  return week_days
 end
 
 -- Helper: Build calendar month grid
@@ -395,11 +511,17 @@ function build_calendar_month(year, month, events)
   for _, event in ipairs(events) do
     local start_time = event.start_time or event.data.start_time
     if start_time then
-      local day = tonumber(os.date("%d", start_time))
-      if not events_by_day[day] then
-        events_by_day[day] = {}
+      -- Verify event is in this month/year (events list passed might be filtered but double check)
+      local e_year = tonumber(os.date("%Y", start_time))
+      local e_month = tonumber(os.date("%m", start_time))
+      
+      if e_year == year and e_month == month then
+        local day = tonumber(os.date("%d", start_time))
+        if not events_by_day[day] then
+          events_by_day[day] = {}
+        end
+        table.insert(events_by_day[day], event)
       end
-      table.insert(events_by_day[day], event)
     end
   end
 

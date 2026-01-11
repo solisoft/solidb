@@ -87,25 +87,37 @@ end
 
 -- Get events for a user within a date range
 function MailboxEvent.for_user(user_key, start_date, end_date)
+  -- Simplified query - just match organizer_key for now
   local result = Sdb:Sdbql([[
     FOR e IN mailbox_events
-    FILTER (
-      e.organizer_key == @user_key
-      OR @user_key IN e.attendees[*].user_key
-    )
-    AND e.start_time >= @start_date
-    AND e.start_time <= @end_date
     SORT e.start_time ASC
     RETURN e
-  ]], { user_key = user_key, start_date = start_date, end_date = end_date })
+  ]], {})
 
+  P("DEBUG: MailboxEvent.for_user: key=" .. tostring(user_key))
+  
   local events = {}
   if result and result.result then
     for _, doc in ipairs(result.result) do
-      table.insert(events, MailboxEvent:new(doc))
+      local matches = false
+      if doc.organizer_key == user_key then
+        matches = true
+      elseif doc.attendees then
+        for _, attendee in ipairs(doc.attendees) do
+          if attendee.user_key == user_key then
+            matches = true
+            break
+          end
+        end
+      end
+      
+      if matches then
+        table.insert(events, MailboxEvent:new(doc))
+      end
     end
     bulk_fetch_organizers(events)
   end
+  P("DEBUG: final events count=" .. #events)
   return events
 end
 
@@ -128,6 +140,37 @@ function MailboxEvent.for_month(user_key, year, month)
   return MailboxEvent.for_user(user_key, start_of_month, end_of_month)
 end
 
+
+-- Get events for a user with pending status
+function MailboxEvent.pending_for_user(user_key)
+  local result = Sdb:Sdbql([[
+    FOR e IN mailbox_events
+    SORT e.start_time ASC
+    RETURN e
+  ]], {})
+
+  local events = {}
+  if result and result.result then
+    for _, doc in ipairs(result.result) do
+      local is_pending = false
+      if doc.attendees then
+        for _, a in ipairs(doc.attendees) do
+          if a.user_key == user_key and a.status == "pending" then
+            is_pending = true
+            break
+          end
+        end
+      end
+      
+      if is_pending then
+        table.insert(events, MailboxEvent:new(doc))
+      end
+    end
+    bulk_fetch_organizers(events)
+  end
+  return events
+end
+
 -- Get upcoming events for a user
 function MailboxEvent.upcoming(user_key, limit)
   limit = limit or 10
@@ -135,20 +178,30 @@ function MailboxEvent.upcoming(user_key, limit)
 
   local result = Sdb:Sdbql([[
     FOR e IN mailbox_events
-    FILTER (
-      e.organizer_key == @user_key
-      OR @user_key IN e.attendees[*].user_key
-    )
-    AND e.start_time >= @now
+    FILTER e.start_time >= @now
     SORT e.start_time ASC
-    LIMIT @limit
     RETURN e
-  ]], { user_key = user_key, now = now, limit = limit })
+  ]], { now = now })
 
   local events = {}
   if result and result.result then
     for _, doc in ipairs(result.result) do
-      table.insert(events, MailboxEvent:new(doc))
+      local matches = false
+      if doc.organizer_key == user_key then
+        matches = true
+      elseif doc.attendees then
+        for _, attendee in ipairs(doc.attendees) do
+          if attendee.user_key == user_key then
+            matches = true
+            break
+          end
+        end
+      end
+      
+      if matches then
+        table.insert(events, MailboxEvent:new(doc))
+        if #events >= limit then break end
+      end
     end
     bulk_fetch_organizers(events)
   end

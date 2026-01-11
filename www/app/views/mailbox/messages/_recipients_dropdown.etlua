@@ -1,16 +1,16 @@
 <% if users and #users > 0 then %>
-<div class="py-2 max-h-64 overflow-y-auto">
+<div class="py-2 max-h-64 overflow-y-auto chat-scrollbar bg-bg-card/95 backdrop-blur-xl">
   <% for _, user in ipairs(users) do %>
   <button type="button"
           onclick="selectRecipient('<%= dropdown_type or 'recipients' %>', '<%= user._key %>', '<%= ((user.firstname or '') .. ' ' .. (user.lastname or '')):gsub("'", "\\'") %>', '<%= (user.email or ''):gsub("'", "\\'") %>')"
-          class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left">
-    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shrink-0">
-      <span class="text-sm font-bold text-white">
+          class="w-full flex items-center gap-3 px-4 py-3 hover:bg-primary/10 transition-colors text-left group border-l-2 border-transparent hover:border-primary">
+    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center shrink-0 border border-white/5 group-hover:border-primary/20 transition-colors">
+      <span class="text-xs font-bold text-primary-light">
         <%= string.upper(string.sub(user.firstname or user.email or "?", 1, 1)) %>
       </span>
     </div>
     <div class="flex-1 min-w-0">
-      <p class="text-sm font-medium text-white truncate">
+      <p class="text-sm font-bold text-white group-hover:text-primary-light transition-colors truncate">
         <%= user.firstname and user.lastname and (user.firstname .. " " .. user.lastname) or user.email %>
       </p>
       <p class="text-xs text-text-muted truncate"><%= user.email %></p>
@@ -19,7 +19,10 @@
   <% end %>
 </div>
 <% else %>
-<div class="px-4 py-3 text-sm text-text-muted text-center">
-  No users found
+<div class="px-4 py-8 text-center bg-bg-card/95 backdrop-blur-xl">
+  <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-2">
+    <i class="fas fa-search text-text-dim"></i>
+  </div>
+  <p class="text-sm font-bold text-text-muted">No users found</p>
 </div>
 <% end %>

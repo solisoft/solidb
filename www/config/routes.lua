@@ -16,6 +16,7 @@ router.get("/sidebar/tasks_progress", "dashboard#sidebar_tasks_progress")
 router.get("/sidebar/tasks_priority", "dashboard#sidebar_tasks_priority")
 router.get("/sidebar/pending_mrs", "dashboard#sidebar_pending_mrs")
 router.get("/sidebar/recent_messages", "dashboard#sidebar_recent_messages")
+router.get("/sidebar/calendar_invites", "dashboard#sidebar_calendar_invites")
 
 -- Auth routes
 router.get("/auth/login", "auth#login")
@@ -264,7 +265,9 @@ end)
 -- MailBox (Internal Webmail + Calendar) routes - requires session auth
 router.scope("/mailbox", { middleware = { "session_auth" } }, function()
   -- Main dashboard
+  -- Main dashboard
   router.get("", "mailbox#index")
+  router.get("/sidebar", "mailbox#update_sidebar")
 
   -- Messages
   router.get("/messages", "mailbox#inbox")
@@ -273,6 +276,7 @@ router.scope("/mailbox", { middleware = { "session_auth" } }, function()
   router.get("/messages/table", "mailbox#messages_table")
   router.get("/compose", "mailbox#compose")
   router.get("/compose/reply/:id", "mailbox#compose_reply")
+  router.get("/compose/forward/:id", "mailbox#compose_forward")
   router.post("/send", "mailbox#send")
   router.post("/draft", "mailbox#save_draft")
   router.post("/messages/:id/star", "mailbox#toggle_star")

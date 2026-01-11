@@ -1,61 +1,72 @@
-<div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl overflow-hidden">
+<div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col h-full">
   <!-- Day headers -->
-  <div class="grid grid-cols-7 border-b border-white/5">
+  <div class="grid grid-cols-7 border-b border-white/5 bg-white/5">
     <% local day_names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" } %>
     <% for _, day_name in ipairs(day_names) do %>
-    <div class="px-3 py-2 text-center text-sm font-medium text-text-muted border-r border-white/5 last:border-r-0">
+    <div class="py-3 text-center text-xs font-bold uppercase tracking-wider text-text-dim border-r border-white/5 last:border-r-0">
       <%= day_name %>
     </div>
     <% end %>
   </div>
 
   <!-- Calendar grid -->
-  <% for week_idx, week in ipairs(calendar.weeks) do %>
-  <div class="grid grid-cols-7 border-b border-white/5 last:border-b-0">
-    <% for day_idx, day_data in ipairs(week) do %>
-    <div class="min-h-[120px] p-2 border-r border-white/5 last:border-r-0 <%= day_data.is_today and 'bg-primary/5' or '' %> <%= not day_data.day and 'bg-white/[0.02]' or '' %>">
-      <% if day_data.day then %>
-      <!-- Day number -->
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium <%= day_data.is_today and 'text-primary-light' or 'text-text' %>">
+  <div class="flex-1 flex flex-col">
+    <% for week_idx, week in ipairs(calendar.weeks) do %>
+    <div class="grid grid-cols-7 border-b border-white/5 last:border-b-0 flex-1 min-h-[100px]">
+      <% for day_idx, day_data in ipairs(week) do %>
+      <div class="relative group p-1 border-r border-white/5 last:border-r-0 transition-colors hover:bg-white/5 
+                  <%= day_data.is_today and 'bg-primary/5' or '' %> 
+                  <%= not day_data.day and 'bg-black/20' or '' %>">
+        <% if day_data.day then %>
+        <!-- Day Header -->
+        <div class="flex items-center justify-between p-1">
           <% if day_data.is_today then %>
-          <span class="w-6 h-6 inline-flex items-center justify-center bg-primary text-white rounded-full">
-            <%= day_data.day %>
-          </span>
+            <div class="w-7 h-7 flex items-center justify-center bg-primary text-white text-sm font-bold rounded-full shadow-lg shadow-primary/30">
+              <%= day_data.day %>
+            </div>
           <% else %>
-          <%= day_data.day %>
+            <div class="w-7 h-7 flex items-center justify-center text-sm font-medium text-text-muted group-hover:text-white transition-colors">
+              <%= day_data.day %>
+            </div>
           <% end %>
-        </span>
-        <button hx-get="/mailbox/calendar/event/modal/create?date=<%= day_data.date %>"
-                hx-target="#modal-container"
-                hx-swap="innerHTML"
-                class="opacity-0 hover:opacity-100 p-1 text-text-dim hover:text-primary-light transition-all">
-          <i class="fas fa-plus text-xs"></i>
-        </button>
-      </div>
 
-      <!-- Events for this day -->
-      <div class="space-y-1">
-        <% for event_idx, event in ipairs(day_data.events) do %>
-        <% if event_idx <= 3 then %>
-        <button hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
-                hx-target="#modal-container"
-                hx-swap="innerHTML"
-                class="w-full text-left px-2 py-1 text-xs rounded truncate transition-colors hover:ring-1 hover:ring-white/20"
-                style="background-color: <%= (event.color or event.data.color or '#3b82f6') %>20; color: <%= event.color or event.data.color or '#3b82f6' %>">
-          <% if not (event.all_day or event.data.all_day) then %>
-          <span class="opacity-70"><%= os.date("%H:%M", event.start_time or event.data.start_time) %></span>
+          <!-- Add Event Button (Visible on hover) -->
+          <button hx-get="/mailbox/calendar/event/modal/create?date=<%= day_data.date %>"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML"
+                  class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-text-dim hover:text-white hover:bg-white/10 rounded-full transition-all">
+            <i class="fas fa-plus text-[10px]"></i>
+          </button>
+        </div>
+
+        <!-- Events List -->
+        <div class="mt-1 space-y-1 px-1">
+          <% for event_idx, event in ipairs(day_data.events) do %>
+          <% if event_idx <= 3 then %>
+          <button hx-get="/mailbox/calendar/event/<%= event._key or event.data._key %>"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML"
+                  class="w-full text-left px-2 py-1 rounded text-[11px] font-medium truncate transition-all hover:scale-[1.02] hover:shadow-md"
+                  style="background-color: <%= (event.color or event.data.color) %>20; color: <%= event.color or event.data.color %>; border-left: 2px solid <%= event.color or event.data.color %>">
+            <% if not (event.all_day or event.data.all_day) then %>
+              <span class="opacity-75 mr-1 text-[10px]"><%= os.date("%H:%M", event.start_time or event.data.start_time) %></span>
+            <% end %>
+            <%= event.title or event.data.title %>
+          </button>
+          <% elseif event_idx == 4 then %>
+          <div class="text-[10px] text-text-dim text-center font-medium hover:text-white cursor-pointer"
+               hx-get="/mailbox/calendar?view=day&year=<%= year %>&month=<%= month %>&day=<%= day_data.day %>"
+               hx-target="#main-content"
+               hx-push-url="true">
+            +<%= #day_data.events - 3 %> more
+          </div>
           <% end %>
-          <%= event.title or event.data.title %>
-        </button>
-        <% elseif event_idx == 4 then %>
-        <span class="text-xs text-text-dim">+<%= #day_data.events - 3 %> more</span>
-        <% end %>
+          <% end %>
+        </div>
         <% end %>
       </div>
       <% end %>
     </div>
     <% end %>
   </div>
-  <% end %>
 </div>

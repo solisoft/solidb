@@ -1,142 +1,187 @@
 <div class="flex h-full">
   <!-- Sidebar -->
-  <%- partial("mailbox/sidebar") %>
+  <%- partial("mailbox/sidebar", { current_folder = current_folder, folder_counts = folder_counts, current_user = current_user }) %>
 
   <!-- Main Content -->
-  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
     <!-- Header -->
-    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
-      <div class="flex items-center gap-3">
-        <a href="/mailbox/messages/inbox"
-           class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-          <i class="fas fa-arrow-left"></i>
-        </a>
-        <h1 class="text-xl font-bold text-white">
-          <% if reply_to then %>Reply<% else %>New Message<% end %>
-        </h1>
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <a href="/mailbox/messages/inbox"
+             class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 group">
+            <i class="fas fa-arrow-left text-text-muted group-hover:text-text transition-colors"></i>
+          </a>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">
+              <% if reply_to then %>Reply<% else %>New Message<% end %>
+            </h1>
+            <p class="text-xs text-text-muted">Drafting new message</p>
+          </div>
+        </div>
       </div>
-    </header>
+    </div>
 
     <!-- Compose Form -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div class="max-w-3xl mx-auto">
-        <form hx-post="/mailbox/send" hx-swap="none" class="space-y-4">
-          <!-- Recipients -->
-          <div class="relative">
-            <label class="block text-sm font-medium text-text-muted mb-2">To</label>
-            <div class="relative">
-              <div id="recipients-tags" class="flex flex-wrap gap-2 mb-2"></div>
-              <input type="hidden" name="recipients" id="recipients-hidden"
-                     <% if reply_to then %>
-                     <% local sender = reply_to:sender_info() %>
-                     value="<%= sender._key or '' %>"
-                     <% end %>>
-              <input type="text"
-                     id="recipients-input"
-                     class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
-                     placeholder="Search for recipients..."
-                     autocomplete="off"
-                     hx-get="/mailbox/recipients/search"
-                     hx-trigger="keyup changed delay:200ms"
-                     hx-target="#recipients-dropdown"
-                     hx-include="this">
-              <div id="recipients-dropdown" class="absolute z-50 w-full mt-1 bg-bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden hidden"></div>
-            </div>
-          </div>
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <div class="max-w-3xl mx-auto pb-64">
+        <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-8 shadow-sm">
+          <form hx-post="/mailbox/send" hx-swap="none" class="space-y-6">
+            
+            <!-- Recipients Container -->
+            <div class="space-y-4">
+              <!-- To Field -->
+              <div class="relative z-30">
+                <div class="flex items-center justify-between mb-2 ml-1">
+                  <label class="block text-xs font-bold text-text-dim uppercase tracking-widest">To</label>
+                  <div class="flex items-center gap-3">
+                    <button type="button" 
+                            onclick="toggleSection('cc-section', 'cc-input')"
+                            class="text-[10px] font-bold text-text-muted hover:text-primary transition-colors uppercase tracking-wider">
+                      CC
+                    </button>
+                    <button type="button" 
+                            onclick="toggleSection('bcc-section', 'bcc-input')"
+                            class="text-[10px] font-bold text-text-muted hover:text-primary transition-colors uppercase tracking-wider">
+                      BCC (CCI)
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="relative group">
+                  <div id="recipients-tags" class="flex flex-wrap gap-2 mb-2"></div>
+                  <input type="hidden" name="recipients" id="recipients-hidden"
+                         <% if reply_to then %>
+                         <% local sender = reply_to:sender_info() %>
+                         value="<%= sender._key or '' %>"
+                         <% end %>>
+                  <input type="text"
+                         id="recipients-input"
+                         class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
+                         placeholder="Search recipients..."
+                         autocomplete="off">
+                  <!-- Dropdown -->
+                  <div id="recipients-dropdown" 
+                       class="absolute top-full left-0 w-full mt-2 bg-bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden hidden z-50 max-h-60 overflow-y-auto chat-scrollbar">
+                  </div>
+                </div>
+              </div>
 
-          <!-- CC -->
-          <div class="relative">
-            <label class="block text-sm font-medium text-text-muted mb-2">CC <span class="text-text-dim">(optional)</span></label>
-            <div class="relative">
-              <div id="cc-tags" class="flex flex-wrap gap-2 mb-2"></div>
-              <input type="hidden" name="cc" id="cc-hidden">
-              <input type="text"
-                     id="cc-input"
-                     class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
-                     placeholder="Add CC recipients..."
-                     autocomplete="off"
-                     hx-get="/mailbox/recipients/search"
-                     hx-trigger="keyup changed delay:200ms"
-                     hx-target="#cc-dropdown"
-                     hx-include="this">
-              <div id="cc-dropdown" class="absolute z-50 w-full mt-1 bg-bg-card border border-white/10 rounded-xl shadow-xl overflow-hidden hidden"></div>
-            </div>
-          </div>
+              <!-- CC Field -->
+              <div id="cc-section" class="relative z-20 hidden">
+                <label class="block text-xs font-bold text-text-dim uppercase tracking-widest mb-2 ml-1">CC</label>
+                <div class="relative group">
+                  <div id="cc-tags" class="flex flex-wrap gap-2 mb-2"></div>
+                  <input type="hidden" name="cc" id="cc-hidden">
+                  <input type="text"
+                         id="cc-input"
+                         class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
+                         placeholder="Add CC recipients..."
+                         autocomplete="off">
+                  <div id="cc-dropdown" 
+                       class="absolute top-full left-0 w-full mt-2 bg-bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden hidden z-50 max-h-60 overflow-y-auto chat-scrollbar">
+                  </div>
+                </div>
+              </div>
 
-          <!-- Subject -->
-          <div>
-            <label class="block text-sm font-medium text-text-muted mb-2">Subject</label>
-            <input type="text"
-                   name="subject"
-                   class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
-                   placeholder="Message subject"
-                   <% if reply_to then %>
-                   <% local subject = reply_to.subject or reply_to.data.subject or "" %>
-                   value="<%= subject:match("^Re:") and subject or ("Re: " .. subject) %>"
-                   <% end %>
-                   required>
-          </div>
-
-          <!-- Body with formatting help -->
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-sm font-medium text-text-muted">Message</label>
-              <div class="flex items-center gap-2 text-xs text-text-dim">
-                <span class="px-1.5 py-0.5 bg-white/5 rounded">**bold**</span>
-                <span class="px-1.5 py-0.5 bg-white/5 rounded">*italic*</span>
-                <span class="px-1.5 py-0.5 bg-white/5 rounded">`code`</span>
-                <span class="px-1.5 py-0.5 bg-white/5 rounded">> quote</span>
+              <!-- BCC Field -->
+              <div id="bcc-section" class="relative z-10 hidden">
+                <label class="block text-xs font-bold text-text-dim uppercase tracking-widest mb-2 ml-1">BCC</label>
+                <div class="relative group">
+                  <div id="bcc-tags" class="flex flex-wrap gap-2 mb-2"></div>
+                  <input type="hidden" name="bcc" id="bcc-hidden">
+                  <input type="text"
+                         id="bcc-input"
+                         class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
+                         placeholder="Add BCC recipients..."
+                         autocomplete="off">
+                  <div id="bcc-dropdown" 
+                       class="absolute top-full left-0 w-full mt-2 bg-bg-card border border-white/10 rounded-xl shadow-2xl overflow-hidden hidden z-50 max-h-60 overflow-y-auto chat-scrollbar">
+                  </div>
+                </div>
               </div>
             </div>
-            <textarea name="body"
-                      rows="12"
-                      class="w-full px-4 py-3 bg-bg-card/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 resize-none font-mono text-sm"
-                      placeholder="Write your message... (supports **bold**, *italic*, `code`, > quote, ```code blocks```)"
-                      required><% if reply_to then %>
+
+            <!-- Subject -->
+            <div class="relative z-0">
+              <label class="block text-xs font-bold text-text-dim uppercase tracking-widest mb-2 ml-1">Subject</label>
+              <input type="text"
+                     name="subject"
+                     class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-inner font-bold"
+                     placeholder="Enter a descriptive subject..."
+                     <% if forward_data then %>
+                     value="<%= forward_data.subject or "" %>"
+                     <% elseif reply_to then %>
+                     <% local subject = reply_to.subject or reply_to.data.subject or "" %>
+                     value="<%= subject:match("^Re:") and subject or ("Re: " .. subject) %>"
+                     <% end %>
+                     required>
+            </div>
+
+            <!-- Body -->
+            <div class="relative z-0">
+              <div class="flex items-center justify-between mb-2 ml-1">
+                <label class="block text-xs font-bold text-text-dim uppercase tracking-widest">Message</label>
+                <div class="flex items-center gap-2 text-[10px] text-text-dim/70 font-mono">
+                  <span class="px-1.5 py-0.5 bg-white/5 rounded">**bold**</span>
+                  <span class="px-1.5 py-0.5 bg-white/5 rounded">*italic*</span>
+                  <span class="px-1.5 py-0.5 bg-white/5 rounded">`code`</span>
+                  <span class="px-1.5 py-0.5 bg-white/5 rounded">&gt; quote</span>
+                </div>
+              </div>
+              <textarea name="body"
+                        rows="12"
+                        class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl text-white placeholder-text-dim focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none font-mono text-sm leading-relaxed shadow-inner chat-scrollbar"
+                        placeholder="Write your details here..."
+                        required><% if forward_data then %><%= forward_data.body or "" %><% elseif reply_to then %>
 
 ---
 On <%= reply_to:formatted_date() %>, <%= (reply_to:sender_info().firstname or "") .. " " .. (reply_to:sender_info().lastname or "") %> wrote:
 
 > <%= (reply_to.body or reply_to.data.body or ""):gsub("\n", "\n> ") %><% end %></textarea>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center justify-between pt-4">
-            <button type="button"
-                    hx-post="/mailbox/draft"
-                    hx-include="closest form"
-                    class="flex items-center gap-2 px-4 py-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-              <i class="fas fa-save"></i>
-              <span>Save Draft</span>
-            </button>
-
-            <div class="flex items-center gap-3">
-              <a href="/mailbox/messages/inbox"
-                 class="px-4 py-2 text-text-muted hover:text-white transition-colors">
-                Cancel
-              </a>
-              <button type="submit"
-                      class="flex items-center gap-2 px-6 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
-                <i class="fas fa-paper-plane"></i>
-                <span>Send</span>
-              </button>
             </div>
-          </div>
-        </form>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-between pt-6 border-t border-white/5 mt-8">
+              <button type="button"
+                      hx-post="/mailbox/draft"
+                      hx-include="closest form"
+                      class="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-text-muted hover:text-white hover:bg-white/5 rounded-xl transition-all">
+                <i class="fas fa-save"></i>
+                <span>Save Draft</span>
+              </button>
+
+              <div class="flex items-center gap-4">
+                <a href="/mailbox/messages/inbox"
+                   class="px-5 py-2.5 text-sm font-bold text-text-muted hover:text-white transition-colors">
+                  Discard
+                </a>
+                <button type="submit"
+                        class="px-8 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center gap-2 group-hover:gap-3">
+                  <i class="fas fa-paper-plane"></i>
+                  <span>Send Message</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
-  </main>
+  </div>
 </div>
 
 <script>
 (function() {
-  // Recipient management
+  // Inject all users from server
+  const allUsers = <%- EncodeJson(all_users or {}) %>;
+
   const recipientsData = {
-    selected: new Map(), // key -> {key, name, email}
+    selected: new Map(),
     inputEl: document.getElementById('recipients-input'),
     tagsEl: document.getElementById('recipients-tags'),
     hiddenEl: document.getElementById('recipients-hidden'),
-    dropdownEl: document.getElementById('recipients-dropdown')
+    dropdownEl: document.getElementById('recipients-dropdown'),
+    type: 'recipients'
   };
 
   const ccData = {
@@ -144,10 +189,89 @@ On <%= reply_to:formatted_date() %>, <%= (reply_to:sender_info().firstname or ""
     inputEl: document.getElementById('cc-input'),
     tagsEl: document.getElementById('cc-tags'),
     hiddenEl: document.getElementById('cc-hidden'),
-    dropdownEl: document.getElementById('cc-dropdown')
+    dropdownEl: document.getElementById('cc-dropdown'),
+    type: 'cc'
   };
 
-  // Initialize with reply_to recipient if exists
+  const bccData = {
+    selected: new Map(),
+    inputEl: document.getElementById('bcc-input'),
+    tagsEl: document.getElementById('bcc-tags'),
+    hiddenEl: document.getElementById('bcc-hidden'),
+    dropdownEl: document.getElementById('bcc-dropdown'),
+    type: 'bcc'
+  };
+
+  // Setup client-side search for each input
+  [recipientsData, ccData, bccData].forEach(data => {
+    data.inputEl.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      filterAndRenderUsers(query, data);
+    });
+
+    data.inputEl.addEventListener('focus', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      filterAndRenderUsers(query, data);
+    });
+  });
+
+  function filterAndRenderUsers(query, data) {
+    if (!query) {
+      data.dropdownEl.classList.add('hidden');
+      data.dropdownEl.innerHTML = '';
+      return;
+    }
+
+    const matches = allUsers.filter(u => {
+      // Don't show if already selected
+      if (data.selected.has(u._key)) return false;
+
+      const name = ((u.firstname || '') + ' ' + (u.lastname || '')).toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      return name.includes(query) || email.includes(query);
+    }).slice(0, 10); // Limit to 10
+
+    if (matches.length === 0) {
+       data.dropdownEl.innerHTML = `
+        <div class="px-4 py-4 text-center">
+          <p class="text-sm font-bold text-text-muted">No users found</p>
+        </div>
+      `;
+      data.dropdownEl.classList.remove('hidden');
+      return;
+    }
+
+    data.dropdownEl.innerHTML = matches.map(user => `
+      <button type="button"
+              onclick="selectRecipient('${data.type}', '${user._key}', '${((user.firstname || '') + ' ' + (user.lastname || '')).replace(/'/g, "\\'")}', '${(user.email || '').replace(/'/g, "\\'")}')"
+              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left group border-l-2 border-transparent hover:border-primary">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center shrink-0 border border-white/5 group-hover:border-primary/20 transition-colors">
+          <span class="text-xs font-bold text-primary-light">
+            ${(user.firstname || user.email || '?').substring(0, 1).toUpperCase()}
+          </span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-bold text-white group-hover:text-primary-light transition-colors truncate">
+            ${user.firstname && user.lastname ? (user.firstname + " " + user.lastname) : user.email}
+          </p>
+          <p class="text-xs text-text-muted truncate">${user.email}</p>
+        </div>
+      </button>
+    `).join('');
+    
+    data.dropdownEl.classList.remove('hidden');
+  }
+
+  // Toggle helper
+  window.toggleSection = function(sectionId, inputId) {
+    const section = document.getElementById(sectionId);
+    section.classList.toggle('hidden');
+    if (!section.classList.contains('hidden')) {
+      document.getElementById(inputId).focus();
+    }
+  };
+
+  // Initialize Reply-To
   <% if reply_to then %>
   <% local sender = reply_to:sender_info() %>
   <% if sender._key then %>
@@ -162,61 +286,70 @@ On <%= reply_to:formatted_date() %>, <%= (reply_to:sender_info().firstname or ""
 
   function renderTags(data) {
     data.tagsEl.innerHTML = '';
+    
+    // Determine type string
+    let typeStr = data.type;
+
     data.selected.forEach((user, key) => {
       const tag = document.createElement('span');
-      tag.className = 'inline-flex items-center gap-1 px-3 py-1 bg-primary/20 text-primary-light rounded-full text-sm';
+      tag.className = 'inline-flex items-center gap-1 px-3 py-1 bg-primary/20 text-primary-light rounded-full text-sm animate-in fade-in zoom-in-95 duration-200';
       tag.innerHTML = `
         <span>${user.name || user.email}</span>
-        <button type="button" onclick="removeRecipient('${data === recipientsData ? 'recipients' : 'cc'}', '${key}')" class="hover:text-white">
+        <button type="button" onclick="removeRecipient('${typeStr}', '${key}')" class="hover:text-white transition-colors">
           <i class="fas fa-times text-xs"></i>
         </button>
       `;
       data.tagsEl.appendChild(tag);
     });
     updateHiddenInput(data);
+    
+    // Auto-show sections if they have data
+    if (data === ccData && data.selected.size > 0) {
+      document.getElementById('cc-section').classList.remove('hidden');
+    }
+    if (data === bccData && data.selected.size > 0) {
+      document.getElementById('bcc-section').classList.remove('hidden');
+    }
   }
 
   function updateHiddenInput(data) {
     data.hiddenEl.value = Array.from(data.selected.keys()).join(',');
   }
 
+  // Global functions for inline onclicks
   window.selectRecipient = function(type, key, name, email) {
-    const data = type === 'recipients' ? recipientsData : ccData;
+    let data;
+    if (type === 'recipients') data = recipientsData;
+    else if (type === 'cc') data = ccData;
+    else data = bccData;
+
     if (!data.selected.has(key)) {
       data.selected.set(key, { key, name, email });
       renderTags(data);
     }
     data.inputEl.value = '';
+    data.dropdownEl.innerHTML = '';
     data.dropdownEl.classList.add('hidden');
     data.inputEl.focus();
   };
 
   window.removeRecipient = function(type, key) {
-    const data = type === 'recipients' ? recipientsData : ccData;
+    let data;
+    if (type === 'recipients') data = recipientsData;
+    else if (type === 'cc') data = ccData;
+    else data = bccData;
+    
     data.selected.delete(key);
     renderTags(data);
   };
-
-  // Handle dropdown visibility
-  document.addEventListener('htmx:afterSwap', function(e) {
-    if (e.detail.target.id === 'recipients-dropdown' || e.detail.target.id === 'cc-dropdown') {
-      const dropdown = e.detail.target;
-      if (dropdown.innerHTML.trim()) {
-        dropdown.classList.remove('hidden');
-      } else {
-        dropdown.classList.add('hidden');
-      }
-    }
-  });
-
+  
   // Close dropdowns on click outside
   document.addEventListener('click', function(e) {
-    if (!recipientsData.dropdownEl.contains(e.target) && e.target !== recipientsData.inputEl) {
-      recipientsData.dropdownEl.classList.add('hidden');
-    }
-    if (!ccData.dropdownEl.contains(e.target) && e.target !== ccData.inputEl) {
-      ccData.dropdownEl.classList.add('hidden');
-    }
+    [recipientsData, ccData, bccData].forEach(data => {
+      if (!data.dropdownEl.contains(e.target) && e.target !== data.inputEl) {
+        data.dropdownEl.classList.add('hidden');
+      }
+    });
   });
 })();
 </script>

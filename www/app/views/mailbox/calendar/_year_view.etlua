@@ -1,0 +1,42 @@
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+  <% 
+    local month_names = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" }
+    for m = 1, 12 do
+      local days_in_month_view = 31 -- Simplification for visual grid or use real logic?
+      -- Reuse helper logic? No, just render link to month
+  %>
+  <a href="/mailbox/calendar?view=month&year=<%= year %>&month=<%= m %>" 
+     class="block bg-bg-card/40 backdrop-blur-sm border border-white/5 rounded-xl p-4 hover:bg-white/5 transition-all group">
+    <div class="text-center mb-3">
+       <span class="text-lg font-bold text-white group-hover:text-primary transition-colors"><%= month_names[m] %></span>
+    </div>
+    
+    <!-- Mini Calendar Grid -->
+    <div class="grid grid-cols-7 gap-1 text-center text-[10px]">
+       <% for _, d in ipairs({"S","M","T","W","T","F","S"}) do %>
+         <div class="text-text-dim font-medium"><%= d %></div>
+       <% end %>
+       
+       <% 
+         -- Quick calc for first day alignment
+         local f_day = os.time({year=year, month=m, day=1, hour=12})
+         local f_w = tonumber(os.date("%w", f_day))
+         local next_m = m == 12 and 1 or m + 1
+         local next_y = m == 12 and year + 1 or year
+         local l_day = os.time({year=next_y, month=next_m, day=1, hour=12}) - 86400
+         local dim = tonumber(os.date("%d", l_day))
+         
+         for _ = 1, f_w do 
+       %>
+         <div></div>
+       <% end %>
+       
+       <% for d = 1, dim do %>
+         <div class="aspect-square flex items-center justify-center rounded-sm <%= (year == today.year and m == today.month and d == today.day) and 'bg-primary text-white font-bold' or 'text-text-muted' %>">
+           <%= d %>
+         </div>
+       <% end %>
+    </div>
+  </a>
+  <% end %>
+</div>

@@ -322,4 +322,9 @@ function SoliDB:LiveQueryToken()
   return nil
 end
 
+-- Alias for Sdbql
+function SoliDB:query(str, bindvars, options)
+  return self:Sdbql(str, bindvars, options)
+end
+
 return SoliDB

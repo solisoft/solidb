@@ -14,57 +14,74 @@
   <% local is_starred = message.starred or message.data.starred %>
   <a href="/mailbox/messages/view/<%= message._key or message.data._key %>"
      data-message-key="<%= message._key or message.data._key %>"
-     class="flex items-center gap-4 px-6 py-4 hover:bg-white/5 transition-all group <%= not is_read and 'bg-primary/5' or '' %>">
+     class="flex items-center gap-5 px-6 py-5 hover:bg-white/5 transition-all group <%= not is_read and 'bg-primary/5' or '' %> cursor-pointer relative overflow-hidden">
+    
+    <% if not is_read then %>
+    <div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+    <% end %>
 
     <!-- Star Button -->
-    <button class="shrink-0 text-lg <%= is_starred and 'text-yellow-400' or 'text-text-dim hover:text-yellow-400' %> transition-colors"
+    <button class="shrink-0 text-lg <%= is_starred and 'text-warning' or 'text-text-dim hover:text-warning' %> transition-colors z-10"
             hx-post="/mailbox/messages/<%= message._key or message.data._key %>/star"
             hx-swap="outerHTML"
             onclick="event.preventDefault(); event.stopPropagation();">
-      <i class="fas fa-star"></i>
+      <i class="<%= is_starred and 'fas' or 'far' %> fa-star"></i>
     </button>
 
     <!-- Sender Avatar -->
-    <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-      <span class="text-sm font-medium text-primary-light">
+    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center shrink-0 border border-white/5">
+      <span class="text-sm font-bold text-primary-light">
         <%= string.upper(string.sub(sender.firstname or sender.email or "?", 1, 1)) %>
       </span>
     </div>
 
     <!-- Message Info -->
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="font-medium text-white truncate <%= not is_read and 'font-semibold' or '' %>">
+      <div class="flex items-center gap-3 mb-1.5">
+        <span class="text-sm font-bold text-white truncate <%= not is_read and 'text-primary-light' or '' %>">
           <%= sender.firstname and sender.lastname and (sender.firstname .. " " .. sender.lastname) or sender.email or "Unknown" %>
         </span>
-        <span class="text-xs text-text-dim shrink-0"><%= message:short_date() %></span>
+        <span class="text-[10px] font-bold text-text-dim uppercase tracking-widest shrink-0 bg-white/5 px-2 py-0.5 rounded-md"><%= message:short_date() %></span>
       </div>
-      <p class="text-sm text-text-muted truncate <%= not is_read and 'text-text font-medium' or '' %>">
+      <p class="text-sm text-text truncate font-medium mb-0.5">
         <%= message.subject or message.data.subject or "(No subject)" %>
       </p>
-      <p class="text-xs text-text-dim truncate mt-0.5">
-        <%= TextHelper and TextHelper.truncate(message.body or message.data.body or "", 80) or string.sub(message.body or message.data.body or "", 1, 80) %>
+      <p class="text-xs text-text-muted truncate opacity-80 font-mono">
+        <% 
+          local raw_body = message.body or message.data.body or "" 
+          local clean_body = raw_body
+          if TextHelper and TextHelper.strip_markdown then
+            clean_body = TextHelper.strip_markdown(clean_body)
+          end
+          local final_body = clean_body
+          if TextHelper and TextHelper.truncate then
+            final_body = TextHelper.truncate(clean_body, 90)
+          else
+            final_body = string.sub(clean_body, 1, 90)
+          end
+        %>
+        <%= final_body %>
       </p>
     </div>
 
     <!-- Actions -->
-    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-      <button class="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 translate-x-4 group-hover:translate-x-0 duration-200">
+      <button class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors border border-transparent hover:border-white/5"
               hx-post="/mailbox/messages/<%= message._key or message.data._key %>/archive"
               hx-swap="outerHTML swap:1s"
               hx-target="closest a"
               onclick="event.preventDefault(); event.stopPropagation();"
               title="Archive">
-        <i class="fas fa-archive"></i>
+        <i class="fas fa-archive text-xs"></i>
       </button>
-      <button class="p-2 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+      <button class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-error hover:bg-error/10 rounded-lg transition-colors border border-transparent hover:border-error/20"
               hx-delete="/mailbox/messages/<%= message._key or message.data._key %>"
               hx-confirm="Delete this message?"
               hx-swap="outerHTML swap:1s"
               hx-target="closest a"
               onclick="event.preventDefault(); event.stopPropagation();"
               title="Delete">
-        <i class="fas fa-trash"></i>
+        <i class="fas fa-trash text-xs"></i>
       </button>
     </div>
   </a>

@@ -1,104 +1,131 @@
 <!-- Edit Datatype Form -->
 <% local dt = datatype.data or datatype %>
-<div class="max-w-4xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex items-center gap-4">
-    <a href="/cruds" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
-      <i class="fas fa-arrow-left"></i>
-    </a>
-    <div>
-      <h1 class="text-2xl font-bold text-gradient">Edit <%= dt.name %></h1>
-      <p class="text-text-muted mt-1">Modify your data structure</p>
-    </div>
-  </div>
-
-  <!-- Form -->
-  <form hx-put="/cruds/datatypes/<%= dt.slug %>" hx-swap="none" class="space-y-6">
-    <!-- Basic Info -->
-    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
-      <h2 class="text-lg font-semibold mb-4">Basic Information</h2>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Name *</label>
-          <input type="text" name="name" required
-                 value="<%= dt.name %>"
-                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
+<div class="flex h-full">
+  <%- partial("cruds/sidebar") %>
+  
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
+    <!-- Header -->
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <a href="/cruds" class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 group">
+            <i class="fas fa-arrow-left text-text-muted group-hover:text-text transition-colors"></i>
+          </a>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Edit <%= dt.name %></h1>
+            <div class="flex items-center gap-2 text-xs text-text-muted mt-0.5">
+               <span class="font-mono text-primary"><%= dt.slug %></span>
+               <span class="w-1 h-1 rounded-full bg-white/20"></span>
+               <span>Schema Configuration</span>
+            </div>
+          </div>
         </div>
-
-        <div>
-          <label class="block text-sm font-medium text-text-muted mb-2">Slug *</label>
-          <input type="text" name="new_slug" required
-                 value="<%= dt.slug %>"
-                 pattern="^[a-z0-9_-]+$"
-                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
-          <p class="text-xs text-text-muted mt-1">URL-safe identifier (lowercase, no spaces)</p>
-        </div>
-
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-text-muted mb-2">Description</label>
-          <textarea name="description" rows="2"
-                    class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary resize-none"><%= dt.description or "" %></textarea>
-        </div>
-
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-text-muted mb-2">Collection Name (optional)</label>
-          <input type="text" name="collection_name"
-                 value="<%= dt.collection_name or "" %>"
-                 placeholder="Leave empty to use 'datasets' collection"
-                 class="w-full px-4 py-2 bg-bg-dark border border-border/50 rounded-lg focus:outline-none focus:border-primary">
-          <p class="text-xs text-text-muted mt-1">Custom collection name, or leave empty to store in 'datasets' with _type field</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Structure Builder -->
-    <div class="bg-bg-card/50 backdrop-blur-xl border border-border/50 rounded-xl p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Datatype Structure</h2>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="addField()" class="px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary-light rounded-lg transition-colors text-sm">
-            <i class="fas fa-plus mr-1"></i> Add Field
-          </button>
-          <button type="button" onclick="addRelation()" class="px-3 py-1.5 bg-success/20 hover:bg-success/30 text-success rounded-lg transition-colors text-sm">
-            <i class="fas fa-link mr-1"></i> Add Relation
+        
+        <div class="flex items-center gap-3">
+          <a href="/cruds" class="px-4 py-2 text-sm font-bold text-text-muted hover:text-white transition-colors">Cancel</a>
+          <button onclick="document.getElementById('edit-form').dispatchEvent(new Event('submit', {cancelable: true}))" 
+                  class="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center gap-2">
+            <i class="fas fa-save"></i>
+            <span>Save Changes</span>
           </button>
         </div>
       </div>
-
-      <div id="structure-container" class="space-y-3">
-        <!-- Elements will be populated dynamically -->
-      </div>
-
-      <input type="hidden" name="fields" id="fields-json" value="[]">
-      <input type="hidden" name="relations" id="relations-json" value="[]">
-
-      <p class="text-xs text-text-muted mt-4">
-        <i class="fas fa-info-circle mr-1"></i>
-        Drag elements to reorder. Fields and relations can be mixed freely.
-      </p>
     </div>
 
-    <!-- Submit -->
-    <div class="flex items-center justify-end gap-3">
-      <a href="/cruds" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</a>
-      <button type="submit" class="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors">
-        <i class="fas fa-save mr-2"></i> Save Changes
-      </button>
-    </div>
-  </form>
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <div class="max-w-5xl mx-auto space-y-8 pb-20">
+        <!-- Form -->
+        <form id="edit-form" hx-put="/cruds/datatypes/<%= dt.slug %>" hx-swap="none" class="space-y-8">
+          <!-- Basic Info -->
+          <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-8 shadow-sm">
+            <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest mb-8 flex items-center gap-2">
+              <i class="fas fa-info-circle text-primary"></i>
+              Basic Information
+            </h2>
 
-  <!-- Danger Zone (outside form) -->
-  <div class="bg-error/10 border border-error/30 rounded-xl p-6 mt-6">
-    <h2 class="text-lg font-semibold text-error mb-4">Danger Zone</h2>
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="font-medium">Delete this datatype</p>
-        <p class="text-sm text-text-muted">This action cannot be undone. All associated data can optionally be deleted.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label class="block text-xs font-bold text-text-muted ml-1 mb-2">Name <span class="text-error">*</span></label>
+                <input type="text" name="name" required
+                       value="<%= dt.name %>"
+                       class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-white placeholder:text-text-dim shadow-inner">
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-text-muted ml-1 mb-2">Slug <span class="text-error">*</span></label>
+                <input type="text" name="new_slug" required
+                       value="<%= dt.slug %>"
+                       pattern="^[a-z0-9_-]+$"
+                       class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-white placeholder:text-text-dim shadow-inner font-mono text-sm">
+                <p class="text-[10px] text-text-muted mt-1.5 ml-1">URL-safe identifier (lowercase, no spaces)</p>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-text-muted ml-1 mb-2">Description</label>
+                <textarea name="description" rows="2"
+                          class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-white placeholder:text-text-dim shadow-inner resize-none"><%= dt.description or "" %></textarea>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-text-muted ml-1 mb-2">Collection Name (optional)</label>
+                <input type="text" name="collection_name"
+                       value="<%= dt.collection_name or "" %>"
+                       placeholder="Leave empty to use 'datasets' collection"
+                       class="w-full px-4 py-3 bg-bg-dark/50 border border-white/10 rounded-xl focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-white placeholder:text-text-dim shadow-inner font-mono text-sm">
+                <p class="text-[10px] text-text-muted mt-1.5 ml-1">Advanced usage: Custom collection name for this datatype.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Structure Builder -->
+          <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-8">
+            <div class="flex items-center justify-between mb-8">
+              <h2 class="text-sm font-bold text-text-dim uppercase tracking-widest flex items-center gap-2">
+                <i class="fas fa-layer-group text-primary"></i>
+                Structure Definition
+              </h2>
+              <div class="flex items-center gap-3">
+                <button type="button" onclick="addField()" class="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary-light border border-primary/20 rounded-xl transition-all text-xs font-bold flex items-center gap-2">
+                  <i class="fas fa-plus"></i> Add Field
+                </button>
+                <button type="button" onclick="addRelation()" class="px-4 py-2 bg-success/10 hover:bg-success/20 text-success border border-success/20 rounded-xl transition-all text-xs font-bold flex items-center gap-2">
+                  <i class="fas fa-link"></i> Add Relation
+                </button>
+              </div>
+            </div>
+
+            <div id="structure-container" class="space-y-4">
+              <!-- Elements will be populated dynamically -->
+            </div>
+
+            <input type="hidden" name="fields" id="fields-json" value="[]">
+            <input type="hidden" name="relations" id="relations-json" value="[]">
+            
+            <div class="mt-8 pt-6 border-t border-white/5 flex items-center justify-center gap-2 text-xs text-text-muted">
+              <i class="fas fa-info-circle text-primary"></i>
+              <span>Drag items by the handle to reorder the form layout.</span>
+            </div>
+          </div>
+        </form>
+
+        <!-- Danger Zone (outside form) -->
+        <div class="bg-error/5 border border-error/10 rounded-2xl p-8 mt-8">
+          <h2 class="text-xs font-bold text-error uppercase tracking-widest mb-6 flex items-center gap-2">
+            <i class="fas fa-exclamation-triangle"></i>
+            Danger Zone
+          </h2>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-bold text-white text-sm">Delete Datatype</p>
+              <p class="text-xs text-text-muted mt-1">This action cannot be undone. Associated data can be kept or deleted.</p>
+            </div>
+            <button type="button" onclick="confirmDelete()" class="px-5 py-2.5 bg-error hover:bg-error/80 text-white font-bold rounded-xl transition-all shadow-lg shadow-error/20">
+              Delete Datatype
+            </button>
+          </div>
+        </div>
       </div>
-      <button type="button" onclick="confirmDelete()" class="px-4 py-2 bg-error hover:bg-error/80 text-white rounded-lg transition-colors">
-        <i class="fas fa-trash mr-2"></i> Delete
-      </button>
     </div>
   </div>
 </div>
@@ -112,31 +139,46 @@ let elements = [];
 let elementIndex = 0;
 
 // Initialize from existing data
+// Initialize from existing data
 document.addEventListener('DOMContentLoaded', function() {
   const existingFields = <%- EncodeJson(dt.fields or {}) %>;
   const existingRelations = <%- EncodeJson(dt.relations or {}) %>;
   
-  // Note: We don't know the original mixed order from backend,
-  // so we show fields then relations initially.
+  // Combine and sort by order index if present
+  const combined = [];
+  
   existingFields.forEach(f => {
-    const id = 'element_' + elementIndex++;
-    elements.push({ id, type: 'field', data: f });
-    renderFieldElement(id, f);
+    combined.push({ type: 'field', data: f, order: f.order || 9999 });
   });
   
   existingRelations.forEach(r => {
+    combined.push({ type: 'relation', data: r, order: r.order || 9999 });
+  });
+  
+  // Sort: explicit order first, then fallback to original separation if no order
+  // However, initial load we just respect the array order if 'order' is missing.
+  // Actually, better to just append them as we did, BUT if they have 'order', use it.
+  combined.sort((a, b) => (a.order || 9999) - (b.order || 9999));
+  
+  // Re-assign IDs and render
+  combined.forEach(item => {
     const id = 'element_' + elementIndex++;
-    elements.push({ id, type: 'relation', data: r });
-    renderRelationElement(id, r);
+    elements.push({ id, type: item.type, data: item.data });
+    if (item.type === 'field') {
+      renderFieldElement(id, item.data);
+    } else {
+      renderRelationElement(id, item.data);
+    }
   });
 
   updateJsonInputs();
 
   // Initialize Sortable
   new Sortable(document.getElementById('structure-container'), {
-    animation: 150,
-    handle: '.fa-grip-vertical',
-    ghostClass: 'opacity-50',
+    animation: 200,
+    handle: '.drag-handle',
+    ghostClass: 'opacity-40',
+    dragClass: 'opacity-100',
     onEnd: function(evt) {
       updateJsonInputs();
     }
@@ -147,48 +189,21 @@ document.addEventListener('DOMContentLoaded', function() {
 function renderFieldElement(id, field) {
   const container = document.getElementById('structure-container');
   const html = `
-    <div id="${id}" data-element-type="field" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-white/5 hover:border-white/10 rounded-2xl group transition-all">
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+    <div id="${id}" data-element-type="field" class="flex flex-col gap-3 p-4 bg-bg-dark/40 border border-white/5 hover:border-white/10 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move drag-handle group-hover:text-text-muted transition-colors shrink-0">
           <i class="fas fa-grip-vertical"></i>
         </div>
         
-        <div class="w-8 h-8 flex items-center justify-center bg-primary/10 text-primary rounded-lg" title="Field">
+        <div class="w-8 h-8 flex items-center justify-center bg-accent/10 text-accent rounded-lg shrink-0" title="Field">
           <i class="fas fa-font text-xs"></i>
         </div>
 
-        <input type="text" placeholder="Field name" data-field="name" value="${field.name || ''}"
-               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
-               onchange="updateElementData('${id}')">
-      </div>
-
-      <div class="flex flex-1 items-center gap-3 w-full">
-        <select data-field="field_type" onchange="updateElementData('${id}')"
-                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
-          ${FIELD_TYPES.map(t => `<option value="${t}" ${t === field.type ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
-        </select>
-
-        <input type="text" placeholder="Label" data-field="label" value="${field.label || ''}"
-               class="flex-1 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+        <input type="text" placeholder="Field ID" data-field="name" value="${field.name || ''}"
+               class="flex-1 min-w-0 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all font-mono"
                onchange="updateElementData('${id}')">
                
-        <select data-field="width" onchange="updateElementData('${id}')"
-                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
-          <option value="1/1" ${field.width === '1/1' ? 'selected' : ''}>FULL</option>
-          <option value="1/2" ${field.width === '1/2' ? 'selected' : ''}>1/2</option>
-          <option value="1/3" ${field.width === '1/3' ? 'selected' : ''}>1/3</option>
-          <option value="1/4" ${field.width === '1/4' ? 'selected' : ''}>1/4</option>
-        </select>
-      </div>
-
-      <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-        <label class="flex items-center gap-2 cursor-pointer group/label">
-          <input type="checkbox" data-field="required" ${field.required ? 'checked' : ''} onchange="updateElementData('${id}')" 
-                 class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
-          <span class="text-xs font-bold text-text-muted group-hover/label:text-white transition-colors">Required</span>
-        </label>
-
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 shrink-0">
           <button type="button" onclick="configureField('${id}')" 
                   class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary/20 text-text-dim hover:text-primary rounded-xl transition-all" title="Configure">
             <i class="fas fa-cog"></i>
@@ -200,6 +215,31 @@ function renderFieldElement(id, field) {
           </button>
         </div>
       </div>
+
+      <div class="flex flex-wrap items-center gap-3 w-full">
+        <select data-field="field_type" onchange="updateElementData('${id}')"
+                class="flex-1 min-w-[100px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer uppercase tracking-wider">
+          ${FIELD_TYPES.map(t => `<option value="${t}" ${t === field.type ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
+        </select>
+
+        <input type="text" placeholder="Human Label" data-field="label" value="${field.label || ''}"
+               class="flex-[2] min-w-[150px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+               onchange="updateElementData('${id}')">
+               
+        <select data-field="width" onchange="updateElementData('${id}')"
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer text-center">
+          <option value="1/1" ${field.width === '1/1' ? 'selected' : ''}>FULL</option>
+          <option value="1/2" ${field.width === '1/2' ? 'selected' : ''}>1/2</option>
+          <option value="1/3" ${field.width === '1/3' ? 'selected' : ''}>1/3</option>
+          <option value="1/4" ${field.width === '1/4' ? 'selected' : ''}>1/4</option>
+        </select>
+
+        <label class="flex items-center gap-2 cursor-pointer group/label shrink-0 ml-auto md:ml-0">
+          <input type="checkbox" data-field="required" ${field.required ? 'checked' : ''} onchange="updateElementData('${id}')" 
+                 class="w-4 h-4 rounded border-white/10 bg-bg-dark text-primary focus:ring-primary focus:ring-offset-bg-dark">
+          <span class="text-xs font-bold text-text-muted group-hover/label:text-white transition-colors">Required</span>
+        </label>
+      </div>
     </div>
   `;
   container.insertAdjacentHTML('beforeend', html);
@@ -209,50 +249,50 @@ function renderFieldElement(id, field) {
 function renderRelationElement(id, rel) {
   const container = document.getElementById('structure-container');
   const html = `
-    <div id="${id}" data-element-type="relation" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-bg-dark/40 border border-success/5 hover:border-success/20 rounded-2xl group transition-all">
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move group-hover:text-text-muted transition-colors">
+    <div id="${id}" data-element-type="relation" class="flex flex-col gap-3 p-4 bg-bg-dark/40 border border-success/5 hover:border-success/20 rounded-2xl group transition-all">
+      <div class="flex items-center gap-3 w-full">
+        <div class="w-8 h-8 flex items-center justify-center bg-white/5 rounded-lg text-text-dim cursor-move drag-handle group-hover:text-text-muted transition-colors shrink-0">
           <i class="fas fa-grip-vertical"></i>
         </div>
         
-        <div class="w-8 h-8 flex items-center justify-center bg-success/10 text-success rounded-lg" title="Relation">
+        <div class="w-8 h-8 flex items-center justify-center bg-success/10 text-success rounded-lg shrink-0" title="Relation">
           <i class="fas fa-link text-xs"></i>
         </div>
 
-        <input type="text" placeholder="Relation name" data-relation="name" value="${rel.name || ''}"
-               class="flex-1 sm:w-48 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
+        <input type="text" placeholder="Relation Name" data-relation="name" value="${rel.name || ''}"
+               class="flex-1 min-w-0 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all font-mono"
                onchange="updateElementData('${id}')">
+               
+        <button type="button" onclick="removeElement('${id}')" 
+                class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all shrink-0" title="Remove">
+          <i class="fas fa-trash-alt text-xs"></i>
+        </button>
       </div>
 
-      <div class="flex flex-1 items-center gap-3 w-full">
-        <div class="relative flex-1">
+      <div class="flex flex-wrap items-center gap-3 w-full">
+        <div class="relative flex-1 min-w-[150px]">
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <i class="fas fa-database text-text-dim text-xs"></i>
           </div>
-          <input type="text" placeholder="Target slug" data-relation="target_datatype" value="${rel.target_datatype || ''}"
+          <input type="text" placeholder="Target Datatype Slug" data-relation="target_datatype" value="${rel.target_datatype || ''}"
                  class="w-full pl-9 pr-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all"
                  onchange="updateElementData('${id}')">
         </div>
 
         <select data-relation="storage" onchange="updateElementData('${id}')"
-                class="w-32 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
+                class="flex-1 min-w-[120px] px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white transition-all appearance-none cursor-pointer">
           <option value="embedded" ${rel.storage === 'embedded' ? 'selected' : ''}>EMBEDDED</option>
           <option value="referenced" ${rel.storage === 'referenced' ? 'selected' : ''}>REFERENCED</option>
         </select>
         
         <select data-relation="width" onchange="updateElementData('${id}')"
-                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer">
+                class="w-24 px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-[10px] font-bold text-white transition-all appearance-none cursor-pointer text-center">
           <option value="1/1" ${rel.width === '1/1' ? 'selected' : ''}>FULL</option>
           <option value="1/2" ${rel.width === '1/2' ? 'selected' : ''}>1/2</option>
           <option value="1/3" ${rel.width === '1/3' ? 'selected' : ''}>1/3</option>
           <option value="1/4" ${rel.width === '1/4' ? 'selected' : ''}>1/4</option>
         </select>
       </div>
-
-      <button type="button" onclick="removeElement('${id}')" 
-              class="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-error/20 text-text-dim hover:text-error rounded-xl transition-all" title="Remove">
-        <i class="fas fa-trash-alt text-xs"></i>
-      </button>
     </div>
   `;
   container.insertAdjacentHTML('beforeend', html);
@@ -361,17 +401,17 @@ function configureField(id) {
         </div>
 
         <div id="static-options" class="${field.source_query ? 'hidden' : ''} space-y-2">
-          <label class="block text-sm font-bold text-text-muted ml-1">Options (one per line)</label>
+          <label class="block text-xs font-bold text-text-muted ml-1">Options (one per line)</label>
           <textarea id="field-options" rows="5" 
                     placeholder="Option 1\\nOption 2\\nOption 3"
-                    class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white">${(field.options || []).join('\\n')}</textarea>
+                    class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white shadow-inner">${(field.options || []).join('\\n')}</textarea>
         </div>
 
         <div id="query-options" class="${field.source_query ? '' : 'hidden'} space-y-4">
           <div class="space-y-2">
-            <label class="block text-sm font-bold text-text-muted ml-1">SDBQL Query</label>
+            <label class="block text-xs font-bold text-text-muted ml-1">SDBQL Query</label>
             <textarea id="field-source-query" rows="4" placeholder="FOR doc IN collection RETURN doc.name"
-                      class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white">${field.source_query || ''}</textarea>
+                      class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary font-mono text-sm text-white shadow-inner">${field.source_query || ''}</textarea>
             <p class="text-[10px] text-text-dim px-1 italic">
               <i class="fas fa-info-circle mr-1"></i>
               Returns labels or objects. Use <code class="px-1 bg-white/10 rounded text-primary-light">@doc</code> for context.
@@ -382,12 +422,12 @@ function configureField(id) {
             <div class="space-y-2">
               <label class="block text-xs font-bold text-text-muted ml-1">Label Field</label>
               <input type="text" id="field-label-field" value="${field.label_field || ''}" placeholder="e.g. name"
-                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white">
+                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white shadow-inner">
             </div>
             <div class="space-y-2">
               <label class="block text-xs font-bold text-text-muted ml-1">Value Field</label>
               <input type="text" id="field-value-field" value="${field.value_field || ''}" placeholder="e.g. _key"
-                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white">
+                     class="w-full px-3 py-2 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-sm text-white shadow-inner">
             </div>
           </div>
         </div>
@@ -396,30 +436,27 @@ function configureField(id) {
   }
 
   const modalHtml = `
-    <div class="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in" onclick="if(event.target===this) closeModal()">
-      <div class="bg-bg-card border border-white/10 rounded-3xl p-8 w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in" onclick="if(event.target===this) closeModal()">
+      <div class="bg-bg-card border border-white/10 rounded-3xl p-8 w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] zoom-in-95 duration-200">
         <div class="flex items-center justify-between mb-6">
           <h3 class="text-2xl font-black text-white tracking-tight">Configure Field</h3>
-          <button type="button" onclick="closeModal()" class="text-text-dim hover:text-white transition-colors">
-            <i class="fas fa-times text-xl"></i>
+          <button type="button" onclick="closeModal()" class="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors text-text-dim hover:text-white">
+            <i class="fas fa-times text-lg"></i>
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto pr-2 scrollbar-thin">
+        <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           <div class="space-y-6">
-            <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
-              <div class="flex items-center gap-3 mb-1">
-                <span class="text-xs font-black text-primary uppercase tracking-widest">Selected Type</span>
-                <span class="px-2 py-0.5 bg-primary/20 text-primary-light rounded text-[10px] font-bold uppercase">${field.type}</span>
-              </div>
-              <p class="text-lg font-bold text-white">${field.label || field.name || 'Unnamed Field'}</p>
+            <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col items-center text-center">
+              <div class="px-3 py-1 bg-primary/20 text-primary-light rounded-full text-[10px] font-bold uppercase tracking-widest mb-2">${field.type}</div>
+              <p class="text-xl font-bold text-white tracking-tight">${field.label || field.name || 'Unnamed Field'}</p>
             </div>
 
             <div class="space-y-2">
-              <label class="block text-sm font-bold text-text-muted ml-1">Placeholder Text</label>
+              <label class="block text-xs font-bold text-text-muted ml-1">Placeholder Text</label>
               <input type="text" id="field-placeholder" value="${field.placeholder || ''}"
                      placeholder="Text shown when field is empty"
-                     class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-white transition-all">
+                     class="w-full px-4 py-3 bg-bg-dark border border-white/10 rounded-xl focus:outline-none focus:border-primary text-white transition-all shadow-inner">
             </div>
 
             ${optionsHtml}
@@ -499,7 +536,7 @@ function updateJsonInputs() {
   const fields = [];
   const relations = [];
 
-  document.querySelectorAll('#structure-container > div[id^="element_"]').forEach(el => {
+  document.querySelectorAll('#structure-container > div[id^="element_"]').forEach((el, index) => {
     const element = elements.find(e => e.id === el.id);
     if (!element) return;
 
@@ -516,7 +553,8 @@ function updateJsonInputs() {
           allow_blank: element.data.allow_blank,
           source_query: element.data.source_query,
           label_field: element.data.label_field,
-          value_field: element.data.value_field
+          value_field: element.data.value_field,
+          order: index
         });
       }
     } else {
@@ -525,7 +563,8 @@ function updateJsonInputs() {
           name: element.data.name,
           target_datatype: element.data.target_datatype,
           storage: element.data.storage,
-          width: element.data.width
+          width: element.data.width,
+          order: index
         });
       }
     }
@@ -538,19 +577,34 @@ function updateJsonInputs() {
 // Confirm delete
 function confirmDelete() {
   const modalHtml = `
-    <div class="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) closeModal()">
-      <div class="bg-bg-card border border-error/30 rounded-xl p-6 w-full max-w-md">
-        <h3 class="text-lg font-semibold text-error mb-4">Delete Datatype</h3>
-        <p class="text-text-muted mb-4">Are you sure you want to delete "<%= dt.name %>"? This action cannot be undone.</p>
+    <div class="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in" onclick="if(event.target===this) closeModal()">
+      <div class="bg-bg-card border border-error/20 rounded-3xl p-8 w-full max-w-md shadow-2xl zoom-in-95 duration-200">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-exclamation-triangle text-error text-xl"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-white tracking-tight">Delete Datatype?</h3>
+            <p class="text-xs text-text-muted mt-1">This action cannot be undone.</p>
+          </div>
+        </div>
+        
+        <p class="text-sm text-text-muted mb-6 leading-relaxed">
+          Are you sure you want to delete <span class="text-white font-bold"><%= dt.name %></span>? You can optionally delete all associated data records.
+        </p>
 
-        <label class="flex items-center gap-2 mb-4">
-          <input type="checkbox" id="delete-data-checkbox" class="rounded">
-          <span class="text-sm">Also delete all associated data records</span>
-        </label>
+        <div class="bg-error/5 rounded-xl p-4 border border-error/10 mb-8">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" id="delete-data-checkbox" class="w-5 h-5 rounded border-error/30 bg-bg-dark text-error focus:ring-error">
+            <span class="text-sm font-bold text-error">Also delete all related data</span>
+          </label>
+        </div>
 
         <div class="flex justify-end gap-3">
-          <button type="button" onclick="closeModal()" class="px-4 py-2 hover:bg-white/10 rounded-lg transition-colors">Cancel</button>
-          <button type="button" onclick="executeDelete()" class="px-4 py-2 bg-error hover:bg-error/80 text-white rounded-lg transition-colors">Delete</button>
+          <button type="button" onclick="closeModal()" class="px-5 py-2.5 text-sm font-bold text-text-muted hover:text-white transition-colors">Cancel</button>
+          <button type="button" onclick="executeDelete()" class="px-6 py-2.5 bg-error hover:bg-error/80 text-white font-bold rounded-xl transition-all shadow-lg shadow-error/20">
+            Yes, Delete It
+          </button>
         </div>
       </div>
     </div>

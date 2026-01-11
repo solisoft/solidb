@@ -1,4 +1,4 @@
-<div class="relative overflow-hidden bg-gray-900 text-white">
+<div class="relative overflow-hidden bg-gray-900 text-white selection:bg-indigo-500 selection:text-white">
   <!-- Dynamic Background Wrapper -->
   <div class="absolute inset-0 z-0 pointer-events-none overflow-hidden">
     <div class="absolute top-0 left-1/4 w-[800px] h-[800px] bg-purple-600/20 rounded-full mix-blend-screen filter blur-[120px] animate-blob"></div>
@@ -11,14 +11,14 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
       <div class="inline-flex items-center px-4 py-2 rounded-full border border-indigo-500/30 bg-indigo-900/30 backdrop-blur-sm mb-8 animate-fade-in-up">
         <span class="flex h-2 w-2 rounded-full bg-indigo-400 mr-2 animate-pulse"></span>
-        <span class="text-sm font-medium text-indigo-200">v0.2 Released - AI Native & Multi-Model</span>
+        <span class="text-sm font-medium text-indigo-200">v0.2 Released - Multi-Model & AI Native</span>
       </div>
       <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 animate-fade-in-up animation-delay-100">
         <span class="block text-gray-100">The Logic of</span>
         <span class="block pb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400">Intelligent Data</span>
       </h1>
       <p class="mt-6 max-w-2xl mx-auto text-xl text-gray-400 animate-fade-in-up animation-delay-200">
-        SoliDB recreates the database from first principles. A distributed, ACID-compliant engine written in Rust, designed to unify your data and power the next generation of AI applications.
+        SoliDB is a distributed, ACID-compliant database written in Rust. It unifies <strong>Documents, Time-Series, and Analytics</strong> with an embedded <strong>Lua Runtime</strong> for building real-time, event-driven applications.
       </p>
       
       <div class="mt-12 flex flex-col sm:flex-row justify-center gap-4 animate-fade-in-up animation-delay-300">
@@ -44,213 +44,228 @@
     </div>
   </div>
 
-  <!-- Bento Grid Section: Core Strengths -->
-  <div class="relative py-24 bg-gray-900/50">
+  <!-- Feature Tour Section -->
+  <div class="py-24 bg-gray-900/50 border-t border-gray-800" id="features">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="text-center mb-16">
         <h2 class="text-3xl font-extrabold text-white sm:text-4xl">
-          Engineered for <span class="text-indigo-400">Scale & Speed</span>
+          One Engine. <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">Infinite Possibilities.</span>
         </h2>
-        <p class="mt-4 text-gray-400">Built from the ground up to solve modern data challenges.</p>
+        <p class="mt-4 text-gray-400 max-w-2xl mx-auto">
+          SoliDB collapses the modern data stack into a single, cohesive runtime.
+          Stop gluing together databases, queues, and serverless functions.
+        </p>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[300px]">
-        <!-- Card 1: Rust/Performance (Large) -->
-        <div class="md:col-span-2 row-span-1 relative group overflow-hidden bg-gray-800 rounded-3xl border border-gray-700/50 hover:border-indigo-500/50 transition-all duration-500">
-          <div class="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-transparent"></div>
-          <div class="relative h-full p-8 flex flex-col justify-between z-10">
-            <div>
-              <div class="w-12 h-12 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-              </div>
-              <h3 class="text-2xl font-bold text-white">Unmatched Performance</h3>
-              <p class="mt-2 text-gray-400 max-w-md">Powered by a custom B-Tree engine in bare-metal Rust. Zero garbage collection pauses, SIMD-optimized query execution, and blazing fast IO.</p>
+      <!-- Feature Tabs -->
+      <div class="flex flex-col lg:flex-row gap-8">
+         
+         <!-- Tabs Navigation -->
+         <div class="lg:w-1/3 flex flex-col gap-4">
+            <button onclick="switchTab('multi-model')" class="feature-tab group text-left p-6 rounded-2xl border border-gray-800 bg-gray-800/30 hover:bg-gray-800 hover:border-gray-700 transition-all active" id="tab-multi-model">
+               <div class="flex items-center mb-2">
+                  <div class="p-2 rounded-lg bg-blue-500/20 text-blue-400 mr-4">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                  </div>
+                  <h3 class="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">Multi-Model</h3>
+               </div>
+               <p class="text-sm text-gray-400 pl-[3.5rem]">
+                  Store JSON documents, time-series data, blobs, and columnar analytics in a single transaction.
+               </p>
+            </button>
+
+            <button onclick="switchTab('realtime')" class="feature-tab group text-left p-6 rounded-2xl border border-gray-800 bg-gray-800/30 hover:bg-gray-800 hover:border-gray-700 transition-all" id="tab-realtime">
+               <div class="flex items-center mb-2">
+                  <div class="p-2 rounded-lg bg-green-500/20 text-green-400 mr-4">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  </div>
+                  <h3 class="text-xl font-bold text-white group-hover:text-green-400 transition-colors">Real-Time</h3>
+               </div>
+               <p class="text-sm text-gray-400 pl-[3.5rem]">
+                  Native WebSockets and Live Queries. Push state changes to clients instantly without polling.
+               </p>
+            </button>
+
+            <button onclick="switchTab('jobs')" class="feature-tab group text-left p-6 rounded-2xl border border-gray-800 bg-gray-800/30 hover:bg-gray-800 hover:border-gray-700 transition-all" id="tab-jobs">
+               <div class="flex items-center mb-2">
+                  <div class="p-2 rounded-lg bg-yellow-500/20 text-yellow-400 mr-4">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  </div>
+                  <h3 class="text-xl font-bold text-white group-hover:text-yellow-400 transition-colors">Jobs & Cron</h3>
+               </div>
+               <p class="text-sm text-gray-400 pl-[3.5rem]">
+                  Built-in persistent job queues and scheduler. Durable execution for background tasks.
+               </p>
+            </button>
+
+            <button onclick="switchTab('lua')" class="feature-tab group text-left p-6 rounded-2xl border border-gray-800 bg-gray-800/30 hover:bg-gray-800 hover:border-gray-700 transition-all" id="tab-lua">
+               <div class="flex items-center mb-2">
+                  <div class="p-2 rounded-lg bg-purple-500/20 text-purple-400 mr-4">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                  </div>
+                  <h3 class="text-xl font-bold text-white group-hover:text-purple-400 transition-colors">Embedded Lua</h3>
+               </div>
+               <p class="text-sm text-gray-400 pl-[3.5rem]">
+                  Write API endpoints, triggers, and logic directly in the database. 0ms latency data access.
+               </p>
+            </button>
+         </div>
+
+         <!-- Display Area -->
+         <div class="lg:w-2/3 bg-black rounded-3xl border border-gray-800 shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
+            <!-- Window Controls -->
+            <div class="h-10 border-b border-gray-800 bg-gray-900/50 flex items-center px-4 space-x-2">
+               <div class="w-3 h-3 rounded-full bg-red-500"></div>
+               <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+               <div class="w-3 h-3 rounded-full bg-green-500"></div>
             </div>
-            <!-- Live Graph Visualization Mock -->
-            <div class="mt-4 h-32 w-full bg-gray-900/50 rounded-lg flex items-end p-2 gap-1 overflow-hidden" id="perf-graph">
-               <!-- JS populated bars -->
+
+            <!-- Content: Multi-Model -->
+            <div class="tab-content flex-1 p-6" id="content-multi-model">
+               <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                  <div class="space-y-4">
+                     <div class="feature-card-sm p-4 rounded-xl border border-gray-800 bg-gray-900">
+                        <h4 class="text-blue-400 font-bold text-sm mb-2">JSON Documents</h4>
+                        <pre class="font-mono text-xs text-gray-300">db:insert("users", {
+  name = "Alice",
+  meta = { role = "admin" }
+})</pre>
+                     </div>
+                     <div class="feature-card-sm p-4 rounded-xl border border-gray-800 bg-gray-900">
+                        <h4 class="text-green-400 font-bold text-sm mb-2">Blobs / Files</h4>
+                        <pre class="font-mono text-xs text-gray-300">solidb.upload(data, {
+  filename = "avatar.png",
+  private = true
+})</pre>
+                     </div>
+                      <div class="feature-card-sm p-4 rounded-xl border border-gray-800 bg-gray-900">
+                        <h4 class="text-orange-400 font-bold text-sm mb-2">Time-Series & Analytics</h4>
+                        <pre class="font-mono text-xs text-gray-300">SELECT time_bucket('1h', ts), avg(val)
+FROM metrics
+GROUP BY 1</pre>
+                     </div>
+                  </div>
+                  <div class="relative bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-xl p-6 flex flex-col justify-center items-center text-center">
+                     <div class="w-20 h-20 bg-blue-500 rounded-full blur-2xl opacity-20 absolute"></div>
+                     <h3 class="text-2xl font-bold text-white relative z-10">Unified Storage</h3>
+                     <p class="text-gray-400 mt-4 text-sm relative z-10">
+                        Don't spin up S3 for files, Influx for metrics, and Mongo for docs. SoliDB handles them all with ACID guarantees.
+                     </p>
+                  </div>
+               </div>
             </div>
-            <script>
-              document.addEventListener('DOMContentLoaded', () => {
-                 const graph = document.getElementById('perf-graph');
-                 for(let i=0; i<40; i++) {
-                    const bar = document.createElement('div');
-                    bar.className = 'w-full bg-indigo-500/30 hover:bg-indigo-400 transition-all duration-300';
-                    bar.style.height = Math.floor(Math.random() * 80 + 20) + '%';
-                    bar.style.borderRadius = '2px 2px 0 0';
-                    graph.appendChild(bar);
-                 }
-              });
-            </script>
-          </div>
-        </div>
 
-        <!-- Card 2: Distributed (Tall) -->
-        <div class="md:col-span-1 md:row-span-2 relative group overflow-hidden bg-gray-800 rounded-3xl border border-gray-700/50 hover:border-blue-500/50 transition-all duration-500">
-           <div class="absolute inset-0 bg-gradient-to-b from-blue-900/10 to-transparent"></div>
-           <div class="relative h-full p-8 flex flex-col z-10">
-              <div class="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
-              </div>
-              <h3 class="text-2xl font-bold text-white mb-2">Distributed Consensus</h3>
-              <p class="text-gray-400 mb-8">Master-master replication and automatic sharding. Scale horizontally without sacrificing consistency.</p>
-              
-              <!-- Cluster Vis -->
-              <div class="flex-1 flex items-center justify-center relative">
-                 <div class="absolute w-32 h-32 bg-blue-500/10 rounded-full animate-pulse"></div>
-                 <div class="grid grid-cols-2 gap-4 relative z-10">
-                    <div class="w-12 h-12 bg-gray-700 rounded-lg border border-blue-400 flex items-center justify-center text-xs font-mono text-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.5)]">N1</div>
-                    <div class="w-12 h-12 bg-gray-700 rounded-lg border border-blue-400/50 flex items-center justify-center text-xs font-mono text-gray-400">N2</div>
-                    <div class="w-12 h-12 bg-gray-700 rounded-lg border border-blue-400/50 flex items-center justify-center text-xs font-mono text-gray-400">N3</div>
-                    <div class="w-12 h-12 bg-gray-700 rounded-lg border border-blue-400/50 flex items-center justify-center text-xs font-mono text-gray-400">N4</div>
-                 </div>
-                 <!-- Connection Lines -->
-                 <svg class="absolute inset-0 w-full h-full pointer-events-none opacity-30">
-                    <line x1="50%" y1="50%" x2="50%" y2="20%" stroke="currentColor" stroke-dasharray="4" class="text-blue-400 animate-dash" />
-                    <line x1="50%" y1="50%" x2="20%" y2="50%" stroke="currentColor" stroke-dasharray="4" class="text-blue-400 animate-dash" />
-                    <line x1="50%" y1="50%" x2="80%" y2="50%" stroke="currentColor" stroke-dasharray="4" class="text-blue-400 animate-dash" />
-                 </svg>
-              </div>
-           </div>
-        </div>
+            <!-- Content: Realtime -->
+            <div class="tab-content flex-1 p-6 hidden" id="content-realtime">
+               <div class="flex flex-col h-full">
+                  <div class="flex-1 bg-gray-900 rounded-xl p-4 font-mono text-sm border border-gray-700/50 overflow-auto">
+                     <div class="text-gray-500 mb-2">// Server-Side Lua: Handling WebSockets</div>
+                     <div class="text-purple-400">function</div> <div class="text-blue-400 inline">OnConnect</div>(ws)<br>
+                     &nbsp;&nbsp;<span class="text-gray-500">-- Subscribe client to 'chat' channel</span><br>
+                     &nbsp;&nbsp;ws:subscribe(<span class="text-green-400">"chat"</span>)<br>
+                     <br>
+                     &nbsp;&nbsp;<span class="text-purple-400">while</span> <span class="text-purple-400">true</span> <span class="text-purple-400">do</span><br>
+                     &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">local</span> msg = ws:recv()<br>
+                     &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-purple-400">if</span> <span class="text-purple-400">not</span> msg <span class="text-purple-400">then</span> <span class="text-purple-400">break</span> <span class="text-purple-400">end</span><br>
+                     &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-gray-500">-- Broadcast message to all subscribers</span><br>
+                     &nbsp;&nbsp;&nbsp;&nbsp;db:broadcast(<span class="text-green-400">"chat"</span>, msg)<br>
+                     &nbsp;&nbsp;<span class="text-purple-400">end</span><br>
+                     <span class="text-purple-400">end</span>
+                  </div>
+                  <div class="mt-6 flex items-center justify-between">
+                     <div>
+                        <h4 class="text-white font-bold">Zero-Latency Push</h4>
+                        <p class="text-gray-400 text-sm">Build collaborative apps without external pub/sub services.</p>
+                     </div>
+                     <div class="flex -space-x-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-500 border-2 border-black"></div>
+                        <div class="w-8 h-8 rounded-full bg-green-500 border-2 border-black"></div>
+                        <div class="w-8 h-8 rounded-full bg-purple-500 border-2 border-black"></div>
+                     </div>
+                  </div>
+               </div>
+            </div>
 
-        <!-- Card 3: Multi-Model (Square) -->
-        <div class="md:col-span-1 row-span-1 relative group overflow-hidden bg-gray-800 rounded-3xl border border-gray-700/50 hover:border-green-500/50 transition-all duration-500">
-           <div class="absolute inset-0 bg-gradient-to-tr from-green-900/10 to-transparent"></div>
-           <div class="relative h-full p-8 flex flex-col z-10">
-              <div class="w-12 h-12 bg-green-500/20 rounded-xl flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-              </div>
-              <h3 class="text-xl font-bold text-white">Multi-Model</h3>
-              <p class="mt-2 text-gray-400 text-sm">One engine, infinite possibilities.</p>
-              <div class="mt-4 flex flex-wrap gap-2">
-                 <span class="px-2 py-1 bg-green-900/50 border border-green-500/30 text-green-300 text-xs rounded">Document</span>
-                 <span class="px-2 py-1 bg-green-900/50 border border-green-500/30 text-green-300 text-xs rounded">Graph</span>
-                 <span class="px-2 py-1 bg-green-900/50 border border-green-500/30 text-green-300 text-xs rounded">Columnar</span>
-                 <span class="px-2 py-1 bg-green-900/50 border border-green-500/30 text-green-300 text-xs rounded">Timeseries</span>
-              </div>
-           </div>
-        </div>
+            <!-- Content: Jobs -->
+            <div class="tab-content flex-1 p-6 hidden" id="content-jobs">
+               <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                   <!-- Code Side -->
+                   <div class="bg-gray-900 rounded-xl p-4 font-mono text-sm border border-gray-700/50 flex flex-col justify-center">
+                     <div class="mb-4">
+                        <div class="text-gray-500 mb-1">// Queue a background job</div>
+                        <span class="text-purple-400">db</span>:enqueue(<span class="text-green-400">"emails"</span>, <span class="text-green-400">"send_welcome"</span>, {<br>
+                        &nbsp;&nbsp;user_id = <span class="text-blue-400">101</span>,<br>
+                        &nbsp;&nbsp;template = <span class="text-green-400">"v1"</span><br>
+                        })
+                     </div>
+                     <div class="border-t border-gray-800 pt-4">
+                        <div class="text-gray-500 mb-1">// Schedule a Cron Job (Every Friday)</div>
+                         <span class="text-purple-400">db</span>:enqueue(<span class="text-green-400">"reports"</span>, <span class="text-green-400">"weekly_stats"</span>, {}, {<br>
+                        &nbsp;&nbsp;run_at = <span class="text-blue-400">next_friday()</span><br>
+                        })
+                     </div>
+                   </div>
 
-        <!-- Card 4: ACID (Square) -->
-        <div class="md:col-span-1 row-span-1 relative group overflow-hidden bg-gray-800 rounded-3xl border border-gray-700/50 hover:border-yellow-500/50 transition-all duration-500">
-           <div class="absolute inset-0 bg-gradient-to-tl from-yellow-900/10 to-transparent"></div>
-           <div class="relative h-full p-8 flex flex-col z-10">
-              <div class="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center mb-4">
-                <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-              </div>
-              <h3 class="text-xl font-bold text-white">Strict ACID</h3>
-              <p class="mt-2 text-gray-400 text-sm">Full transaction support ensuring your data is safe and consistent, always.</p>
-           </div>
-        </div>
+                   <!-- Visual Side -->
+                   <div class="flex flex-col justify-between">
+                      <div class="space-y-3">
+                         <div class="flex items-center p-3 bg-gray-800 rounded-lg border border-gray-700">
+                            <div class="w-2 h-2 rounded-full bg-green-400 mr-3 animate-pulse"></div>
+                            <span class="text-sm text-gray-300">Worker 1: Processing email...</span>
+                         </div>
+                         <div class="flex items-center p-3 bg-gray-800 rounded-lg border border-gray-700 opacity-60">
+                            <div class="w-2 h-2 rounded-full bg-yellow-400 mr-3"></div>
+                            <span class="text-sm text-gray-300">Worker 2: Idle</span>
+                         </div>
+                         <div class="flex items-center p-3 bg-gray-800 rounded-lg border border-gray-700 opacity-60">
+                            <div class="w-2 h-2 rounded-full bg-blue-400 mr-3"></div>
+                            <span class="text-sm text-gray-300">Cron: Next run in 2h</span>
+                         </div>
+                      </div>
+                      <div>
+                         <h4 class="text-white font-bold">Durable & Distributed</h4>
+                         <p class="text-gray-400 text-sm">Jobs are stored in the database. If a node fails, another one picks up the work.</p>
+                      </div>
+                   </div>
+               </div>
+            </div>
+
+            <!-- Content: Lua -->
+            <div class="tab-content flex-1 p-6 hidden" id="content-lua">
+               <div class="flex flex-col h-full gap-4">
+                  <div class="flex gap-4 mb-2">
+                     <span class="px-3 py-1 bg-purple-900/50 text-purple-300 rounded-full text-xs font-bold ring-1 ring-purple-500/50">API Endpoint</span>
+                     <span class="px-3 py-1 bg-gray-800 text-gray-400 rounded-full text-xs">Trigger</span>
+                  </div>
+                  <div class="flex-1 bg-gray-900 rounded-xl p-4 font-mono text-sm border border-gray-700/50 overflow-auto">
+                     <span class="text-gray-500">-- POST /api/custom/register</span><br>
+                     <span class="text-purple-400">local</span> body = request.body<br>
+                     <br>
+                     <span class="text-gray-500">-- 1. Validate Input</span><br>
+                     solidb.validate(body, { email = <span class="text-green-400">"email"</span> })<br>
+                     <br>
+                     <span class="text-gray-500">-- 2. Transactional Insert</span><br>
+                     db:transaction(<span class="text-purple-400">function</span>(tx)<br>
+                     &nbsp;&nbsp;<span class="text-purple-400">local</span> user = tx:insert(<span class="text-green-400">"users"</span>, body)<br>
+                     &nbsp;&nbsp;db:enqueue(<span class="text-green-400">"mail"</span>, <span class="text-green-400">"welcome"</span>, { id = user._key })<br>
+                     <span class="text-purple-400">end</span>)<br>
+                     <br>
+                     <span class="text-purple-400">return</span> { status = <span class="text-green-400">"created"</span> }
+                  </div>
+               </div>
+            </div>
+
+         </div>
       </div>
     </div>
   </div>
 
-  <!-- AI Native Section -->
-  <div class="py-24 relative overflow-hidden">
-     <div class="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-indigo-900/10 to-transparent pointer-events-none"></div>
-     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center gap-16">
-        <div class="flex-1">
-           <div class="inline-flex items-center px-4 py-2 rounded-full border border-purple-500/30 bg-purple-900/30 backdrop-blur-sm mb-6">
-              <span class="text-xs font-bold text-purple-300 uppercase tracking-wide">Artificial Intelligence</span>
-           </div>
-           <h2 class="text-4xl font-extrabold text-white mb-6">Database, meet AI Agent.</h2>
-           <p class="text-lg text-gray-400 mb-8 leading-relaxed">
-              SoliDB isn't just a store for vectors. It's a complete runtime for AI Agents. Define tasks, register agents, and execute workflows directly where your data lives.
-           </p>
-           
-           <ul class="space-y-4">
-              <li class="flex items-start">
-                 <svg class="w-6 h-6 text-purple-500 mr-3 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                 <div>
-                    <h4 class="font-bold text-white">Real-time Agent Monitoring</h4>
-                    <p class="text-sm text-gray-500">Track agent status, heartbeats, and contribution history live.</p>
-                 </div>
-              </li>
-              <li class="flex items-start">
-                 <svg class="w-6 h-6 text-purple-500 mr-3 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                 <div>
-                    <h4 class="font-bold text-white">Agent Task Queue</h4>
-                    <p class="text-sm text-gray-500">Orchestrate complex AI workflows with persistent task tracking.</p>
-                 </div>
-              </li>
-              <li class="flex items-start">
-                 <svg class="w-6 h-6 text-purple-500 mr-3 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                 <div>
-                    <h4 class="font-bold text-white">LLM Validation Headers</h4>
-                    <p class="text-sm text-gray-500">Ensure structured outputs from LLMs meet strict schema requirements.</p>
-                 </div>
-              </li>
-           </ul>
-        </div>
-        
-        <div class="flex-1 w-full">
-           <div class="bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl p-6 relative">
-              <div class="absolute -top-4 -right-4 bg-purple-600 px-4 py-1 rounded text-xs font-bold shadow-lg">POST /api/ai/tasks</div>
-              <pre class="font-mono text-sm leading-relaxed overflow-x-auto">
-<span class="text-gray-500">// Creating an AI Task</span>
-{
-  <span class="text-purple-400">"task_type"</span>: <span class="text-green-400">"analyze_sentiment"</span>,
-  <span class="text-purple-400">"model"</span>: <span class="text-green-400">"gst-large"</span>,
-  <span class="text-purple-400">"payload"</span>: {
-    <span class="text-purple-400">"text"</span>: <span class="text-green-400">"SoliDB's performance is incredible!"</span>
-  },
-  <span class="text-purple-400">"callback_url"</span>: <span class="text-green-400">"webhook://internal/process"</span>
-}</pre>
-           </div>
-        </div>
-     </div>
-  </div>
-
-  <!-- Developer Experience -->
-  <div class="py-24 bg-gray-900/50">
-     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center mb-16">
-           <h2 class="text-3xl font-extrabold text-white">Developer Experience First</h2>
-           <p class="mt-4 text-gray-400">Tools that make you feel like a wizard.</p>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-           <!-- Lua Scripting -->
-           <div class="bg-gray-800 rounded-2xl p-8 border border-gray-700/50 flex flex-col">
-              <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                 <span class="bg-blue-900/50 p-2 rounded mr-3 text-blue-400 text-xs font-mono">.lua</span>
-                 Server-Side Scripting
-              </h3>
-              <p class="text-gray-400 mb-6 flex-1">Write complex transactions, triggers, and API endpoints directly in Lua. Run logic close to your data for maximum efficiency.</p>
-              <div class="bg-gray-900 p-4 rounded-lg font-mono text-xs text-gray-300">
-                 <span class="text-purple-400">function</span> <span class="text-blue-400">OnUserSignup</span>(user)<br>
-                 &nbsp;&nbsp;<span class="text-yellow-400">DB</span>:insert(<span class="text-green-400">"audit_log"</span>, { event = <span class="text-green-400">"signup"</span> })<br>
-                 &nbsp;&nbsp;<span class="text-purple-400">return</span> true<br>
-                 <span class="text-purple-400">end</span>
-              </div>
-           </div>
-
-           <!-- SDBQL -->
-           <div class="bg-gray-800 rounded-2xl p-8 border border-gray-700/50 flex flex-col">
-              <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                 <span class="bg-yellow-900/50 p-2 rounded mr-3 text-yellow-400 text-xs font-mono">SDBQL</span>
-                 SDBQL Query Language
-              </h3>
-              <p class="text-gray-400 mb-6 flex-1">An AQL-inspired query language designed for documents. Powerful iteration, aggregations, and graph traversals.</p>
-              <div class="bg-gray-900 p-4 rounded-lg font-mono text-xs text-gray-300">
-                 <span class="text-purple-400">FOR</span> u <span class="text-purple-400">IN</span> users<br>
-                 &nbsp;&nbsp;<span class="text-purple-400">FILTER</span> u.age > <span class="text-blue-400">18</span> <span class="text-purple-400">AND</span> u.active == <span class="text-blue-400">true</span><br>
-                 &nbsp;&nbsp;<span class="text-purple-400">LIMIT</span> <span class="text-blue-400">10</span><br>
-                 &nbsp;&nbsp;<span class="text-purple-400">RETURN</span> { name: u.name, email: u.email }
-              </div>
-           </div>
-        </div>
-     </div>
-  </div>
-
   <!-- Footer CTA -->
-  <div class="py-20 text-center relative overflow-hidden">
-     <div class="absolute inset-x-0 bottom-0 h-full bg-gradient-to-t from-indigo-900/20 to-transparent pointer-events-none"></div>
+  <div class="py-20 text-center relative overflow-hidden bg-gray-950">
+     <div class="absolute inset-x-0 bottom-0 h-full bg-gradient-to-t from-indigo-900/10 to-transparent pointer-events-none"></div>
      <div class="relative z-10 max-w-4xl mx-auto px-4">
-        <h2 class="text-4xl font-bold text-white mb-6">Ready to build the future?</h2>
-        <p class="text-xl text-gray-400 mb-10">Join thousands of developers building the next generation of intelligent applications.</p>
+        <h2 class="text-4xl font-bold text-white mb-6">Ready to see it in action?</h2>
+        <p class="text-xl text-gray-400 mb-10">Join thousands of developers building intelligent applications.</p>
         <a href="/database/_system" class="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all bg-indigo-600 rounded-full hover:bg-indigo-700 hover:scale-105 shadow-xl">
            Get Started Now
         </a>
@@ -277,9 +292,22 @@
   .animation-delay-100 { animation-delay: 0.1s; }
   .animation-delay-200 { animation-delay: 0.2s; }
   .animation-delay-300 { animation-delay: 0.3s; }
-  
-  @keyframes dash {
-    to { stroke-dashoffset: -20; }
-  }
-  .animate-dash { animation: dash 1s linear infinite; }
 </style>
+
+<script>
+   function switchTab(tabId) {
+      // Hide all contents
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      // Show selected content
+      document.getElementById('content-' + tabId).classList.remove('hidden');
+
+      // Update tab styles
+      document.querySelectorAll('.feature-tab').forEach(el => {
+         el.classList.remove('active', 'border-gray-600', 'bg-gray-800');
+         el.classList.add('border-gray-800', 'bg-gray-800/30');
+      });
+      const activeTab = document.getElementById('tab-' + tabId);
+      activeTab.classList.remove('border-gray-800', 'bg-gray-800/30');
+      activeTab.classList.add('active', 'border-gray-600', 'bg-gray-800');
+   }
+</script>

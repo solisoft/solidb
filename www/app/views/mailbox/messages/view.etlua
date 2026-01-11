@@ -1,100 +1,104 @@
 <div class="flex h-full">
   <!-- Sidebar -->
-  <%- partial("mailbox/sidebar") %>
+  <%- partial("mailbox/sidebar", { current_folder = current_folder, folder_counts = folder_counts, current_user = current_user }) %>
 
   <!-- Main Content -->
-  <main class="flex-1 flex flex-col min-w-0 bg-bg/50">
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg/50">
     <!-- Header -->
-    <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0">
-      <div class="flex items-center gap-3">
-        <a href="/mailbox/messages/<%= current_folder %>"
-           class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-          <i class="fas fa-arrow-left"></i>
-        </a>
-        <h1 class="text-xl font-bold text-white truncate"><%= message.subject or message.data.subject or "(No subject)" %></h1>
-      </div>
-      <div class="flex items-center gap-2">
-        <button class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                hx-post="/mailbox/messages/<%= message._key or message.data._key %>/archive"
-                hx-swap="none"
-                onclick="window.location='/mailbox/messages/<%= current_folder %>'"
-                title="Archive">
-          <i class="fas fa-archive"></i>
-        </button>
-        <button class="p-2 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                hx-delete="/mailbox/messages/<%= message._key or message.data._key %>"
-                hx-confirm="Delete this message?"
-                hx-swap="none"
-                onclick="window.location='/mailbox/messages/<%= current_folder %>'"
-                title="Delete">
-          <i class="fas fa-trash"></i>
-        </button>
-      </div>
-    </header>
-
-    <!-- Message Content -->
-    <div class="flex-1 overflow-y-auto p-6">
-      <div class="max-w-3xl mx-auto">
-        <!-- Sender Info -->
-        <% local sender = message:sender_info() %>
-        <div class="flex items-start gap-4 mb-6">
-          <div class="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-            <span class="text-lg font-medium text-primary-light">
-              <%= string.upper(string.sub(sender.firstname or sender.email or "?", 1, 1)) %>
-            </span>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="font-semibold text-white">
-                <%= sender.firstname and sender.lastname and (sender.firstname .. " " .. sender.lastname) or sender.email or "Unknown" %>
-              </span>
-              <span class="text-sm text-text-muted">&lt;<%= sender.email or "" %>&gt;</span>
-            </div>
-            <p class="text-sm text-text-dim">
-              to me
-              <% local cc = message.cc or message.data.cc or {} %>
-              <% if #cc > 0 then %>
-              , CC: <%= #cc %> others
-              <% end %>
-            </p>
-            <p class="text-xs text-text-dim mt-1">
-              <%= message:formatted_date() %>
-            </p>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button class="<%= (message.starred or message.data.starred) and 'text-yellow-400' or 'text-text-dim hover:text-yellow-400' %> transition-colors"
-                    hx-post="/mailbox/messages/<%= message._key or message.data._key %>/star"
-                    hx-swap="outerHTML">
-              <i class="fas fa-star text-xl"></i>
-            </button>
-          </div>
-        </div>
-
-        <!-- Message Body -->
-        <div class="bg-bg-card/50 backdrop-blur border border-white/5 rounded-xl p-6">
-          <div class="prose prose-invert prose-sm max-w-none text-text leading-relaxed">
-            <% if TextHelper and TextHelper.format_message then %>
-            <%- TextHelper.format_message(message.body or message.data.body or "") %>
-            <% else %>
-            <pre class="whitespace-pre-wrap font-sans text-sm"><%= message.body or message.data.body or "" %></pre>
-            <% end %>
-          </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="mt-6 flex items-center gap-3">
-          <a href="/mailbox/compose/reply/<%= message._key or message.data._key %>"
-             class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
-            <i class="fas fa-reply"></i>
-            <span>Reply</span>
+    <div class="flex-shrink-0 px-8 py-6 border-b border-white/5 backdrop-blur-sm bg-bg/30">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4 min-w-0">
+          <a href="/mailbox/messages/<%= current_folder %>"
+             class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 group shrink-0">
+            <i class="fas fa-arrow-left text-text-muted group-hover:text-text transition-colors"></i>
           </a>
-          <a href="/mailbox/compose"
-             class="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white font-medium rounded-lg transition-colors">
-            <i class="fas fa-share"></i>
-            <span>Forward</span>
-          </a>
+          <h1 class="text-xl font-bold text-white tracking-tight truncate"><%= message.subject or message.data.subject or "(No subject)" %></h1>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+          <button class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 group"
+                  hx-post="/mailbox/messages/<%= message._key or message.data._key %>/archive"
+                  hx-swap="none"
+                  onclick="window.location='/mailbox/messages/<%= current_folder %>'"
+                  title="Archive">
+            <i class="fas fa-archive text-text-muted group-hover:text-white transition-colors"></i>
+          </button>
+          <button class="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-red-500/10 rounded-xl transition-all border border-white/5 hover:border-red-500/20 group"
+                  hx-delete="/mailbox/messages/<%= message._key or message.data._key %>"
+                  hx-confirm="Delete this message?"
+                  hx-swap="none"
+                  onclick="window.location='/mailbox/messages/<%= current_folder %>'"
+                  title="Delete">
+            <i class="fas fa-trash text-text-muted group-hover:text-red-500 transition-colors"></i>
+          </button>
         </div>
       </div>
     </div>
-  </main>
+
+    <!-- Message Content -->
+    <div class="flex-1 overflow-y-auto chat-scrollbar p-8">
+      <div class="max-w-3xl mx-auto pb-20">
+        <!-- Message Card -->
+        <div class="bg-bg-card/40 backdrop-blur-xl border border-white/5 rounded-2xl p-8 shadow-sm">
+          <!-- Sender Info -->
+          <% local sender = message:sender_info() %>
+          <div class="flex items-start gap-5 mb-8 pb-8 border-b border-white/5">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center shrink-0 border border-white/5 shadow-inner">
+              <span class="text-xl font-bold text-primary-light">
+                <%= string.upper(string.sub(sender.firstname or sender.email or "?", 1, 1)) %>
+              </span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-3 mb-1">
+                <span class="text-lg font-bold text-white">
+                  <%= sender.firstname and sender.lastname and (sender.firstname .. " " .. sender.lastname) or sender.email or "Unknown" %>
+                </span>
+                <span class="text-sm text-text-muted">&lt;<%= sender.email or "" %>&gt;</span>
+              </div>
+              <div class="flex items-center gap-2 text-sm text-text-dim">
+                <span>To: Me</span>
+                <% local cc = message.cc or message.data.cc or {} %>
+                <% if #cc > 0 then %>
+                <span>&bull;</span>
+                <span>CC: <%= #cc %> others</span>
+                <% end %>
+              </div>
+              <p class="text-xs font-bold text-text-dim uppercase tracking-widest mt-2">
+                <%= message:formatted_date() %>
+              </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button class="w-10 h-10 flex items-center justify-center rounded-xl transition-colors <%= (message.starred or message.data.starred) and 'text-warning bg-warning/10' or 'text-text-dim hover:text-warning hover:bg-white/5' %>"
+                      hx-post="/mailbox/messages/<%= message._key or message.data._key %>/star"
+                      hx-swap="outerHTML">
+                <i class="<%= (message.starred or message.data.starred) and 'fas' or 'far' %> fa-star text-lg"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Message Body -->
+          <div class="prose prose-invert prose-lg max-w-none text-text-light/90 leading-relaxed">
+            <% if TextHelper and TextHelper.format_message then %>
+            <%- TextHelper.format_message(message.body or message.data.body or "") %>
+            <% else %>
+            <pre class="whitespace-pre-wrap font-mono text-sm bg-black/20 p-4 rounded-xl border border-white/5 text-text-muted"><%= message.body or message.data.body or "" %></pre>
+            <% end %>
+          </div>
+
+          <!-- Actions -->
+          <div class="mt-8 pt-8 border-t border-white/5 flex items-center gap-4">
+            <a href="/mailbox/compose/reply/<%= message._key or message.data._key %>"
+               class="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95 group">
+              <i class="fas fa-reply group-hover:-translate-x-0.5 transition-transform"></i>
+              <span>Reply via Email</span>
+            </a>
+            <a href="/mailbox/compose/forward/<%= message._key or message.data._key %>"
+               class="flex items-center gap-2 px-6 py-2.5 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all border border-white/5 group">
+              <i class="fas fa-share group-hover:translate-x-0.5 transition-transform"></i>
+              <span>Forward</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>

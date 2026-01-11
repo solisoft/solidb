@@ -1,0 +1,126 @@
+
+
+<!-- Header -->
+  <header class="h-16 px-6 flex items-center justify-between border-b border-white/5 bg-white/5 shrink-0 backdrop-blur-md">
+    <div class="flex items-center gap-4">
+      <i class="fas fa-calendar text-accent-light text-xl"></i>
+      <!-- Dynamic Title -->
+      <% if view == "year" then %>
+        <h1 class="text-xl font-bold text-white"><%= year %></h1>
+      <% elseif view == "week" then %>
+        <h1 class="text-xl font-bold text-white">Week of <%= os.date("%b %d", os.time(current_date)) %> <%= year %></h1>
+      <% elseif view == "day" then %>
+        <h1 class="text-xl font-bold text-white"><%= os.date("%B %d, %Y", os.time(current_date)) %></h1>
+      <% else %>
+        <h1 class="text-xl font-bold text-white"><%= month_name %> <%= year %></h1>
+      <% end %>
+    </div>
+
+    <div class="flex items-center gap-3">
+      
+      <!-- View Switcher -->
+      <div class="flex bg-black/20 rounded-lg p-1 border border-white/5">
+         <a href="#"
+            hx-get="/mailbox/calendar?view=day&year=<%= current_date and current_date.year or year %>&month=<%= current_date and current_date.month or month %>&day=<%= current_date and current_date.day or (today and today.day or 1) %>"
+            hx-target="#calendar-main-content"
+            hx-push-url="true"
+            class="px-3 py-1 text-sm font-medium rounded-md transition-all <%= view == 'day' and 'bg-white/10 text-white shadow-sm' or 'text-text-muted hover:text-white' %>">Day</a>
+         <a href="#"
+            hx-get="/mailbox/calendar?view=week&year=<%= current_date and current_date.year or year %>&month=<%= current_date and current_date.month or month %>&day=<%= current_date and current_date.day or (today and today.day or 1) %>"
+            hx-target="#calendar-main-content"
+            hx-push-url="true"
+            class="px-3 py-1 text-sm font-medium rounded-md transition-all <%= view == 'week' and 'bg-white/10 text-white shadow-sm' or 'text-text-muted hover:text-white' %>">Week</a>
+         <a href="#"
+            hx-get="/mailbox/calendar?view=month&year=<%= current_date and current_date.year or year %>&month=<%= current_date and current_date.month or month %>"
+            hx-target="#calendar-main-content"
+            hx-push-url="true"
+            class="px-3 py-1 text-sm font-medium rounded-md transition-all <%= view == 'month' and 'bg-white/10 text-white shadow-sm' or 'text-text-muted hover:text-white' %>">Month</a>
+         <a href="#"
+            hx-get="/mailbox/calendar?view=year&year=<%= year %>"
+            hx-target="#calendar-main-content"
+            hx-push-url="true"
+            class="px-3 py-1 text-sm font-medium rounded-md transition-all <%= view == 'year' and 'bg-white/10 text-white shadow-sm' or 'text-text-muted hover:text-white' %>">Year</a>
+      </div>
+
+      <div class="w-px h-6 bg-white/10 mx-1"></div>
+
+      <!-- Navigation -->
+      <div class="flex items-center gap-1">
+        <%
+          local nav_prev, nav_next = "", ""
+          if view == "year" then
+             nav_prev = "?view=year&year=" .. (year - 1)
+             nav_next = "?view=year&year=" .. (year + 1)
+          elseif view == "week" then
+             local curr_ts = os.time(current_date)
+             local prev_ts = curr_ts - (7 * 86400)
+             local next_ts = curr_ts + (7 * 86400)
+             local p = os.date("*t", prev_ts)
+             local n = os.date("*t", next_ts)
+             nav_prev = string.format("?view=week&year=%d&month=%d&day=%d", p.year, p.month, p.day)
+             nav_next = string.format("?view=week&year=%d&month=%d&day=%d", n.year, n.month, n.day)
+          elseif view == "day" then
+             local curr_ts = os.time(current_date)
+             local prev_ts = curr_ts - 86400
+             local next_ts = curr_ts + 86400
+             local p = os.date("*t", prev_ts)
+             local n = os.date("*t", next_ts)
+             nav_prev = string.format("?view=day&year=%d&month=%d&day=%d", p.year, p.month, p.day)
+             nav_next = string.format("?view=day&year=%d&month=%d&day=%d", n.year, n.month, n.day)
+          else -- Month
+             local p_m, p_y = month - 1, year
+             if p_m < 1 then p_m, p_y = 12, year - 1 end
+             local n_m, n_y = month + 1, year
+             if n_m > 12 then n_m, n_y = 1, year + 1 end
+             nav_prev = string.format("?view=month&year=%d&month=%d", p_y, p_m)
+             nav_next = string.format("?view=month&year=%d&month=%d", n_y, n_m)
+          end
+        %>
+        <a href="#"
+           hx-get="/mailbox/calendar<%= nav_prev %>"
+           hx-target="#calendar-main-content"
+           hx-push-url="true"
+           class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          <i class="fas fa-chevron-left"></i>
+        </a>
+        <a href="#"
+           hx-get="/mailbox/calendar?view=<%= view %>"
+           hx-target="#calendar-main-content"
+           hx-push-url="true"
+           class="px-3 py-1.5 text-sm text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          Today
+        </a>
+        <a href="#"
+           hx-get="/mailbox/calendar<%= nav_next %>"
+           hx-target="#calendar-main-content"
+           hx-push-url="true"
+           class="p-2 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          <i class="fas fa-chevron-right"></i>
+        </a>
+      </div>
+
+      <!-- Create Event Button -->
+      <button hx-get="/mailbox/calendar/event/modal/create"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors">
+        <i class="fas fa-plus"></i>
+        <span class="hidden sm:inline">New Event</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Calendar Content -->
+  <div id="calendar-container" class="flex-1 min-h-0 p-4 sm:p-6 flex flex-col">
+    <% local locals = { current_user = current_user, folder_counts = folder_counts, current_folder = current_folder, year = year, month = month, month_name = month_name, view = view, calendar = calendar, current_date = current_date, events = events, today = today } %>
+    
+    <% if view == "week" then %>
+      <%- partial("mailbox/calendar/week_view", locals) %>
+    <% elseif view == "day" then %>
+      <%- partial("mailbox/calendar/day_view", locals) %>
+    <% elseif view == "year" then %>
+      <%- partial("mailbox/calendar/year_view", locals) %>
+    <% else %>
+      <%- partial("mailbox/calendar/month_view", locals) %>
+    <% end %>
+  </div>

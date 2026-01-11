@@ -1,5 +1,25 @@
 local M = {}
 
+function M.truncate(s, max_len)
+  if not s then return "" end
+  if #s <= max_len then return s end
+  return string.sub(s, 1, max_len) .. "..."
+end
+
+function M.strip_markdown(s)
+  if not s then return "" end
+  s = s:gsub("```.+```", "") -- code blocks
+  s = s:gsub("`[^`]+`", "") -- inline code
+  s = s:gsub("%*+", "") -- bold/italic
+  s = s:gsub("_+", "") -- underline/italic
+  s = s:gsub("#+", "") -- headers
+  s = s:gsub("!%[[^%]]+%]", "") -- images
+  s = s:gsub("%[([^%]]+)%]%([^%)]+%)", "%1") -- links (keep text)
+  s = s:gsub("> ", "") -- blockquotes
+  s = s:gsub("\n", " ") -- newlines
+  return s
+end
+
 function M.escape_html(s)
   if not s then return "" end
   return (s:gsub("[&<>'\"]", {

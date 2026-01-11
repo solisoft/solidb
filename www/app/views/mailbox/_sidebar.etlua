@@ -1,87 +1,82 @@
-<aside class="w-64 bg-bg-card/30 backdrop-blur border-r border-white/5 flex flex-col shrink-0">
+<aside id="mailbox-sidebar" 
+       class="w-64 bg-black/20 backdrop-blur-xl border-r border-white/5 flex flex-col shrink-0"
+       hx-get="/mailbox/sidebar?folder=<%= current_folder %>"
+       hx-trigger="mailboxStatsUpdated from:body"
+       hx-swap="outerHTML">
   <!-- Compose Button -->
   <div class="p-4">
     <a href="/mailbox/compose"
-       class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary hover:bg-primary-dark text-white font-medium rounded-xl transition-colors">
-      <i class="fas fa-pen"></i>
+       class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95 group">
+      <i class="fas fa-pen group-hover:rotate-12 transition-transform"></i>
       <span>Compose</span>
     </a>
   </div>
 
   <!-- Folders -->
-  <nav class="flex-1 px-3 space-y-1">
+  <nav class="flex-1 px-4 space-y-1">
+    <div class="px-2 pt-2 pb-1">
+      <h3 class="text-xs font-bold text-text-dim uppercase tracking-widest">Mailbox</h3>
+    </div>
+
     <a href="/mailbox/messages/inbox"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'inbox' and 'bg-primary/10 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-inbox w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'inbox' and 'bg-primary/10 border-primary/10 text-primary font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-inbox w-5 text-center <%= current_folder == 'inbox' and 'text-primary' or 'opacity-70' %>"></i>
       <span class="flex-1">Inbox</span>
       <% if folder_counts and folder_counts.unread and folder_counts.unread > 0 then %>
-      <span class="px-2 py-0.5 text-xs font-medium bg-primary/20 text-primary-light rounded-full">
+      <span class="px-2 py-0.5 text-[10px] font-bold bg-primary text-white rounded-full shadow-sm">
         <%= folder_counts.unread %>
       </span>
       <% end %>
     </a>
 
     <a href="/mailbox/messages/starred"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'starred' and 'bg-primary/10 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-star w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'starred' and 'bg-warning/10 border-warning/10 text-warning font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-star w-5 text-center <%= current_folder == 'starred' and 'text-warning' or 'opacity-70' %>"></i>
       <span class="flex-1">Starred</span>
       <% if folder_counts and folder_counts.starred and folder_counts.starred > 0 then %>
-      <span class="text-xs text-text-dim"><%= folder_counts.starred %></span>
+      <span class="text-xs opacity-70"><%= folder_counts.starred %></span>
       <% end %>
     </a>
 
     <a href="/mailbox/messages/sent"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'sent' and 'bg-primary/10 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-paper-plane w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'sent' and 'bg-info/10 border-info/10 text-info font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-paper-plane w-5 text-center <%= current_folder == 'sent' and 'text-info' or 'opacity-70' %>"></i>
       <span class="flex-1">Sent</span>
       <% if folder_counts and folder_counts.sent and folder_counts.sent > 0 then %>
-      <span class="text-xs text-text-dim"><%= folder_counts.sent %></span>
+      <span class="text-xs opacity-70"><%= folder_counts.sent %></span>
       <% end %>
     </a>
 
     <a href="/mailbox/messages/drafts"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'drafts' and 'bg-primary/10 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-file-alt w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'drafts' and 'bg-white/10 border-white/5 text-white font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-file-alt w-5 text-center <%= current_folder == 'drafts' and 'text-white' or 'opacity-70' %>"></i>
       <span class="flex-1">Drafts</span>
       <% if folder_counts and folder_counts.drafts and folder_counts.drafts > 0 then %>
-      <span class="text-xs text-text-dim"><%= folder_counts.drafts %></span>
+      <span class="text-xs opacity-70"><%= folder_counts.drafts %></span>
       <% end %>
     </a>
 
     <a href="/mailbox/messages/archive"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'archive' and 'bg-primary/10 text-primary-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-archive w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'archive' and 'bg-white/10 border-white/5 text-white font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-archive w-5 text-center <%= current_folder == 'archive' and 'text-white' or 'opacity-70' %>"></i>
       <span class="flex-1">Archive</span>
       <% if folder_counts and folder_counts.archive and folder_counts.archive > 0 then %>
-      <span class="text-xs text-text-dim"><%= folder_counts.archive %></span>
+      <span class="text-xs opacity-70"><%= folder_counts.archive %></span>
       <% end %>
     </a>
 
     <!-- Divider -->
-    <div class="my-3 border-t border-white/5"></div>
+    <div class="my-4 border-t border-white/5 mx-2"></div>
+
+    <div class="px-2 pb-1">
+      <h3 class="text-xs font-bold text-text-dim uppercase tracking-widest">Production</h3>
+    </div>
 
     <!-- Calendar -->
     <a href="/mailbox/calendar"
-       class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors <%= current_folder == 'calendar' and 'bg-accent/10 text-accent-light' or 'text-text-muted hover:bg-white/5 hover:text-white' %>">
-      <i class="fas fa-calendar w-5 text-center"></i>
+       class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all border <%= current_folder == 'calendar' and 'bg-accent/10 border-accent/10 text-accent font-medium' or 'border-transparent text-text-muted hover:bg-white/5 hover:text-white' %>">
+      <i class="fas fa-calendar w-5 text-center <%= current_folder == 'calendar' and 'text-accent' or 'opacity-70' %>"></i>
       <span class="flex-1">Calendar</span>
     </a>
   </nav>
-
-  <!-- User Info -->
-  <div class="p-4 border-t border-white/5">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-        <span class="text-sm font-medium text-primary-light">
-          <%= string.upper(string.sub(current_user.firstname or current_user.email, 1, 1)) %>
-        </span>
-      </div>
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-white truncate">
-          <%= current_user.firstname and current_user.lastname and (current_user.firstname .. " " .. current_user.lastname) or current_user.email %>
-        </p>
-        <p class="text-xs text-text-muted truncate"><%= current_user.email %></p>
-      </div>
-    </div>
-  </div>
 </aside>

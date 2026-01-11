@@ -183,4 +183,15 @@ function DashboardController:sidebar_recent_messages()
   self:render("shared/_widget_recent_messages", { messages = messages })
 end
 
+function DashboardController:sidebar_calendar_invites()
+  local user = AuthHelper.get_current_user()
+  if not user then return self:html("") end
+
+  local MailboxEvent = require("models.mailbox_event")
+  local invites = MailboxEvent.pending_for_user(user._key)
+
+  self.layout = false
+  self:render("shared/_widget_calendar_invites", { invites = invites })
+end
+
 return DashboardController

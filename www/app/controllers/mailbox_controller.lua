@@ -19,11 +19,27 @@ function MailboxController:index()
   local upcoming_events = MailboxEvent.upcoming(current_user._key, 5)
 
   self.layout = "application"
+  self.full_height = true
   self:render("mailbox/index", {
     current_user = current_user,
     folder_counts = folder_counts,
     upcoming_events = upcoming_events,
-    current_folder = "inbox"
+    current_folder = "inbox",
+    db_name = self.params.db or (Sdb and Sdb.database and Sdb.database()) -- Attempt to get db name
+  })
+end
+
+-- Refresh sidebar stats
+function MailboxController:update_sidebar()
+  local current_user = get_current_user()
+  local folder_counts = MailboxMessage.folder_counts(current_user._key)
+  local current_folder = self.params.folder or "inbox"
+  
+  self.layout = false
+  self:render("mailbox/_sidebar", {
+    current_user = current_user,
+    folder_counts = folder_counts,
+    current_folder = current_folder
   })
 end
 
@@ -44,8 +60,9 @@ function MailboxController:folder_view(folder)
   local page = tonumber(self.params.page) or 1
   local limit = 25
   local offset = (page - 1) * limit
+  local query = self.params.q
 
-  local messages = MailboxMessage.for_folder(folder, current_user._key, limit, offset)
+  local messages = MailboxMessage.for_folder(folder, current_user._key, limit, offset, query)
   local folder_counts = MailboxMessage.folder_counts(current_user._key)
 
   local view_data = {
@@ -59,10 +76,11 @@ function MailboxController:folder_view(folder)
 
   if self:is_htmx_request() then
     self.layout = false
-    return self:render("mailbox/messages/_messages_list", view_data)
+    return self:render("mailbox/messages/_list", view_data)
   end
 
   self.layout = "application"
+  self.full_height = true
   self:render("mailbox/messages/index", view_data)
 end
 
@@ -73,14 +91,16 @@ function MailboxController:messages_table()
   local page = tonumber(self.params.page) or 1
   local limit = 25
   local offset = (page - 1) * limit
+  local query = self.params.q
 
-  local messages = MailboxMessage.for_folder(folder, current_user._key, limit, offset)
+  local messages = MailboxMessage.for_folder(folder, current_user._key, limit, offset, query)
 
   self.layout = false
-  self:render("mailbox/messages/_messages_list", {
+  self:render("mailbox/messages/_list", {
     messages = messages,
     current_folder = folder,
-    page = page
+    page = page,
+    TextHelper = TextHelper
   })
 end
 
@@ -120,17 +140,28 @@ function MailboxController:view_message()
   })
 end
 
+-- Get all users for client-side search
+local function get_all_users()
+  local result = Sdb:Sdbql([[
+    FOR u IN users
+    RETURN { _key: u._key, firstname: u.firstname, lastname: u.lastname, email: u.email }
+  ]])
+  return (result and result.result) or {}
+end
+
 -- Compose new message
 function MailboxController:compose()
   local current_user = get_current_user()
   local folder_counts = MailboxMessage.folder_counts(current_user._key)
+  local all_users = get_all_users()
 
   self.layout = "application"
   self:render("mailbox/messages/compose", {
     current_user = current_user,
     folder_counts = folder_counts,
     current_folder = "compose",
-    reply_to = nil
+    reply_to = nil,
+    all_users = all_users
   })
 end
 
@@ -145,13 +176,57 @@ function MailboxController:compose_reply()
   end
 
   local folder_counts = MailboxMessage.folder_counts(current_user._key)
+  local all_users = get_all_users()
 
   self.layout = "application"
   self:render("mailbox/messages/compose", {
     current_user = current_user,
     folder_counts = folder_counts,
     current_folder = "compose",
-    reply_to = original
+    reply_to = original,
+    all_users = all_users
+  })
+end
+
+function MailboxController:compose_forward()
+  local current_user = get_current_user()
+  local message_id = self.params.id
+
+  local original = MailboxMessage:find(message_id)
+  if not original then
+    return self:redirect("/mailbox/messages/inbox")
+  end
+
+  local folder_counts = MailboxMessage.folder_counts(current_user._key)
+  local all_users = get_all_users()
+
+  -- Prepare forwarded content
+  local subject = original.subject or original.data.subject or ""
+  if not subject:match("^Fwd:") then
+    subject = "Fwd: " .. subject
+  end
+  
+  local sender = original:sender_info()
+  local sender_name = (sender.firstname and sender.lastname and (sender.firstname .. " " .. sender.lastname)) or sender.email or "Unknown"
+  local date = original:formatted_date()
+  
+  local body = "\n\n---------- Forwarded message ---------\n" ..
+               "From: " .. sender_name .. " <" .. (sender.email or "") .. ">\n" ..
+               "Date: " .. date .. "\n" ..
+               "Subject: " .. (original.subject or original.data.subject or "") .. "\n" ..
+               "To: " .. (original.recipients and table.concat(original.recipients, ", ") or "") .. "\n\n" ..
+               (original.body or original.data.body or "")
+
+  self.layout = "application"
+  self:render("mailbox/messages/compose", {
+    current_user = current_user,
+    folder_counts = folder_counts,
+    current_folder = "compose",
+    forward_data = { -- Pass explicit forward data instead of using reply logic completely
+      subject = subject,
+      body = body
+    },
+    all_users = all_users
   })
 end
 
@@ -161,6 +236,7 @@ function MailboxController:send()
 
   local recipients_str = self.params.recipients or ""
   local cc_str = self.params.cc or ""
+  local bcc_str = self.params.bcc or ""
   local subject = self.params.subject or ""
   local body = self.params.body or ""
 
@@ -181,6 +257,14 @@ function MailboxController:send()
     end
   end
 
+  local bcc = {}
+  for key in string.gmatch(bcc_str, "[^,]+") do
+    local trimmed = key:match("^%s*(.-)%s*$")
+    if trimmed and trimmed ~= "" then
+      table.insert(bcc, trimmed)
+    end
+  end
+
   if #recipients == 0 then
     return self:json({ error = "At least one recipient is required" }, 400)
   end
@@ -189,10 +273,11 @@ function MailboxController:send()
     return self:json({ error = "Subject is required" }, 400)
   end
 
-  local message = MailboxMessage.send(current_user, recipients, cc, subject, body, {})
+  -- MailboxMessage.send(user, to, cc, subject, body, options, bcc)
+  local message = MailboxMessage.send(current_user, recipients, cc, subject, body, {}, bcc)
 
   if self:is_htmx_request() then
-    SetHeader("HX-Redirect", "/mailbox/messages/sent")
+    self:set_header("HX-Redirect", "/mailbox/messages/sent")
     return self:html("")
   end
 
@@ -205,6 +290,7 @@ function MailboxController:save_draft()
 
   local recipients_str = self.params.recipients or ""
   local cc_str = self.params.cc or ""
+  local bcc_str = self.params.bcc or ""
   local subject = self.params.subject or ""
   local body = self.params.body or ""
   local draft_key = self.params.draft_key
@@ -226,7 +312,15 @@ function MailboxController:save_draft()
     end
   end
 
-  local draft = MailboxMessage.save_draft(current_user, recipients, cc, subject, body, draft_key)
+  local bcc = {}
+  for key in string.gmatch(bcc_str, "[^,]+") do
+    local trimmed = key:match("^%s*(.-)%s*$")
+    if trimmed and trimmed ~= "" then
+      table.insert(bcc, trimmed)
+    end
+  end
+
+  local draft = MailboxMessage.save_draft(current_user, recipients, cc, subject, body, draft_key, bcc)
 
   return self:json({ success = true, draft_key = draft._key or draft.data._key })
 end
@@ -234,13 +328,16 @@ end
 -- Search recipients (HTMX autocomplete)
 function MailboxController:search_recipients()
   -- Get the search query from the input value
-  local query = self.params["recipients-input"] or self.params["cc-input"] or self.params.q or ""
+  local query = self.params["recipients-input"] or self.params["cc-input"] or self.params["bcc-input"] or self.params.q or ""
 
   -- Determine dropdown type based on htmx target
   local hx_target = GetHeader("HX-Target") or ""
   local dropdown_type = "recipients"
   if hx_target:match("cc") then
     dropdown_type = "cc"
+  end
+  if hx_target:match("bcc") then
+    dropdown_type = "bcc"
   end
 
   if #query < 1 then
@@ -313,7 +410,7 @@ function MailboxController:archive()
   message:archive()
 
   if self:is_htmx_request() then
-    SetHeader("HX-Trigger", "messageArchived")
+    self:set_header("HX-Trigger", "messageArchived")
     return self:html("")
   end
 
@@ -332,7 +429,7 @@ function MailboxController:delete_message()
   message:destroy()
 
   if self:is_htmx_request() then
-    SetHeader("HX-Trigger", "messageDeleted")
+    self:set_header("HX-Trigger", "messageDeleted")
     return self:html("")
   end
 

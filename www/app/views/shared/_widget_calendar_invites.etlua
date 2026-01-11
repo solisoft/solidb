@@ -1,0 +1,44 @@
+<% if invites and #invites > 0 then %>
+  <div class="space-y-2 animate-fade-in">
+    <% for _, event in ipairs(invites) do %>
+    <div class="block p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 transition-all group">
+      <div class="flex items-start gap-3">
+        <div class="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
+          <i class="far fa-calendar-alt text-xs"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h4 class="text-xs font-medium text-text group-hover:text-white truncate"><%= event.title or event.data.title %></h4>
+          <div class="flex items-center gap-1 mt-0.5 text-[10px] text-text-muted">
+             <i class="far fa-clock text-[9px]"></i>
+             <span><%= os.date("%a, %b %d @ %I:%M %p", event.start_time or event.data.start_time) %></span>
+          </div>
+          <% if event.organizer_key then %>
+          <div class="text-[10px] text-text-dim mt-0.5 flex items-center gap-1">
+             <i class="far fa-user text-[9px]"></i>
+             <span><%= event.organizer and event.organizer.firstname or "Organizer" %></span>
+          </div>
+          <% end %>
+          
+          <!-- Actions -->
+          <div class="flex items-center gap-2 mt-2">
+            <button hx-post="/mailbox/calendar/event/<%= event._key or event.data._key %>/respond?status=accepted"
+                    hx-swap="none"
+                    class="flex-1 py-1 text-[10px] font-medium bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded transition-colors text-center">
+              Accept
+            </button>
+            <button hx-post="/mailbox/calendar/event/<%= event._key or event.data._key %>/respond?status=declined"
+                    hx-swap="none"
+                    class="flex-1 py-1 text-[10px] font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded transition-colors text-center">
+              Decline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <% end %>
+  </div>
+<% else %>
+  <div class="text-center py-4 text-text-dim text-xs">
+    No pending invitations.
+  </div>
+<% end %>
