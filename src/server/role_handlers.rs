@@ -40,8 +40,8 @@ pub struct UpdateRoleRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PermissionInput {
-    pub action: String,   // "admin", "write", "read"
-    pub scope: String,    // "global", "database"
+    pub action: String, // "admin", "write", "read"
+    pub scope: String,  // "global", "database"
     pub database: Option<String>,
 }
 
@@ -113,10 +113,17 @@ impl From<&Role> for RoleResponse {
         Self {
             name: role.name.clone(),
             description: role.description.clone().unwrap_or_default(),
-            permissions: role.permissions.iter().map(PermissionOutput::from).collect(),
+            permissions: role
+                .permissions
+                .iter()
+                .map(PermissionOutput::from)
+                .collect(),
             is_builtin: role.is_builtin,
             created_at: role.created_at.clone(),
-            updated_at: role.updated_at.clone().unwrap_or_else(|| role.created_at.clone()),
+            updated_at: role
+                .updated_at
+                .clone()
+                .unwrap_or_else(|| role.created_at.clone()),
         }
     }
 }
@@ -179,7 +186,10 @@ pub async fn list_roles(
             // doc.data doesn't include _key, need to merge it
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             serde_json::from_value(data).ok()
         })
@@ -198,18 +208,18 @@ pub async fn create_role(
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
     // Validate role name
-    if req.name.starts_with("admin") || req.name.starts_with("editor") || req.name.starts_with("viewer") {
+    if req.name.starts_with("admin")
+        || req.name.starts_with("editor")
+        || req.name.starts_with("viewer")
+    {
         return Err(DbError::BadRequest(
             "Cannot create role with reserved name prefix (admin, editor, viewer)".to_string(),
         ));
     }
 
     // Parse permissions
-    let permissions: Result<Vec<Permission>, _> = req
-        .permissions
-        .iter()
-        .map(|p| p.to_permission())
-        .collect();
+    let permissions: Result<Vec<Permission>, _> =
+        req.permissions.iter().map(|p| p.to_permission()).collect();
     let permissions = permissions?;
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -413,14 +423,19 @@ pub async fn get_user_roles(
         .filter_map(|doc| {
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             serde_json::from_value::<UserRole>(data).ok()
         })
         .filter(|ur| ur.username == username)
         .collect();
 
-    Ok(Json(user_roles.iter().map(UserRoleResponse::from).collect()))
+    Ok(Json(
+        user_roles.iter().map(UserRoleResponse::from).collect(),
+    ))
 }
 
 /// Assign a role to a user
@@ -444,7 +459,10 @@ pub async fn assign_role(
     // Verify user exists
     let admins_coll = db.get_collection(ADMIN_COLL)?;
     if admins_coll.get(&username).is_err() {
-        return Err(DbError::DocumentNotFound(format!("User '{}' not found", username)));
+        return Err(DbError::DocumentNotFound(format!(
+            "User '{}' not found",
+            username
+        )));
     }
 
     // Check if assignment already exists
@@ -455,7 +473,10 @@ pub async fn assign_role(
         .filter_map(|doc| {
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             serde_json::from_value::<UserRole>(data).ok()
         })
@@ -502,7 +523,10 @@ pub async fn assign_role(
     // Invalidate cache for this user
     state.permission_cache.invalidate(&username);
 
-    Ok((StatusCode::CREATED, Json(UserRoleResponse::from(&user_role))))
+    Ok((
+        StatusCode::CREATED,
+        Json(UserRoleResponse::from(&user_role)),
+    ))
 }
 
 /// Revoke a role from a user
@@ -531,11 +555,16 @@ pub async fn revoke_role(
         .filter_map(|doc| {
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             serde_json::from_value::<UserRole>(data).ok()
         })
-        .find(|ur| ur.username == username && ur.role == role_name && ur.database == query.database);
+        .find(|ur| {
+            ur.username == username && ur.role == role_name && ur.database == query.database
+        });
 
     let assignment = assignment.ok_or_else(|| {
         DbError::DocumentNotFound(format!(
@@ -594,7 +623,9 @@ pub async fn get_my_permissions(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<PermissionOutput>>, DbError> {
     let permissions = AuthorizationService::get_effective_permissions(&claims, &state).await?;
-    Ok(Json(permissions.iter().map(PermissionOutput::from).collect()))
+    Ok(Json(
+        permissions.iter().map(PermissionOutput::from).collect(),
+    ))
 }
 
 // ===========================================
@@ -639,7 +670,10 @@ pub async fn list_users(
             // doc.data doesn't include _key, need to merge it
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             let user: crate::server::auth::User = serde_json::from_value(data).ok()?;
             let created_at = Some(doc.created_at.to_rfc3339());
@@ -655,7 +689,10 @@ pub async fn list_users(
         .filter_map(|doc| {
             let mut data = doc.data.clone();
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("_key".to_string(), serde_json::Value::String(doc.key.clone()));
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(doc.key.clone()),
+                );
             }
             serde_json::from_value(data).ok()
         })
@@ -677,7 +714,9 @@ pub async fn list_users(
         })
         .collect();
 
-    Ok(Json(UsersListResponse { users: users_with_roles }))
+    Ok(Json(UsersListResponse {
+        users: users_with_roles,
+    }))
 }
 
 /// Create a new user
@@ -691,12 +730,16 @@ pub async fn create_user(
 
     // Validate username
     if req.username.is_empty() || req.username.len() > 64 {
-        return Err(DbError::BadRequest("Username must be 1-64 characters".to_string()));
+        return Err(DbError::BadRequest(
+            "Username must be 1-64 characters".to_string(),
+        ));
     }
 
     // Validate password
     if req.password.len() < 6 {
-        return Err(DbError::BadRequest("Password must be at least 6 characters".to_string()));
+        return Err(DbError::BadRequest(
+            "Password must be at least 6 characters".to_string(),
+        ));
     }
 
     let db = state.storage.get_database("_system")?;
@@ -704,7 +747,10 @@ pub async fn create_user(
 
     // Check if user already exists
     if collection.get(&req.username).is_ok() {
-        return Err(DbError::ConflictError(format!("User '{}' already exists", req.username)));
+        return Err(DbError::ConflictError(format!(
+            "User '{}' already exists",
+            req.username
+        )));
     }
 
     // Hash password
@@ -775,11 +821,14 @@ pub async fn create_user(
         }
     }
 
-    Ok((StatusCode::CREATED, Json(UserResponse {
-        username: req.username,
-        created_at: Some(chrono::Utc::now().to_rfc3339()),
-        roles,
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(UserResponse {
+            username: req.username,
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            roles,
+        }),
+    ))
 }
 
 /// Delete a user
@@ -793,12 +842,16 @@ pub async fn delete_user(
 
     // Prevent deleting yourself
     if claims.sub == username {
-        return Err(DbError::BadRequest("Cannot delete your own account".to_string()));
+        return Err(DbError::BadRequest(
+            "Cannot delete your own account".to_string(),
+        ));
     }
 
     // Prevent deleting the default admin
     if username == "admin" {
-        return Err(DbError::BadRequest("Cannot delete the default admin user".to_string()));
+        return Err(DbError::BadRequest(
+            "Cannot delete the default admin user".to_string(),
+        ));
     }
 
     let db = state.storage.get_database("_system")?;
@@ -806,7 +859,10 @@ pub async fn delete_user(
 
     // Check if user exists
     if collection.get(&username).is_err() {
-        return Err(DbError::DocumentNotFound(format!("User '{}' not found", username)));
+        return Err(DbError::DocumentNotFound(format!(
+            "User '{}' not found",
+            username
+        )));
     }
 
     // Delete user

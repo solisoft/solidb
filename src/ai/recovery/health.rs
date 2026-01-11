@@ -125,8 +125,7 @@ impl AgentHealthMetrics {
             CircuitState::Closed => {
                 // Open if consecutive failures exceed threshold
                 self.consecutive_failures >= failure_threshold
-                    || (self.window_requests >= 10
-                        && self.failure_rate() >= failure_rate_threshold)
+                    || (self.window_requests >= 10 && self.failure_rate() >= failure_rate_threshold)
             }
             CircuitState::HalfOpen => {
                 // Any failure in half-open reopens circuit
@@ -211,7 +210,10 @@ impl AgentHealthMetrics {
 
     /// Check if circuit allows requests
     pub fn allows_requests(&self) -> bool {
-        matches!(self.circuit_state, CircuitState::Closed | CircuitState::HalfOpen)
+        matches!(
+            self.circuit_state,
+            CircuitState::Closed | CircuitState::HalfOpen
+        )
     }
 }
 

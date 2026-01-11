@@ -51,15 +51,11 @@ impl TaskOrchestrator {
             AITaskType::ValidateCode => {
                 Self::handle_validation_complete(task, contribution, output)
             }
-            AITaskType::RunTests => {
-                Self::handle_tests_complete(task, contribution, output)
-            }
+            AITaskType::RunTests => Self::handle_tests_complete(task, contribution, output),
             AITaskType::PrepareReview => {
                 Self::handle_prepare_review_complete(task, contribution, output)
             }
-            AITaskType::MergeChanges => {
-                Self::handle_merge_complete(task, contribution, output)
-            }
+            AITaskType::MergeChanges => Self::handle_merge_complete(task, contribution, output),
         }
     }
 
@@ -74,12 +70,14 @@ impl TaskOrchestrator {
         let requires_review = output
             .map(|v| {
                 // Check requires_review field
-                let explicit_review = v.get("requires_review")
+                let explicit_review = v
+                    .get("requires_review")
                     .and_then(|r| r.as_bool())
                     .unwrap_or(false);
 
                 // Check risk_score field
-                let high_risk = v.get("risk_score")
+                let high_risk = v
+                    .get("risk_score")
                     .and_then(|r| r.as_f64())
                     .map(|score| score > 0.7)
                     .unwrap_or(false);
@@ -277,11 +275,7 @@ impl TaskOrchestrator {
 
     /// Create a merge task after human approval
     pub fn on_approval(contribution: &Contribution, priority: i32) -> OrchestrationResult {
-        let next_task = AITask::new(
-            contribution.id.clone(),
-            AITaskType::MergeChanges,
-            priority,
-        );
+        let next_task = AITask::new(contribution.id.clone(), AITaskType::MergeChanges, priority);
 
         OrchestrationResult {
             next_tasks: vec![next_task],
@@ -319,7 +313,10 @@ impl TaskOrchestrator {
             OrchestrationResult {
                 next_tasks: vec![review_task],
                 contribution_status: Some(ContributionStatus::Review),
-                message: format!("Task failed after max retries - escalating to review: {}", error),
+                message: format!(
+                    "Task failed after max retries - escalating to review: {}",
+                    error
+                ),
             }
         }
     }
@@ -345,7 +342,9 @@ impl TaskOrchestrator {
     /// This method queries the agent marketplace to find the most suitable agent
     /// based on trust scores, recent performance, and availability.
     pub fn select_agent_for_task(db: &Database, task: &AITask) -> Option<RankedAgent> {
-        AgentMarketplace::select_agent_for_task(db, task).ok().flatten()
+        AgentMarketplace::select_agent_for_task(db, task)
+            .ok()
+            .flatten()
     }
 
     /// Enhanced orchestration that includes agent selection
@@ -488,7 +487,10 @@ mod tests {
 
         assert_eq!(result.next_tasks.len(), 1);
         assert_eq!(result.next_tasks[0].task_type, AITaskType::GenerateCode);
-        assert_eq!(result.contribution_status, Some(ContributionStatus::Generating));
+        assert_eq!(
+            result.contribution_status,
+            Some(ContributionStatus::Generating)
+        );
     }
 
     #[test]
@@ -558,7 +560,10 @@ mod tests {
 
         assert_eq!(result.next_tasks.len(), 1);
         assert_eq!(result.next_tasks[0].task_type, AITaskType::MergeChanges);
-        assert_eq!(result.contribution_status, Some(ContributionStatus::Approved));
+        assert_eq!(
+            result.contribution_status,
+            Some(ContributionStatus::Approved)
+        );
     }
 
     #[test]
@@ -574,8 +579,14 @@ mod tests {
 
     #[test]
     fn test_pipeline_stage_progression() {
-        assert_eq!(PipelineStage::Submitted.next(), Some(PipelineStage::Analyzing));
-        assert_eq!(PipelineStage::Analyzing.next(), Some(PipelineStage::Generating));
+        assert_eq!(
+            PipelineStage::Submitted.next(),
+            Some(PipelineStage::Analyzing)
+        );
+        assert_eq!(
+            PipelineStage::Analyzing.next(),
+            Some(PipelineStage::Generating)
+        );
         assert_eq!(PipelineStage::Merged.next(), None);
         assert_eq!(PipelineStage::Rejected.next(), None);
     }

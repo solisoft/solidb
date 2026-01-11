@@ -103,7 +103,7 @@ pub enum SyncMessage {
     AuthResponse { hmac: Vec<u8> },
     /// Server confirms auth result
     AuthResult { success: bool, message: String },
-    
+
     // === Incremental Sync ===
     /// Request entries after a sequence
     IncrementalSyncRequest {
@@ -112,7 +112,7 @@ pub enum SyncMessage {
         /// Max batch size in bytes (default 1MB)  
         max_batch_bytes: u32,
     },
-    
+
     // === Full Sync (for new nodes) ===
     /// Request full sync
     FullSyncRequest { from_node: String },
@@ -141,7 +141,7 @@ pub enum SyncMessage {
     },
     /// End of full sync
     FullSyncComplete { final_sequence: u64 },
-    
+
     // === Batch Sync Response ===
     /// Batch of sync entries
     SyncBatch {
@@ -151,7 +151,7 @@ pub enum SyncMessage {
         /// Compressed data (if large)
         compressed: bool,
     },
-    
+
     // === Health & Heartbeat ===
     /// Periodic heartbeat
     Heartbeat {
@@ -161,11 +161,11 @@ pub enum SyncMessage {
     },
     /// Heartbeat acknowledgment
     HeartbeatAck { node_id: String },
-    
+
     // === Node Management ===
     /// Node joining cluster
-    NodeJoin { 
-        node_id: String, 
+    NodeJoin {
+        node_id: String,
         address: String,
         http_address: String,
     },
@@ -173,7 +173,7 @@ pub enum SyncMessage {
     NodeLeave { node_id: String },
     /// Node detected as dead (after timeout)
     NodeDead { node_id: String },
-    
+
     // === Shard Management ===
     /// Shard rebalance after node failure/join
     ShardRebalance {
@@ -193,7 +193,7 @@ impl SyncMessage {
         result.extend(payload);
         result
     }
-    
+
     /// Decode message from bincode bytes (without length prefix)
     pub fn decode(bytes: &[u8]) -> Result<Self, bincode::Error> {
         bincode::deserialize(bytes)
@@ -235,7 +235,7 @@ impl SyncEntry {
 pub fn compute_shard_id(key: &str, num_shards: u16) -> u16 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
     (hasher.finish() % num_shards as u64) as u16
@@ -244,7 +244,7 @@ pub fn compute_shard_id(key: &str, num_shards: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_sync_message_encode_decode() {
         let msg = SyncMessage::Heartbeat {
@@ -252,25 +252,27 @@ mod tests {
             sequence: 42,
             stats: NodeStats::default(),
         };
-        
+
         let encoded = msg.encode();
         // Skip length prefix (4 bytes)
         let decoded = SyncMessage::decode(&encoded[4..]).unwrap();
-        
+
         match decoded {
-            SyncMessage::Heartbeat { node_id, sequence, .. } => {
+            SyncMessage::Heartbeat {
+                node_id, sequence, ..
+            } => {
                 assert_eq!(node_id, "node1");
                 assert_eq!(sequence, 42);
             }
             _ => panic!("Wrong message type"),
         }
     }
-    
+
     #[test]
     fn test_compute_shard_id() {
         let shard = compute_shard_id("doc123", 8);
         assert!(shard < 8);
-        
+
         // Same key should give same shard
         assert_eq!(compute_shard_id("doc123", 8), shard);
     }

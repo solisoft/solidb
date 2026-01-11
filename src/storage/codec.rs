@@ -45,38 +45,46 @@ pub fn decode_key(bytes: &[u8]) -> Option<Value> {
     match bytes[0] {
         0x01 => Some(Value::Null),
         0x02 => {
-             if bytes.len() < 2 { return None; }
-             Some(Value::Bool(bytes[1] == 0x01))
+            if bytes.len() < 2 {
+                return None;
+            }
+            Some(Value::Bool(bytes[1] == 0x01))
         }
         0x03 => {
-            if bytes.len() < 9 { return None; }
+            if bytes.len() < 9 {
+                return None;
+            }
             let mut arr = [0u8; 8];
             arr.copy_from_slice(&bytes[1..9]);
             let f = decode_f64(arr);
-            Some(serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null))
+            Some(
+                serde_json::Number::from_f64(f)
+                    .map(Value::Number)
+                    .unwrap_or(Value::Null),
+            )
         }
         0x04 => {
-             let content = if let Some(last) = bytes.last() {
-                 if *last == 0x00 && bytes.len() > 1 {
-                     &bytes[1..bytes.len()-1]
-                 } else {
-                     &bytes[1..]
-                 }
-             } else {
-                 &bytes[1..]
-             };
-             String::from_utf8(content.to_vec()).ok().map(Value::String)
+            let content = if let Some(last) = bytes.last() {
+                if *last == 0x00 && bytes.len() > 1 {
+                    &bytes[1..bytes.len() - 1]
+                } else {
+                    &bytes[1..]
+                }
+            } else {
+                &bytes[1..]
+            };
+            String::from_utf8(content.to_vec()).ok().map(Value::String)
         }
         0x05 => {
-             let content = if let Some(last) = bytes.last() {
-                 if *last == 0x00 && bytes.len() > 1 {
-                     &bytes[1..bytes.len()-1]
-                 } else {
-                     &bytes[1..]
-                 }
-             } else {
-                 &bytes[1..]
-             };
+            let content = if let Some(last) = bytes.last() {
+                if *last == 0x00 && bytes.len() > 1 {
+                    &bytes[1..bytes.len() - 1]
+                } else {
+                    &bytes[1..]
+                }
+            } else {
+                &bytes[1..]
+            };
             serde_json::from_slice(content).ok()
         }
         _ => None,
@@ -122,13 +130,13 @@ mod tests {
     fn test_encode_decode_bool() {
         let true_val = Value::Bool(true);
         let false_val = Value::Bool(false);
-        
+
         let encoded_true = encode_key(&true_val);
         let encoded_false = encode_key(&false_val);
-        
+
         assert_eq!(decode_key(&encoded_true), Some(Value::Bool(true)));
         assert_eq!(decode_key(&encoded_false), Some(Value::Bool(false)));
-        
+
         // false should sort before true
         assert!(encoded_false < encoded_true);
     }
@@ -144,14 +152,14 @@ mod tests {
             json!(100.5),
             json!(1000000),
         ];
-        
+
         for v in &values {
             let encoded = encode_key(v);
             let decoded = decode_key(&encoded);
             // Numbers might have precision differences, check approximately
             assert!(decoded.is_some());
-            if let (Some(orig), Some(dec)) = 
-                   (v.as_f64(), decoded.as_ref().and_then(|d| d.as_f64())) {
+            if let (Some(orig), Some(dec)) = (v.as_f64(), decoded.as_ref().and_then(|d| d.as_f64()))
+            {
                 assert!((orig - dec).abs() < 1e-10);
             }
         }
@@ -160,7 +168,7 @@ mod tests {
     #[test]
     fn test_encode_decode_strings() {
         let values = vec!["", "hello", "world", "abc123", "🦀 Rust"];
-        
+
         for s in values {
             let value = Value::String(s.to_string());
             let encoded = encode_key(&value);
@@ -193,7 +201,7 @@ mod tests {
         let number = encode_key(&json!(0));
         let string = encode_key(&json!("a"));
         let array = encode_key(&json!([]));
-        
+
         assert!(null < bool_val);
         assert!(bool_val < number);
         assert!(number < string);
@@ -207,7 +215,7 @@ mod tests {
         let zero = encode_key(&json!(0));
         let pos_small = encode_key(&json!(1));
         let pos_big = encode_key(&json!(1000));
-        
+
         assert!(neg_big < neg_small);
         assert!(neg_small < zero);
         assert!(zero < pos_small);
@@ -220,7 +228,7 @@ mod tests {
         let b = encode_key(&json!("b"));
         let aa = encode_key(&json!("aa"));
         let ab = encode_key(&json!("ab"));
-        
+
         assert!(a < aa);
         assert!(a < b);
         assert!(aa < ab);
@@ -259,4 +267,3 @@ mod tests {
         }
     }
 }
-

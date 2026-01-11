@@ -11,10 +11,10 @@
 //! - **Request Frame**: `[length: 4 bytes BE][msgpack payload]`
 //! - **Response Frame**: `[length: 4 bytes BE][msgpack payload]`
 
-pub mod protocol;
-pub mod handler;
 pub mod client;
+pub mod handler;
+pub mod protocol;
 
-pub use protocol::{Command, Response, DriverError};
-pub use handler::DriverHandler;
 pub use client::SoliDBClient;
+pub use handler::DriverHandler;
+pub use protocol::{Command, DriverError, Response};

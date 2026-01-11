@@ -1,6 +1,6 @@
+use crate::storage::StorageEngine;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::storage::StorageEngine;
 
 /// TTL Worker - background task that cleans up expired documents
 /// based on TTL indexes defined on collections
@@ -68,12 +68,7 @@ impl TtlWorker {
                         }
                     }
                     Ok(Err(e)) => {
-                        tracing::warn!(
-                            "TTL cleanup failed for {}.{}: {}",
-                            db_name,
-                            coll_name,
-                            e
-                        );
+                        tracing::warn!("TTL cleanup failed for {}.{}: {}", db_name, coll_name, e);
                     }
                     Err(e) => {
                         tracing::error!("TTL cleanup task panicked: {}", e);
@@ -83,7 +78,10 @@ impl TtlWorker {
         }
 
         if total_deleted > 0 {
-            tracing::debug!("TTL cleanup cycle complete: {} total documents deleted", total_deleted);
+            tracing::debug!(
+                "TTL cleanup cycle complete: {} total documents deleted",
+                total_deleted
+            );
         }
     }
 }
@@ -97,9 +95,9 @@ mod tests {
     fn test_ttl_worker_new() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
-        
+
         let worker = TtlWorker::new(storage);
-        
+
         // Default interval is 60 seconds
         assert_eq!(worker.interval_secs, 60);
     }
@@ -108,9 +106,9 @@ mod tests {
     async fn test_ttl_cleanup_empty_database() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
-        
+
         let worker = TtlWorker::new(storage);
-        
+
         // Should not panic on empty database
         worker.cleanup_expired_documents().await;
     }
@@ -119,16 +117,15 @@ mod tests {
     async fn test_ttl_cleanup_no_ttl_indexes() {
         let tmp = TempDir::new().unwrap();
         let storage = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
-        
+
         // Create a database and collection without TTL index
         storage.create_database("test_db".to_string()).unwrap();
         let db = storage.get_database("test_db").unwrap();
         db.create_collection("test_coll".to_string(), None).unwrap();
-        
+
         let worker = TtlWorker::new(storage);
-        
+
         // Should skip collections without TTL indexes
         worker.cleanup_expired_documents().await;
     }
 }
-

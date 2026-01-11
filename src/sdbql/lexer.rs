@@ -64,12 +64,12 @@ pub enum Token {
     NotRegEx,      // !~
 
     // Bitwise operators
-    Ampersand,     // &
-    Pipe,          // |
-    Caret,         // ^
-    Tilde,         // ~
-    LeftShift,     // <<
-    RightShift,    // >>
+    Ampersand,  // &
+    Pipe,       // |
+    Caret,      // ^
+    Tilde,      // ~
+    LeftShift,  // <<
+    RightShift, // >>
 
     // Delimiters
     Dot,          // .
@@ -110,8 +110,6 @@ impl Lexer {
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
     }
-
-
 
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.current_char {
@@ -207,7 +205,9 @@ impl Lexer {
             self.advance();
         }
 
-        Err(DbError::ParseError("Unterminated quoted identifier".to_string()))
+        Err(DbError::ParseError(
+            "Unterminated quoted identifier".to_string(),
+        ))
     }
 
     fn read_identifier(&mut self) -> Token {
@@ -523,13 +523,22 @@ mod tests {
     #[test]
     fn test_identifiers() {
         assert_eq!(tokenize("myVar")[0], Token::Identifier("myVar".to_string()));
-        assert_eq!(tokenize("_private")[0], Token::Identifier("_private".to_string()));
-        assert_eq!(tokenize("var123")[0], Token::Identifier("var123".to_string()));
+        assert_eq!(
+            tokenize("_private")[0],
+            Token::Identifier("_private".to_string())
+        );
+        assert_eq!(
+            tokenize("var123")[0],
+            Token::Identifier("var123".to_string())
+        );
     }
 
     #[test]
     fn test_quoted_identifier() {
-        assert_eq!(tokenize("`my field`")[0], Token::Identifier("my field".to_string()));
+        assert_eq!(
+            tokenize("`my field`")[0],
+            Token::Identifier("my field".to_string())
+        );
     }
 
     #[test]
@@ -562,9 +571,18 @@ mod tests {
 
     #[test]
     fn test_string_escapes() {
-        assert_eq!(tokenize("\"hello\\nworld\"")[0], Token::String("hello\nworld".to_string()));
-        assert_eq!(tokenize("\"tab\\there\"")[0], Token::String("tab\there".to_string()));
-        assert_eq!(tokenize("\"quote\\\"here\"")[0], Token::String("quote\"here".to_string()));
+        assert_eq!(
+            tokenize("\"hello\\nworld\"")[0],
+            Token::String("hello\nworld".to_string())
+        );
+        assert_eq!(
+            tokenize("\"tab\\there\"")[0],
+            Token::String("tab\there".to_string())
+        );
+        assert_eq!(
+            tokenize("\"quote\\\"here\"")[0],
+            Token::String("quote\"here".to_string())
+        );
     }
 
     #[test]
@@ -626,7 +644,7 @@ mod tests {
     fn test_complete_query() {
         let query = "FOR doc IN users FILTER doc.age > 18 RETURN doc";
         let tokens = tokenize(query);
-        
+
         assert_eq!(tokens[0], Token::For);
         assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
         assert_eq!(tokens[2], Token::In);
@@ -661,4 +679,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

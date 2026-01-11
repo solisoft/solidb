@@ -67,17 +67,15 @@ impl SchemaValidator {
     /// Create a new schema validator
     pub fn new(schema: CollectionSchema) -> Result<Self, SchemaCompilationError> {
         let validator = if schema.is_enabled() {
-            Some(validator_for(&schema.schema).map_err(|e| {
-                SchemaCompilationError::InvalidSchema(e.to_string())
-            })?)
+            Some(
+                validator_for(&schema.schema)
+                    .map_err(|e| SchemaCompilationError::InvalidSchema(e.to_string()))?,
+            )
         } else {
             None
         };
 
-        Ok(Self {
-            schema,
-            validator,
-        })
+        Ok(Self { schema, validator })
     }
 
     /// Validate a document against the schema

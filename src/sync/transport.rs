@@ -101,8 +101,14 @@ impl ConnectionPool {
                 s
             }
             Err(e) => {
-                debug!("ConnectionPool: TCP connection failed to {}: {}", peer_addr, e);
-                return Err(TransportError::ConnectionFailed(format!("{}: {}", peer_addr, e)));
+                debug!(
+                    "ConnectionPool: TCP connection failed to {}: {}",
+                    peer_addr, e
+                );
+                return Err(TransportError::ConnectionFailed(format!(
+                    "{}: {}",
+                    peer_addr, e
+                )));
             }
         };
 
@@ -110,14 +116,20 @@ impl ConnectionPool {
         use tokio::io::AsyncWriteExt;
         let mut stream = stream;
         if let Err(e) = stream.write_all(b"solidb-sync-v1").await {
-            debug!("ConnectionPool: Failed to send magic header to {}: {}", peer_addr, e);
+            debug!(
+                "ConnectionPool: Failed to send magic header to {}: {}",
+                peer_addr, e
+            );
             return Err(TransportError::IoError(e));
         }
         debug!("ConnectionPool: Magic header sent to {}", peer_addr);
-        
+
         // Flush to ensure magic header is sent before authentication
         if let Err(e) = stream.flush().await {
-            debug!("ConnectionPool: Failed to flush magic header to {}: {}", peer_addr, e);
+            debug!(
+                "ConnectionPool: Failed to flush magic header to {}: {}",
+                peer_addr, e
+            );
             return Err(TransportError::IoError(e));
         }
 
@@ -125,23 +137,32 @@ impl ConnectionPool {
         let stream = match self.authenticate_client(stream).await {
             Ok(s) => s,
             Err(e) => {
-                debug!("ConnectionPool: Authentication failed with {}: {}", peer_addr, e);
+                debug!(
+                    "ConnectionPool: Authentication failed with {}: {}",
+                    peer_addr, e
+                );
                 return Err(e);
             }
         };
 
         // Store connection
-        self.connections.write().await.insert(peer_addr.to_string(), PeerConnection {
-            stream,
-            last_activity: std::time::Instant::now(),
-        });
+        self.connections.write().await.insert(
+            peer_addr.to_string(),
+            PeerConnection {
+                stream,
+                last_activity: std::time::Instant::now(),
+            },
+        );
 
         debug!("ConnectionPool: Connected to peer: {}", peer_addr);
         Ok(())
     }
 
     /// Authenticate as client (respond to server's challenge)
-    async fn authenticate_client(&self, mut stream: TcpStream) -> Result<TcpStream, TransportError> {
+    async fn authenticate_client(
+        &self,
+        mut stream: TcpStream,
+    ) -> Result<TcpStream, TransportError> {
         // If no keyfile, skip authentication
         if self.keyfile_path.is_empty() || !std::path::Path::new(&self.keyfile_path).exists() {
             debug!("authenticate_client: no keyfile, skipping");
@@ -151,7 +172,7 @@ impl ConnectionPool {
         debug!("authenticate_client: waiting for challenge");
         // Small delay to let server process magic header and send challenge
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        
+
         // Read challenge from server
         let msg = match Self::read_message(&mut stream).await {
             Ok(m) => {
@@ -169,7 +190,11 @@ impl ConnectionPool {
                 debug!("authenticate_client: got challenge");
                 challenge
             }
-            _ => return Err(TransportError::AuthFailed("Expected AuthChallenge".to_string())),
+            _ => {
+                return Err(TransportError::AuthFailed(
+                    "Expected AuthChallenge".to_string(),
+                ))
+            }
         };
 
         // Compute HMAC response
@@ -188,11 +213,16 @@ impl ConnectionPool {
                 debug!("authenticate_client: success");
                 Ok(stream)
             }
-            SyncMessage::AuthResult { success: false, message } => {
+            SyncMessage::AuthResult {
+                success: false,
+                message,
+            } => {
                 debug!("authenticate_client: failed: {}", message);
                 Err(TransportError::AuthFailed(message))
             }
-            _ => Err(TransportError::AuthFailed("Unexpected response".to_string())),
+            _ => Err(TransportError::AuthFailed(
+                "Unexpected response".to_string(),
+            )),
         }
     }
 
@@ -201,13 +231,11 @@ impl ConnectionPool {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
-        let key = std::fs::read(&self.keyfile_path).map_err(|e| {
-            TransportError::AuthFailed(format!("Failed to read keyfile: {}", e))
-        })?;
+        let key = std::fs::read(&self.keyfile_path)
+            .map_err(|e| TransportError::AuthFailed(format!("Failed to read keyfile: {}", e)))?;
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&key).map_err(|e| {
-            TransportError::AuthFailed(format!("Invalid key: {}", e))
-        })?;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&key)
+            .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
 
         Ok(mac.finalize().into_bytes().to_vec())
@@ -251,14 +279,21 @@ impl ConnectionPool {
     }
 
     /// Reconnect to a peer with exponential backoff
-    pub async fn reconnect_with_backoff(&self, peer_addr: &str, max_attempts: u32) -> Result<(), TransportError> {
+    pub async fn reconnect_with_backoff(
+        &self,
+        peer_addr: &str,
+        max_attempts: u32,
+    ) -> Result<(), TransportError> {
         let mut delay = Duration::from_millis(100);
 
         for attempt in 1..=max_attempts {
             match self.connect(peer_addr).await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    warn!("Connection attempt {} to {} failed: {}", attempt, peer_addr, e);
+                    warn!(
+                        "Connection attempt {} to {} failed: {}",
+                        attempt, peer_addr, e
+                    );
                     if attempt < max_attempts {
                         tokio::time::sleep(delay).await;
                         delay = std::cmp::min(delay * 2, Duration::from_secs(30));
@@ -268,16 +303,18 @@ impl ConnectionPool {
         }
 
         Err(TransportError::ConnectionFailed(format!(
-            "Failed after {} attempts", max_attempts
+            "Failed after {} attempts",
+            max_attempts
         )))
     }
 
     /// Write a message to a stream
     pub async fn write_message<T>(stream: &mut T, msg: &SyncMessage) -> Result<(), TransportError>
-    where T: tokio::io::AsyncWrite + Unpin {
-        let payload = bincode::serialize(msg).map_err(|e| {
-            TransportError::EncodeError(e.to_string())
-        })?;
+    where
+        T: tokio::io::AsyncWrite + Unpin,
+    {
+        let payload =
+            bincode::serialize(msg).map_err(|e| TransportError::EncodeError(e.to_string()))?;
 
         // Compress if large
         let (data, compressed) = if payload.len() > COMPRESSION_THRESHOLD {
@@ -306,7 +343,9 @@ impl ConnectionPool {
 
     /// Read a message from a stream
     pub async fn read_message<T>(stream: &mut T) -> Result<SyncMessage, TransportError>
-    where T: tokio::io::AsyncRead + Unpin {
+    where
+        T: tokio::io::AsyncRead + Unpin,
+    {
         // Read header
         let mut header = [0u8; 5];
         stream.read_exact(&mut header).await?;
@@ -324,17 +363,14 @@ impl ConnectionPool {
 
         // Decompress if needed
         let payload = if compressed {
-            lz4_flex::decompress_size_prepended(&data).map_err(|e| {
-                TransportError::DecodeError(format!("Decompression failed: {}", e))
-            })?
+            lz4_flex::decompress_size_prepended(&data)
+                .map_err(|e| TransportError::DecodeError(format!("Decompression failed: {}", e)))?
         } else {
             data
         };
 
         // Decode
-        bincode::deserialize(&payload).map_err(|e| {
-            TransportError::DecodeError(e.to_string())
-        })
+        bincode::deserialize(&payload).map_err(|e| TransportError::DecodeError(e.to_string()))
     }
 
     /// Get list of connected peers
@@ -352,7 +388,11 @@ pub struct SyncServer {
 
 impl SyncServer {
     /// Bind to address and create server
-    pub async fn bind(addr: &str, keyfile_path: String, local_node_id: String) -> Result<Self, TransportError> {
+    pub async fn bind(
+        addr: &str,
+        keyfile_path: String,
+        local_node_id: String,
+    ) -> Result<Self, TransportError> {
         let listener = TcpListener::bind(addr).await?;
         info!("Sync server listening on {}", addr);
 
@@ -366,7 +406,10 @@ impl SyncServer {
     /// Accept incoming connection and authenticate
     pub async fn accept(&self) -> Result<(SyncStream, String), TransportError> {
         let listener = self.listener.as_ref().ok_or_else(|| {
-            TransportError::IoError(std::io::Error::new(std::io::ErrorKind::NotConnected, "No listener"))
+            TransportError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "No listener",
+            ))
         })?;
         let (stream, addr) = listener.accept().await?;
         let peer_addr = addr.to_string();
@@ -382,28 +425,44 @@ impl SyncServer {
     }
 
     /// Authenticate as server (send challenge, verify response)
-    pub async fn authenticate_server(&self, stream: SyncStream) -> Result<SyncStream, TransportError> {
+    pub async fn authenticate_server(
+        &self,
+        stream: SyncStream,
+    ) -> Result<SyncStream, TransportError> {
         Self::authenticate_standalone(stream, &self.keyfile_path).await
     }
 
     /// Standalone authentication flow (e.g. for multiplexed connections)
     /// If magic_already_verified is true, skip reading the magic header (multiplexer already did it)
-    pub async fn authenticate_standalone(stream: SyncStream, keyfile_path: &str) -> Result<SyncStream, TransportError> {
+    pub async fn authenticate_standalone(
+        stream: SyncStream,
+        keyfile_path: &str,
+    ) -> Result<SyncStream, TransportError> {
         Self::authenticate_standalone_impl(stream, keyfile_path, false).await
     }
 
     /// Version that skips magic header reading (for multiplexed mode where header was already peeked)
-    pub async fn authenticate_standalone_skip_magic(stream: SyncStream, keyfile_path: &str) -> Result<SyncStream, TransportError> {
+    pub async fn authenticate_standalone_skip_magic(
+        stream: SyncStream,
+        keyfile_path: &str,
+    ) -> Result<SyncStream, TransportError> {
         Self::authenticate_standalone_impl(stream, keyfile_path, true).await
     }
 
-    async fn authenticate_standalone_impl(mut stream: SyncStream, keyfile_path: &str, skip_magic: bool) -> Result<SyncStream, TransportError> {
-        debug!("authenticate_standalone: starting, skip_magic={}, keyfile={}", skip_magic, keyfile_path);
+    async fn authenticate_standalone_impl(
+        mut stream: SyncStream,
+        keyfile_path: &str,
+        skip_magic: bool,
+    ) -> Result<SyncStream, TransportError> {
+        debug!(
+            "authenticate_standalone: starting, skip_magic={}, keyfile={}",
+            skip_magic, keyfile_path
+        );
 
         // If no keyfile provided or it doesn't exist, skip authentication (for dev/test)
         if keyfile_path.is_empty() || !std::path::Path::new(keyfile_path).exists() {
             debug!("authenticate_standalone: no keyfile found, skipping authentication");
-            
+
             // Still need to handle magic header if not skipped
             if !skip_magic {
                 let mut magic = [0u8; 14];
@@ -411,10 +470,12 @@ impl SyncServer {
                     return Err(TransportError::IoError(e));
                 }
                 if &magic != b"solidb-sync-v1" {
-                    return Err(TransportError::AuthFailed("Invalid protocol header".to_string()));
+                    return Err(TransportError::AuthFailed(
+                        "Invalid protocol header".to_string(),
+                    ));
                 }
             }
-            
+
             return Ok(stream);
         }
 
@@ -424,13 +485,18 @@ impl SyncServer {
             match stream.read_exact(&mut magic).await {
                 Ok(_) => debug!("authenticate_standalone: read magic header"),
                 Err(e) => {
-                    debug!("authenticate_standalone: failed to read magic header: {}", e);
+                    debug!(
+                        "authenticate_standalone: failed to read magic header: {}",
+                        e
+                    );
                     return Err(TransportError::IoError(e));
                 }
             }
 
             if &magic != b"solidb-sync-v1" {
-                 return Err(TransportError::AuthFailed("Invalid protocol header".to_string()));
+                return Err(TransportError::AuthFailed(
+                    "Invalid protocol header".to_string(),
+                ));
             }
         } else {
             debug!("authenticate_standalone: skip magic (multiplexed)");
@@ -442,7 +508,9 @@ impl SyncServer {
 
         // Send challenge
         debug!("authenticate_standalone: sending challenge");
-        let challenge_msg = SyncMessage::AuthChallenge { challenge: challenge.clone() };
+        let challenge_msg = SyncMessage::AuthChallenge {
+            challenge: challenge.clone(),
+        };
         ConnectionPool::write_message(&mut stream, &challenge_msg).await?;
         debug!("authenticate_standalone: waiting for response");
 
@@ -453,11 +521,17 @@ impl SyncServer {
         let client_hmac = match response {
             SyncMessage::AuthResponse { hmac } => hmac,
             _ => {
-                let _ = ConnectionPool::write_message(&mut stream, &SyncMessage::AuthResult {
-                    success: false,
-                    message: "Expected AuthResponse".to_string(),
-                }).await;
-                return Err(TransportError::AuthFailed("Expected AuthResponse".to_string()));
+                let _ = ConnectionPool::write_message(
+                    &mut stream,
+                    &SyncMessage::AuthResult {
+                        success: false,
+                        message: "Expected AuthResponse".to_string(),
+                    },
+                )
+                .await;
+                return Err(TransportError::AuthFailed(
+                    "Expected AuthResponse".to_string(),
+                ));
             }
         };
 
@@ -465,10 +539,14 @@ impl SyncServer {
         let expected_hmac = Self::compute_hmac_static(&challenge, keyfile_path)?;
 
         if client_hmac == expected_hmac {
-            let _ = ConnectionPool::write_message(&mut stream, &SyncMessage::AuthResult {
-                success: true,
-                message: "OK".to_string(),
-            }).await;
+            let _ = ConnectionPool::write_message(
+                &mut stream,
+                &SyncMessage::AuthResult {
+                    success: true,
+                    message: "OK".to_string(),
+                },
+            )
+            .await;
             Ok(stream)
         } else {
             Err(TransportError::AuthFailed("Invalid HMAC".to_string()))
@@ -483,9 +561,8 @@ impl SyncServer {
             TransportError::AuthFailed(format!("Failed to read keyfile {}: {}", keyfile_path, e))
         })?;
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&key).map_err(|e| {
-            TransportError::AuthFailed(format!("Invalid key: {}", e))
-        })?;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&key)
+            .map_err(|e| TransportError::AuthFailed(format!("Invalid key: {}", e)))?;
         mac.update(data);
 
         Ok(mac.finalize().into_bytes().to_vec())

@@ -200,11 +200,7 @@ mod tests {
 
     #[test]
     fn test_ai_task_lifecycle() {
-        let mut task = AITask::new(
-            "contrib-456".to_string(),
-            AITaskType::GenerateCode,
-            0,
-        );
+        let mut task = AITask::new("contrib-456".to_string(), AITaskType::GenerateCode, 0);
 
         assert_eq!(task.status, AITaskStatus::Pending);
         assert!(task.started_at.is_none());
@@ -222,11 +218,7 @@ mod tests {
 
     #[test]
     fn test_ai_task_retry() {
-        let mut task = AITask::new(
-            "contrib-789".to_string(),
-            AITaskType::ValidateCode,
-            0,
-        );
+        let mut task = AITask::new("contrib-789".to_string(), AITaskType::ValidateCode, 0);
         task.max_retries = 3;
 
         // First failure - should retry

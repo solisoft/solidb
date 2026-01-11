@@ -188,9 +188,13 @@ impl RecoveryEvent {
             Some(to) => format!("Task reassigned from {} to {}", from_agent, to),
             None => format!("Task unassigned from {} (awaiting new agent)", from_agent),
         };
-        Self::new(RecoveryActionType::TaskReassigned, RecoverySeverity::Info, desc)
-            .with_task(task_id)
-            .with_agent(from_agent)
+        Self::new(
+            RecoveryActionType::TaskReassigned,
+            RecoverySeverity::Info,
+            desc,
+        )
+        .with_task(task_id)
+        .with_agent(from_agent)
     }
 
     /// Create circuit opened event
@@ -330,7 +334,10 @@ mod tests {
             RecoveryActionType::TaskRecovered.to_string(),
             "task_recovered"
         );
-        assert_eq!(RecoveryActionType::CircuitOpened.to_string(), "circuit_opened");
+        assert_eq!(
+            RecoveryActionType::CircuitOpened.to_string(),
+            "circuit_opened"
+        );
     }
 
     #[test]

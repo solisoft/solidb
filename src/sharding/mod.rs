@@ -4,9 +4,9 @@
 //! that map to the new sync module's ShardConfig.
 
 pub mod coordinator;
-pub mod router;
 pub mod distribution;
 pub mod migration;
 pub mod repro_issue;
+pub mod router;
 
-pub use coordinator::{ShardCoordinator, CollectionShardConfig};
+pub use coordinator::{CollectionShardConfig, ShardCoordinator};

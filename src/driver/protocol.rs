@@ -171,7 +171,10 @@ pub enum Command {
     },
 
     /// List indexes on a collection
-    ListIndexes { database: String, collection: String },
+    ListIndexes {
+        database: String,
+        collection: String,
+    },
 
     // ==================== Transaction Operations ====================
     /// Begin a new transaction
@@ -373,7 +376,11 @@ mod tests {
         // Decode (skip length prefix)
         let decoded: Command = decode_message(&encoded[4..]).unwrap();
         match decoded {
-            Command::Get { database, collection, key } => {
+            Command::Get {
+                database,
+                collection,
+                key,
+            } => {
                 assert_eq!(database, "test");
                 assert_eq!(collection, "users");
                 assert_eq!(key, "user1");

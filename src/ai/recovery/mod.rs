@@ -16,7 +16,5 @@ pub use event::{
     ListRecoveryEventsResponse, RecoveryActionType, RecoveryCycleStats, RecoveryEvent,
     RecoveryEventQuery, RecoverySeverity, RECOVERY_EVENTS_COLLECTION,
 };
-pub use health::{
-    AgentHealthMetrics, CircuitState, RecoverySystemStatus, AGENT_HEALTH_COLLECTION,
-};
+pub use health::{AgentHealthMetrics, CircuitState, RecoverySystemStatus, AGENT_HEALTH_COLLECTION};
 pub use worker::RecoveryWorker;

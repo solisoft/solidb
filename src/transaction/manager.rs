@@ -72,39 +72,51 @@ impl TransactionManager {
     /// Validate transaction before commit (consistency checks)
     pub fn validate(&self, tx_id: TransactionId) -> DbResult<()> {
         let tx_arc = self.get(tx_id)?;
-        
+
         // First, collect all errors without holding tx lock
         let errors = {
             let tx = tx_arc.read().unwrap();
             let mut validation_errors = Vec::new();
 
             // Check for conflicting operations within the transaction
-            let mut seen_keys: std::collections::HashMap<String, Vec<Operation>> = std::collections::HashMap::new();
+            let mut seen_keys: std::collections::HashMap<String, Vec<Operation>> =
+                std::collections::HashMap::new();
 
             for op in &tx.operations {
                 let key = format!("{}:{}:{}", op.database(), op.collection(), op.key());
-                seen_keys.entry(key.clone()).or_insert_with(Vec::new).push(op.clone());
+                seen_keys
+                    .entry(key.clone())
+                    .or_insert_with(Vec::new)
+                    .push(op.clone());
             }
 
             // Check for duplicate inserts within transaction
             for (key, ops) in seen_keys.iter() {
-                let inserts: Vec<_> = ops.iter().filter(|op| matches!(op, Operation::Insert { .. })).collect();
-                
+                let inserts: Vec<_> = ops
+                    .iter()
+                    .filter(|op| matches!(op, Operation::Insert { .. }))
+                    .collect();
+
                 if inserts.len() > 1 {
                     let error = format!("Duplicate insert for key {} within transaction", key);
                     validation_errors.push(error);
                 }
 
                 // Check for operations on deleted documents
-                let deletes: Vec<_> = ops.iter().filter(|op| matches!(op, Operation::Delete { .. })).collect();
+                let deletes: Vec<_> = ops
+                    .iter()
+                    .filter(|op| matches!(op, Operation::Delete { .. }))
+                    .collect();
                 if !deletes.is_empty() {
-                    let updates_after_delete: Vec<_> = ops.iter()
+                    let updates_after_delete: Vec<_> = ops
+                        .iter()
                         .skip_while(|op| !matches!(op, Operation::Delete { .. }))
                         .filter(|op| matches!(op, Operation::Update { .. }))
                         .collect();
-                    
+
                     if !updates_after_delete.is_empty() {
-                        let error = format!("Cannot update deleted document {} within transaction", key);
+                        let error =
+                            format!("Cannot update deleted document {} within transaction", key);
                         validation_errors.push(error);
                     }
                 }
@@ -141,7 +153,7 @@ impl TransactionManager {
 
         // Get transaction
         let tx_arc = self.get(tx_id)?;
-        
+
         // Prepare transaction
         {
             let mut tx = tx_arc.write().unwrap();
@@ -218,7 +230,10 @@ impl TransactionManager {
             let active = self.active_transactions.read().unwrap();
             for (tx_id, tx_arc) in active.iter() {
                 let tx = tx_arc.read().unwrap();
-                if now.signed_duration_since(tx.created_at).to_std().unwrap_or(Duration::ZERO)
+                if now
+                    .signed_duration_since(tx.created_at)
+                    .to_std()
+                    .unwrap_or(Duration::ZERO)
                     > self.timeout
                 {
                     expired.push(*tx_id);
@@ -335,7 +350,7 @@ mod tests {
 
         let tx_id = manager.begin(IsolationLevel::ReadCommitted).unwrap();
         manager.commit(tx_id).unwrap();
-        
+
         // Second commit should fail (transaction not found)
         assert!(manager.commit(tx_id).is_err());
     }

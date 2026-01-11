@@ -385,11 +385,7 @@ mod tests {
 
     #[test]
     fn test_agent_task_lifecycle() {
-        let mut agent = Agent::new(
-            "test-coder".to_string(),
-            AgentType::Coder,
-            vec![],
-        );
+        let mut agent = Agent::new("test-coder".to_string(), AgentType::Coder, vec![]);
 
         assert_eq!(agent.status, AgentStatus::Idle);
         assert!(agent.current_task_id.is_none());

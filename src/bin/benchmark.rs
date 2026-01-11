@@ -1,13 +1,13 @@
-use solidb::driver::SoliDBClient;
 use serde_json::json;
-use std::time::Instant;
+use solidb::driver::SoliDBClient;
 use std::env;
+use std::time::Instant;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = env::var("SOLIDB_PORT").unwrap_or_else(|_| "9998".to_string());
     let password = env::var("SOLIDB_PASSWORD").unwrap_or_else(|_| "password".to_string());
-    
+
     let addr = format!("127.0.0.1:{}", port);
     let mut client = SoliDBClient::connect(&addr).await?;
     client.auth("_system", "admin", &password).await?;
@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = client.create_collection(db, col, None).await;
 
     let iterations = 1000;
-    
+
     // INSERT BENCHMARK
     let start = Instant::now();
     for i in 0..iterations {

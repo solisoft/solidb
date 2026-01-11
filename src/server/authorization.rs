@@ -24,7 +24,9 @@ impl PermissionAction {
     pub fn implies(&self, other: &PermissionAction) -> bool {
         match self {
             PermissionAction::Admin => true, // Admin implies all
-            PermissionAction::Write => matches!(other, PermissionAction::Write | PermissionAction::Read),
+            PermissionAction::Write => {
+                matches!(other, PermissionAction::Write | PermissionAction::Read)
+            }
             PermissionAction::Read => matches!(other, PermissionAction::Read),
         }
     }
@@ -150,7 +152,11 @@ impl Role {
 
     /// Get all built-in roles
     pub fn builtin_roles() -> Vec<Self> {
-        vec![Self::builtin_admin(), Self::builtin_editor(), Self::builtin_viewer()]
+        vec![
+            Self::builtin_admin(),
+            Self::builtin_editor(),
+            Self::builtin_viewer(),
+        ]
     }
 }
 
@@ -187,7 +193,12 @@ impl UserRole {
     }
 
     /// Create a new database-scoped role assignment
-    pub fn new_database_scoped(username: &str, role: &str, database: &str, assigned_by: &str) -> Self {
+    pub fn new_database_scoped(
+        username: &str,
+        role: &str,
+        database: &str,
+        assigned_by: &str,
+    ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             username: username.to_string(),
@@ -405,10 +416,34 @@ mod tests {
         permissions.insert(Permission::global_admin());
 
         // Admin should have access to everything
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Admin, None, None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, None, None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, None, None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("mydb"), None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Admin,
+            None,
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            None,
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Read,
+            None,
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("mydb"),
+            None
+        )
+        .is_ok());
     }
 
     #[test]
@@ -418,22 +453,61 @@ mod tests {
         permissions.insert(Permission::global_read());
 
         // Write+Read should allow read and write but not admin
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, None, None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, None, None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Admin, None, None).is_err());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Read,
+            None,
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            None,
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Admin,
+            None,
+            None
+        )
+        .is_err());
     }
 
     #[test]
     fn test_database_scope_restriction() {
         let mut permissions = HashSet::new();
-        permissions.insert(Permission::database_permission(PermissionAction::Write, "allowed_db"));
+        permissions.insert(Permission::database_permission(
+            PermissionAction::Write,
+            "allowed_db",
+        ));
 
         // Should work for allowed_db
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("allowed_db"), None).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Read, Some("allowed_db"), None).is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("allowed_db"),
+            None
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Read,
+            Some("allowed_db"),
+            None
+        )
+        .is_ok());
 
         // Should fail for other databases
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("other_db"), None).is_err());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("other_db"),
+            None
+        )
+        .is_err());
     }
 
     #[test]
@@ -445,11 +519,29 @@ mod tests {
         let scoped_dbs = vec!["db1".to_string(), "db2".to_string()];
 
         // Should work for scoped databases
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db1"), Some(&scoped_dbs)).is_ok());
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db2"), Some(&scoped_dbs)).is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("db1"),
+            Some(&scoped_dbs)
+        )
+        .is_ok());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("db2"),
+            Some(&scoped_dbs)
+        )
+        .is_ok());
 
         // Should fail for non-scoped databases
-        assert!(AuthorizationService::check_permission_raw(&permissions, PermissionAction::Write, Some("db3"), Some(&scoped_dbs)).is_err());
+        assert!(AuthorizationService::check_permission_raw(
+            &permissions,
+            PermissionAction::Write,
+            Some("db3"),
+            Some(&scoped_dbs)
+        )
+        .is_err());
     }
 
     #[test]

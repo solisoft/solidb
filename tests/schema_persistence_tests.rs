@@ -1,13 +1,16 @@
-use solidb::storage::{StorageEngine, schema::{CollectionSchema, SchemaValidationMode}};
-use tempfile::TempDir;
 use serde_json::json;
+use solidb::storage::{
+    schema::{CollectionSchema, SchemaValidationMode},
+    StorageEngine,
+};
+use tempfile::TempDir;
 
 #[test]
 fn test_schema_persistence() {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
-    
+
     // Create collection
     engine.create_collection("users".to_string(), None).unwrap();
     let collection = engine.get_collection("users").unwrap();
@@ -44,9 +47,9 @@ fn test_schema_persistence() {
     // but dropping 'engine' might be tricky if threads hold references.
     // However, verify that get_json_schema works is a good enough proxy for now
     // as it reads from RocksDB directly.
-    
+
     drop(collection);
-    
+
     // Re-get collection
     let collection2 = engine.get_collection("users").unwrap();
     let retrieved2 = collection2.get_json_schema().unwrap();

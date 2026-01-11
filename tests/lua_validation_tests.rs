@@ -6,17 +6,19 @@
 //! - Enhanced type checking
 //! - Schema management
 
-use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
+use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
+use solidb::storage::StorageEngine;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
 
     // Create DB
     engine.create_database("testdb".to_string()).unwrap();
@@ -58,7 +60,7 @@ fn create_script(code: &str) -> Script {
 #[tokio::test]
 async fn test_validate_basic_schema() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local schema = {
             type = "object",
@@ -77,13 +79,16 @@ async fn test_validate_basic_schema() {
             invalid = solidb.validate(invalid_data, schema)
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
 }
@@ -91,7 +96,7 @@ async fn test_validate_basic_schema() {
 #[tokio::test]
 async fn test_validate_detailed_errors() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local schema = {
             type = "object",
@@ -115,13 +120,16 @@ async fn test_validate_detailed_errors() {
             first_error = result.errors[1].message
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), false);
     assert!(body.get("error_count").unwrap().as_i64().unwrap() > 0);
 }
@@ -129,7 +137,7 @@ async fn test_validate_detailed_errors() {
 #[tokio::test]
 async fn test_sanitize_input() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local dirty_data = {
             name = "  Alice Smith  ",
@@ -150,22 +158,31 @@ async fn test_sanitize_input() {
             message = clean_data.message
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("name").unwrap().as_str().unwrap(), "Alice Smith");
-    assert_eq!(body.get("email").unwrap().as_str().unwrap(), "alice@example.com");
-    assert_eq!(body.get("message").unwrap().as_str().unwrap(), "Hello World");
+    assert_eq!(
+        body.get("email").unwrap().as_str().unwrap(),
+        "alice@example.com"
+    );
+    assert_eq!(
+        body.get("message").unwrap().as_str().unwrap(),
+        "Hello World"
+    );
 }
 
 #[tokio::test]
 async fn test_enhanced_typeof() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         return {
             string_type = solidb.typeof("hello"),
@@ -176,29 +193,38 @@ async fn test_enhanced_typeof() {
             function_type = solidb.typeof(function() end)
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("string_type").unwrap().as_str().unwrap(), "string");
     assert_eq!(body.get("number_type").unwrap().as_str().unwrap(), "number");
-    assert_eq!(body.get("boolean_type").unwrap().as_str().unwrap(), "boolean");
+    assert_eq!(
+        body.get("boolean_type").unwrap().as_str().unwrap(),
+        "boolean"
+    );
     assert_eq!(body.get("table_type").unwrap().as_str().unwrap(), "table");
     assert_eq!(body.get("nil_type").unwrap().as_str().unwrap(), "nil");
-    assert_eq!(body.get("function_type").unwrap().as_str().unwrap(), "function");
+    assert_eq!(
+        body.get("function_type").unwrap().as_str().unwrap(),
+        "function"
+    );
 }
 
 #[tokio::test]
 async fn test_schema_storage_and_retrieval() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create _schemas collection
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("_schemas".to_string(), None).unwrap();
-    
+
     let code = r#"
         -- Store a schema
         local user_schema = {
@@ -232,22 +258,28 @@ async fn test_schema_storage_and_retrieval() {
             schema_name = retrieved.name
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert!(body.contains_key("stored_key"));
     assert_eq!(body.get("schema_valid").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("schema_name").unwrap().as_str().unwrap(), "user_schema");
+    assert_eq!(
+        body.get("schema_name").unwrap().as_str().unwrap(),
+        "user_schema"
+    );
 }
 
 #[tokio::test]
 async fn test_validation_with_nested_objects() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local schema = {
             type = "object",
@@ -305,13 +337,16 @@ async fn test_validation_with_nested_objects() {
             invalid = solidb.validate(invalid_data, schema)
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
 }
@@ -319,7 +354,7 @@ async fn test_validation_with_nested_objects() {
 #[tokio::test]
 async fn test_array_validation() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local schema = {
             type = "object",
@@ -353,13 +388,16 @@ async fn test_array_validation() {
             invalid = solidb.validate(invalid_data, schema)
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
 }

@@ -17,7 +17,7 @@ use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
-use rustyline::{Editor, Helper, Context};
+use rustyline::{Context, Editor, Helper};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -151,13 +151,15 @@ impl Completer for SoliDBHelper {
         pos: usize,
         _ctx: &Context<'_>,
     ) -> Result<(usize, Vec<Pair>), ReadlineError> {
-        let start = line[..pos].rfind(|c: char| c.is_whitespace() || c == '(' || c == ',')
+        let start = line[..pos]
+            .rfind(|c: char| c.is_whitespace() || c == '(' || c == ',')
             .map(|i| i + 1)
             .unwrap_or(0);
 
         let word = &line[start..pos];
 
-        let matches: Vec<Pair> = self.completions
+        let matches: Vec<Pair> = self
+            .completions
             .iter()
             .filter(|c| c.starts_with(word))
             .map(|c| Pair {
@@ -178,7 +180,8 @@ impl Hinter for SoliDBHelper {
             return None;
         }
 
-        let start = line.rfind(|c: char| c.is_whitespace() || c == '(' || c == ',')
+        let start = line
+            .rfind(|c: char| c.is_whitespace() || c == '(' || c == ',')
             .map(|i| i + 1)
             .unwrap_or(0);
 
@@ -235,16 +238,13 @@ impl ReplClient {
             body.insert("session_id", &session_id_string);
         }
 
-        let mut req = self.client
-            .post(&url)
-            .json(&body);
+        let mut req = self.client.post(&url).json(&body);
 
         if let Some(ref key) = self.api_key {
             req = req.header("X-API-Key", key);
         }
 
-        let response = req.send()
-            .map_err(|e| format!("Connection error: {}", e))?;
+        let response = req.send().map_err(|e| format!("Connection error: {}", e))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -252,8 +252,8 @@ impl ReplClient {
             return Err(format!("Server error {}: {}", status, text));
         }
 
-        let repl_response: ReplResponse = response.json()
-            .map_err(|e| format!("Parse error: {}", e))?;
+        let repl_response: ReplResponse =
+            response.json().map_err(|e| format!("Parse error: {}", e))?;
 
         // Save session ID for future requests
         self.session_id = Some(repl_response.session_id.clone());
@@ -268,14 +268,26 @@ impl ReplClient {
 }
 
 fn print_banner() {
-    println!("{}", r#"
+    println!(
+        "{}",
+        r#"
    ___       _ _ ___  ___
   / __| ___ | (_)   \| _ )
   \__ \/ _ \| | | |) | _ \
   |___/\___/|_|_|___/|___/
-"#.cyan());
-    println!("  {} {}", "SoliDB Interactive REPL".white().bold(), env!("CARGO_PKG_VERSION").dimmed());
-    println!("  Type {} for help, {} to quit\n", ".help".yellow(), ".exit".yellow());
+"#
+        .cyan()
+    );
+    println!(
+        "  {} {}",
+        "SoliDB Interactive REPL".white().bold(),
+        env!("CARGO_PKG_VERSION").dimmed()
+    );
+    println!(
+        "  Type {} for help, {} to quit\n",
+        ".help".yellow(),
+        ".exit".yellow()
+    );
 }
 
 fn print_help() {
@@ -288,9 +300,18 @@ fn print_help() {
     println!("  {}       Reset session state", ".reset".yellow());
 
     println!("\n{}", "Lua API:".white().bold());
-    println!("  {}  Database operations", "db:collection(), db:query(), db:transaction()".cyan());
-    println!("  {}   Crypto functions", "crypto.sha256(), crypto.jwt_encode()".cyan());
-    println!("  {}   Time utilities", "time.now(), time.iso(), time.format()".cyan());
+    println!(
+        "  {}  Database operations",
+        "db:collection(), db:query(), db:transaction()".cyan()
+    );
+    println!(
+        "  {}   Crypto functions",
+        "crypto.sha256(), crypto.jwt_encode()".cyan()
+    );
+    println!(
+        "  {}   Time utilities",
+        "time.now(), time.iso(), time.format()".cyan()
+    );
     println!("  {}   HTTP requests", "solidb.fetch(url, options)".cyan());
     println!("  {}   Logging", "solidb.log(message), print(...)".cyan());
 
@@ -299,7 +320,10 @@ fn print_help() {
     println!("  {}", "db:query(\"FOR u IN users RETURN u\")".green());
     println!();
     println!("  {} Insert a document", "-- ".dimmed());
-    println!("  {}", "db:collection(\"users\"):insert({ name = \"Alice\" })".green());
+    println!(
+        "  {}",
+        "db:collection(\"users\"):insert({ name = \"Alice\" })".green()
+    );
     println!();
     println!("  {} Generate a UUID", "-- ".dimmed());
     println!("  {}", "crypto.uuid()".green());
@@ -321,7 +345,8 @@ fn format_value(value: &serde_json::Value, indent: usize) -> String {
                 let items: Vec<String> = arr.iter().map(|v| format_value(v, 0)).collect();
                 format!("[ {} ]", items.join(", "))
             } else {
-                let items: Vec<String> = arr.iter()
+                let items: Vec<String> = arr
+                    .iter()
                     .map(|v| format!("{}  {}", prefix, format_value(v, indent + 1)))
                     .collect();
                 format!("[\n{}\n{}]", items.join(",\n"), prefix)
@@ -331,8 +356,11 @@ fn format_value(value: &serde_json::Value, indent: usize) -> String {
             if obj.is_empty() {
                 "{}".to_string()
             } else {
-                let items: Vec<String> = obj.iter()
-                    .map(|(k, v)| format!("{}  {}: {}", prefix, k.cyan(), format_value(v, indent + 1)))
+                let items: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| {
+                        format!("{}  {}: {}", prefix, k.cyan(), format_value(v, indent + 1))
+                    })
                     .collect();
                 format!("{{\n{}\n{}}}", items.join(",\n"), prefix)
             }
@@ -376,7 +404,7 @@ fn main() {
 
                 // Handle multiline input
                 if line.ends_with('\\') {
-                    multiline_buffer.push_str(&line[..line.len()-1]);
+                    multiline_buffer.push_str(&line[..line.len() - 1]);
                     multiline_buffer.push('\n');
                     in_multiline = true;
                     continue;
@@ -417,7 +445,11 @@ fn main() {
                         ".db" | ".database" => {
                             if parts.len() > 1 {
                                 client.set_database(parts[1].to_string());
-                                println!("  {} {}", "Switched to database:".dimmed(), parts[1].cyan());
+                                println!(
+                                    "  {} {}",
+                                    "Switched to database:".dimmed(),
+                                    parts[1].cyan()
+                                );
                             } else {
                                 println!("  {}", "Usage: .db <database_name>".yellow());
                             }
@@ -425,8 +457,11 @@ fn main() {
                         ".status" => {
                             println!("  {} {}", "Server:".dimmed(), client.server.white());
                             println!("  {} {}", "Database:".dimmed(), client.database.cyan());
-                            println!("  {} {}", "Session:".dimmed(),
-                                client.session_id.as_deref().unwrap_or("(none)").dimmed());
+                            println!(
+                                "  {} {}",
+                                "Session:".dimmed(),
+                                client.session_id.as_deref().unwrap_or("(none)").dimmed()
+                            );
                         }
                         ".reset" => {
                             client.session_id = None;
@@ -451,7 +486,12 @@ fn main() {
                         // Print error or result
                         if let Some(err) = response.error {
                             if let Some(line) = err.line {
-                                println!("{} {} (line {})", "Error:".red().bold(), err.message, line);
+                                println!(
+                                    "{} {} (line {})",
+                                    "Error:".red().bold(),
+                                    err.message,
+                                    line
+                                );
                             } else {
                                 println!("{} {}", "Error:".red().bold(), err.message);
                             }
@@ -460,7 +500,10 @@ fn main() {
                         }
 
                         // Print timing
-                        println!("{}", format!("  ({:.2}ms)", response.execution_time_ms).dimmed());
+                        println!(
+                            "{}",
+                            format!("  ({:.2}ms)", response.execution_time_ms).dimmed()
+                        );
                     }
                     Err(e) => {
                         println!("{} {}", "Error:".red().bold(), e);

@@ -3,7 +3,7 @@
 //! This module provides string manipulation and table utilities
 //! for Lua scripts in SoliDB.
 
-use mlua::{Lua, Result as LuaResult, Value as LuaValue, Function, Table};
+use mlua::{Function, Lua, Result as LuaResult, Table, Value as LuaValue};
 
 /// Create string.slugify(text) -> URL-friendly string
 pub fn create_slugify_function(lua: &Lua) -> LuaResult<Function> {
@@ -38,32 +38,34 @@ pub fn create_slugify_function(lua: &Lua) -> LuaResult<Function> {
 
 /// Create string.truncate(text, length, suffix) -> truncated string
 pub fn create_truncate_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, (text, length, suffix): (String, usize, Option<String>)| {
-        let suffix = suffix.unwrap_or_else(|| "...".to_string());
+    lua.create_function(
+        |_lua, (text, length, suffix): (String, usize, Option<String>)| {
+            let suffix = suffix.unwrap_or_else(|| "...".to_string());
 
-        if text.chars().count() <= length {
-            return Ok(text);
-        }
-
-        // Ensure we have room for the suffix
-        let suffix_len = suffix.chars().count();
-        if length <= suffix_len {
-            return Ok(suffix.chars().take(length).collect());
-        }
-
-        let truncate_at = length - suffix_len;
-        let truncated: String = text.chars().take(truncate_at).collect();
-
-        // Try to break at a word boundary (space)
-        if let Some(last_space) = truncated.rfind(' ') {
-            if last_space > truncate_at / 2 {
-                // Only use word boundary if it's not too far back
-                return Ok(format!("{}{}", &truncated[..last_space], suffix));
+            if text.chars().count() <= length {
+                return Ok(text);
             }
-        }
 
-        Ok(format!("{}{}", truncated, suffix))
-    })
+            // Ensure we have room for the suffix
+            let suffix_len = suffix.chars().count();
+            if length <= suffix_len {
+                return Ok(suffix.chars().take(length).collect());
+            }
+
+            let truncate_at = length - suffix_len;
+            let truncated: String = text.chars().take(truncate_at).collect();
+
+            // Try to break at a word boundary (space)
+            if let Some(last_space) = truncated.rfind(' ') {
+                if last_space > truncate_at / 2 {
+                    // Only use word boundary if it's not too far back
+                    return Ok(format!("{}{}", &truncated[..last_space], suffix));
+                }
+            }
+
+            Ok(format!("{}{}", truncated, suffix))
+        },
+    )
 }
 
 /// Create string.template(template, vars) -> interpolated string
@@ -78,7 +80,9 @@ pub fn create_template_function(lua: &Lua) -> LuaResult<Function> {
                 if let Ok((key, value)) = pair {
                     let placeholder = format!("{{{{{}}}}}", key); // {{key}}
                     let replacement = match value {
-                        LuaValue::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_default(),
+                        LuaValue::String(s) => {
+                            s.to_str().map(|s| s.to_string()).unwrap_or_default()
+                        }
                         LuaValue::Integer(i) => i.to_string(),
                         LuaValue::Number(n) => n.to_string(),
                         LuaValue::Boolean(b) => b.to_string(),
@@ -111,41 +115,47 @@ pub fn create_split_function(lua: &Lua) -> LuaResult<Function> {
 
 /// Create string.trim(text) -> trimmed string
 pub fn create_trim_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, text: String| {
-        Ok(text.trim().to_string())
-    })
+    lua.create_function(|_lua, text: String| Ok(text.trim().to_string()))
 }
 
 /// Create string.pad_left(text, length, char) -> padded string
 pub fn create_pad_left_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, (text, length, pad_char): (String, usize, Option<String>)| {
-        let pad_char = pad_char.unwrap_or_else(|| " ".to_string());
-        let pad_char = pad_char.chars().next().unwrap_or(' ');
-        let text_len = text.chars().count();
+    lua.create_function(
+        |_lua, (text, length, pad_char): (String, usize, Option<String>)| {
+            let pad_char = pad_char.unwrap_or_else(|| " ".to_string());
+            let pad_char = pad_char.chars().next().unwrap_or(' ');
+            let text_len = text.chars().count();
 
-        if text_len >= length {
-            return Ok(text);
-        }
+            if text_len >= length {
+                return Ok(text);
+            }
 
-        let padding: String = std::iter::repeat(pad_char).take(length - text_len).collect();
-        Ok(format!("{}{}", padding, text))
-    })
+            let padding: String = std::iter::repeat(pad_char)
+                .take(length - text_len)
+                .collect();
+            Ok(format!("{}{}", padding, text))
+        },
+    )
 }
 
 /// Create string.pad_right(text, length, char) -> padded string
 pub fn create_pad_right_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, (text, length, pad_char): (String, usize, Option<String>)| {
-        let pad_char = pad_char.unwrap_or_else(|| " ".to_string());
-        let pad_char = pad_char.chars().next().unwrap_or(' ');
-        let text_len = text.chars().count();
+    lua.create_function(
+        |_lua, (text, length, pad_char): (String, usize, Option<String>)| {
+            let pad_char = pad_char.unwrap_or_else(|| " ".to_string());
+            let pad_char = pad_char.chars().next().unwrap_or(' ');
+            let text_len = text.chars().count();
 
-        if text_len >= length {
-            return Ok(text);
-        }
+            if text_len >= length {
+                return Ok(text);
+            }
 
-        let padding: String = std::iter::repeat(pad_char).take(length - text_len).collect();
-        Ok(format!("{}{}", text, padding))
-    })
+            let padding: String = std::iter::repeat(pad_char)
+                .take(length - text_len)
+                .collect();
+            Ok(format!("{}{}", text, padding))
+        },
+    )
 }
 
 /// Create string.capitalize(text) -> capitalized string (first letter uppercase)
@@ -324,7 +334,9 @@ mod tests {
         let lua = Lua::new();
         let truncate_fn = create_truncate_function(&lua).unwrap();
 
-        let result: String = truncate_fn.call(("Hello World", 8, None::<String>)).unwrap();
+        let result: String = truncate_fn
+            .call(("Hello World", 8, None::<String>))
+            .unwrap();
         assert!(result.len() <= 8);
         assert!(result.ends_with("..."));
 
@@ -341,7 +353,9 @@ mod tests {
         vars.set("name", "Alice").unwrap();
         vars.set("age", 30).unwrap();
 
-        let result: String = template_fn.call(("Hello {{name}}, you are {{age}}", LuaValue::Table(vars))).unwrap();
+        let result: String = template_fn
+            .call(("Hello {{name}}, you are {{age}}", LuaValue::Table(vars)))
+            .unwrap();
         assert_eq!(result, "Hello Alice, you are 30");
     }
 

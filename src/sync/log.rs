@@ -6,8 +6,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use rocksdb::{DB, Options, IteratorMode};
-use serde::{Serialize, Deserialize};
+use rocksdb::{IteratorMode, Options, DB};
+use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};
 use crate::cluster::HybridLogicalClock;
@@ -63,15 +63,15 @@ impl SyncLog {
     /// Create a new sync log
     pub fn new(node_id: String, data_dir: &str, max_cache_size: usize) -> Result<Self, String> {
         let log_path = format!("{}/sync_log", data_dir);
-        
+
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.set_max_write_buffer_number(4);
         opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
-        
+
         let db = DB::open(&opts, &log_path).map_err(|e| e.to_string())?;
         let db = Arc::new(db);
-        
+
         // Load current sequence
         let sequence = match db.get(SEQ_KEY) {
             Ok(Some(bytes)) => {
@@ -80,7 +80,7 @@ impl SyncLog {
             }
             _ => 0,
         };
-        
+
         let log = Self {
             db,
             node_id,
@@ -88,29 +88,31 @@ impl SyncLog {
             cache: Arc::new(RwLock::new(VecDeque::with_capacity(max_cache_size))),
             max_cache_size,
         };
-        
+
         log.load_cache();
         Ok(log)
     }
-    
+
     /// Load recent entries into cache
     fn load_cache(&self) {
         let mut cache = self.cache.write().unwrap();
         cache.clear();
-        
-        let iter = self.db.iterator(IteratorMode::From(LOG_PREFIX, rocksdb::Direction::Forward));
+
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(LOG_PREFIX, rocksdb::Direction::Forward));
         let mut count = 0;
-        
+
         for item in iter {
             if let Ok((key, value)) = item {
                 if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                     continue;
                 }
-                
+
                 if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
                     cache.push_back(entry);
                     count += 1;
-                    
+
                     if count >= self.max_cache_size {
                         break;
                     }
@@ -118,65 +120,65 @@ impl SyncLog {
             }
         }
     }
-    
+
     /// Append an entry to the log
     pub fn append(&self, mut entry: LogEntry) -> u64 {
         let mut seq = self.sequence.write().unwrap();
         *seq += 1;
         entry.sequence = *seq;
-        
+
         if entry.node_id.is_empty() {
             entry.node_id = self.node_id.clone();
         }
-        
+
         // Write to RocksDB
         let key = format!("sync_log:{:020}", *seq);
         let value = serde_json::to_vec(&entry).unwrap();
-        
+
         if let Err(e) = self.db.put(key.as_bytes(), &value) {
             tracing::error!("SyncLog: Failed to write entry {}: {}", *seq, e);
         }
         if let Err(e) = self.db.put(SEQ_KEY, seq.to_be_bytes()) {
             tracing::error!("SyncLog: Failed to write sequence {}: {}", *seq, e);
         }
-        
+
         // Update cache
         let mut cache = self.cache.write().unwrap();
         cache.push_back(entry);
         if cache.len() > self.max_cache_size {
             cache.pop_front();
         }
-        
+
         *seq
     }
-    
+
     /// Append multiple entries atomically
     pub fn append_batch(&self, mut entries: Vec<LogEntry>) -> u64 {
         if entries.is_empty() {
             return self.current_sequence();
         }
-        
+
         let mut seq = self.sequence.write().unwrap();
         let mut batch = rocksdb::WriteBatch::default();
-        
+
         for entry in &mut entries {
             *seq += 1;
             entry.sequence = *seq;
-            
+
             if entry.node_id.is_empty() {
                 entry.node_id = self.node_id.clone();
             }
-            
+
             let key = format!("sync_log:{:020}", *seq);
             let value = serde_json::to_vec(&entry).unwrap();
             batch.put(key.as_bytes(), &value);
         }
-        
+
         batch.put(SEQ_KEY, seq.to_be_bytes());
         if let Err(e) = self.db.write(batch) {
-             tracing::error!("SyncLog: Failed to write batch ending at {}: {}", *seq, e);
+            tracing::error!("SyncLog: Failed to write batch ending at {}: {}", *seq, e);
         }
-        
+
         // Update cache
         let mut cache = self.cache.write().unwrap();
         for entry in entries {
@@ -185,10 +187,10 @@ impl SyncLog {
                 cache.pop_front();
             }
         }
-        
+
         *seq
     }
-    
+
     /// Get entries after a sequence number
     pub fn get_entries_after(&self, after_sequence: u64, limit: usize) -> Vec<LogEntry> {
         // Try cache first
@@ -199,25 +201,28 @@ impl SyncLog {
             .take(limit)
             .cloned()
             .collect();
-        
+
         // Critical: Only return from cache if we have the IMMEDIATE NEXT entry.
         if let Some(first) = cached.first() {
             if first.sequence == after_sequence + 1 {
                 return cached;
             }
         }
-        
+
         // Fall back to disk
         let start_key = format!("sync_log:{:020}", after_sequence + 1);
-        let iter = self.db.iterator(IteratorMode::From(start_key.as_bytes(), rocksdb::Direction::Forward));
-        
+        let iter = self.db.iterator(IteratorMode::From(
+            start_key.as_bytes(),
+            rocksdb::Direction::Forward,
+        ));
+
         let mut entries = Vec::new();
         for item in iter {
             if let Ok((key, value)) = item {
                 if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                     continue;
                 }
-                
+
                 if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
                     if entry.sequence > after_sequence {
                         entries.push(entry);
@@ -228,15 +233,15 @@ impl SyncLog {
                 }
             }
         }
-        
+
         entries
     }
-    
+
     /// Get current sequence number
     pub fn current_sequence(&self) -> u64 {
         *self.sequence.read().unwrap()
     }
-    
+
     /// Get node ID
     pub fn node_id(&self) -> &str {
         &self.node_id
@@ -301,7 +306,7 @@ mod tests {
     #[test]
     fn test_log_entry_creation() {
         let entry = create_test_entry(1);
-        
+
         assert_eq!(entry.sequence, 1);
         assert_eq!(entry.node_id, "test_node");
         assert_eq!(entry.database, "test_db");
@@ -312,10 +317,14 @@ mod tests {
     #[test]
     fn test_log_entry_to_sync_entry() {
         let entry = create_test_entry(5);
-        let hlc = HybridLogicalClock::new(chrono::Utc::now().timestamp_millis() as u64, 0, "node1".to_string());
-        
+        let hlc = HybridLogicalClock::new(
+            chrono::Utc::now().timestamp_millis() as u64,
+            0,
+            "node1".to_string(),
+        );
+
         let sync_entry = entry.to_sync_entry(&hlc);
-        
+
         assert_eq!(sync_entry.sequence, 5);
         assert_eq!(sync_entry.origin_node, "test_node");
         assert_eq!(sync_entry.database, "test_db");
@@ -325,11 +334,11 @@ mod tests {
     #[test]
     fn test_log_entry_serialization() {
         let entry = create_test_entry(1);
-        
+
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("test_node"));
         assert!(json.contains("test_db"));
-        
+
         let deserialized: LogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(entry.sequence, deserialized.sequence);
         assert_eq!(entry.key, deserialized.key);
@@ -338,12 +347,8 @@ mod tests {
     #[test]
     fn test_sync_log_new() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         assert_eq!(log.node_id(), "node1");
         assert_eq!(log.current_sequence(), 0);
     }
@@ -351,15 +356,11 @@ mod tests {
     #[test]
     fn test_sync_log_append() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         let entry = create_test_entry(0);
         let seq = log.append(entry);
-        
+
         assert_eq!(seq, 1);
         assert_eq!(log.current_sequence(), 1);
     }
@@ -367,36 +368,28 @@ mod tests {
     #[test]
     fn test_sync_log_append_multiple() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         for _ in 0..5 {
             log.append(create_test_entry(0));
         }
-        
+
         assert_eq!(log.current_sequence(), 5);
     }
 
     #[test]
     fn test_sync_log_append_batch() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         let entries = vec![
             create_test_entry(0),
             create_test_entry(0),
             create_test_entry(0),
         ];
-        
+
         let seq = log.append_batch(entries);
-        
+
         assert_eq!(seq, 3);
         assert_eq!(log.current_sequence(), 3);
     }
@@ -404,12 +397,8 @@ mod tests {
     #[test]
     fn test_sync_log_append_batch_empty() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         let seq = log.append_batch(vec![]);
         assert_eq!(seq, 0);
     }
@@ -417,16 +406,12 @@ mod tests {
     #[test]
     fn test_sync_log_get_entries_after() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         for _ in 0..5 {
             log.append(create_test_entry(0));
         }
-        
+
         let entries = log.get_entries_after(2, 10);
         assert_eq!(entries.len(), 3); // Sequences 3, 4, 5
         assert_eq!(entries[0].sequence, 3);
@@ -435,16 +420,12 @@ mod tests {
     #[test]
     fn test_sync_log_get_entries_with_limit() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         for _ in 0..10 {
             log.append(create_test_entry(0));
         }
-        
+
         let entries = log.get_entries_after(0, 3);
         assert_eq!(entries.len(), 3);
     }
@@ -452,16 +433,12 @@ mod tests {
     #[test]
     fn test_sync_log_clone() {
         let tmp = TempDir::new().unwrap();
-        let log1 = SyncLog::new(
-            "node1".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log1 = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         log1.append(create_test_entry(0));
-        
+
         let log2 = log1.clone();
-        
+
         // Both share the same state
         assert_eq!(log1.current_sequence(), log2.current_sequence());
     }
@@ -469,19 +446,14 @@ mod tests {
     #[test]
     fn test_sync_log_fills_node_id() {
         let tmp = TempDir::new().unwrap();
-        let log = SyncLog::new(
-            "my_node".to_string(),
-            tmp.path().to_str().unwrap(),
-            100,
-        ).unwrap();
-        
+        let log = SyncLog::new("my_node".to_string(), tmp.path().to_str().unwrap(), 100).unwrap();
+
         let mut entry = create_test_entry(0);
         entry.node_id = String::new(); // Empty node_id
-        
+
         log.append(entry);
-        
+
         let entries = log.get_entries_after(0, 1);
         assert_eq!(entries[0].node_id, "my_node");
     }
 }
-

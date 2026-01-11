@@ -6,17 +6,19 @@
 //! - Try-catch patterns
 //! - Error formatting and reporting
 
-use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
+use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
+use solidb::storage::StorageEngine;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
 
     engine.create_database("testdb".to_string()).unwrap();
 
@@ -57,15 +59,15 @@ fn create_script(code: &str) -> Script {
 #[tokio::test]
 async fn test_basic_error_functionality() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         solidb.error("Validation failed", 400)
         return { should_not_reach = "here" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
         Err(e) => {
@@ -78,15 +80,15 @@ async fn test_basic_error_functionality() {
 #[tokio::test]
 async fn test_error_with_default_code() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         solidb.error("Internal server error")
         return { should_not_reach = "here" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
         Err(e) => {
@@ -99,7 +101,7 @@ async fn test_error_with_default_code() {
 #[tokio::test]
 async fn test_assertion_success() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local valid_data = { name = "Alice", age = 30 }
         solidb.assert(valid_data.name ~= nil, "Name is required")
@@ -107,21 +109,27 @@ async fn test_assertion_success() {
         
         return { success = true, message = "All assertions passed" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("message").unwrap().as_str().unwrap(), "All assertions passed");
+    assert_eq!(
+        body.get("message").unwrap().as_str().unwrap(),
+        "All assertions passed"
+    );
 }
 
 #[tokio::test]
 async fn test_assertion_failure() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local invalid_data = { name = nil, age = -5 }
         solidb.assert(invalid_data.name ~= nil, "Name cannot be nil")
@@ -129,10 +137,10 @@ async fn test_assertion_failure() {
         
         return { should_not_reach = "here" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected assertion error, but got success"),
         Err(e) => {
@@ -145,7 +153,7 @@ async fn test_assertion_failure() {
 #[tokio::test]
 async fn test_try_catch_success_pattern() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local function risky_operation()
             return { success = true, data = "operation completed" }
@@ -157,21 +165,27 @@ async fn test_try_catch_success_pattern() {
         
         return result
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("data").unwrap().as_str().unwrap(), "operation completed");
+    assert_eq!(
+        body.get("data").unwrap().as_str().unwrap(),
+        "operation completed"
+    );
 }
 
 #[tokio::test]
 async fn test_try_catch_failure_pattern() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local function risky_operation()
             solidb.error("Something went wrong!", 500)
@@ -187,13 +201,16 @@ async fn test_try_catch_failure_pattern() {
         
         return result
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), false);
     assert_eq!(body.get("handled").unwrap().as_bool().unwrap(), true);
     assert!(body.get("error_message").unwrap().is_string());
@@ -202,7 +219,7 @@ async fn test_try_catch_failure_pattern() {
 #[tokio::test]
 async fn test_try_without_catch() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local function risky_operation()
             solidb.error("Unhandled error", 400)
@@ -213,10 +230,10 @@ async fn test_try_without_catch() {
         
         return result
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
         Err(e) => {
@@ -229,7 +246,7 @@ async fn test_try_without_catch() {
 #[tokio::test]
 async fn test_nested_error_handling() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local function validate_user(user)
             solidb.assert(user.name, "Name is required")
@@ -261,15 +278,17 @@ async fn test_nested_error_handling() {
             invalid_result = result2
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
         Err(e) => {
             let error_msg = e.to_string();
-            assert!(error_msg.contains("Validation failed") || error_msg.contains("Processing failed"));
+            assert!(
+                error_msg.contains("Validation failed") || error_msg.contains("Processing failed")
+            );
         }
     }
 }
@@ -277,7 +296,7 @@ async fn test_nested_error_handling() {
 #[tokio::test]
 async fn test_error_with_context() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local function validate_order(order)
             if not order.customer_id then
@@ -306,10 +325,10 @@ async fn test_error_with_context() {
         
         return { success = true }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected error, but got success"),
         Err(e) => {
@@ -322,7 +341,7 @@ async fn test_error_with_context() {
 #[tokio::test]
 async fn test_async_error_handling() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local async_operation = solidb.try(function()
             time.sleep(100)  -- Wait 100ms
@@ -337,13 +356,16 @@ async fn test_async_error_handling() {
         
         return async_operation
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("error_caught").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("async_handled").unwrap().as_bool().unwrap(), true);
     assert!(body.get("message").unwrap().is_string());
@@ -352,7 +374,7 @@ async fn test_async_error_handling() {
 #[tokio::test]
 async fn test_error_codes_and_messages() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local test_cases = {
             { code = 400, message = "Bad Request" },
@@ -382,13 +404,16 @@ async fn test_error_codes_and_messages() {
             last_error = errors[#errors].error
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("errors_tested").unwrap().as_i64().unwrap(), 6);
     assert!(body.get("first_error").unwrap().is_string());
     assert!(body.get("last_error").unwrap().is_string());

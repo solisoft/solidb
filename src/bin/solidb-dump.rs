@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let login_url = format!("{}/auth/login", base_url);
         let client = reqwest::Client::new();
         eprintln!("Authenticating as user: {}", user);
-        
+
         let response = client
             .post(&login_url)
             .json(&serde_json::json!({
@@ -60,11 +60,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }))
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             return Err(format!("Authentication failed: {}", response.status()).into());
         }
-        
+
         let login_data: Value = response.json().await?;
         if let Some(token) = login_data["token"].as_str() {
             Some(token.to_string())
@@ -95,7 +95,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(collection_name) = &args.collection {
         // Dump single collection
-        dump_collection_jsonl(&client, &base_url, &args.database, collection_name, &mut output, None).await?;
+        dump_collection_jsonl(
+            &client,
+            &base_url,
+            &args.database,
+            collection_name,
+            &mut output,
+            None,
+        )
+        .await?;
     } else {
         // Dump all collections
         dump_database_jsonl(&client, &base_url, &args.database, &mut output).await?;
@@ -107,7 +115,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
 
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -123,7 +130,7 @@ async fn dump_database_jsonl(
     // Get list of collections
     let collections_url = format!("{}/_api/database/{}/collection", base_url, database);
     let response = client.get(&collections_url).send().await?;
-    
+
     if !response.status().is_success() {
         return Err(format!("Failed to list collections: {}", response.status()).into());
     }
@@ -133,13 +140,18 @@ async fn dump_database_jsonl(
         .as_array()
         .ok_or("Invalid collections response")?;
 
-    eprintln!("{} {} {}", "Found".green(), collections.len().to_string().yellow(), "collections".green());
+    eprintln!(
+        "{} {} {}",
+        "Found".green(),
+        collections.len().to_string().yellow(),
+        "collections".green()
+    );
 
     for collection in collections {
         let collection_name = collection["name"]
             .as_str()
             .ok_or("Collection name missing")?;
-        
+
         let count = collection["count"].as_u64();
 
         // We'll trust dump_collection_jsonl to handle its own UI/progress
@@ -163,7 +175,10 @@ async fn dump_collection_jsonl(
     let count = if let Some(c) = known_count {
         c
     } else {
-        let stats_url = format!("{}/_api/database/{}/collection/{}/stats", base_url, database, collection);
+        let stats_url = format!(
+            "{}/_api/database/{}/collection/{}/stats",
+            base_url, database, collection
+        );
         let response = client.get(&stats_url).send().await?;
         if response.status().is_success() {
             let stats: Value = response.json().await?;
@@ -179,7 +194,7 @@ async fn dump_collection_jsonl(
     let collections_url = format!("{}/_api/database/{}/collection", base_url, database);
     let response = client.get(&collections_url).send().await?;
     let collections_data: Value = response.json().await?;
-    
+
     let collection_info = collections_data["collections"]
         .as_array()
         .and_then(|arr| arr.iter().find(|c| c["name"] == collection))
@@ -187,16 +202,23 @@ async fn dump_collection_jsonl(
 
     // Setup Progress Bar
     let pb = ProgressBar::new(count);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
-        .progress_chars("#>-"));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )?
+            .progress_chars("#>-"),
+    );
 
     // Check collection type to decide dump method
     let collection_type = collection_info["type"].as_str().unwrap_or("document");
 
     if collection_type == "blob" {
         eprintln!("  Using streaming export for blob collection...");
-        let export_url = format!("{}/_api/database/{}/collection/{}/export", base_url, database, collection);
+        let export_url = format!(
+            "{}/_api/database/{}/collection/{}/export",
+            base_url, database, collection
+        );
         let mut response = client.get(&export_url).send().await?;
 
         if !response.status().is_success() {
@@ -214,7 +236,7 @@ async fn dump_collection_jsonl(
         // Standard SDBQL dump for document/edge collections
         let query = format!("FOR doc IN {} RETURN doc", collection);
         let query_url = format!("{}/_api/database/{}/cursor", base_url, database);
-        
+
         let response = client
             .post(&query_url)
             .json(&serde_json::json!({
@@ -240,19 +262,19 @@ async fn dump_collection_jsonl(
                 "_database": database,
                 "_collection": collection,
             });
-            
+
             // Add shard config if present
             if let Some(shard_config) = collection_info.get("shardConfig") {
                 doc_with_meta["_shardConfig"] = shard_config.clone();
             }
-            
+
             // Merge document data
             if let Some(obj) = doc.as_object() {
                 for (k, v) in obj {
                     doc_with_meta[k] = v.clone();
                 }
             }
-            
+
             writeln!(output, "{}", serde_json::to_string(&doc_with_meta)?)?;
             pb.inc(1);
         }
@@ -262,5 +284,3 @@ async fn dump_collection_jsonl(
 
     Ok(())
 }
-
-

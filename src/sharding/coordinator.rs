@@ -2,16 +2,16 @@
 //!
 //! This provides the old ShardCoordinator API backed by the new sync module.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
-use serde::{Serialize, Deserialize};
+use std::sync::{Arc, RwLock};
 
-use crate::storage::StorageEngine;
-use crate::DbError;
 use crate::cluster::manager::ClusterManager;
-use crate::sync::{LogEntry, Operation};
 use crate::sharding::migration::BatchSender;
+use crate::storage::StorageEngine;
+use crate::sync::{LogEntry, Operation};
+use crate::DbError;
 
 /// Configuration for a sharded collection
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -52,9 +52,11 @@ impl<'a> BatchSender for CoordinatorBatchSender<'a> {
         db_name: &str,
         coll_name: &str,
         config: &CollectionShardConfig,
-        batch: Vec<(String, serde_json::Value)>
+        batch: Vec<(String, serde_json::Value)>,
     ) -> Result<Vec<String>, String> {
-        self.coordinator.send_migrated_batch(db_name, coll_name, config, batch).await
+        self.coordinator
+            .send_migrated_batch(db_name, coll_name, config, batch)
+            .await
     }
 
     async fn should_pause_resharding(&self) -> bool {
@@ -103,7 +105,11 @@ impl ShardCoordinator {
     }
 
     /// Get shard configuration for a collection
-    pub fn get_shard_config(&self, database: &str, collection: &str) -> Option<CollectionShardConfig> {
+    pub fn get_shard_config(
+        &self,
+        database: &str,
+        collection: &str,
+    ) -> Option<CollectionShardConfig> {
         if let Ok(db) = self.storage.get_database(database) {
             if let Ok(coll) = db.get_collection(collection) {
                 return coll.get_shard_config();
@@ -125,27 +131,30 @@ impl ShardCoordinator {
             // 1. Primary nodes are unhealthy
             // 2. Shard count doesn't match config (expansion/contraction happened)
             let is_stale = if let Some(ref mgr) = self.cluster_manager {
-                 let healthy_nodes = mgr.get_healthy_nodes();
-                 let has_unhealthy_primary = table.assignments.values().any(|a| !healthy_nodes.contains(&a.primary_node));
+                let healthy_nodes = mgr.get_healthy_nodes();
+                let has_unhealthy_primary = table
+                    .assignments
+                    .values()
+                    .any(|a| !healthy_nodes.contains(&a.primary_node));
 
-                 // Check if shard count in config differs from table
-                 let shard_count_mismatch = if let Ok(db) = self.storage.get_database(database) {
-                     if let Ok(coll) = db.get_collection(collection) {
-                         if let Some(config) = coll.get_shard_config() {
-                             config.num_shards != table.num_shards
-                         } else {
-                             false
-                         }
-                     } else {
-                         false
-                     }
-                 } else {
-                     false
-                 };
+                // Check if shard count in config differs from table
+                let shard_count_mismatch = if let Ok(db) = self.storage.get_database(database) {
+                    if let Ok(coll) = db.get_collection(collection) {
+                        if let Some(config) = coll.get_shard_config() {
+                            config.num_shards != table.num_shards
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
 
-                 has_unhealthy_primary || shard_count_mismatch
+                has_unhealthy_primary || shard_count_mismatch
             } else {
-                 false
+                false
             };
 
             if !is_stale {
@@ -162,14 +171,19 @@ impl ShardCoordinator {
             if let Ok(coll) = db.get_collection(collection) {
                 // Skip non-sharded collections - they don't need shard tables
                 let shard_config = coll.get_shard_config();
-                if shard_config.is_none() || shard_config.as_ref().map(|c| c.num_shards).unwrap_or(0) == 0 {
+                if shard_config.is_none()
+                    || shard_config.as_ref().map(|c| c.num_shards).unwrap_or(0) == 0
+                {
                     return None;
                 }
 
                 // Try to load persisted table first (preserves assignments)
                 if let Some(table) = coll.get_stored_shard_table() {
                     tracing::debug!("Loaded shard table {} from storage (missed cache)", key);
-                    self.shard_tables.write().unwrap().insert(key.clone(), table.clone());
+                    self.shard_tables
+                        .write()
+                        .unwrap()
+                        .insert(key.clone(), table.clone());
                     return Some(table);
                 } else {
                     tracing::debug!("No persisted shard table found for {}", key);
@@ -184,12 +198,19 @@ impl ShardCoordinator {
                         let _ = coll.set_shard_table(&table);
 
                         // Cache it
-                        self.shard_tables.write().unwrap().insert(key, table.clone());
+                        self.shard_tables
+                            .write()
+                            .unwrap()
+                            .insert(key, table.clone());
                         return Some(table);
                     }
                 }
             } else {
-                tracing::warn!("Collection {} not found during shard table lookup (db: {})", collection, database);
+                tracing::warn!(
+                    "Collection {} not found during shard table lookup (db: {})",
+                    collection,
+                    database
+                );
             }
         } else {
             tracing::warn!("Database {} not found during shard table lookup", database);
@@ -197,7 +218,6 @@ impl ShardCoordinator {
 
         None
     }
-
 
     /// Initialize sharding for a collection
     pub fn init_collection(
@@ -216,7 +236,10 @@ impl ShardCoordinator {
             }
         }
 
-        self.shard_tables.write().unwrap().insert(key, table.clone());
+        self.shard_tables
+            .write()
+            .unwrap()
+            .insert(key, table.clone());
         Ok(table)
     }
 
@@ -235,7 +258,6 @@ impl ShardCoordinator {
             }
         }
     }
-
 
     /// Compute shard table assignments based on current cluster state
     /// Only uses HEALTHY nodes to ensure data availability
@@ -256,7 +278,6 @@ impl ShardCoordinator {
             vec!["local".to_string()]
         };
 
-
         if nodes.is_empty() {
             return Err("No nodes available".to_string());
         }
@@ -265,7 +286,7 @@ impl ShardCoordinator {
             &nodes,
             config.num_shards,
             config.replication_factor,
-            None // Initial computation has no history
+            None, // Initial computation has no history
         )?;
 
         Ok(ShardTable {
@@ -313,7 +334,8 @@ impl ShardCoordinator {
     /// Get all node addresses in the cluster
     pub fn get_node_addresses(&self) -> Vec<String> {
         if let Some(ref mgr) = self.cluster_manager {
-            mgr.state().get_all_members()
+            mgr.state()
+                .get_all_members()
                 .into_iter()
                 .map(|m| m.node.address.clone())
                 .collect()
@@ -325,7 +347,8 @@ impl ShardCoordinator {
     /// Get all node IDs in the cluster
     pub fn get_node_ids(&self) -> Vec<String> {
         if let Some(ref mgr) = self.cluster_manager {
-            mgr.state().get_all_members()
+            mgr.state()
+                .get_all_members()
                 .into_iter()
                 .map(|m| m.node.id.clone())
                 .collect()
@@ -333,8 +356,6 @@ impl ShardCoordinator {
             vec!["local".to_string()]
         }
     }
-
-
 
     /// Get this node's address
     pub fn my_address(&self) -> String {
@@ -368,7 +389,9 @@ impl ShardCoordinator {
     /// Example: 10 nodes -> 5 replicas
     pub fn calculate_blob_replication_factor(&self) -> u16 {
         let healthy_count = self.get_healthy_node_count() as u16;
-        (healthy_count / 2).max(Self::MIN_BLOB_REPLICAS).min(Self::MAX_BLOB_REPLICAS)
+        (healthy_count / 2)
+            .max(Self::MIN_BLOB_REPLICAS)
+            .min(Self::MAX_BLOB_REPLICAS)
     }
 
     /// Get my node ID
@@ -416,9 +439,10 @@ impl ShardCoordinator {
         db_name: &str,
         coll_name: &str,
         config: &CollectionShardConfig,
-        batch: Vec<(String, serde_json::Value)>
+        batch: Vec<(String, serde_json::Value)>,
     ) -> Result<Vec<String>, String> {
-        self.upsert_batch_to_shards(db_name, coll_name, config, batch).await
+        self.upsert_batch_to_shards(db_name, coll_name, config, batch)
+            .await
             .map_err(|e| e.to_string())
     }
 
@@ -430,7 +454,9 @@ impl ShardCoordinator {
     pub async fn rebalance(&self) -> Result<(), crate::error::DbError> {
         // Prevent concurrent rebalancing operations which can cause deadlocks
         if self.is_rebalancing.load(Ordering::SeqCst) {
-            tracing::warn!("REBALANCE: Another rebalancing operation is already in progress, skipping");
+            tracing::warn!(
+                "REBALANCE: Another rebalancing operation is already in progress, skipping"
+            );
             return Ok(());
         }
         self.is_rebalancing.store(true, Ordering::SeqCst);
@@ -444,10 +470,15 @@ impl ShardCoordinator {
             // Nodes with higher IDs wait longer to allow lower-ID nodes to establish first.
             if let Some(ref mgr) = self.cluster_manager {
                 let my_id = mgr.local_node_id();
-                let my_hash = my_id.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32));
+                let my_hash = my_id
+                    .bytes()
+                    .fold(0u32, |acc, b| acc.wrapping_add(b as u32));
                 let coordination_delay_ms = (my_hash % 3000) as u64; // 0-3 second staggered delay
 
-                tracing::info!("REBALANCE: Waiting {}ms for coordination to prevent distributed deadlocks", coordination_delay_ms);
+                tracing::info!(
+                    "REBALANCE: Waiting {}ms for coordination to prevent distributed deadlocks",
+                    coordination_delay_ms
+                );
                 tokio::time::sleep(tokio::time::Duration::from_millis(coordination_delay_ms)).await;
             }
 
@@ -470,12 +501,18 @@ impl ShardCoordinator {
             for db_name in self.storage.list_databases() {
                 if let Ok(db) = self.storage.get_database(&db_name) {
                     for coll_name in db.list_collections() {
-                         if coll_name.starts_with('_') || coll_name.contains("_s") { continue; }
-                         if let Ok(coll) = db.get_collection(&coll_name) {
-                             if let Some(config) = coll.get_shard_config() {
-                                 sharded_collections.push((db_name.clone(), coll_name.clone(), config));
-                             }
-                         }
+                        if coll_name.starts_with('_') || coll_name.contains("_s") {
+                            continue;
+                        }
+                        if let Ok(coll) = db.get_collection(&coll_name) {
+                            if let Some(config) = coll.get_shard_config() {
+                                sharded_collections.push((
+                                    db_name.clone(),
+                                    coll_name.clone(),
+                                    config,
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -498,7 +535,12 @@ impl ShardCoordinator {
                     // This implies config change drives it.
 
                     if table.num_shards != config.num_shards {
-                        tracing::info!("REBALANCE: Config change detected for {}: {} -> {} shards", key, table.num_shards, config.num_shards);
+                        tracing::info!(
+                            "REBALANCE: Config change detected for {}: {} -> {} shards",
+                            key,
+                            table.num_shards,
+                            config.num_shards
+                        );
                         old_shards = table.num_shards;
                         old_assignments = table.assignments.clone();
                         needs_migration = true;
@@ -512,12 +554,12 @@ impl ShardCoordinator {
                     &nodes,
                     config.num_shards,
                     config.replication_factor,
-                    previous_assignments
+                    previous_assignments,
                 ) {
                     Ok(a) => a,
                     Err(e) => {
-                         tracing::error!("Failed to compute assignments for {}: {}", key, e);
-                         continue;
+                        tracing::error!("Failed to compute assignments for {}: {}", key, e);
+                        continue;
                     }
                 };
 
@@ -538,7 +580,10 @@ impl ShardCoordinator {
                     }
                 }
                 // Update cache
-                self.shard_tables.write().unwrap().insert(key.clone(), new_table.clone());
+                self.shard_tables
+                    .write()
+                    .unwrap()
+                    .insert(key.clone(), new_table.clone());
 
                 // 4. Create Physical Shards (if expansion or new)
                 if let Err(e) = self.create_shards(&db_name, &coll_name).await {
@@ -584,7 +629,12 @@ impl ShardCoordinator {
                     // But we can genericize or wrap.
                     // Or implement BatchSender for ShardCoordinator wrapper.
 
-                    tracing::info!("REBALANCE: Resharding {} from {} to {} shards", key, old_shards, config.num_shards);
+                    tracing::info!(
+                        "REBALANCE: Resharding {} from {} to {} shards",
+                        key,
+                        old_shards,
+                        config.num_shards
+                    );
 
                     let sender = CoordinatorBatchSender { coordinator: self };
                     let my_node_id = self.my_node_id();
@@ -602,16 +652,26 @@ impl ShardCoordinator {
                         config.num_shards,
                         &my_node_id,
                         &old_assignments,
-                        &current_assignments_map
-                    ).await {
-                         tracing::error!("Resharding failed for {}: {}", key, _e);
+                        &current_assignments_map,
+                    )
+                    .await
+                    {
+                        tracing::error!("Resharding failed for {}: {}", key, _e);
                     }
                 }
 
                 // Handle removed shards during contraction
                 if old_shards > config.num_shards {
                     // We shrunk, so we need to migrate data from removed shards on all nodes
-                    if let Err(e) = self.broadcast_reshard_removed_shards(&db_name, &coll_name, old_shards, config.num_shards).await {
+                    if let Err(e) = self
+                        .broadcast_reshard_removed_shards(
+                            &db_name,
+                            &coll_name,
+                            old_shards,
+                            config.num_shards,
+                        )
+                        .await
+                    {
                         tracing::error!("Failed to broadcast reshard for removed shards: {}", e);
                     }
                 }
@@ -623,14 +683,14 @@ impl ShardCoordinator {
             }
 
             Ok::<(), crate::error::DbError>(())
-        }.await;
+        }
+        .await;
 
         // Mark resharding completed - this delays healing for 60 seconds to allow stabilization
         self.mark_reshard_completed();
         self.is_rebalancing.store(false, Ordering::SeqCst);
         initial_res
     }
-
 
     /// Check if rebalancing is in progress
     pub fn is_rebalancing(&self) -> bool {
@@ -671,11 +731,9 @@ impl ShardCoordinator {
         let mut recently_failed = self.recently_failed_nodes.write().unwrap();
         let now = std::time::Instant::now();
 
-        recently_failed.retain(|_, failure_time| {
-            now.duration_since(*failure_time).as_secs() < MAX_AGE_SECS
-        });
+        recently_failed
+            .retain(|_, failure_time| now.duration_since(*failure_time).as_secs() < MAX_AGE_SECS);
     }
-
 
     /// Broadcast reshard requests for removed shards to all nodes
     async fn broadcast_reshard_removed_shards(
@@ -696,8 +754,11 @@ impl ShardCoordinator {
 
         // For each removed shard, broadcast reshard request to all nodes
         for removed_shard_id in new_shards..old_shards {
-            tracing::info!("BROADCAST: Sending reshard requests for removed shard {}_s{} to all nodes",
-                coll_name, removed_shard_id);
+            tracing::info!(
+                "BROADCAST: Sending reshard requests for removed shard {}_s{} to all nodes",
+                coll_name,
+                removed_shard_id
+            );
 
             for member in mgr.state().get_all_members() {
                 let node_id = &member.node.id;
@@ -715,26 +776,42 @@ impl ShardCoordinator {
 
                 match tokio::time::timeout(
                     std::time::Duration::from_secs(30),
-                    client.post(&url)
+                    client
+                        .post(&url)
                         .header("X-Cluster-Secret", &secret)
                         .json(&request)
-                        .send()
-                ).await {
+                        .send(),
+                )
+                .await
+                {
                     Ok(Ok(response)) => {
                         if response.status().is_success() {
-                            tracing::debug!("BROADCAST: Successfully sent reshard request to {} for shard {}",
-                                node_id, removed_shard_id);
+                            tracing::debug!(
+                                "BROADCAST: Successfully sent reshard request to {} for shard {}",
+                                node_id,
+                                removed_shard_id
+                            );
                         } else {
-                            tracing::warn!("BROADCAST: Failed to send reshard request to {}: status {}",
-                                node_id, response.status());
+                            tracing::warn!(
+                                "BROADCAST: Failed to send reshard request to {}: status {}",
+                                node_id,
+                                response.status()
+                            );
                         }
                     }
                     Ok(Err(e)) => {
-                        tracing::error!("BROADCAST: Failed to send reshard request to {}: {}", node_id, e);
+                        tracing::error!(
+                            "BROADCAST: Failed to send reshard request to {}: {}",
+                            node_id,
+                            e
+                        );
                     }
                     Err(_) => {
-                        tracing::error!("BROADCAST: Timeout sending reshard request to {} for shard {}",
-                            node_id, removed_shard_id);
+                        tracing::error!(
+                            "BROADCAST: Timeout sending reshard request to {} for shard {}",
+                            node_id,
+                            removed_shard_id
+                        );
                     }
                 }
             }
@@ -749,7 +826,7 @@ impl ShardCoordinator {
         if self.is_rebalancing() {
             return true;
         }
-        
+
         // Check if resharding completed within the last 10 seconds
         // This gives the cluster time to stabilize before healing runs
         if let Ok(last_time) = self.last_reshard_time.read() {
@@ -761,15 +838,17 @@ impl ShardCoordinator {
                 }
             }
         }
-        
+
         false
     }
-    
+
     /// Record that resharding has completed - used to prevent aggressive healing
     pub fn mark_reshard_completed(&self) {
         if let Ok(mut last_time) = self.last_reshard_time.write() {
             *last_time = Some(std::time::Instant::now());
-            tracing::info!("RESHARD: Marked resharding as completed, delaying healing for 10 seconds");
+            tracing::info!(
+                "RESHARD: Marked resharding as completed, delaying healing for 10 seconds"
+            );
         }
     }
 
@@ -781,14 +860,22 @@ impl ShardCoordinator {
 
             // Pause resharding if less than 50% of nodes are healthy
             if healthy_nodes.len() < (total_nodes + 1) / 2 {
-                tracing::warn!("RESHARD: Pausing resharding - only {}/{} nodes are healthy", healthy_nodes.len(), total_nodes);
+                tracing::warn!(
+                    "RESHARD: Pausing resharding - only {}/{} nodes are healthy",
+                    healthy_nodes.len(),
+                    total_nodes
+                );
                 return true;
             }
 
             // Also check for recently failed nodes
             let recently_failed = self.recently_failed_nodes.read().unwrap();
             if recently_failed.len() > total_nodes / 2 {
-                tracing::warn!("RESHARD: Pausing resharding - {}/{} nodes recently failed", recently_failed.len(), total_nodes);
+                tracing::warn!(
+                    "RESHARD: Pausing resharding - {}/{} nodes recently failed",
+                    recently_failed.len(),
+                    total_nodes
+                );
                 return true;
             }
         }
@@ -810,21 +897,31 @@ impl ShardCoordinator {
         }
     }
 
-
-
     /// Repair sharded collection by checking for misplaced documents and fixing them
     /// This cleans up duplicates left over from failed migration cleanups
-    pub async fn repair_collection(&self, db_name: &str, coll_name: &str) -> Result<String, String> {
-        let db = self.storage.get_database(db_name).map_err(|e| e.to_string())?;
+    pub async fn repair_collection(
+        &self,
+        db_name: &str,
+        coll_name: &str,
+    ) -> Result<String, String> {
+        let db = self
+            .storage
+            .get_database(db_name)
+            .map_err(|e| e.to_string())?;
         let main_coll = db.get_collection(coll_name).map_err(|e| e.to_string())?;
-        let config = main_coll.get_shard_config().ok_or("Missing shard config".to_string())?;
+        let config = main_coll
+            .get_shard_config()
+            .ok_or("Missing shard config".to_string())?;
 
         let mut report = String::new();
         let mut total_fixed = 0;
         let mut total_moved = 0;
         let mut total_errors = 0;
 
-        report.push_str(&format!("Repairing {}.{} (Num Shards: {})\n", db_name, coll_name, config.num_shards));
+        report.push_str(&format!(
+            "Repairing {}.{} (Num Shards: {})\n",
+            db_name, coll_name, config.num_shards
+        ));
 
         // Iterate through ALL potential physical shards (current num_shards)
         // Note: usage of 0..num_shards checks shards that SHOULD exist.
@@ -841,7 +938,11 @@ impl ShardCoordinator {
                 let mut shard_fixed = 0;
                 let mut shard_moved = 0;
 
-                tracing::info!("REPAIR: Scanning shard {} ({} docs)...", physical_name, doc_count);
+                tracing::info!(
+                    "REPAIR: Scanning shard {} ({} docs)...",
+                    physical_name,
+                    doc_count
+                );
 
                 let mut redundant_keys = Vec::new();
                 let mut misplaced_docs = Vec::new();
@@ -851,12 +952,13 @@ impl ShardCoordinator {
                 for doc in documents {
                     let id_str = doc.key.clone();
                     let route_key = if config.shard_key == "_key" {
-                         doc.key.clone()
+                        doc.key.clone()
                     } else {
-                         doc.key.clone() // Default
+                        doc.key.clone() // Default
                     };
 
-                    let target_shard = crate::sharding::router::ShardRouter::route(&route_key, config.num_shards);
+                    let target_shard =
+                        crate::sharding::router::ShardRouter::route(&route_key, config.num_shards);
 
                     if target_shard != s {
                         // Document is misplaced!
@@ -865,13 +967,13 @@ impl ShardCoordinator {
                         let exists = self.get(db_name, coll_name, &id_str).await.is_ok();
 
                         if exists {
-                             // It exists in target -> Redundant Duplicate
-                             redundant_keys.push(id_str);
-                             shard_fixed += 1;
+                            // It exists in target -> Redundant Duplicate
+                            redundant_keys.push(id_str);
+                            shard_fixed += 1;
                         } else {
-                             // It DOES NOT exist -> Misplaced (needs move)
-                             misplaced_docs.push(doc.to_value());
-                             misplaced_keys.push(id_str);
+                            // It DOES NOT exist -> Misplaced (needs move)
+                            misplaced_docs.push(doc.to_value());
+                            misplaced_keys.push(id_str);
                         }
                     }
                 }
@@ -879,26 +981,37 @@ impl ShardCoordinator {
                 // 2. Batch Move Misplaced Docs
                 if !misplaced_docs.is_empty() {
                     let total_to_move = misplaced_docs.len();
-                    tracing::info!("REPAIR: Moving {} misplaced docs from {}...", total_to_move, physical_name);
+                    tracing::info!(
+                        "REPAIR: Moving {} misplaced docs from {}...",
+                        total_to_move,
+                        physical_name
+                    );
 
-                    match self.insert_batch(db_name, coll_name, &config, misplaced_docs).await {
+                    match self
+                        .insert_batch(db_name, coll_name, &config, misplaced_docs)
+                        .await
+                    {
                         Ok((success, fail)) => {
-                             if fail == 0 {
-                                 // Move successful (all), now we can delete them from source
-                                 redundant_keys.extend(misplaced_keys);
-                                 shard_moved += success; // Actually moved
-                             } else {
-                                 // Partial failure. Safety check: DO NOT DELETE from source to avoid data loss.
-                                 // We could try to identify which failed, but insert_batch doesn't return that.
-                                 // User can run repair again.
-                                 tracing::warn!("REPAIR: Batch move had failures (success={}, fail={}). Skipping delete for safety.", success, fail);
-                                 total_errors += fail;
-                             }
-                        },
+                            if fail == 0 {
+                                // Move successful (all), now we can delete them from source
+                                redundant_keys.extend(misplaced_keys);
+                                shard_moved += success; // Actually moved
+                            } else {
+                                // Partial failure. Safety check: DO NOT DELETE from source to avoid data loss.
+                                // We could try to identify which failed, but insert_batch doesn't return that.
+                                // User can run repair again.
+                                tracing::warn!("REPAIR: Batch move had failures (success={}, fail={}). Skipping delete for safety.", success, fail);
+                                total_errors += fail;
+                            }
+                        }
                         Err(e) => {
-                             tracing::error!("REPAIR: Batch move failed for {}: {}", physical_name, e);
-                             total_errors += 1;
-                             // We do NOT delete misplaced_keys if move failed.
+                            tracing::error!(
+                                "REPAIR: Batch move failed for {}: {}",
+                                physical_name,
+                                e
+                            );
+                            total_errors += 1;
+                            // We do NOT delete misplaced_keys if move failed.
                         }
                     }
                 }
@@ -907,24 +1020,30 @@ impl ShardCoordinator {
                 if !redundant_keys.is_empty() {
                     match physical_coll.delete_batch(&redundant_keys) {
                         Ok(_n) => {
-                             // n duplicates deleted
-                             // shard_fixed/shard_moved counts track logic, n tracks actual deletes
-                        },
+                            // n duplicates deleted
+                            // shard_fixed/shard_moved counts track logic, n tracks actual deletes
+                        }
                         Err(e) => {
-                             tracing::error!("REPAIR: Batch delete failed for {}: {}", physical_name, e);
-                             total_errors += 1;
+                            tracing::error!(
+                                "REPAIR: Batch delete failed for {}: {}",
+                                physical_name,
+                                e
+                            );
+                            total_errors += 1;
                         }
                     }
                 }
 
                 if shard_fixed > 0 || shard_moved > 0 {
-                    report.push_str(&format!("  Shard {}: Removed {} duplicates (already in target), Moved {} docs\n", s, shard_fixed, shard_moved));
+                    report.push_str(&format!(
+                        "  Shard {}: Removed {} duplicates (already in target), Moved {} docs\n",
+                        s, shard_fixed, shard_moved
+                    ));
                     total_fixed += shard_fixed;
                     total_moved += shard_moved;
                 }
             }
         }
-
 
         report.push_str(&format!("----------------------------------\nTotal: {} duplicates removed, {} docs moved, {} errors.\n", total_fixed, total_moved, total_errors));
         tracing::info!("{}", report);
@@ -933,7 +1052,12 @@ impl ShardCoordinator {
 
     /// Promote a healthy replica to be the new primary for a shard
     /// Returns the new primary node ID if successful
-    pub fn promote_replica(&self, database: &str, collection: &str, shard_id: u16) -> Option<String> {
+    pub fn promote_replica(
+        &self,
+        database: &str,
+        collection: &str,
+        shard_id: u16,
+    ) -> Option<String> {
         let key = format!("{}.{}", database, collection);
         let mut table_to_persist = None;
         let mut result = None;
@@ -953,7 +1077,8 @@ impl ShardCoordinator {
                         let old_primary = assignment.primary_node.clone();
 
                         // Update the assignment
-                        let mut new_replicas: Vec<String> = assignment.replica_nodes
+                        let mut new_replicas: Vec<String> = assignment
+                            .replica_nodes
                             .iter()
                             .filter(|n| *n != &new_primary)
                             .cloned()
@@ -962,15 +1087,20 @@ impl ShardCoordinator {
                         // Old primary becomes a replica (for when it comes back)
                         new_replicas.push(old_primary.clone());
 
-                        table.assignments.insert(shard_id, ShardAssignment {
+                        table.assignments.insert(
                             shard_id,
-                            primary_node: new_primary.clone(),
-                            replica_nodes: new_replicas,
-                        });
+                            ShardAssignment {
+                                shard_id,
+                                primary_node: new_primary.clone(),
+                                replica_nodes: new_replicas,
+                            },
+                        );
 
                         tracing::warn!(
                             "FAILOVER: Promoted {} to primary for shard {} (was: {})",
-                            new_primary, shard_id, old_primary
+                            new_primary,
+                            shard_id,
+                            old_primary
                         );
 
                         // Record that the old primary failed (for future healing decisions)
@@ -988,14 +1118,13 @@ impl ShardCoordinator {
         if let Some(table) = table_to_persist {
             if let Ok(db) = self.storage.get_database(database) {
                 if let Ok(coll) = db.get_collection(collection) {
-                     let _ = coll.set_shard_table(&table);
+                    let _ = coll.set_shard_table(&table);
                 }
             }
         }
 
         result
     }
-
 
     /// Heal shards by creating new replicas when nodes are unhealthy
     /// This maintains the replication factor when nodes fail
@@ -1011,7 +1140,9 @@ impl ShardCoordinator {
         // For now, be more conservative and only heal shards that clearly need it
         let recently_resharded = self.check_recent_resharding();
         if recently_resharded {
-            tracing::debug!("HEAL: Skipping aggressive healing - recently resharded, allowing stabilization");
+            tracing::debug!(
+                "HEAL: Skipping aggressive healing - recently resharded, allowing stabilization"
+            );
             return Ok(0);
         }
 
@@ -1031,15 +1162,18 @@ impl ShardCoordinator {
         let my_node_id = self.my_node_id();
         let mut healed_count = 0usize;
 
-        tracing::debug!("HEAL: Starting shard healing check. Healthy nodes: {:?}", healthy_nodes);
+        tracing::debug!(
+            "HEAL: Starting shard healing check. Healthy nodes: {:?}",
+            healthy_nodes
+        );
 
         // Get all shard tables
         let tables: Vec<(String, ShardTable)> = {
-            let guard = self.shard_tables.read()
+            let guard = self
+                .shard_tables
+                .read()
                 .map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
-            guard.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
+            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
 
         tracing::debug!("HEAL: Checking {} shard tables", tables.len());
@@ -1069,7 +1203,9 @@ impl ShardCoordinator {
                 let primary_healthy = healthy_nodes.contains(&assignment.primary_node);
 
                 // Count healthy replicas
-                let healthy_replicas: Vec<&String> = assignment.replica_nodes.iter()
+                let healthy_replicas: Vec<&String> = assignment
+                    .replica_nodes
+                    .iter()
                     .filter(|n| healthy_nodes.contains(*n))
                     .collect();
 
@@ -1104,7 +1240,8 @@ impl ShardCoordinator {
                         set
                     };
 
-                    let available_nodes: Vec<&String> = healthy_nodes.iter()
+                    let available_nodes: Vec<&String> = healthy_nodes
+                        .iter()
                         .filter(|n| !nodes_with_shard.contains(*n))
                         .collect();
 
@@ -1115,24 +1252,39 @@ impl ShardCoordinator {
                     }
 
                     // Pick a node (round-robin based on shard_id for distribution)
-                    let target_node = available_nodes[*shard_id as usize % available_nodes.len()].clone();
+                    let target_node =
+                        available_nodes[*shard_id as usize % available_nodes.len()].clone();
 
                     // Find a source node (healthy primary or replica)
                     // Prefer nodes that haven't recently failed to avoid stale data
-                    let source_node = if primary_healthy && !self.was_recently_failed(&assignment.primary_node) {
+                    let source_node = if primary_healthy
+                        && !self.was_recently_failed(&assignment.primary_node)
+                    {
                         assignment.primary_node.clone()
-                    } else if let Some(replica) = healthy_replicas.iter()
-                        .find(|r| !self.was_recently_failed(*r)) {
+                    } else if let Some(replica) = healthy_replicas
+                        .iter()
+                        .find(|r| !self.was_recently_failed(*r))
+                    {
                         (*replica).clone()
                     } else if primary_healthy {
                         // Fallback to primary even if recently failed (better than no source)
-                        tracing::warn!("HEAL: Using recently failed primary {} as source for {}/{}/s{}",
-                            assignment.primary_node, database, collection, shard_id);
+                        tracing::warn!(
+                            "HEAL: Using recently failed primary {} as source for {}/{}/s{}",
+                            assignment.primary_node,
+                            database,
+                            collection,
+                            shard_id
+                        );
                         assignment.primary_node.clone()
                     } else if let Some(replica) = healthy_replicas.first() {
                         // Fallback to any healthy replica
-                        tracing::warn!("HEAL: Using recently failed replica {} as source for {}/{}/s{}",
-                            replica, database, collection, shard_id);
+                        tracing::warn!(
+                            "HEAL: Using recently failed replica {} as source for {}/{}/s{}",
+                            replica,
+                            database,
+                            collection,
+                            shard_id
+                        );
                         (*replica).clone()
                     } else {
                         tracing::warn!("HEAL: Skipping shard {}/{}/s{} - no suitable source available (all candidates recently failed or unhealthy)",
@@ -1142,7 +1294,11 @@ impl ShardCoordinator {
 
                     tracing::info!(
                         "HEAL: Creating replica for shard {}/{}/s{} on {} (source: {})",
-                        database, collection, shard_id, target_node, source_node
+                        database,
+                        collection,
+                        shard_id,
+                        target_node,
+                        source_node
                     );
 
                     // If target is us, copy data from source
@@ -1152,9 +1308,12 @@ impl ShardCoordinator {
                     if target_node == my_node_id {
                         // We delegate the "Do I need to copy?" check to the copy function itself
                         // This allows checking for Stale data (Count mismatch) instead of just "Empty vs Non-Empty"
-                        if let Err(e) = self.copy_shard_from_source(database, &physical_coll, &source_node).await {
-                             tracing::error!("HEAL: Failed to copy shard locally: {}", e);
-                             continue;
+                        if let Err(e) = self
+                            .copy_shard_from_source(database, &physical_coll, &source_node)
+                            .await
+                        {
+                            tracing::error!("HEAL: Failed to copy shard locally: {}", e);
+                            continue;
                         }
                     } else {
                         // Tell target node to copy from source
@@ -1165,19 +1324,25 @@ impl ShardCoordinator {
                             );
                             let secret = self.cluster_secret();
 
-                            let source_addr = mgr.get_node_api_address(&source_node).unwrap_or_default();
+                            let source_addr =
+                                mgr.get_node_api_address(&source_node).unwrap_or_default();
 
                             let client = reqwest::Client::new();
-                            let res = client.post(&url)
+                            let res = client
+                                .post(&url)
                                 .header("X-Cluster-Secret", &secret)
-                                .header("X-Shard-Direct", "true")  // Required for auth bypass
+                                .header("X-Shard-Direct", "true") // Required for auth bypass
                                 .json(&serde_json::json!({ "source_address": source_addr }))
                                 .timeout(std::time::Duration::from_secs(60))
                                 .send()
                                 .await;
 
                             if let Err(e) = res {
-                                tracing::error!("HEAL: Failed to trigger copy on {}: {}", target_node, e);
+                                tracing::error!(
+                                    "HEAL: Failed to trigger copy on {}: {}",
+                                    target_node,
+                                    e
+                                );
                                 continue;
                             }
                         }
@@ -1185,14 +1350,19 @@ impl ShardCoordinator {
 
                     // Update shard table with new replica
                     {
-                        let mut tables = self.shard_tables.write()
-                            .map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
+                        let mut tables = self.shard_tables.write().map_err(|_| {
+                            crate::error::DbError::InternalError("Lock poisoned".to_string())
+                        })?;
                         if let Some(table) = tables.get_mut(key) {
                             if let Some(assignment) = table.assignments.get_mut(shard_id) {
                                 if !assignment.replica_nodes.contains(&target_node) {
                                     assignment.replica_nodes.push(target_node.clone());
                                     healed_count += 1;
-                                    tracing::info!("HEAL: Added {} as replica for shard {}", target_node, shard_id);
+                                    tracing::info!(
+                                        "HEAL: Added {} as replica for shard {}",
+                                        target_node,
+                                        shard_id
+                                    );
                                 }
                             }
                         }
@@ -1209,7 +1379,9 @@ impl ShardCoordinator {
         // If this node is a replica/primary but has significantly less data than the source, resync
         for (key, table) in &tables {
             let parts: Vec<&str> = key.split('.').collect();
-            if parts.len() != 2 { continue; }
+            if parts.len() != 2 {
+                continue;
+            }
             let (database, collection) = (parts[0], parts[1]);
 
             for (shard_id, assignment) in &table.assignments {
@@ -1225,7 +1397,8 @@ impl ShardCoordinator {
                     "HEAL: Node {} is {} for {}_s{}",
                     my_node_id,
                     if is_primary { "PRIMARY" } else { "REPLICA" },
-                    collection, shard_id
+                    collection,
+                    shard_id
                 );
 
                 // Get local document count
@@ -1244,7 +1417,9 @@ impl ShardCoordinator {
                 // If we're a replica, use the primary. If we're the primary, use a healthy replica.
                 let source_node = if is_primary {
                     // We're primary - find a healthy replica to sync from
-                    assignment.replica_nodes.iter()
+                    assignment
+                        .replica_nodes
+                        .iter()
                         .find(|r| healthy_nodes.contains(*r))
                         .cloned()
                 } else {
@@ -1262,15 +1437,19 @@ impl ShardCoordinator {
                 };
 
                 // Get source document count
-                let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node) {
-                    let url = format!("http://{}/_api/database/{}/collection/{}/count",
-                        source_addr, database, &physical_coll);
+                let source_count = if let Some(source_addr) = mgr.get_node_api_address(&source_node)
+                {
+                    let url = format!(
+                        "http://{}/_api/database/{}/collection/{}/count",
+                        source_addr, database, &physical_coll
+                    );
                     let secret = self.cluster_secret();
                     let client = reqwest::Client::new();
 
-                    match client.get(&url)
+                    match client
+                        .get(&url)
                         .header("X-Cluster-Secret", &secret)
-                        .header("X-Shard-Direct", "true")  // Required for auth bypass
+                        .header("X-Shard-Direct", "true") // Required for auth bypass
                         .timeout(std::time::Duration::from_secs(5))
                         .send()
                         .await
@@ -1278,25 +1457,43 @@ impl ShardCoordinator {
                         Ok(res) if res.status().is_success() => {
                             if let Ok(body) = res.json::<serde_json::Value>().await {
                                 body.get("count").and_then(|c| c.as_u64()).unwrap_or(0) as usize
-                            } else { 0 }
+                            } else {
+                                0
+                            }
                         }
                         Ok(res) => {
-                            tracing::warn!("HEAL: Count request failed for {}_s{} from {}: status {}",
-                                collection, shard_id, source_node, res.status());
+                            tracing::warn!(
+                                "HEAL: Count request failed for {}_s{} from {}: status {}",
+                                collection,
+                                shard_id,
+                                source_node,
+                                res.status()
+                            );
                             0
                         }
                         Err(e) => {
-                            tracing::warn!("HEAL: Count request error for {}_s{} from {}: {}",
-                                collection, shard_id, source_node, e);
+                            tracing::warn!(
+                                "HEAL: Count request error for {}_s{} from {}: {}",
+                                collection,
+                                shard_id,
+                                source_node,
+                                e
+                            );
                             0
                         }
                     }
-                } else { 0 };
+                } else {
+                    0
+                };
 
                 // Log the count comparison for debugging
                 tracing::debug!(
                     "HEAL: {}_s{}: local_count={}, source_count={}, source_node={}",
-                    collection, shard_id, local_count, source_count, source_node
+                    collection,
+                    shard_id,
+                    local_count,
+                    source_count,
+                    source_node
                 );
 
                 // If local has significantly fewer docs (>10% difference OR local is 0 with source > 0), resync
@@ -1317,11 +1514,24 @@ impl ShardCoordinator {
                     );
 
                     // Resync by copying all data from source
-                    if let Err(e) = self.copy_shard_from_source(database, &physical_coll, &source_node).await {
-                        tracing::error!("HEAL: Failed to resync stale {}_s{}: {}", collection, shard_id, e);
+                    if let Err(e) = self
+                        .copy_shard_from_source(database, &physical_coll, &source_node)
+                        .await
+                    {
+                        tracing::error!(
+                            "HEAL: Failed to resync stale {}_s{}: {}",
+                            collection,
+                            shard_id,
+                            e
+                        );
                     } else {
                         healed_count += 1;
-                        tracing::info!("HEAL: Resynced stale {}_s{} from {}", collection, shard_id, source_node);
+                        tracing::info!(
+                            "HEAL: Resynced stale {}_s{} from {}",
+                            collection,
+                            shard_id,
+                            source_node
+                        );
                     }
                 }
                 // Case 2: Local REPLICA is ahead of PRIMARY (has stale data) - truncate and resync
@@ -1339,11 +1549,24 @@ impl ShardCoordinator {
                     }
 
                     // Resync from primary
-                    if let Err(e) = self.copy_shard_from_source(database, &physical_coll, &source_node).await {
-                        tracing::error!("HEAL: Failed to resync replica {}_s{}: {}", collection, shard_id, e);
+                    if let Err(e) = self
+                        .copy_shard_from_source(database, &physical_coll, &source_node)
+                        .await
+                    {
+                        tracing::error!(
+                            "HEAL: Failed to resync replica {}_s{}: {}",
+                            collection,
+                            shard_id,
+                            e
+                        );
                     } else {
                         healed_count += 1;
-                        tracing::info!("HEAL: Resynced oversized replica {}_s{} from primary {}", collection, shard_id, source_node);
+                        tracing::info!(
+                            "HEAL: Resynced oversized replica {}_s{} from primary {}",
+                            collection,
+                            shard_id,
+                            source_node
+                        );
                     }
                 }
             }
@@ -1368,7 +1591,6 @@ impl ShardCoordinator {
                 Err(_) => continue,
             };
 
-
             // Get all collections in this database
             let collections = db.list_collections();
 
@@ -1386,13 +1608,14 @@ impl ShardCoordinator {
 
                         // Check if we should have this shard
                         let key = format!("{}.{}", db_name, base);
-                        let tables = self.shard_tables.read()
-                            .map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
+                        let tables = self.shard_tables.read().map_err(|_| {
+                            crate::error::DbError::InternalError("Lock poisoned".to_string())
+                        })?;
 
                         let is_assigned_to_us = if let Some(table) = tables.get(&key) {
                             if let Some(assignment) = table.assignments.get(&shard_id) {
-                                assignment.primary_node == my_node_id ||
-                                assignment.replica_nodes.contains(&my_node_id)
+                                assignment.primary_node == my_node_id
+                                    || assignment.replica_nodes.contains(&my_node_id)
                             } else {
                                 false
                             }
@@ -1411,7 +1634,9 @@ impl ShardCoordinator {
                             if let Err(e) = db.delete_collection(&coll_name) {
                                 tracing::error!(
                                     "CLEANUP: Failed to delete orphaned shard {}/{}: {}",
-                                    db_name, coll_name, e
+                                    db_name,
+                                    coll_name,
+                                    e
                                 );
                             } else {
                                 cleaned_count += 1;
@@ -1423,7 +1648,10 @@ impl ShardCoordinator {
         }
 
         if cleaned_count > 0 {
-            tracing::info!("CLEANUP: Removed {} orphaned shard collections", cleaned_count);
+            tracing::info!(
+                "CLEANUP: Removed {} orphaned shard collections",
+                cleaned_count
+            );
         }
 
         Ok(cleaned_count)
@@ -1449,7 +1677,10 @@ impl ShardCoordinator {
 
         // Collect all shard tables to broadcast
         let tables: Vec<ShardTable> = {
-            let guard = self.shard_tables.read().map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
+            let guard = self
+                .shard_tables
+                .read()
+                .map_err(|_| crate::error::DbError::InternalError("Lock poisoned".to_string()))?;
             guard.values().cloned().collect()
         };
 
@@ -1461,9 +1692,15 @@ impl ShardCoordinator {
             let addr = &member.node.api_address;
             let url = format!("http://{}/_api/cluster/cleanup", addr);
 
-            tracing::info!("CLEANUP: Broadcasting cleanup (with {} tables) to node {} at {}", tables.len(), member.node.id, addr);
+            tracing::info!(
+                "CLEANUP: Broadcasting cleanup (with {} tables) to node {} at {}",
+                tables.len(),
+                member.node.id,
+                addr
+            );
 
-            match client.post(&url)
+            match client
+                .post(&url)
                 .header("X-Cluster-Secret", &secret)
                 .json(&tables) // Send tables in body
                 .timeout(std::time::Duration::from_secs(30))
@@ -1472,7 +1709,11 @@ impl ShardCoordinator {
             {
                 Ok(res) => {
                     if !res.status().is_success() {
-                        tracing::warn!("CLEANUP: Cleanup broadcast to {} failed with status {}", addr, res.status());
+                        tracing::warn!(
+                            "CLEANUP: Cleanup broadcast to {} failed with status {}",
+                            addr,
+                            res.status()
+                        );
                     } else {
                         tracing::info!("CLEANUP: Cleanup broadcast to {} successful", addr);
                     }
@@ -1495,19 +1736,25 @@ impl ShardCoordinator {
     ) -> Result<usize, crate::error::DbError> {
         use base64::{engine::general_purpose, Engine as _};
 
-        let mgr = self.cluster_manager.as_ref()
-            .ok_or_else(|| crate::error::DbError::InternalError("No cluster manager".to_string()))?;
+        let mgr = self.cluster_manager.as_ref().ok_or_else(|| {
+            crate::error::DbError::InternalError("No cluster manager".to_string())
+        })?;
 
-        let source_addr = mgr.get_node_api_address(source_node)
-            .ok_or_else(|| crate::error::DbError::InternalError("Source node address not found".to_string()))?;
+        let source_addr = mgr.get_node_api_address(source_node).ok_or_else(|| {
+            crate::error::DbError::InternalError("Source node address not found".to_string())
+        })?;
 
         // Step 1: Check Source Count using Metadata API
         let secret = self.cluster_secret();
         let client = reqwest::Client::new();
 
         // Use standard Collection API to get metadata (count)
-        let meta_url = format!("http://{}/_api/database/{}/collection/{}", source_addr, database, physical_coll);
-        let meta_res = client.get(&meta_url)
+        let meta_url = format!(
+            "http://{}/_api/database/{}/collection/{}",
+            source_addr, database, physical_coll
+        );
+        let meta_res = client
+            .get(&meta_url)
             .header("X-Cluster-Secret", &secret)
             .header("X-Shard-Direct", "true")
             .timeout(std::time::Duration::from_secs(10))
@@ -1518,14 +1765,14 @@ impl ShardCoordinator {
         let mut check_count = false;
 
         if let Ok(res) = meta_res {
-             if res.status().is_success() {
-                 if let Ok(json) = res.json::<serde_json::Value>().await {
-                     if let Some(c) = json.get("count").and_then(|v| v.as_u64()) {
-                         source_count = c as usize;
-                         check_count = true;
-                     }
-                 }
-             }
+            if res.status().is_success() {
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    if let Some(c) = json.get("count").and_then(|v| v.as_u64()) {
+                        source_count = c as usize;
+                        check_count = true;
+                    }
+                }
+            }
         }
 
         // Local Check & Prep
@@ -1544,7 +1791,7 @@ impl ShardCoordinator {
         if check_count {
             let local_count = coll.count();
             if local_count == source_count && !is_blob {
-               return Ok(0);
+                return Ok(0);
             }
             if local_count != source_count || is_blob {
                 tracing::info!("HEAL: Mismatch or Blob forced sync for {}/{} (Local: {}, Source: {}). Syncing.", database, physical_coll, local_count, source_count);
@@ -1554,20 +1801,29 @@ impl ShardCoordinator {
 
         // Use EXPORT endpoint to stream all data (Docs + Blob Chunks)
         let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-        let url = format!("{}://{}/_api/database/{}/collection/{}/export", scheme, source_addr, database, physical_coll);
+        let url = format!(
+            "{}://{}/_api/database/{}/collection/{}/export",
+            scheme, source_addr, database, physical_coll
+        );
 
-        let mut resp = client.get(&url)
+        let mut resp = client
+            .get(&url)
             .header("X-Cluster-Secret", &secret)
             .header("X-Shard-Direct", "true")
             .timeout(std::time::Duration::from_secs(3600)) // Long timeout for large shards
             .send()
             .await
-            .map_err(|e| crate::error::DbError::InternalError(format!("Export request failed: {}", e)))?;
+            .map_err(|e| {
+                crate::error::DbError::InternalError(format!("Export request failed: {}", e))
+            })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             tracing::error!("HEAL: Export failed - status: {}, url: {}", status, url);
-            return Err(crate::error::DbError::InternalError(format!("Export failed with status {}", status)));
+            return Err(crate::error::DbError::InternalError(format!(
+                "Export failed with status {}",
+                status
+            )));
         }
 
         let mut batch_docs = Vec::with_capacity(1000);
@@ -1577,75 +1833,93 @@ impl ShardCoordinator {
         // Stream processing
         while let Ok(Some(chunk)) = resp.chunk().await {
             // Append chunk to buffer
-             let chunk_str = String::from_utf8_lossy(&chunk);
-             line_buffer.push_str(&chunk_str);
+            let chunk_str = String::from_utf8_lossy(&chunk);
+            line_buffer.push_str(&chunk_str);
 
-             // Process lines
-             while let Some(pos) = line_buffer.find('\n') {
-                 let line: String = line_buffer.drain(..pos + 1).collect();
-                 let line = line.trim();
-                 if line.is_empty() { continue; }
+            // Process lines
+            while let Some(pos) = line_buffer.find('\n') {
+                let line: String = line_buffer.drain(..pos + 1).collect();
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
 
-                 if let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(line) {
-                     // Check if blob chunk
-                     let is_blob_chunk = doc.get("_type")
+                if let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(line) {
+                    // Check if blob chunk
+                    let is_blob_chunk = doc
+                        .get("_type")
                         .and_then(|t| t.as_str())
                         .map(|t| t == "blob_chunk")
                         .unwrap_or(false);
 
-                     if is_blob_chunk {
-                         // Import Chunk immediately
-                         if let (Some(key), Some(index), Some(data_b64)) = (
-                             doc.get("_doc_key").and_then(|s| s.as_str()),
-                             doc.get("_chunk_index").and_then(|n| n.as_u64()),
-                             doc.get("_blob_data").and_then(|s| s.as_str())
-                         ) {
-                             if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
-                                 if let Err(e) = coll.put_blob_chunk(key, index as u32, &data) {
-                                     tracing::error!("HEAL: Failed to write chunk {} for {}: {}", index, key, e);
-                                 }
-                             }
-                         }
-                     } else {
-                         // Clean metadata (same as import)
-                         if let Some(obj) = doc.as_object_mut() {
-                             obj.remove("_database");
-                             obj.remove("_collection");
-                             obj.remove("_shardConfig");
-                         }
+                    if is_blob_chunk {
+                        // Import Chunk immediately
+                        if let (Some(key), Some(index), Some(data_b64)) = (
+                            doc.get("_doc_key").and_then(|s| s.as_str()),
+                            doc.get("_chunk_index").and_then(|n| n.as_u64()),
+                            doc.get("_blob_data").and_then(|s| s.as_str()),
+                        ) {
+                            if let Ok(data) = general_purpose::STANDARD.decode(data_b64) {
+                                if let Err(e) = coll.put_blob_chunk(key, index as u32, &data) {
+                                    tracing::error!(
+                                        "HEAL: Failed to write chunk {} for {}: {}",
+                                        index,
+                                        key,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        // Clean metadata (same as import)
+                        if let Some(obj) = doc.as_object_mut() {
+                            obj.remove("_database");
+                            obj.remove("_collection");
+                            obj.remove("_shardConfig");
+                        }
 
-                         // Prepare for batch upsert
-                         let key = doc.get("_key").and_then(|k| k.as_str()).unwrap_or("").to_string();
-                         if !key.is_empty() {
-                             batch_docs.push((key, doc));
-                         }
-                     }
-                 }
-             }
+                        // Prepare for batch upsert
+                        let key = doc
+                            .get("_key")
+                            .and_then(|k| k.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !key.is_empty() {
+                            batch_docs.push((key, doc));
+                        }
+                    }
+                }
+            }
 
-             // Flush Batch if full
-             if batch_docs.len() >= 1000 {
-                 let count = batch_docs.len();
-                 let batch_to_insert: Vec<(String, serde_json::Value)> = batch_docs.drain(..).collect();
-                 if let Err(e) = coll.upsert_batch(batch_to_insert) {
-                      tracing::error!("HEAL: Batch upsert failed: {}", e);
-                 } else {
-                     total_copied += count;
-                 }
-             }
+            // Flush Batch if full
+            if batch_docs.len() >= 1000 {
+                let count = batch_docs.len();
+                let batch_to_insert: Vec<(String, serde_json::Value)> =
+                    batch_docs.drain(..).collect();
+                if let Err(e) = coll.upsert_batch(batch_to_insert) {
+                    tracing::error!("HEAL: Batch upsert failed: {}", e);
+                } else {
+                    total_copied += count;
+                }
+            }
         }
 
         // Final Flush
         if !batch_docs.len() > 0 {
-             let count = batch_docs.len();
-             if let Err(e) = coll.upsert_batch(batch_docs) {
-                  tracing::error!("HEAL: Final batch upsert failed: {}", e);
-             } else {
-                 total_copied += count;
-             }
+            let count = batch_docs.len();
+            if let Err(e) = coll.upsert_batch(batch_docs) {
+                tracing::error!("HEAL: Final batch upsert failed: {}", e);
+            } else {
+                total_copied += count;
+            }
         }
 
-        tracing::info!("HEAL: Copied {} docs (and associated chunks) to {}/{}", total_copied, database, physical_coll);
+        tracing::info!(
+            "HEAL: Copied {} docs (and associated chunks) to {}/{}",
+            total_copied,
+            database,
+            physical_coll
+        );
         Ok(total_copied)
     }
 
@@ -1660,8 +1934,9 @@ impl ShardCoordinator {
         use crate::sharding::router::ShardRouter;
         use std::collections::HashMap;
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
         let local_id = if let Some(mgr) = &self.cluster_manager {
             mgr.local_node_id()
@@ -1728,15 +2003,24 @@ impl ShardCoordinator {
                 // Queue remote batch as future
                 if let Some(mgr) = &self.cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                        let url = format!("http://{}/_api/database/{}/document/{}/_batch", addr, database, physical_coll);
-                        tracing::info!("INSERT BATCH: Queuing {} docs for remote shard {} at {}", batch.len(), physical_coll, addr);
+                        let url = format!(
+                            "http://{}/_api/database/{}/document/{}/_batch",
+                            addr, database, physical_coll
+                        );
+                        tracing::info!(
+                            "INSERT BATCH: Queuing {} docs for remote shard {} at {}",
+                            batch.len(),
+                            physical_coll,
+                            addr
+                        );
 
                         let batch_size = batch.len();
                         let client = client.clone();
                         let secret = secret.clone();
 
                         let future = async move {
-                            let res = client.post(&url)
+                            let res = client
+                                .post(&url)
                                 .header("X-Shard-Direct", "true")
                                 .header("X-Cluster-Secret", &secret)
                                 .json(&batch)
@@ -1773,14 +2057,18 @@ impl ShardCoordinator {
             let coll = db.get_collection(&physical_coll)?;
 
             // Convert to keyed docs for upsert (prevents duplicates)
-            let keyed_docs: Vec<(String, serde_json::Value)> = batch.iter().map(|doc| {
-                let key = doc.get("_key")
-                    .and_then(|k| k.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                (key, doc.clone())
-            }).filter(|(key, _)| !key.is_empty())
-            .collect();
+            let keyed_docs: Vec<(String, serde_json::Value)> = batch
+                .iter()
+                .map(|doc| {
+                    let key = doc
+                        .get("_key")
+                        .and_then(|k| k.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    (key, doc.clone())
+                })
+                .filter(|(key, _)| !key.is_empty())
+                .collect();
 
             match coll.upsert_batch(keyed_docs) {
                 Ok(count) => {
@@ -1795,15 +2083,24 @@ impl ShardCoordinator {
                             if let Some(mgr) = &self.cluster_manager {
                                 for replica_node in &assignment.replica_nodes {
                                     if let Some(addr) = mgr.get_node_api_address(replica_node) {
-                                        let url = format!("http://{}/_api/database/{}/document/{}/_replica", addr, database, physical_coll);
-                                        tracing::debug!("REPLICA: Forwarding {} docs to replica {} at {}", batch.len(), physical_coll, addr);
+                                        let url = format!(
+                                            "http://{}/_api/database/{}/document/{}/_replica",
+                                            addr, database, physical_coll
+                                        );
+                                        tracing::debug!(
+                                            "REPLICA: Forwarding {} docs to replica {} at {}",
+                                            batch.len(),
+                                            physical_coll,
+                                            addr
+                                        );
 
                                         let client = client.clone();
                                         let secret = secret.clone();
                                         let batch = batch.clone();
 
                                         let future = async move {
-                                            let _ = client.post(&url)
+                                            let _ = client
+                                                .post(&url)
                                                 .header("X-Shard-Direct", "true")
                                                 .header("X-Cluster-Secret", &secret)
                                                 .json(&batch)
@@ -1856,8 +2153,9 @@ impl ShardCoordinator {
         use crate::sharding::router::ShardRouter;
         use std::collections::HashMap;
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
         let local_id = if let Some(mgr) = &self.cluster_manager {
             mgr.local_node_id()
@@ -1940,12 +2238,16 @@ impl ShardCoordinator {
                             break;
                         }
 
-                        let url = format!("http://{}/_api/database/{}/document/{}/_batch", addr, database, physical_coll);
+                        let url = format!(
+                            "http://{}/_api/database/{}/document/{}/_batch",
+                            addr, database, physical_coll
+                        );
                         let secret = self.cluster_secret();
                         let client = reqwest::Client::new();
 
                         // Extract just values for the remote call
-                        let values: Vec<serde_json::Value> = batch.into_iter().map(|(_, v)| v).collect();
+                        let values: Vec<serde_json::Value> =
+                            batch.into_iter().map(|(_, v)| v).collect();
 
                         // Retry logic with exponential backoff for remote batch operations
                         let mut retry_count = 0;
@@ -1962,13 +2264,16 @@ impl ShardCoordinator {
 
                             match tokio::time::timeout(
                                 timeout_duration,
-                                client.post(&url)
+                                client
+                                    .post(&url)
                                     .header("X-Shard-Direct", "true")
-                                    .header("X-Migration", "true")  // Prevent replica forwarding during resharding
+                                    .header("X-Migration", "true") // Prevent replica forwarding during resharding
                                     .header("X-Cluster-Secret", &secret)
                                     .json(&values)
-                                    .send()
-                            ).await {
+                                    .send(),
+                            )
+                            .await
+                            {
                                 Ok(Ok(res)) => {
                                     if res.status().is_success() {
                                         // Success! Mark keys as successful
@@ -1985,7 +2290,12 @@ impl ShardCoordinator {
                                             // Server errors are retryable
                                             if retry_count < MAX_RETRIES {
                                                 retry_count += 1;
-                                                tokio::time::sleep(std::time::Duration::from_millis(1000 * (1 << retry_count))).await;
+                                                tokio::time::sleep(
+                                                    std::time::Duration::from_millis(
+                                                        1000 * (1 << retry_count),
+                                                    ),
+                                                )
+                                                .await;
                                                 continue;
                                             }
                                         }
@@ -2001,7 +2311,10 @@ impl ShardCoordinator {
                                     // Network errors are retryable
                                     if retry_count < MAX_RETRIES {
                                         retry_count += 1;
-                                        tokio::time::sleep(std::time::Duration::from_millis(1000 * (1 << retry_count))).await;
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            1000 * (1 << retry_count),
+                                        ))
+                                        .await;
                                         continue;
                                     }
                                     break;
@@ -2009,12 +2322,16 @@ impl ShardCoordinator {
                                 Err(_) => {
                                     tracing::warn!("UPSERT: Remote batch request to {} timed out after {:?} (attempt {}/{})",
                                         addr, timeout_duration, retry_count + 1, MAX_RETRIES + 1);
-                                    last_error = Some(format!("timeout after {:?}", timeout_duration));
+                                    last_error =
+                                        Some(format!("timeout after {:?}", timeout_duration));
 
                                     // Timeouts are retryable
                                     if retry_count < MAX_RETRIES {
                                         retry_count += 1;
-                                        tokio::time::sleep(std::time::Duration::from_millis(1000 * (1 << retry_count))).await;
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            1000 * (1 << retry_count),
+                                        ))
+                                        .await;
                                         continue;
                                     }
                                     break;
@@ -2029,7 +2346,10 @@ impl ShardCoordinator {
                             self.record_node_failure(primary_node);
                         }
                     } else {
-                         tracing::error!("UPSERT: Primary node address unknown for {}", primary_node);
+                        tracing::error!(
+                            "UPSERT: Primary node address unknown for {}",
+                            primary_node
+                        );
                     }
                 }
             }
@@ -2062,7 +2382,8 @@ impl ShardCoordinator {
         let shard_key_value = if config.shard_key == "_key" {
             key.clone()
         } else {
-             document.get(&config.shard_key)
+            document
+                .get(&config.shard_key)
                 .and_then(|v| v.as_str())
                 .unwrap_or(&key) // Fallback to key if shard key missing? Or Error?
                 .to_string()
@@ -2075,11 +2396,13 @@ impl ShardCoordinator {
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
         // 4. Find Primary Node
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
 
         let primary_node = &assignment.primary_node;
 
@@ -2108,13 +2431,19 @@ impl ShardCoordinator {
                     primary_node.clone()
                 } else {
                     // Primary is unhealthy - promote a replica
-                    tracing::warn!("Primary {} is unhealthy for shard {}, attempting failover", primary_node, shard_id);
-                    if let Some(new_primary) = self.promote_replica(database, collection, shard_id) {
+                    tracing::warn!(
+                        "Primary {} is unhealthy for shard {}, attempting failover",
+                        primary_node,
+                        shard_id
+                    );
+                    if let Some(new_primary) = self.promote_replica(database, collection, shard_id)
+                    {
                         new_primary
                     } else {
-                        return Err(crate::error::DbError::InternalError(
-                            format!("Primary {} unhealthy and no healthy replica for failover", primary_node)
-                        ));
+                        return Err(crate::error::DbError::InternalError(format!(
+                            "Primary {} unhealthy and no healthy replica for failover",
+                            primary_node
+                        )));
                     }
                 }
             } else {
@@ -2133,32 +2462,50 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
                     let client = reqwest::Client::new();
-                    let url = format!("http://{}/_api/database/{}/document/{}", addr, database, physical_coll);
+                    let url = format!(
+                        "http://{}/_api/database/{}/document/{}",
+                        addr, database, physical_coll
+                    );
 
                     // Get Cluster Secret
                     let secret = self.cluster_secret();
 
-                    let res = client.post(&url)
+                    let res = client
+                        .post(&url)
                         .header("X-Shard-Direct", "true")
                         .header("X-Cluster-Secret", &secret)
                         .timeout(std::time::Duration::from_secs(10))
                         .json(&document)
                         .send()
                         .await
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Forwarding failed: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Forwarding failed: {}",
+                                e
+                            ))
+                        })?;
 
                     if res.status().is_success() {
-                        let val: serde_json::Value = res.json().await
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Invalid response: {}", e)))?;
+                        let val: serde_json::Value = res.json().await.map_err(|e| {
+                            crate::error::DbError::InternalError(format!("Invalid response: {}", e))
+                        })?;
                         Ok(val)
                     } else {
-                        Err(crate::error::DbError::InternalError(format!("Remote insert failed: {}", res.status())))
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote insert failed: {}",
+                            res.status()
+                        )))
                     }
                 } else {
-                    Err(crate::error::DbError::InternalError(format!("Target node {} address unknown", target_node)))
+                    Err(crate::error::DbError::InternalError(format!(
+                        "Target node {} address unknown",
+                        target_node
+                    )))
                 }
             } else {
-                 Err(crate::error::DbError::InternalError("Cluster manager missing for remote write".to_string()))
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing for remote write".to_string(),
+                ))
             }
         }
     }
@@ -2189,7 +2536,8 @@ impl ShardCoordinator {
         let shard_key_value = if config.shard_key == "_key" {
             key.clone()
         } else {
-             document.get(&config.shard_key)
+            document
+                .get(&config.shard_key)
                 .and_then(|v| v.as_str())
                 .unwrap_or(&key)
                 .to_string()
@@ -2202,11 +2550,13 @@ impl ShardCoordinator {
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
         // 4. Find Primary Node
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
 
         let primary_node = &assignment.primary_node;
 
@@ -2238,13 +2588,19 @@ impl ShardCoordinator {
                     primary_node.clone()
                 } else {
                     // Primary is unhealthy - promote a replica
-                    tracing::warn!("Primary {} is unhealthy for shard {}, attempting failover", primary_node, shard_id);
-                    if let Some(new_primary) = self.promote_replica(database, collection, shard_id) {
+                    tracing::warn!(
+                        "Primary {} is unhealthy for shard {}, attempting failover",
+                        primary_node,
+                        shard_id
+                    );
+                    if let Some(new_primary) = self.promote_replica(database, collection, shard_id)
+                    {
                         new_primary
                     } else {
-                        return Err(crate::error::DbError::InternalError(
-                            format!("Primary {} unhealthy and no healthy replica for failover", primary_node)
-                        ));
+                        return Err(crate::error::DbError::InternalError(format!(
+                            "Primary {} unhealthy and no healthy replica for failover",
+                            primary_node
+                        )));
                     }
                 }
             } else {
@@ -2270,53 +2626,82 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(&target_node) {
                     let client = reqwest::Client::new();
-                    let url = format!("http://{}/_internal/blob/upload/{}/{}", addr, database, physical_coll);
+                    let url = format!(
+                        "http://{}/_internal/blob/upload/{}/{}",
+                        addr, database, physical_coll
+                    );
 
                     // Create multipart form with metadata and chunks
                     let mut form = reqwest::multipart::Form::new();
 
                     // Add metadata
-                    let meta_json = serde_json::to_string(&document)
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Failed to serialize metadata: {}", e)))?;
+                    let meta_json = serde_json::to_string(&document).map_err(|e| {
+                        crate::error::DbError::InternalError(format!(
+                            "Failed to serialize metadata: {}",
+                            e
+                        ))
+                    })?;
                     let meta_part = reqwest::multipart::Part::text(meta_json)
                         .mime_str("application/json")
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Invalid mime: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!("Invalid mime: {}", e))
+                        })?;
                     form = form.part("metadata", meta_part);
 
                     // Add chunks
                     for (chunk_index, chunk_data) in &chunks {
                         let part = reqwest::multipart::Part::bytes(chunk_data.clone())
                             .mime_str("application/octet-stream")
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Invalid mime: {}", e)))?;
+                            .map_err(|e| {
+                                crate::error::DbError::InternalError(format!("Invalid mime: {}", e))
+                            })?;
                         form = form.part(format!("chunk_{}", chunk_index), part);
                     }
 
                     // Get Cluster Secret
                     let secret = self.cluster_secret();
 
-                    let res = client.post(&url)
+                    let res = client
+                        .post(&url)
                         .header("X-Shard-Direct", "true")
                         .header("X-Cluster-Secret", &secret)
                         .timeout(std::time::Duration::from_secs(60)) // Longer timeout for blob uploads
                         .multipart(form)
                         .send()
                         .await
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Blob upload forwarding failed: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Blob upload forwarding failed: {}",
+                                e
+                            ))
+                        })?;
 
                     let status = res.status();
                     if status.is_success() {
-                        let val: serde_json::Value = res.json().await
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Invalid blob upload response: {}", e)))?;
+                        let val: serde_json::Value = res.json().await.map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Invalid blob upload response: {}",
+                                e
+                            ))
+                        })?;
                         Ok(val)
                     } else {
                         let error_text = res.text().await.unwrap_or_default();
-                        Err(crate::error::DbError::InternalError(format!("Remote blob upload failed: {} - {}", status, error_text)))
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote blob upload failed: {} - {}",
+                            status, error_text
+                        )))
                     }
                 } else {
-                    Err(crate::error::DbError::InternalError(format!("Target node {} address unknown", target_node)))
+                    Err(crate::error::DbError::InternalError(format!(
+                        "Target node {} address unknown",
+                        target_node
+                    )))
                 }
             } else {
-                 Err(crate::error::DbError::InternalError("Cluster manager missing for remote blob upload".to_string()))
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing for remote blob upload".to_string(),
+                ))
             }
         }
     }
@@ -2339,11 +2724,13 @@ impl ShardCoordinator {
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
         // 3. Find Primary Node
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
 
         let primary_node = &assignment.primary_node;
 
@@ -2361,7 +2748,10 @@ impl ShardCoordinator {
 
             // Check if blob exists
             if coll.get(key).is_err() {
-                return Err(DbError::DocumentNotFound(format!("Blob not found: {}", key)));
+                return Err(DbError::DocumentNotFound(format!(
+                    "Blob not found: {}",
+                    key
+                )));
             }
 
             // Get content type and filename from metadata
@@ -2414,8 +2804,8 @@ impl ShardCoordinator {
 
             let body = axum::body::Body::from_stream(stream);
 
-            let mut builder = axum::response::Response::builder()
-                .header("Content-Type", content_type);
+            let mut builder =
+                axum::response::Response::builder().header("Content-Type", content_type);
 
             if let Some(name) = file_name {
                 let disposition = format!("attachment; filename=\"{}\"", name);
@@ -2430,24 +2820,37 @@ impl ShardCoordinator {
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
                     let client = reqwest::Client::new();
-                    let url = format!("http://{}/_api/blob/{}/{}/{}", addr, database, physical_coll, key);
+                    let url = format!(
+                        "http://{}/_api/blob/{}/{}/{}",
+                        addr, database, physical_coll, key
+                    );
 
                     // Get Cluster Secret
                     let secret = self.cluster_secret();
 
-                    let res = client.get(&url)
+                    let res = client
+                        .get(&url)
                         .header("X-Cluster-Secret", &secret)
                         .timeout(std::time::Duration::from_secs(60))
                         .send()
                         .await
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Blob download forwarding failed: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Blob download forwarding failed: {}",
+                                e
+                            ))
+                        })?;
 
                     if res.status().is_success() {
                         // Convert reqwest response to axum response
                         let status = res.status();
                         let headers = res.headers().clone();
-                        let body = res.bytes().await
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Failed to read response body: {}", e)))?;
+                        let body = res.bytes().await.map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Failed to read response body: {}",
+                                e
+                            ))
+                        })?;
 
                         let mut response = Response::builder().status(status);
 
@@ -2458,19 +2861,31 @@ impl ShardCoordinator {
                             }
                         }
 
-                        let axum_response = response
-                            .body(axum::body::Body::from(body))
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Failed to build response: {}", e)))?;
+                        let axum_response =
+                            response.body(axum::body::Body::from(body)).map_err(|e| {
+                                crate::error::DbError::InternalError(format!(
+                                    "Failed to build response: {}",
+                                    e
+                                ))
+                            })?;
 
                         Ok(axum_response)
                     } else {
-                        Err(crate::error::DbError::InternalError(format!("Remote blob download failed: {}", res.status())))
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote blob download failed: {}",
+                            res.status()
+                        )))
                     }
                 } else {
-                    Err(crate::error::DbError::InternalError(format!("Target node {} address unknown", primary_node)))
+                    Err(crate::error::DbError::InternalError(format!(
+                        "Target node {} address unknown",
+                        primary_node
+                    )))
                 }
             } else {
-                 Err(crate::error::DbError::InternalError("Cluster manager missing for remote blob download".to_string()))
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing for remote blob download".to_string(),
+                ))
             }
         }
     }
@@ -2484,19 +2899,25 @@ impl ShardCoordinator {
     ) -> Result<serde_json::Value, crate::error::DbError> {
         use crate::sharding::router::ShardRouter;
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
         // TODO: Handle custom shard_keys. For now assume _key
         let shard_id = ShardRouter::route(key, table.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
         let primary_node = &assignment.primary_node;
 
         // Check local
-        let local_id = if let Some(mgr) = &self.cluster_manager { mgr.local_node_id() } else { "local".to_string() };
+        let local_id = if let Some(mgr) = &self.cluster_manager {
+            mgr.local_node_id()
+        } else {
+            "local".to_string()
+        };
 
         if primary_node == &local_id || primary_node == "local" {
             let db = self.storage.get_database(database)?;
@@ -2513,7 +2934,11 @@ impl ShardCoordinator {
                     nodes
                 } else {
                     // Primary is unhealthy, try replicas only
-                    tracing::warn!("Primary {} is unhealthy for shard {}, trying replicas", primary_node, shard_id);
+                    tracing::warn!(
+                        "Primary {} is unhealthy for shard {}, trying replicas",
+                        primary_node,
+                        shard_id
+                    );
                     assignment.replica_nodes.clone()
                 }
             } else {
@@ -2521,7 +2946,9 @@ impl ShardCoordinator {
             };
 
             if nodes_to_try.is_empty() {
-                return Err(crate::error::DbError::InternalError("No healthy nodes for shard".to_string()));
+                return Err(crate::error::DbError::InternalError(
+                    "No healthy nodes for shard".to_string(),
+                ));
             }
 
             // Try nodes in order until one succeeds
@@ -2531,9 +2958,13 @@ impl ShardCoordinator {
             for node_id in &nodes_to_try {
                 if let Some(mgr) = &self.cluster_manager {
                     if let Some(addr) = mgr.get_node_api_address(node_id) {
-                        let url = format!("http://{}/_api/database/{}/document/{}/{}", addr, database, physical_coll, key);
+                        let url = format!(
+                            "http://{}/_api/database/{}/document/{}/{}",
+                            addr, database, physical_coll, key
+                        );
 
-                        let res = client.get(&url)
+                        let res = client
+                            .get(&url)
                             .header("X-Shard-Direct", "true")
                             .header("X-Cluster-Secret", &secret)
                             .timeout(std::time::Duration::from_secs(5))
@@ -2542,10 +2973,17 @@ impl ShardCoordinator {
 
                         match res {
                             Ok(r) if r.status().is_success() => {
-                                return r.json().await.map_err(|e| crate::error::DbError::InternalError(format!("Invalid response: {}", e)));
+                                return r.json().await.map_err(|e| {
+                                    crate::error::DbError::InternalError(format!(
+                                        "Invalid response: {}",
+                                        e
+                                    ))
+                                });
                             }
                             Ok(r) if r.status() == reqwest::StatusCode::NOT_FOUND => {
-                                return Err(crate::error::DbError::DocumentNotFound(key.to_string()));
+                                return Err(crate::error::DbError::DocumentNotFound(
+                                    key.to_string(),
+                                ));
                             }
                             _ => {
                                 tracing::debug!("Failed to get from {}, trying next node", node_id);
@@ -2556,7 +2994,9 @@ impl ShardCoordinator {
                 }
             }
 
-            Err(crate::error::DbError::InternalError("All nodes failed for shard read".to_string()))
+            Err(crate::error::DbError::InternalError(
+                "All nodes failed for shard read".to_string(),
+            ))
         }
     }
 
@@ -2564,15 +3004,16 @@ impl ShardCoordinator {
     pub fn get_replicas(&self, key: &str, config: &CollectionShardConfig) -> Vec<String> {
         use crate::sharding::router::ShardRouter;
         let _shard_id = ShardRouter::route(key, config.num_shards);
-        if let Some(_table) = self.get_shard_table("", "") { // Context missing db/coll - this API is flawed
-             // Try to look up assignment from cached tables?
-             // But we don't know db/coll here.
-             // Logic needs db/coll.
-             vec![]
+        if let Some(_table) = self.get_shard_table("", "") {
+            // Context missing db/coll - this API is flawed
+            // Try to look up assignment from cached tables?
+            // But we don't know db/coll here.
+            // Logic needs db/coll.
+            vec![]
         } else {
             // Fallback: calculate theoretical replicas
             // This method is used by `handlers.rs` to decorate response.
-             vec![] // Stub for now
+            vec![] // Stub for now
         }
     }
 
@@ -2590,24 +3031,30 @@ impl ShardCoordinator {
         let shard_key_value = if config.shard_key == "_key" {
             key.to_string()
         } else {
-             // For update, we might not have the full doc content to extract shard key?
-             // If shard key is immutable, we can assume it matches current doc?
-             // But we don't have current doc.
-             // If shard key is NOT _key, update(key) is ambiguous if we don't know shard key.
-             // Assume _key for now.
-             key.to_string()
+            // For update, we might not have the full doc content to extract shard key?
+            // If shard key is immutable, we can assume it matches current doc?
+            // But we don't have current doc.
+            // If shard key is NOT _key, update(key) is ambiguous if we don't know shard key.
+            // Assume _key for now.
+            key.to_string()
         };
 
         let shard_id = ShardRouter::route(&shard_key_value, config.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
         let primary_node = &assignment.primary_node;
 
-        let local_id = if let Some(mgr) = &self.cluster_manager { mgr.local_node_id() } else { "local".to_string() };
+        let local_id = if let Some(mgr) = &self.cluster_manager {
+            mgr.local_node_id()
+        } else {
+            "local".to_string()
+        };
 
         if primary_node == &local_id || primary_node == "local" {
             let db = self.storage.get_database(database)?;
@@ -2618,50 +3065,67 @@ impl ShardCoordinator {
             // `collection.update` does merge.
             coll.update(key, document.clone())?;
 
-             if let Some(ref log) = self.replication_log {
-                  let entry = LogEntry {
-                      sequence: 0,
-                      node_id: "".to_string(),
-                      database: database.to_string(),
-                      collection: physical_coll.clone(),
-                      operation: Operation::Update,
-                      key: key.to_string(),
-                      data: serde_json::to_vec(&document).ok(),
-                      timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                      origin_sequence: None,
-                  };
-                  let _ = log.append(entry);
-             }
+            if let Some(ref log) = self.replication_log {
+                let entry = LogEntry {
+                    sequence: 0,
+                    node_id: "".to_string(),
+                    database: database.to_string(),
+                    collection: physical_coll.clone(),
+                    operation: Operation::Update,
+                    key: key.to_string(),
+                    data: serde_json::to_vec(&document).ok(),
+                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                    origin_sequence: None,
+                };
+                let _ = log.append(entry);
+            }
 
             Ok(document)
         } else {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                     let client = reqwest::Client::new();
-                     let url = format!("http://{}/_api/database/{}/document/{}/{}", addr, database, physical_coll, key);
-                     let secret = self.cluster_secret();
+                    let client = reqwest::Client::new();
+                    let url = format!(
+                        "http://{}/_api/database/{}/document/{}/{}",
+                        addr, database, physical_coll, key
+                    );
+                    let secret = self.cluster_secret();
 
-                     let res = client.put(&url)
+                    let res = client
+                        .put(&url)
                         .header("X-Shard-Direct", "true")
                         .header("X-Cluster-Secret", secret)
                         .json(&document)
                         .send()
                         .await
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Forwarding update failed: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Forwarding update failed: {}",
+                                e
+                            ))
+                        })?;
 
-                     if res.status().is_success() {
-                         let val: serde_json::Value = res.json().await
-                            .map_err(|e| crate::error::DbError::InternalError(format!("Invalid response: {}", e)))?;
-                         Ok(val)
-                     } else {
-                         Err(crate::error::DbError::InternalError(format!("Remote update failed: {}", res.status())))
-                     }
+                    if res.status().is_success() {
+                        let val: serde_json::Value = res.json().await.map_err(|e| {
+                            crate::error::DbError::InternalError(format!("Invalid response: {}", e))
+                        })?;
+                        Ok(val)
+                    } else {
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote update failed: {}",
+                            res.status()
+                        )))
+                    }
                 } else {
-                    Err(crate::error::DbError::InternalError("Primary node unknown".to_string()))
+                    Err(crate::error::DbError::InternalError(
+                        "Primary node unknown".to_string(),
+                    ))
                 }
             } else {
-                 Err(crate::error::DbError::InternalError("Cluster manager missing".to_string()))
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing".to_string(),
+                ))
             }
         }
     }
@@ -2679,60 +3143,82 @@ impl ShardCoordinator {
         let shard_id = ShardRouter::route(key, config.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
-        let assignment = table.assignments.get(&shard_id)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard assignment not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
         let primary_node = &assignment.primary_node;
 
-        let local_id = if let Some(mgr) = &self.cluster_manager { mgr.local_node_id() } else { "local".to_string() };
+        let local_id = if let Some(mgr) = &self.cluster_manager {
+            mgr.local_node_id()
+        } else {
+            "local".to_string()
+        };
 
         if primary_node == &local_id || primary_node == "local" {
             let db = self.storage.get_database(database)?;
             let coll = db.get_collection(&physical_coll)?;
             coll.delete(key)?;
 
-             if let Some(ref log) = self.replication_log {
-                  let entry = LogEntry {
-                      sequence: 0,
-                      node_id: "".to_string(),
-                      database: database.to_string(),
-                      collection: physical_coll.clone(),
-                      operation: Operation::Delete,
-                      key: key.to_string(),
-                      data: None,
-                      timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                      origin_sequence: None,
-                  };
-                  let _ = log.append(entry);
-             }
+            if let Some(ref log) = self.replication_log {
+                let entry = LogEntry {
+                    sequence: 0,
+                    node_id: "".to_string(),
+                    database: database.to_string(),
+                    collection: physical_coll.clone(),
+                    operation: Operation::Delete,
+                    key: key.to_string(),
+                    data: None,
+                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                    origin_sequence: None,
+                };
+                let _ = log.append(entry);
+            }
 
             Ok(())
         } else {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
-                 if let Some(addr) = mgr.get_node_api_address(primary_node) {
-                     let client = reqwest::Client::new();
-                     let url = format!("http://{}/_api/database/{}/document/{}/{}", addr, database, physical_coll, key);
-                     let secret = self.cluster_secret();
+                if let Some(addr) = mgr.get_node_api_address(primary_node) {
+                    let client = reqwest::Client::new();
+                    let url = format!(
+                        "http://{}/_api/database/{}/document/{}/{}",
+                        addr, database, physical_coll, key
+                    );
+                    let secret = self.cluster_secret();
 
-                     let res = client.delete(&url)
+                    let res = client
+                        .delete(&url)
                         .header("X-Shard-Direct", "true")
                         .header("X-Cluster-Secret", secret)
                         .send()
                         .await
-                        .map_err(|e| crate::error::DbError::InternalError(format!("Forwarding delete failed: {}", e)))?;
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Forwarding delete failed: {}",
+                                e
+                            ))
+                        })?;
 
-                     if res.status().is_success() {
-                         Ok(())
-                     } else {
-                         Err(crate::error::DbError::InternalError(format!("Remote delete failed: {}", res.status())))
-                     }
-                 } else {
-                     Err(crate::error::DbError::InternalError("Primary node unknown".to_string()))
-                 }
+                    if res.status().is_success() {
+                        Ok(())
+                    } else {
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote delete failed: {}",
+                            res.status()
+                        )))
+                    }
+                } else {
+                    Err(crate::error::DbError::InternalError(
+                        "Primary node unknown".to_string(),
+                    ))
+                }
             } else {
-                Err(crate::error::DbError::InternalError("Cluster manager missing".to_string()))
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing".to_string(),
+                ))
             }
         }
     }
@@ -2776,7 +3262,9 @@ impl ShardCoordinator {
                 if !orphaned_shards.is_empty() {
                     tracing::warn!(
                         "Node {} was primary for {} shards in {}, will reassign",
-                        node_addr, orphaned_shards.len(), key
+                        node_addr,
+                        orphaned_shards.len(),
+                        key
                     );
                 }
             }
@@ -2784,7 +3272,6 @@ impl ShardCoordinator {
 
         // Trigger rebalance to redistribute
         self.rebalance().await?;
-
 
         tracing::info!("Node {} removed successfully", node_addr);
         Ok(())
@@ -2804,21 +3291,18 @@ impl ShardCoordinator {
     }
 
     /// Create physical shards on all assigned nodes
-    pub async fn create_shards(
-        &self,
-        database: &str,
-        collection: &str,
-    ) -> Result<(), String> {
-        let table = self.get_shard_table(database, collection)
-             .ok_or_else(|| "Shard table not found".to_string())?;
-        
+    pub async fn create_shards(&self, database: &str, collection: &str) -> Result<(), String> {
+        let table = self
+            .get_shard_table(database, collection)
+            .ok_or_else(|| "Shard table not found".to_string())?;
+
         // Get collection type to propagate to shards
         let collection_type = if let Ok(db) = self.storage.get_database(database) {
-             if let Ok(coll) = db.get_collection(collection) {
-                 Some(coll.get_type().to_string())
-             } else {
-                 None
-             }
+            if let Ok(coll) = db.get_collection(collection) {
+                Some(coll.get_type().to_string())
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -2830,108 +3314,142 @@ impl ShardCoordinator {
         let mut created_shards = std::collections::HashSet::new();
 
         for (shard_id, assignment) in &table.assignments {
-             let phys_name = format!("{}_s{}", collection, shard_id);
+            let phys_name = format!("{}_s{}", collection, shard_id);
 
-             // Check if we already processed this shard (unlikely given loop, but safety first)
-             if created_shards.contains(&phys_name) {
-                 continue;
-             }
-             created_shards.insert(phys_name.clone());
+            // Check if we already processed this shard (unlikely given loop, but safety first)
+            if created_shards.contains(&phys_name) {
+                continue;
+            }
+            created_shards.insert(phys_name.clone());
 
-             let is_local = if let Some(mgr) = &self.cluster_manager {
-                 assignment.primary_node == mgr.local_node_id()
-             } else {
-                 true
-             };
+            let is_local = if let Some(mgr) = &self.cluster_manager {
+                assignment.primary_node == mgr.local_node_id()
+            } else {
+                true
+            };
 
-             // DEBUG LOGGING
-             tracing::info!("CREATE_SHARDS: Processing {} (is_local={}). Primary: {}", phys_name, is_local, assignment.primary_node);
+            // DEBUG LOGGING
+            tracing::info!(
+                "CREATE_SHARDS: Processing {} (is_local={}). Primary: {}",
+                phys_name,
+                is_local,
+                assignment.primary_node
+            );
 
-             // DEBUG LOGGING
-             tracing::info!("CREATE_SHARDS: Processing {} (is_local={}). Primary: {}", phys_name, is_local, assignment.primary_node);
+            // DEBUG LOGGING
+            tracing::info!(
+                "CREATE_SHARDS: Processing {} (is_local={}). Primary: {}",
+                phys_name,
+                is_local,
+                assignment.primary_node
+            );
 
-             // Unified loop for Primary AND Replicas
-             // We want to ensure the shard exists on ALL assigned nodes
-             let targets = std::iter::once(&assignment.primary_node).chain(assignment.replica_nodes.iter());
+            // Unified loop for Primary AND Replicas
+            // We want to ensure the shard exists on ALL assigned nodes
+            let targets =
+                std::iter::once(&assignment.primary_node).chain(assignment.replica_nodes.iter());
 
-             for target_node in targets {
-                 let is_target_local = if let Some(mgr) = &self.cluster_manager {
-                     target_node == &mgr.local_node_id()
-                 } else {
-                     true
-                 };
+            for target_node in targets {
+                let is_target_local = if let Some(mgr) = &self.cluster_manager {
+                    target_node == &mgr.local_node_id()
+                } else {
+                    true
+                };
 
-                 if is_target_local {
-                      // Create Local
-                      if let Ok(db) = self.storage.get_database(database) {
-                           if db.get_collection(&phys_name).is_err() {
-                               tracing::info!("CREATE_SHARDS: Creating local physical shard {} on {} type={:?}", phys_name, target_node, collection_type);
-                               if let Err(e) = db.create_collection(phys_name.clone(), collection_type.clone()) {
-                                   let msg = format!("Failed to create local shard {}: {}", phys_name, e);
-                                   tracing::error!("{}", msg);
-                                   // Continue to next target
-                               } else {
-                                   // Log it
-                                   if let Some(log) = &self.replication_log {
-                                        let entry = LogEntry {
-                                            sequence: 0,
-                                            node_id: "".to_string(),
-                                            database: database.to_string(),
-                                            collection: phys_name.clone(),
-                                            operation: Operation::CreateCollection,
-                                            key: "".to_string(),
-                                            data: None,
-                                            timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                                            origin_sequence: None,
-                                        };
-                                        let _ = log.append(entry);
-                                   }
-                               }
-                           }
-                      }
-                 } else {
-                      // Remote Create
-                      if let Some(mgr) = &self.cluster_manager {
-                           if let Some(addr) = mgr.get_node_api_address(target_node) {
-                                let url = format!("http://{}/_api/database/{}/collection", addr, database);
-                               tracing::info!("CREATE_SHARDS: Remote creating {} at {} (url={}) type={:?}", phys_name, addr, url, collection_type);
-                                let body = serde_json::json!({ 
-                                    "name": phys_name,
-                                    "type": collection_type
-                                });
+                if is_target_local {
+                    // Create Local
+                    if let Ok(db) = self.storage.get_database(database) {
+                        if db.get_collection(&phys_name).is_err() {
+                            tracing::info!(
+                                "CREATE_SHARDS: Creating local physical shard {} on {} type={:?}",
+                                phys_name,
+                                target_node,
+                                collection_type
+                            );
+                            if let Err(e) =
+                                db.create_collection(phys_name.clone(), collection_type.clone())
+                            {
+                                let msg =
+                                    format!("Failed to create local shard {}: {}", phys_name, e);
+                                tracing::error!("{}", msg);
+                                // Continue to next target
+                            } else {
+                                // Log it
+                                if let Some(log) = &self.replication_log {
+                                    let entry = LogEntry {
+                                        sequence: 0,
+                                        node_id: "".to_string(),
+                                        database: database.to_string(),
+                                        collection: phys_name.clone(),
+                                        operation: Operation::CreateCollection,
+                                        key: "".to_string(),
+                                        data: None,
+                                        timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                                        origin_sequence: None,
+                                    };
+                                    let _ = log.append(entry);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Remote Create
+                    if let Some(mgr) = &self.cluster_manager {
+                        if let Some(addr) = mgr.get_node_api_address(target_node) {
+                            let url =
+                                format!("http://{}/_api/database/{}/collection", addr, database);
+                            tracing::info!(
+                                "CREATE_SHARDS: Remote creating {} at {} (url={}) type={:?}",
+                                phys_name,
+                                addr,
+                                url,
+                                collection_type
+                            );
+                            let body = serde_json::json!({
+                                "name": phys_name,
+                                "type": collection_type
+                            });
 
-                                match client.post(&url)
-                                    .header("X-Shard-Direct", "true")
-                                    .header("X-Cluster-Secret", &secret)
-                                    .json(&body)
-                                    .send().await
-                                {
-                                    Ok(res) => {
-                                        if !res.status().is_success() {
-                                             let status = res.status();
-                                             if status.as_u16() == 409 {
-                                                 tracing::debug!("CREATE_SHARDS: Remote shard {} already exists (409)", phys_name);
-                                             } else {
-                                                 let err_text = res.text().await.unwrap_or_default();
-                                                 tracing::error!("CREATE_SHARDS: Remote creation of {} failed: {} - {}", phys_name, status, err_text);
-                                             }
+                            match client
+                                .post(&url)
+                                .header("X-Shard-Direct", "true")
+                                .header("X-Cluster-Secret", &secret)
+                                .json(&body)
+                                .send()
+                                .await
+                            {
+                                Ok(res) => {
+                                    if !res.status().is_success() {
+                                        let status = res.status();
+                                        if status.as_u16() == 409 {
+                                            tracing::debug!("CREATE_SHARDS: Remote shard {} already exists (409)", phys_name);
+                                        } else {
+                                            let err_text = res.text().await.unwrap_or_default();
+                                            tracing::error!("CREATE_SHARDS: Remote creation of {} failed: {} - {}", phys_name, status, err_text);
                                         }
-                                    },
-                                    Err(e) => {
-                                        tracing::error!("Request failed to {}: {}", addr, e);
                                     }
                                 }
-                           }
-                      }
-                 }
-             }
-         }
-         Ok(())
+                                Err(e) => {
+                                    tracing::error!("Request failed to {}: {}", addr, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Get aggregated document count for a sharded collection
-    pub async fn get_total_count(&self, database: &str, collection: &str, auth_header: Option<String>) -> Result<usize, crate::error::DbError> {
-        let config = self.get_shard_config(database, collection)
+    pub async fn get_total_count(
+        &self,
+        database: &str,
+        collection: &str,
+        auth_header: Option<String>,
+    ) -> Result<usize, crate::error::DbError> {
+        let config = self
+            .get_shard_config(database, collection)
             .ok_or_else(|| crate::error::DbError::CollectionNotFound(collection.to_string()))?;
 
         if config.num_shards == 0 {
@@ -2941,8 +3459,9 @@ impl ShardCoordinator {
             return Ok(coll.count());
         }
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
         let my_id = self.my_node_id();
         let client = reqwest::Client::new();
@@ -2951,22 +3470,28 @@ impl ShardCoordinator {
         let mut total_count = 0usize;
 
         for shard_id in 0..config.num_shards {
-            let assignment = table.assignments.get(&shard_id)
-                .ok_or_else(|| crate::error::DbError::InternalError(format!("No assignment for shard {}", shard_id)))?;
+            let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+                crate::error::DbError::InternalError(format!(
+                    "No assignment for shard {}",
+                    shard_id
+                ))
+            })?;
 
             let physical_name = format!("{}_s{}", collection, shard_id);
             let mut shard_count = 0usize;
             let mut found = false;
 
             // Try local primary/replica first
-            let has_local = assignment.primary_node == my_id || assignment.replica_nodes.contains(&my_id) || assignment.primary_node == "local";
+            let has_local = assignment.primary_node == my_id
+                || assignment.replica_nodes.contains(&my_id)
+                || assignment.primary_node == "local";
             if has_local {
-                 if let Ok(db) = self.storage.get_database(database) {
-                     if let Ok(coll) = db.get_collection(&physical_name) {
-                         shard_count = coll.count();
-                         found = true;
-                     }
-                 }
+                if let Ok(db) = self.storage.get_database(database) {
+                    if let Ok(coll) = db.get_collection(&physical_name) {
+                        shard_count = coll.count();
+                        found = true;
+                    }
+                }
             }
 
             // If not found locally, try primary node then replicas
@@ -2974,17 +3499,20 @@ impl ShardCoordinator {
                 if let Some(mgr) = &self.cluster_manager {
                     // Try primary node
                     if let Some(addr) = mgr.get_node_api_address(&assignment.primary_node) {
-                        let url = format!("http://{}/_api/database/{}/collection/{}/count", addr, database, physical_name);
-                        let mut req = client.get(&url)
-                             .header("X-Cluster-Secret", &secret)
-                             .timeout(std::time::Duration::from_secs(2));
-                        
+                        let url = format!(
+                            "http://{}/_api/database/{}/collection/{}/count",
+                            addr, database, physical_name
+                        );
+                        let mut req = client
+                            .get(&url)
+                            .header("X-Cluster-Secret", &secret)
+                            .timeout(std::time::Duration::from_secs(2));
+
                         if let Some(ref auth) = auth_header {
                             req = req.header("Authorization", auth);
                         }
 
-                        match req.send().await
-                        {
+                        match req.send().await {
                             Ok(res) if res.status().is_success() => {
                                 if let Ok(json) = res.json::<serde_json::Value>().await {
                                     if let Some(c) = json.get("count").and_then(|v| v.as_u64()) {
@@ -3001,20 +3529,25 @@ impl ShardCoordinator {
                     if !found {
                         for replica_node in &assignment.replica_nodes {
                             if let Some(addr) = mgr.get_node_api_address(replica_node) {
-                                let url = format!("http://{}/_api/database/{}/collection/{}/count", addr, database, physical_name);
-                                let mut req = client.get(&url)
-                                     .header("X-Cluster-Secret", &secret)
-                                     .timeout(std::time::Duration::from_secs(2));
-                                
+                                let url = format!(
+                                    "http://{}/_api/database/{}/collection/{}/count",
+                                    addr, database, physical_name
+                                );
+                                let mut req = client
+                                    .get(&url)
+                                    .header("X-Cluster-Secret", &secret)
+                                    .timeout(std::time::Duration::from_secs(2));
+
                                 if let Some(ref auth) = auth_header {
                                     req = req.header("Authorization", auth);
                                 }
 
-                                match req.send().await
-                                {
+                                match req.send().await {
                                     Ok(res) if res.status().is_success() => {
                                         if let Ok(json) = res.json::<serde_json::Value>().await {
-                                            if let Some(c) = json.get("count").and_then(|v| v.as_u64()) {
+                                            if let Some(c) =
+                                                json.get("count").and_then(|v| v.as_u64())
+                                            {
                                                 shard_count = c as usize;
                                                 found = true;
                                                 break;
@@ -3032,7 +3565,11 @@ impl ShardCoordinator {
             if found {
                 total_count += shard_count;
             } else {
-                tracing::warn!("Could not get count for shard {} of {} from any node", shard_id, collection);
+                tracing::warn!(
+                    "Could not get count for shard {} of {} from any node",
+                    shard_id,
+                    collection
+                );
             }
         }
 
@@ -3040,8 +3577,14 @@ impl ShardCoordinator {
     }
 
     /// Get aggregated stats (docs, chunks, size) for a sharded collection
-    pub async fn get_total_stats(&self, database: &str, collection: &str, auth_header: Option<String>) -> Result<(u64, u64, u64), crate::error::DbError> {
-        let config = self.get_shard_config(database, collection)
+    pub async fn get_total_stats(
+        &self,
+        database: &str,
+        collection: &str,
+        auth_header: Option<String>,
+    ) -> Result<(u64, u64, u64), crate::error::DbError> {
+        let config = self
+            .get_shard_config(database, collection)
             .ok_or_else(|| crate::error::DbError::CollectionNotFound(collection.to_string()))?;
 
         if config.num_shards == 0 {
@@ -3049,11 +3592,16 @@ impl ShardCoordinator {
             let db = self.storage.get_database(database)?;
             let coll = db.get_collection(collection)?;
             let stats = coll.stats();
-            return Ok((stats.document_count as u64, stats.chunk_count as u64, stats.disk_usage.sst_files_size + stats.disk_usage.memtable_size));
+            return Ok((
+                stats.document_count as u64,
+                stats.chunk_count as u64,
+                stats.disk_usage.sst_files_size + stats.disk_usage.memtable_size,
+            ));
         }
 
-        let table = self.get_shard_table(database, collection)
-            .ok_or_else(|| crate::error::DbError::InternalError("Shard table not found".to_string()))?;
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
 
         let my_id = self.my_node_id();
         let client = reqwest::Client::new();
@@ -3064,21 +3612,31 @@ impl ShardCoordinator {
         let mut total_size = 0u64;
 
         for shard_id in 0..config.num_shards {
-            let assignment = table.assignments.get(&shard_id)
-                .ok_or_else(|| crate::error::DbError::InternalError(format!("No assignment for shard {}", shard_id)))?;
+            let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+                crate::error::DbError::InternalError(format!(
+                    "No assignment for shard {}",
+                    shard_id
+                ))
+            })?;
 
             let physical_name = format!("{}_s{}", collection, shard_id);
             let mut shard_stats: Option<(u64, u64, u64)> = None;
 
             // 1. Try local primary/replica first
-            let has_local = assignment.primary_node == my_id || assignment.replica_nodes.contains(&my_id) || assignment.primary_node == "local";
+            let has_local = assignment.primary_node == my_id
+                || assignment.replica_nodes.contains(&my_id)
+                || assignment.primary_node == "local";
             if has_local {
-                 if let Ok(db) = self.storage.get_database(database) {
-                     if let Ok(coll) = db.get_collection(&physical_name) {
-                         let s = coll.stats();
-                         shard_stats = Some((s.document_count as u64, s.chunk_count as u64, s.disk_usage.sst_files_size + s.disk_usage.memtable_size));
-                     }
-                 }
+                if let Ok(db) = self.storage.get_database(database) {
+                    if let Ok(coll) = db.get_collection(&physical_name) {
+                        let s = coll.stats();
+                        shard_stats = Some((
+                            s.document_count as u64,
+                            s.chunk_count as u64,
+                            s.disk_usage.sst_files_size + s.disk_usage.memtable_size,
+                        ));
+                    }
+                }
             }
 
             // 2. If not found locally, try primary node then replicas
@@ -3090,11 +3648,15 @@ impl ShardCoordinator {
 
                     for node_id in nodes_to_try {
                         if let Some(addr) = mgr.get_node_api_address(&node_id) {
-                            let url = format!("http://{}/_api/database/{}/collection/{}/stats", addr, database, physical_name);
-                            let mut req = client.get(&url)
-                                 .header("X-Cluster-Secret", &secret)
-                                 .timeout(std::time::Duration::from_secs(2));
-                            
+                            let url = format!(
+                                "http://{}/_api/database/{}/collection/{}/stats",
+                                addr, database, physical_name
+                            );
+                            let mut req = client
+                                .get(&url)
+                                .header("X-Cluster-Secret", &secret)
+                                .timeout(std::time::Duration::from_secs(2));
+
                             if let Some(ref auth) = auth_header {
                                 req = req.header("Authorization", auth);
                             }
@@ -3102,11 +3664,26 @@ impl ShardCoordinator {
                             if let Ok(res) = req.send().await {
                                 if res.status().is_success() {
                                     if let Ok(json) = res.json::<serde_json::Value>().await {
-                                        let doc_count = json.get("document_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                                        let chunk_count = json.get("chunk_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                                        let disk_usage = json.get("disk_usage").and_then(|v| v.get("sst_files_size")).and_then(|v| v.as_u64()).unwrap_or(0);
-                                        let mem_usage = json.get("disk_usage").and_then(|v| v.get("memtable_size")).and_then(|v| v.as_u64()).unwrap_or(0);
-                                        shard_stats = Some((doc_count, chunk_count, disk_usage + mem_usage));
+                                        let doc_count = json
+                                            .get("document_count")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let chunk_count = json
+                                            .get("chunk_count")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let disk_usage = json
+                                            .get("disk_usage")
+                                            .and_then(|v| v.get("sst_files_size"))
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let mem_usage = json
+                                            .get("disk_usage")
+                                            .and_then(|v| v.get("memtable_size"))
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        shard_stats =
+                                            Some((doc_count, chunk_count, disk_usage + mem_usage));
                                         break;
                                     }
                                 }
@@ -3121,7 +3698,11 @@ impl ShardCoordinator {
                 total_chunks += c;
                 total_size += s;
             } else {
-                tracing::warn!("Could not get stats for shard {} of {} from any node", shard_id, collection);
+                tracing::warn!(
+                    "Could not get stats for shard {} of {} from any node",
+                    shard_id,
+                    collection
+                );
             }
         }
 
@@ -3138,23 +3719,23 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Failed to create temp dir");
         let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
             .expect("Failed to create storage engine");
-        
+
         let coordinator = ShardCoordinator::new(
             Arc::new(engine),
             None, // No cluster manager for unit tests
             None, // No replication log
         );
-        
+
         (coordinator, tmp_dir)
     }
 
     #[test]
     fn test_new_coordinator() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Should not be rebalancing initially
         assert!(!coordinator.is_rebalancing());
-        
+
         // Without cluster manager, should return "local"
         assert_eq!(coordinator.my_node_id(), "local");
         assert_eq!(coordinator.my_address(), "local");
@@ -3163,12 +3744,12 @@ mod tests {
     #[test]
     fn test_route_delegates_to_router() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Verify routing is consistent
         let shard1 = coordinator.route("test_key", 10);
         let shard2 = coordinator.route("test_key", 10);
         assert_eq!(shard1, shard2);
-        
+
         // Different keys should potentially route to different shards
         let shard_a = coordinator.route("key_a", 100);
         let shard_b = coordinator.route("key_b", 100);
@@ -3184,12 +3765,12 @@ mod tests {
         assert!(ShardCoordinator::is_shard_replica(0, 0, 2, 3));
         assert!(ShardCoordinator::is_shard_replica(0, 1, 2, 3));
         assert!(!ShardCoordinator::is_shard_replica(0, 2, 2, 3));
-        
+
         // Shard 1, RF=2, 3 nodes: nodes 1 and 2 should have it
         assert!(!ShardCoordinator::is_shard_replica(1, 0, 2, 3));
         assert!(ShardCoordinator::is_shard_replica(1, 1, 2, 3));
         assert!(ShardCoordinator::is_shard_replica(1, 2, 2, 3));
-        
+
         // Edge cases
         assert!(!ShardCoordinator::is_shard_replica(0, 0, 0, 3)); // RF=0
         assert!(!ShardCoordinator::is_shard_replica(0, 0, 2, 0)); // num_nodes=0
@@ -3198,18 +3779,18 @@ mod tests {
     #[test]
     fn test_record_and_clear_node_failure() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Record failure
         coordinator.record_node_failure("node1");
-        
+
         // Check it was recorded
         let failures = coordinator.recently_failed_nodes.read().unwrap();
         assert!(failures.contains_key("node1"));
         drop(failures);
-        
+
         // Clear failure
         coordinator.clear_node_failure("node1");
-        
+
         // Check it was cleared
         let failures = coordinator.recently_failed_nodes.read().unwrap();
         assert!(!failures.contains_key("node1"));
@@ -3218,13 +3799,13 @@ mod tests {
     #[test]
     fn test_cleanup_old_failures() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Record a failure
         coordinator.record_node_failure("node1");
-        
+
         // Cleanup should keep recent failures
         coordinator.cleanup_old_failures();
-        
+
         let failures = coordinator.recently_failed_nodes.read().unwrap();
         assert!(failures.contains_key("node1")); // Should still be there (recent)
     }
@@ -3232,14 +3813,14 @@ mod tests {
     #[test]
     fn test_is_rebalancing_flag() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Initially false
         assert!(!coordinator.is_rebalancing());
-        
+
         // Set to true
         coordinator.is_rebalancing.store(true, Ordering::SeqCst);
         assert!(coordinator.is_rebalancing());
-        
+
         // Set back to false
         coordinator.is_rebalancing.store(false, Ordering::SeqCst);
         assert!(!coordinator.is_rebalancing());
@@ -3248,16 +3829,16 @@ mod tests {
     #[test]
     fn test_mark_reshard_completed() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Initially no reshard time
         {
             let last_time = coordinator.last_reshard_time.read().unwrap();
             assert!(last_time.is_none());
         }
-        
+
         // Mark as completed
         coordinator.mark_reshard_completed();
-        
+
         // Should now have a time
         {
             let last_time = coordinator.last_reshard_time.read().unwrap();
@@ -3268,16 +3849,16 @@ mod tests {
     #[test]
     fn test_check_recent_resharding() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // No recent resharding initially
         assert!(!coordinator.check_recent_resharding());
-        
+
         // Mark reshard completed
         coordinator.mark_reshard_completed();
-        
+
         // Should return true (within 10 second window)
         assert!(coordinator.check_recent_resharding());
-        
+
         // Also returns true if currently rebalancing
         coordinator.is_rebalancing.store(true, Ordering::SeqCst);
         assert!(coordinator.check_recent_resharding());
@@ -3286,7 +3867,7 @@ mod tests {
     #[test]
     fn test_calculate_blob_replication_factor_single_node() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, healthy_count = 1
         // Formula: min(max(2, 1/2), 10) = min(max(2, 0), 10) = min(2, 10) = 2
         let rf = coordinator.calculate_blob_replication_factor();
@@ -3296,7 +3877,7 @@ mod tests {
     #[test]
     fn test_get_node_addresses_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, should return ["local"]
         let addresses = coordinator.get_node_addresses();
         assert_eq!(addresses, vec!["local".to_string()]);
@@ -3305,7 +3886,7 @@ mod tests {
     #[test]
     fn test_get_node_ids_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, should return ["local"]
         let ids = coordinator.get_node_ids();
         assert_eq!(ids, vec!["local".to_string()]);
@@ -3314,7 +3895,7 @@ mod tests {
     #[test]
     fn test_get_healthy_node_count_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, should return 1
         assert_eq!(coordinator.get_healthy_node_count(), 1);
     }
@@ -3322,7 +3903,7 @@ mod tests {
     #[test]
     fn test_get_node_api_address_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, should return None
         assert!(coordinator.get_node_api_address("any_node").is_none());
     }
@@ -3330,23 +3911,27 @@ mod tests {
     #[test]
     fn test_get_shard_config_nonexistent() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Non-existent database/collection should return None
-        assert!(coordinator.get_shard_config("nonexistent_db", "nonexistent_coll").is_none());
+        assert!(coordinator
+            .get_shard_config("nonexistent_db", "nonexistent_coll")
+            .is_none());
     }
 
     #[test]
     fn test_get_shard_table_nonexistent() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Non-existent database/collection should return None
-        assert!(coordinator.get_shard_table("nonexistent_db", "nonexistent_coll").is_none());
+        assert!(coordinator
+            .get_shard_table("nonexistent_db", "nonexistent_coll")
+            .is_none());
     }
 
     #[test]
     fn test_should_pause_resharding_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, should return false
         assert!(!coordinator.should_pause_resharding());
     }
@@ -3354,7 +3939,7 @@ mod tests {
     #[test]
     fn test_collection_shard_config_default() {
         let config = CollectionShardConfig::default();
-        
+
         assert_eq!(config.num_shards, 0);
         assert_eq!(config.shard_key, "");
         assert_eq!(config.replication_factor, 0);
@@ -3363,12 +3948,15 @@ mod tests {
     #[test]
     fn test_shard_table_creation() {
         let mut assignments = HashMap::new();
-        assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "node1".to_string(),
-            replica_nodes: vec!["node2".to_string()],
-        });
-        
+        assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "node1".to_string(),
+                replica_nodes: vec!["node2".to_string()],
+            },
+        );
+
         let table = ShardTable {
             database: "test_db".to_string(),
             collection: "test_coll".to_string(),
@@ -3377,7 +3965,7 @@ mod tests {
             shard_key: "_key".to_string(),
             assignments,
         };
-        
+
         assert_eq!(table.database, "test_db");
         assert_eq!(table.collection, "test_coll");
         assert_eq!(table.num_shards, 4);
@@ -3392,7 +3980,7 @@ mod tests {
             primary_node: "primary".to_string(),
             replica_nodes: vec!["replica1".to_string(), "replica2".to_string()],
         };
-        
+
         assert_eq!(assignment.shard_id, 5);
         assert_eq!(assignment.primary_node, "primary");
         assert_eq!(assignment.replica_nodes.len(), 2);
@@ -3407,7 +3995,7 @@ mod tests {
     #[test]
     fn test_update_shard_table_cache() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         let table = ShardTable {
             database: "db1".to_string(),
             collection: "coll1".to_string(),
@@ -3416,9 +4004,9 @@ mod tests {
             shard_key: "_key".to_string(),
             assignments: HashMap::new(),
         };
-        
+
         coordinator.update_shard_table_cache(table.clone());
-        
+
         // Check it was cached
         let tables = coordinator.shard_tables.read().unwrap();
         assert!(tables.contains_key("db1.coll1"));
@@ -3427,7 +4015,7 @@ mod tests {
     #[test]
     fn test_get_node_index_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Without cluster manager, returns None since we can't compute index
         // Actually the implementation might differ - let's check
         let index = coordinator.get_node_index();
@@ -3438,18 +4026,17 @@ mod tests {
     #[test]
     fn test_clear_failures_for_healthy_nodes_without_cluster() {
         let (coordinator, _tmp) = create_test_coordinator();
-        
+
         // Record some failures
         coordinator.record_node_failure("node1");
         coordinator.record_node_failure("node2");
-        
+
         // Without cluster manager, this should be a no-op
         coordinator.clear_failures_for_healthy_nodes();
-        
+
         // Failures should still be there (no cluster manager to determine health)
         let failures = coordinator.recently_failed_nodes.read().unwrap();
         assert!(failures.contains_key("node1"));
         assert!(failures.contains_key("node2"));
     }
 }
-

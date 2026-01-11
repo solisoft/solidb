@@ -3,15 +3,15 @@
 //! This module provides file upload, metadata, and image processing
 //! functions for Lua scripts in SoliDB using the blob storage system.
 
-use mlua::{Lua, Result as LuaResult, Function, Table, Value as LuaValue};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use image::{DynamicImage, GenericImageView, ImageFormat};
+use mlua::{Function, Lua, Result as LuaResult, Table, Value as LuaValue};
+use serde_json::Value as JsonValue;
 use std::io::Cursor;
 use std::sync::Arc;
-use image::{ImageFormat, DynamicImage, GenericImageView};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde_json::Value as JsonValue;
 
-use crate::storage::StorageEngine;
 use crate::error::DbError;
+use crate::storage::StorageEngine;
 
 /// Default chunk size for blob storage (1MB)
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -52,7 +52,9 @@ fn mime_from_magic(data: &[u8]) -> Option<&'static str> {
         [0xFF, 0xD8, 0xFF, _] => Some("image/jpeg"),
         [0x89, 0x50, 0x4E, 0x47] => Some("image/png"),
         [0x47, 0x49, 0x46, 0x38] => Some("image/gif"),
-        [0x52, 0x49, 0x46, 0x46] if data.len() >= 12 && &data[8..12] == b"WEBP" => Some("image/webp"),
+        [0x52, 0x49, 0x46, 0x46] if data.len() >= 12 && &data[8..12] == b"WEBP" => {
+            Some("image/webp")
+        }
         [0x25, 0x50, 0x44, 0x46] => Some("application/pdf"),
         [0x50, 0x4B, 0x03, 0x04] => Some("application/zip"),
         _ => None,
@@ -74,7 +76,8 @@ fn extension_from_mime(mime: &str) -> &'static str {
 
 /// Ensure the _files collection exists as a blob collection
 fn ensure_files_collection(storage: &StorageEngine, db_name: &str) -> Result<(), mlua::Error> {
-    let database = storage.get_database(db_name)
+    let database = storage
+        .get_database(db_name)
         .map_err(|e| mlua::Error::RuntimeError(format!("Failed to access database: {}", e)))?;
 
     // Check if _files collection exists
@@ -82,18 +85,25 @@ fn ensure_files_collection(storage: &StorageEngine, db_name: &str) -> Result<(),
         Ok(coll) => {
             // Verify it's a blob collection
             if coll.get_type() != "blob" {
-                return Err(mlua::Error::RuntimeError(
-                    format!("Collection '{}' exists but is not a blob collection", FILES_COLLECTION)
-                ));
+                return Err(mlua::Error::RuntimeError(format!(
+                    "Collection '{}' exists but is not a blob collection",
+                    FILES_COLLECTION
+                )));
             }
         }
         Err(DbError::CollectionNotFound(_)) => {
             // Create as blob collection
-            database.create_collection(FILES_COLLECTION.to_string(), Some("blob".to_string()))
-                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to create _files collection: {}", e)))?;
+            database
+                .create_collection(FILES_COLLECTION.to_string(), Some("blob".to_string()))
+                .map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Failed to create _files collection: {}", e))
+                })?;
         }
         Err(e) => {
-            return Err(mlua::Error::RuntimeError(format!("Failed to check _files collection: {}", e)));
+            return Err(mlua::Error::RuntimeError(format!(
+                "Failed to check _files collection: {}",
+                e
+            )));
         }
     }
 
@@ -103,7 +113,11 @@ fn ensure_files_collection(storage: &StorageEngine, db_name: &str) -> Result<(),
 /// Create solidb.upload(data, options) -> file info function
 /// Options: { filename, directory, overwrite }
 /// Stores files in the _files blob collection
-pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_upload_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |lua, (data, options): (LuaValue, Option<Table>)| {
         // Extract binary data (base64 string or raw bytes)
         let bytes: Vec<u8> = match data {
@@ -122,9 +136,11 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
                 }
                 bytes
             }
-            _ => return Err(mlua::Error::RuntimeError(
-                "upload: data must be a base64 string or byte array".to_string()
-            )),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "upload: data must be a base64 string or byte array".to_string(),
+                ))
+            }
         };
 
         if bytes.is_empty() {
@@ -132,10 +148,12 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
         }
 
         // Parse options
-        let filename = options.as_ref()
+        let filename = options
+            .as_ref()
             .and_then(|o| o.get::<String>("filename").ok());
 
-        let directory = options.as_ref()
+        let directory = options
+            .as_ref()
             .and_then(|o| o.get::<String>("directory").ok());
 
         // Generate file key (UUID v7 for time-ordering)
@@ -157,28 +175,34 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
         };
 
         if safe_filename.is_empty() {
-            return Err(mlua::Error::RuntimeError("upload: invalid filename".to_string()));
+            return Err(mlua::Error::RuntimeError(
+                "upload: invalid filename".to_string(),
+            ));
         }
 
         // Detect MIME type
-        let mime_type = mime_from_magic(&bytes)
-            .unwrap_or_else(|| mime_from_extension(&ext));
+        let mime_type = mime_from_magic(&bytes).unwrap_or_else(|| mime_from_extension(&ext));
 
         // Ensure _files collection exists
         ensure_files_collection(&storage, &db_name)?;
 
         // Get collection
-        let database = storage.get_database(&db_name)
+        let database = storage
+            .get_database(&db_name)
             .map_err(|e| mlua::Error::RuntimeError(format!("upload: {}", e)))?;
-        let collection = database.get_collection(FILES_COLLECTION)
+        let collection = database
+            .get_collection(FILES_COLLECTION)
             .map_err(|e| mlua::Error::RuntimeError(format!("upload: {}", e)))?;
 
         // Store blob chunks
         let total_size = bytes.len();
         let mut chunk_index = 0u32;
         for chunk in bytes.chunks(CHUNK_SIZE) {
-            collection.put_blob_chunk(&file_key, chunk_index, chunk)
-                .map_err(|e| mlua::Error::RuntimeError(format!("upload: failed to store chunk: {}", e)))?;
+            collection
+                .put_blob_chunk(&file_key, chunk_index, chunk)
+                .map_err(|e| {
+                    mlua::Error::RuntimeError(format!("upload: failed to store chunk: {}", e))
+                })?;
             chunk_index += 1;
         }
 
@@ -194,11 +218,20 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
         let mut metadata = serde_json::Map::new();
         metadata.insert("_key".to_string(), JsonValue::String(file_key.clone()));
         metadata.insert("path".to_string(), JsonValue::String(path.clone()));
-        metadata.insert("filename".to_string(), JsonValue::String(safe_filename.clone()));
+        metadata.insert(
+            "filename".to_string(),
+            JsonValue::String(safe_filename.clone()),
+        );
         metadata.insert("size".to_string(), JsonValue::Number(total_size.into()));
-        metadata.insert("mime_type".to_string(), JsonValue::String(mime_type.to_string()));
+        metadata.insert(
+            "mime_type".to_string(),
+            JsonValue::String(mime_type.to_string()),
+        );
         metadata.insert("chunks".to_string(), JsonValue::Number(chunk_index.into()));
-        metadata.insert("created_at".to_string(), JsonValue::String(chrono::Utc::now().to_rfc3339()));
+        metadata.insert(
+            "created_at".to_string(),
+            JsonValue::String(chrono::Utc::now().to_rfc3339()),
+        );
 
         if let Some(ref dir) = directory {
             metadata.insert("directory".to_string(), JsonValue::String(dir.clone()));
@@ -214,8 +247,11 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
         }
 
         // Store metadata document
-        collection.insert(JsonValue::Object(metadata))
-            .map_err(|e| mlua::Error::RuntimeError(format!("upload: failed to store metadata: {}", e)))?;
+        collection
+            .insert(JsonValue::Object(metadata))
+            .map_err(|e| {
+                mlua::Error::RuntimeError(format!("upload: failed to store metadata: {}", e))
+            })?;
 
         // Return file info
         let result = lua.create_table()?;
@@ -231,22 +267,31 @@ pub fn create_upload_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: S
 }
 
 /// Create solidb.file_info(key) -> file metadata function
-pub fn create_file_info_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_file_info_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |lua, key: String| {
         // Get collection
-        let database = storage.get_database(&db_name)
+        let database = storage
+            .get_database(&db_name)
             .map_err(|e| mlua::Error::RuntimeError(format!("file_info: {}", e)))?;
 
         let collection = match database.get_collection(FILES_COLLECTION) {
             Ok(c) => c,
-            Err(_) => return Err(mlua::Error::RuntimeError(
-                format!("file_info: file not found: {}", key)
-            )),
+            Err(_) => {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "file_info: file not found: {}",
+                    key
+                )))
+            }
         };
 
         // Get metadata document
-        let doc = collection.get(&key)
-            .map_err(|_| mlua::Error::RuntimeError(format!("file_info: file not found: {}", key)))?;
+        let doc = collection.get(&key).map_err(|_| {
+            mlua::Error::RuntimeError(format!("file_info: file not found: {}", key))
+        })?;
 
         // Convert to Lua table
         let result = lua.create_table()?;
@@ -259,7 +304,9 @@ pub fn create_file_info_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
         if let JsonValue::Object(obj) = &doc.data {
             for (k, v) in obj {
                 match v {
-                    JsonValue::String(s) => { result.set(k.as_str(), s.as_str())?; }
+                    JsonValue::String(s) => {
+                        result.set(k.as_str(), s.as_str())?;
+                    }
                     JsonValue::Number(n) => {
                         if let Some(i) = n.as_u64() {
                             result.set(k.as_str(), i)?;
@@ -267,7 +314,9 @@ pub fn create_file_info_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
                             result.set(k.as_str(), f)?;
                         }
                     }
-                    JsonValue::Bool(b) => { result.set(k.as_str(), *b)?; }
+                    JsonValue::Bool(b) => {
+                        result.set(k.as_str(), *b)?;
+                    }
                     _ => {}
                 }
             }
@@ -278,26 +327,33 @@ pub fn create_file_info_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
 }
 
 /// Create solidb.file_read(key) -> base64 string function
-pub fn create_file_read_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_file_read_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |_lua, key: String| {
         // Get collection
-        let database = storage.get_database(&db_name)
+        let database = storage
+            .get_database(&db_name)
             .map_err(|e| mlua::Error::RuntimeError(format!("file_read: {}", e)))?;
 
         let collection = match database.get_collection(FILES_COLLECTION) {
             Ok(c) => c,
-            Err(_) => return Err(mlua::Error::RuntimeError(
-                format!("file_read: file not found: {}", key)
-            )),
+            Err(_) => {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "file_read: file not found: {}",
+                    key
+                )))
+            }
         };
 
         // Get metadata to know chunk count
-        let doc = collection.get(&key)
-            .map_err(|_| mlua::Error::RuntimeError(format!("file_read: file not found: {}", key)))?;
+        let doc = collection.get(&key).map_err(|_| {
+            mlua::Error::RuntimeError(format!("file_read: file not found: {}", key))
+        })?;
 
-        let chunk_count = doc.get("chunks")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
+        let chunk_count = doc.get("chunks").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
         // Read all chunks
         let mut data = Vec::new();
@@ -313,10 +369,15 @@ pub fn create_file_read_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
 }
 
 /// Create solidb.file_delete(key) -> boolean function
-pub fn create_file_delete_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_file_delete_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |_lua, key: String| {
         // Get collection
-        let database = storage.get_database(&db_name)
+        let database = storage
+            .get_database(&db_name)
             .map_err(|e| mlua::Error::RuntimeError(format!("file_delete: {}", e)))?;
 
         let collection = match database.get_collection(FILES_COLLECTION) {
@@ -328,11 +389,13 @@ pub fn create_file_delete_function(lua: &Lua, storage: Arc<StorageEngine>, db_na
         match collection.get(&key) {
             Ok(_) => {
                 // Delete blob chunks
-                collection.delete_blob_data(&key)
+                collection
+                    .delete_blob_data(&key)
                     .map_err(|e| mlua::Error::RuntimeError(format!("file_delete: {}", e)))?;
 
                 // Delete metadata document
-                collection.delete(&key)
+                collection
+                    .delete(&key)
                     .map_err(|e| mlua::Error::RuntimeError(format!("file_delete: {}", e)))?;
 
                 Ok(true)
@@ -344,10 +407,15 @@ pub fn create_file_delete_function(lua: &Lua, storage: Arc<StorageEngine>, db_na
 
 /// Create solidb.file_list(options?) -> array of file info
 /// Options: { directory, limit, offset }
-pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_file_list_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |lua, options: Option<Table>| {
         // Get collection
-        let database = storage.get_database(&db_name)
+        let database = storage
+            .get_database(&db_name)
             .map_err(|e| mlua::Error::RuntimeError(format!("file_list: {}", e)))?;
 
         let collection = match database.get_collection(FILES_COLLECTION) {
@@ -359,9 +427,17 @@ pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
         };
 
         // Parse options
-        let directory = options.as_ref().and_then(|o| o.get::<String>("directory").ok());
-        let limit = options.as_ref().and_then(|o| o.get::<usize>("limit").ok()).unwrap_or(100);
-        let offset = options.as_ref().and_then(|o| o.get::<usize>("offset").ok()).unwrap_or(0);
+        let directory = options
+            .as_ref()
+            .and_then(|o| o.get::<String>("directory").ok());
+        let limit = options
+            .as_ref()
+            .and_then(|o| o.get::<usize>("limit").ok())
+            .unwrap_or(100);
+        let offset = options
+            .as_ref()
+            .and_then(|o| o.get::<usize>("offset").ok())
+            .unwrap_or(0);
 
         // Scan all documents
         let docs = collection.scan(Some(limit + offset));
@@ -373,7 +449,8 @@ pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
         for doc in docs {
             // Filter by directory if specified
             if let Some(ref dir) = directory {
-                let doc_dir = doc.get("directory")
+                let doc_dir = doc
+                    .get("directory")
                     .and_then(|v| v.as_str().map(|s| s.to_string()))
                     .unwrap_or_default();
                 if doc_dir != *dir {
@@ -400,7 +477,9 @@ pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
             if let JsonValue::Object(obj) = &doc.data {
                 for (k, v) in obj {
                     match v {
-                        JsonValue::String(s) => { file_info.set(k.as_str(), s.as_str())?; }
+                        JsonValue::String(s) => {
+                            file_info.set(k.as_str(), s.as_str())?;
+                        }
                         JsonValue::Number(n) => {
                             if let Some(i) = n.as_u64() {
                                 file_info.set(k.as_str(), i)?;
@@ -408,7 +487,9 @@ pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
                                 file_info.set(k.as_str(), f)?;
                             }
                         }
-                        JsonValue::Bool(b) => { file_info.set(k.as_str(), *b)?; }
+                        JsonValue::Bool(b) => {
+                            file_info.set(k.as_str(), *b)?;
+                        }
                         _ => {}
                     }
                 }
@@ -426,12 +507,17 @@ pub fn create_file_list_function(lua: &Lua, storage: Arc<StorageEngine>, db_name
 /// Operations: { resize: {width, height}, crop: {x, y, width, height},
 ///               rotate: 90|180|270, flip: "horizontal"|"vertical",
 ///               format: "jpeg"|"png"|"webp", quality: 1-100 }
-pub fn create_image_process_function(lua: &Lua, storage: Arc<StorageEngine>, db_name: String) -> LuaResult<Function> {
+pub fn create_image_process_function(
+    lua: &Lua,
+    storage: Arc<StorageEngine>,
+    db_name: String,
+) -> LuaResult<Function> {
     lua.create_function(move |lua, (data, operations): (LuaValue, Table)| {
         // Parse input data (base64 string, file key, or byte array)
         let bytes: Vec<u8> = match data {
             LuaValue::String(s) => {
-                let s_str = s.to_str()
+                let s_str = s
+                    .to_str()
                     .map_err(|e| mlua::Error::RuntimeError(format!("image_process: {}", e)))?;
 
                 // Try as file key first (UUID format)
@@ -441,13 +527,13 @@ pub fn create_image_process_function(lua: &Lua, storage: Arc<StorageEngine>, db_
                     if let Ok(database) = storage.get_database(&db_name) {
                         if let Ok(collection) = database.get_collection(FILES_COLLECTION) {
                             if let Ok(doc) = collection.get(&file_key) {
-                                let chunk_count = doc.get("chunks")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(1) as u32;
+                                let chunk_count =
+                                    doc.get("chunks").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
                                 let mut file_data = Vec::new();
                                 for i in 0..chunk_count {
-                                    if let Ok(Some(chunk)) = collection.get_blob_chunk(&file_key, i) {
+                                    if let Ok(Some(chunk)) = collection.get_blob_chunk(&file_key, i)
+                                    {
                                         file_data.extend(chunk);
                                     }
                                 }
@@ -461,12 +547,15 @@ pub fn create_image_process_function(lua: &Lua, storage: Arc<StorageEngine>, db_
                 }
 
                 // Try as base64
-                BASE64.decode(s_str.as_bytes())
-                    .map_err(|e| mlua::Error::RuntimeError(format!("image_process: invalid data: {}", e)))?
+                BASE64.decode(s_str.as_bytes()).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("image_process: invalid data: {}", e))
+                })?
             }
-            _ => return Err(mlua::Error::RuntimeError(
-                "image_process: data must be a base64 string or file key".to_string()
-            )),
+            _ => {
+                return Err(mlua::Error::RuntimeError(
+                    "image_process: data must be a base64 string or file key".to_string(),
+                ))
+            }
         };
 
         process_image(lua, bytes, operations)
@@ -476,8 +565,9 @@ pub fn create_image_process_function(lua: &Lua, storage: Arc<StorageEngine>, db_
 /// Process image with given operations
 fn process_image(lua: &Lua, bytes: Vec<u8>, operations: Table) -> LuaResult<Table> {
     // Load image
-    let mut img = image::load_from_memory(&bytes)
-        .map_err(|e| mlua::Error::RuntimeError(format!("image_process: failed to load image: {}", e)))?;
+    let mut img = image::load_from_memory(&bytes).map_err(|e| {
+        mlua::Error::RuntimeError(format!("image_process: failed to load image: {}", e))
+    })?;
 
     // Apply operations
     // Resize
@@ -567,7 +657,9 @@ fn process_image(lua: &Lua, bytes: Vec<u8>, operations: Table) -> LuaResult<Tabl
     }
 
     // Output format
-    let format_str: String = operations.get("format").unwrap_or_else(|_| "png".to_string());
+    let format_str: String = operations
+        .get("format")
+        .unwrap_or_else(|_| "png".to_string());
     let quality: u8 = operations.get("quality").unwrap_or(85);
 
     let format = match format_str.to_lowercase().as_str() {
@@ -584,17 +676,20 @@ fn process_image(lua: &Lua, bytes: Vec<u8>, operations: Table) -> LuaResult<Tabl
     match format {
         ImageFormat::Jpeg => {
             let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
-            img.write_with_encoder(encoder)
-                .map_err(|e| mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e)))?;
+            img.write_with_encoder(encoder).map_err(|e| {
+                mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e))
+            })?;
         }
         ImageFormat::WebP => {
             // WebP encoding
-            img.write_to(&mut output, format)
-                .map_err(|e| mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e)))?;
+            img.write_to(&mut output, format).map_err(|e| {
+                mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e))
+            })?;
         }
         _ => {
-            img.write_to(&mut output, format)
-                .map_err(|e| mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e)))?;
+            img.write_to(&mut output, format).map_err(|e| {
+                mlua::Error::RuntimeError(format!("image_process: encode failed: {}", e))
+            })?;
         }
     }
 
@@ -607,13 +702,16 @@ fn process_image(lua: &Lua, bytes: Vec<u8>, operations: Table) -> LuaResult<Tabl
     result.set("width", img.width())?;
     result.set("height", img.height())?;
     result.set("format", format_str)?;
-    result.set("mime_type", match format {
-        ImageFormat::Jpeg => "image/jpeg",
-        ImageFormat::Png => "image/png",
-        ImageFormat::WebP => "image/webp",
-        ImageFormat::Gif => "image/gif",
-        _ => "image/png",
-    })?;
+    result.set(
+        "mime_type",
+        match format {
+            ImageFormat::Jpeg => "image/jpeg",
+            ImageFormat::Png => "image/png",
+            ImageFormat::WebP => "image/webp",
+            ImageFormat::Gif => "image/gif",
+            _ => "image/png",
+        },
+    )?;
 
     Ok(result)
 }

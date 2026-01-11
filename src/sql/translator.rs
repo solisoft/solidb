@@ -1,14 +1,14 @@
-use crate::error::DbResult;
 use super::parser::{
-    SqlParser, SqlStatement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
-    SelectColumn, SqlExpr, BinaryOp, OrderByItem, JoinClause,
+    BinaryOp, DeleteStatement, InsertStatement, JoinClause, OrderByItem, SelectColumn,
+    SelectStatement, SqlExpr, SqlParser, SqlStatement, UpdateStatement,
 };
+use crate::error::DbResult;
 
 /// Translates SQL to SDBQL
 pub fn translate_sql_to_sdbql(sql: &str) -> DbResult<String> {
     let mut parser = SqlParser::new(sql)?;
     let stmt = parser.parse()?;
-    
+
     Ok(translate_statement(&stmt))
 }
 
@@ -24,10 +24,10 @@ fn translate_statement(stmt: &SqlStatement) -> String {
 fn translate_select(stmt: &SelectStatement) -> String {
     let mut parts = Vec::new();
     let doc_var = stmt.from_alias.as_deref().unwrap_or("doc");
-    
+
     // FOR clause for main table
     parts.push(format!("FOR {} IN {}", doc_var, stmt.from));
-    
+
     // Handle JOINs as nested FOR loops
     for (i, join) in stmt.joins.iter().enumerate() {
         // Generate unique variable name if no alias provided
@@ -40,27 +40,32 @@ fn translate_select(stmt: &SelectStatement) -> String {
         } else {
             join_var.to_string()
         };
-        
+
         parts.push(format!("  FOR {} IN {}", join_var, join.table));
-        
+
         // ON condition becomes a FILTER
         // For LEFT/RIGHT joins, we'd need more complex handling with LET/subquery
         // For now, we translate as INNER JOIN (nested FOR with FILTER)
         let on_expr = translate_join_expr(&join.on_condition, doc_var);
         parts.push(format!("    FILTER {}", on_expr));
     }
-    
+
     // Determine indentation based on number of joins
     let indent = "  ".repeat(stmt.joins.len() + 1);
-    
+
     // WHERE -> FILTER
     if let Some(ref where_clause) = stmt.where_clause {
-        parts.push(format!("{}FILTER {}", indent, translate_expr(where_clause, doc_var)));
+        parts.push(format!(
+            "{}FILTER {}",
+            indent,
+            translate_expr(where_clause, doc_var)
+        ));
     }
-    
+
     // GROUP BY -> COLLECT
     if !stmt.group_by.is_empty() {
-        let collect_vars: Vec<String> = stmt.group_by
+        let collect_vars: Vec<String> = stmt
+            .group_by
             .iter()
             .map(|col| {
                 if col.contains('.') {
@@ -72,32 +77,46 @@ fn translate_select(stmt: &SelectStatement) -> String {
                 }
             })
             .collect();
-        parts.push(format!("{}COLLECT {} INTO group", indent, collect_vars.join(", ")));
+        parts.push(format!(
+            "{}COLLECT {} INTO group",
+            indent,
+            collect_vars.join(", ")
+        ));
     }
-    
+
     // Build alias map for ORDER BY/RETURN resolution
     let is_grouped = !stmt.group_by.is_empty();
     let alias_map = build_alias_map(&stmt.columns, doc_var, is_grouped);
-    
+
     // Generate LET statements for aggregate aliases BEFORE HAVING (to avoid recalculating)
     if is_grouped {
         for col in &stmt.columns {
-            if let SelectColumn::Function { name: _, args: _, alias: Some(alias_name) } = col {
+            if let SelectColumn::Function {
+                name: _,
+                args: _,
+                alias: Some(alias_name),
+            } = col
+            {
                 if let Some(expr) = alias_map.get(alias_name) {
                     parts.push(format!("{}LET {} = {}", indent, alias_name, expr));
                 }
             }
         }
-        
+
         // HAVING -> FILTER (after COLLECT and LET, uses LET variables)
         if let Some(ref having) = stmt.having {
-            parts.push(format!("{}FILTER {}", indent, translate_having_with_let(having, &alias_map)));
+            parts.push(format!(
+                "{}FILTER {}",
+                indent,
+                translate_having_with_let(having, &alias_map)
+            ));
         }
     }
-    
+
     // ORDER BY -> SORT (now uses LET variables for aliases)
     if !stmt.order_by.is_empty() {
-        let sort_items: Vec<String> = stmt.order_by
+        let sort_items: Vec<String> = stmt
+            .order_by
             .iter()
             .map(|item| {
                 let direction = if item.descending { "DESC" } else { "ASC" };
@@ -111,7 +130,7 @@ fn translate_select(stmt: &SelectStatement) -> String {
             .collect();
         parts.push(format!("{}SORT {}", indent, sort_items.join(", ")));
     }
-    
+
     // LIMIT/OFFSET
     if let Some(limit) = stmt.limit {
         if let Some(offset) = stmt.offset {
@@ -120,11 +139,11 @@ fn translate_select(stmt: &SelectStatement) -> String {
             parts.push(format!("{}LIMIT {}", indent, limit));
         }
     }
-    
+
     // RETURN (uses LET variables for aliases)
     let return_expr = translate_columns_with_let(&stmt.columns, doc_var, is_grouped, &stmt.joins);
     parts.push(format!("{}RETURN {}", indent, return_expr));
-    
+
     parts.join("\n")
 }
 
@@ -214,14 +233,14 @@ fn translate_having_with_let(expr: &SqlExpr, alias_map: &HashMap<String, String>
         SqlExpr::Function { name, args } => {
             // Check if this exact aggregate expression has a LET variable
             let agg_expr = translate_having_expr_to_string(name, args);
-            
+
             // Look for matching alias
             for (alias_name, alias_expr) in alias_map {
                 if *alias_expr == agg_expr {
                     return alias_name.clone();
                 }
             }
-            
+
             // No matching LET variable, use the expression directly
             agg_expr
         }
@@ -269,8 +288,12 @@ fn translate_having_expr_to_string(name: &str, args: &[SqlExpr]) -> String {
     }
 }
 
-
-fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, joins: &[JoinClause]) -> String {
+fn translate_columns(
+    columns: &[SelectColumn],
+    doc_var: &str,
+    is_grouped: bool,
+    joins: &[JoinClause],
+) -> String {
     // Single star - if there are joins, return merged object
     if columns.len() == 1 {
         if let SelectColumn::Star = &columns[0] {
@@ -292,7 +315,7 @@ fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, 
             }
         }
     }
-    
+
     // Check if all columns are simple (no aliases, no functions)
     let simple_columns: Vec<&str> = columns
         .iter()
@@ -304,7 +327,7 @@ fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, 
             }
         })
         .collect();
-    
+
     if simple_columns.len() == columns.len() && !simple_columns.is_empty() {
         // Build object with only requested fields
         let fields: Vec<String> = simple_columns
@@ -320,13 +343,13 @@ fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, 
             .collect();
         return format!("{{ {} }}", fields.join(", "));
     }
-    
+
     // Complex columns with functions or aliases
     let fields: Vec<String> = columns
         .iter()
         .map(|c| translate_select_column(c, doc_var, is_grouped))
         .collect();
-    
+
     if fields.len() == 1 {
         fields[0].clone()
     } else {
@@ -335,14 +358,19 @@ fn translate_columns(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, 
 }
 
 /// Version that uses LET variable names for aggregate aliases (when is_grouped)
-fn translate_columns_with_let(columns: &[SelectColumn], doc_var: &str, is_grouped: bool, joins: &[JoinClause]) -> String {
+fn translate_columns_with_let(
+    columns: &[SelectColumn],
+    doc_var: &str,
+    is_grouped: bool,
+    joins: &[JoinClause],
+) -> String {
     // Single star - delegate to regular function
     if columns.len() == 1 {
         if let SelectColumn::Star = &columns[0] {
             return translate_columns(columns, doc_var, is_grouped, joins);
         }
     }
-    
+
     // Check if all columns are simple (no aliases, no functions)
     let simple_columns: Vec<&str> = columns
         .iter()
@@ -354,17 +382,17 @@ fn translate_columns_with_let(columns: &[SelectColumn], doc_var: &str, is_groupe
             }
         })
         .collect();
-    
+
     if simple_columns.len() == columns.len() && !simple_columns.is_empty() {
         return translate_columns(columns, doc_var, is_grouped, joins);
     }
-    
+
     // Complex columns - use LET variables for aggregate aliases
     let fields: Vec<String> = columns
         .iter()
         .map(|c| translate_select_column_with_let(c, doc_var, is_grouped))
         .collect();
-    
+
     if fields.len() == 1 {
         fields[0].clone()
     } else {
@@ -374,7 +402,11 @@ fn translate_columns_with_let(columns: &[SelectColumn], doc_var: &str, is_groupe
 
 fn translate_select_column_with_let(col: &SelectColumn, doc_var: &str, is_grouped: bool) -> String {
     match col {
-        SelectColumn::Function { name: _, args: _, alias: Some(alias_name) } if is_grouped => {
+        SelectColumn::Function {
+            name: _,
+            args: _,
+            alias: Some(alias_name),
+        } if is_grouped => {
             // Use the LET variable directly
             format!("{}: {}", alias_name, alias_name)
         }
@@ -390,9 +422,15 @@ fn translate_select_column(col: &SelectColumn, doc_var: &str, is_grouped: bool) 
             // For qualified columns (table.column), extract just the column name for the key
             let (key_name, value) = if name.contains('.') {
                 let col_name = name.split('.').last().unwrap_or(name);
-                (alias.as_ref().map(|s| s.as_str()).unwrap_or(col_name), name.clone())
+                (
+                    alias.as_ref().map(|s| s.as_str()).unwrap_or(col_name),
+                    name.clone(),
+                )
             } else {
-                (alias.as_ref().map(|s| s.as_str()).unwrap_or(name), format!("{}.{}", doc_var, name))
+                (
+                    alias.as_ref().map(|s| s.as_str()).unwrap_or(name),
+                    format!("{}.{}", doc_var, name),
+                )
             };
             format!("{}: {}", key_name, value)
         }
@@ -412,7 +450,12 @@ fn translate_select_column(col: &SelectColumn, doc_var: &str, is_grouped: bool) 
     }
 }
 
-fn translate_aggregate_function(name: &str, args: &[SqlExpr], doc_var: &str, is_grouped: bool) -> String {
+fn translate_aggregate_function(
+    name: &str,
+    args: &[SqlExpr],
+    doc_var: &str,
+    is_grouped: bool,
+) -> String {
     let arg_str = if args.is_empty() {
         "".to_string()
     } else if args.len() == 1 {
@@ -437,7 +480,7 @@ fn translate_aggregate_function(name: &str, args: &[SqlExpr], doc_var: &str, is_
             .collect::<Vec<_>>()
             .join(", ")
     };
-    
+
     match name.to_uppercase().as_str() {
         "COUNT" => {
             if is_grouped {
@@ -457,9 +500,13 @@ fn translate_aggregate_function(name: &str, args: &[SqlExpr], doc_var: &str, is_
 use std::collections::HashMap;
 
 /// Build a map from SELECT aliases to their SDBQL expressions
-fn build_alias_map(columns: &[SelectColumn], doc_var: &str, is_grouped: bool) -> HashMap<String, String> {
+fn build_alias_map(
+    columns: &[SelectColumn],
+    doc_var: &str,
+    is_grouped: bool,
+) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    
+
     for col in columns {
         match col {
             SelectColumn::Function { name, args, alias } => {
@@ -488,18 +535,22 @@ fn build_alias_map(columns: &[SelectColumn], doc_var: &str, is_grouped: bool) ->
             _ => {}
         }
     }
-    
+
     map
 }
 
-fn translate_order_by_with_aliases(item: &OrderByItem, doc_var: &str, alias_map: &HashMap<String, String>) -> String {
+fn translate_order_by_with_aliases(
+    item: &OrderByItem,
+    doc_var: &str,
+    alias_map: &HashMap<String, String>,
+) -> String {
     let direction = if item.descending { "DESC" } else { "ASC" };
-    
+
     // Check if this is an alias
     if let Some(expr) = alias_map.get(&item.column) {
         return format!("{} {}", expr, direction);
     }
-    
+
     // Qualified columns (table.column) are kept as-is
     if item.column.contains('.') {
         format!("{} {}", item.column, direction)
@@ -541,7 +592,7 @@ fn translate_expr(expr: &SqlExpr, doc_var: &str) -> String {
         SqlExpr::Boolean(b) => b.to_string(),
         SqlExpr::Null => "null".to_string(),
         SqlExpr::Placeholder(name) => format!("@{}", name),
-        
+
         SqlExpr::BinaryOp { left, op, right } => {
             let left_str = translate_expr(left, doc_var);
             let right_str = translate_expr(right, doc_var);
@@ -563,32 +614,32 @@ fn translate_expr(expr: &SqlExpr, doc_var: &str) -> String {
             };
             format!("{} {} {}", left_str, op_str, right_str)
         }
-        
+
         SqlExpr::Not(inner) => {
             format!("NOT ({})", translate_expr(inner, doc_var))
         }
-        
+
         SqlExpr::IsNull(inner) => {
             format!("{} == null", translate_expr(inner, doc_var))
         }
-        
+
         SqlExpr::IsNotNull(inner) => {
             format!("{} != null", translate_expr(inner, doc_var))
         }
-        
+
         SqlExpr::Between { expr, low, high } => {
             let e = translate_expr(expr, doc_var);
             let l = translate_expr(low, doc_var);
             let h = translate_expr(high, doc_var);
             format!("({} >= {} AND {} <= {})", e, l, e, h)
         }
-        
+
         SqlExpr::InList { expr, list } => {
             let e = translate_expr(expr, doc_var);
             let items: Vec<String> = list.iter().map(|i| translate_expr(i, doc_var)).collect();
             format!("{} IN [{}]", e, items.join(", "))
         }
-        
+
         SqlExpr::Function { name, args } => {
             let args_str: Vec<String> = args.iter().map(|a| translate_expr(a, doc_var)).collect();
             format!("{}({})", name.to_uppercase(), args_str.join(", "))
@@ -598,7 +649,7 @@ fn translate_expr(expr: &SqlExpr, doc_var: &str) -> String {
 
 fn translate_insert(stmt: &InsertStatement) -> String {
     let mut results = Vec::new();
-    
+
     for row in &stmt.values {
         let doc = if let Some(ref columns) = stmt.columns {
             // Build object with specified columns
@@ -613,28 +664,34 @@ fn translate_insert(stmt: &InsertStatement) -> String {
             let values: Vec<String> = row.iter().map(|v| translate_expr(v, "doc")).collect();
             format!("{{ {}: {} }}", "values", format!("[{}]", values.join(", ")))
         };
-        
+
         results.push(format!("INSERT {} INTO {}", doc, stmt.table));
     }
-    
+
     if results.len() == 1 {
         format!("{}\nRETURN NEW", results[0])
     } else {
         // Multiple rows: use FOR loop
-        let docs: Vec<String> = stmt.values.iter().enumerate().map(|(i, row)| {
-            if let Some(ref columns) = stmt.columns {
-                let fields: Vec<String> = columns
-                    .iter()
-                    .zip(row.iter())
-                    .map(|(col, val)| format!("{}: {}", col, translate_expr(val, "doc")))
-                    .collect();
-                format!("{{ {} }}", fields.join(", "))
-            } else {
-                let _values: Vec<String> = row.iter().map(|v| translate_expr(v, "doc")).collect();
-                format!("{{ row: {} }}", i)
-            }
-        }).collect();
-        
+        let docs: Vec<String> = stmt
+            .values
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                if let Some(ref columns) = stmt.columns {
+                    let fields: Vec<String> = columns
+                        .iter()
+                        .zip(row.iter())
+                        .map(|(col, val)| format!("{}: {}", col, translate_expr(val, "doc")))
+                        .collect();
+                    format!("{{ {} }}", fields.join(", "))
+                } else {
+                    let _values: Vec<String> =
+                        row.iter().map(|v| translate_expr(v, "doc")).collect();
+                    format!("{{ row: {} }}", i)
+                }
+            })
+            .collect();
+
         format!(
             "FOR doc IN [{}]\n  INSERT doc INTO {}\n  RETURN NEW",
             docs.join(", "),
@@ -645,50 +702,55 @@ fn translate_insert(stmt: &InsertStatement) -> String {
 
 fn translate_update(stmt: &UpdateStatement) -> String {
     let mut parts = Vec::new();
-    
+
     parts.push(format!("FOR doc IN {}", stmt.table));
-    
+
     if let Some(ref where_clause) = stmt.where_clause {
         parts.push(format!("  FILTER {}", translate_expr(where_clause, "doc")));
     }
-    
-    let changes: Vec<String> = stmt.assignments
+
+    let changes: Vec<String> = stmt
+        .assignments
         .iter()
         .map(|(col, val)| format!("{}: {}", col, translate_expr(val, "doc")))
         .collect();
-    
-    parts.push(format!("  UPDATE doc WITH {{ {} }} IN {}", changes.join(", "), stmt.table));
+
+    parts.push(format!(
+        "  UPDATE doc WITH {{ {} }} IN {}",
+        changes.join(", "),
+        stmt.table
+    ));
     parts.push("  RETURN NEW".to_string());
-    
+
     parts.join("\n")
 }
 
 fn translate_delete(stmt: &DeleteStatement) -> String {
     let mut parts = Vec::new();
-    
+
     parts.push(format!("FOR doc IN {}", stmt.table));
-    
+
     if let Some(ref where_clause) = stmt.where_clause {
         parts.push(format!("  FILTER {}", translate_expr(where_clause, "doc")));
     }
-    
+
     parts.push(format!("  REMOVE doc IN {}", stmt.table));
     parts.push("  RETURN OLD".to_string());
-    
+
     parts.join("\n")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_simple_select() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users").unwrap();
         assert!(sdbql.contains("FOR doc IN users"));
         assert!(sdbql.contains("RETURN doc"));
     }
-    
+
     #[test]
     fn test_select_columns() {
         let sdbql = translate_sql_to_sdbql("SELECT name, age FROM users").unwrap();
@@ -696,85 +758,92 @@ mod tests {
         assert!(sdbql.contains("name: doc.name"));
         assert!(sdbql.contains("age: doc.age"));
     }
-    
+
     #[test]
     fn test_select_with_where() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE age > 18").unwrap();
         assert!(sdbql.contains("FILTER doc.age > 18"));
     }
-    
+
     #[test]
     fn test_select_with_and() {
-        let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE age > 18 AND status = 'active'").unwrap();
+        let sdbql =
+            translate_sql_to_sdbql("SELECT * FROM users WHERE age > 18 AND status = 'active'")
+                .unwrap();
         assert!(sdbql.contains("doc.age > 18 AND doc.status == \"active\""));
     }
-    
+
     #[test]
     fn test_select_with_order_by() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users ORDER BY name ASC").unwrap();
         assert!(sdbql.contains("SORT doc.name ASC"));
     }
-    
+
     #[test]
     fn test_select_with_limit() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users LIMIT 10").unwrap();
         assert!(sdbql.contains("LIMIT 10"));
     }
-    
+
     #[test]
     fn test_select_with_limit_offset() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users LIMIT 10 OFFSET 20").unwrap();
         assert!(sdbql.contains("LIMIT 20, 10"));
     }
-    
+
     #[test]
     fn test_select_like() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE name LIKE 'A%'").unwrap();
         assert!(sdbql.contains("doc.name LIKE \"A%\""));
     }
-    
+
     #[test]
     fn test_select_in() {
-        let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE status IN ('active', 'pending')").unwrap();
+        let sdbql =
+            translate_sql_to_sdbql("SELECT * FROM users WHERE status IN ('active', 'pending')")
+                .unwrap();
         assert!(sdbql.contains("doc.status IN"));
     }
-    
+
     #[test]
     fn test_select_is_null() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE email IS NULL").unwrap();
         assert!(sdbql.contains("doc.email == null"));
     }
-    
+
     #[test]
     fn test_select_is_not_null() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE email IS NOT NULL").unwrap();
         assert!(sdbql.contains("doc.email != null"));
     }
-    
+
     #[test]
     fn test_select_between() {
-        let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE age BETWEEN 18 AND 65").unwrap();
+        let sdbql =
+            translate_sql_to_sdbql("SELECT * FROM users WHERE age BETWEEN 18 AND 65").unwrap();
         assert!(sdbql.contains("doc.age >= 18 AND doc.age <= 65"));
     }
-    
+
     #[test]
     fn test_insert() {
-        let sdbql = translate_sql_to_sdbql("INSERT INTO users (name, age) VALUES ('Alice', 30)").unwrap();
+        let sdbql =
+            translate_sql_to_sdbql("INSERT INTO users (name, age) VALUES ('Alice', 30)").unwrap();
         assert!(sdbql.contains("INSERT"));
         assert!(sdbql.contains("INTO users"));
         assert!(sdbql.contains("name:"));
         assert!(sdbql.contains("RETURN NEW"));
     }
-    
+
     #[test]
     fn test_update() {
-        let sdbql = translate_sql_to_sdbql("UPDATE users SET age = 31 WHERE name = 'Alice'").unwrap();
+        let sdbql =
+            translate_sql_to_sdbql("UPDATE users SET age = 31 WHERE name = 'Alice'").unwrap();
         assert!(sdbql.contains("FOR doc IN users"));
         assert!(sdbql.contains("FILTER doc.name == \"Alice\""));
         assert!(sdbql.contains("UPDATE doc WITH"));
         assert!(sdbql.contains("age: 31"));
     }
-    
+
     #[test]
     fn test_delete() {
         let sdbql = translate_sql_to_sdbql("DELETE FROM users WHERE age < 18").unwrap();
@@ -782,70 +851,70 @@ mod tests {
         assert!(sdbql.contains("FILTER doc.age < 18"));
         assert!(sdbql.contains("REMOVE doc IN users"));
     }
-    
+
     #[test]
     fn test_placeholder() {
         let sdbql = translate_sql_to_sdbql("SELECT * FROM users WHERE name = :name").unwrap();
         assert!(sdbql.contains("@name"));
     }
-    
+
     #[test]
     fn test_full_query() {
         let sql = "SELECT name, age FROM users WHERE age > 18 AND status = 'active' ORDER BY name DESC LIMIT 10 OFFSET 5";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
-        
+
         assert!(sdbql.contains("FOR doc IN users"));
         assert!(sdbql.contains("FILTER"));
         assert!(sdbql.contains("SORT doc.name DESC"));
         assert!(sdbql.contains("LIMIT 5, 10"));
         assert!(sdbql.contains("RETURN"));
     }
-    
+
     #[test]
     fn test_inner_join() {
         let sql = "SELECT u.name, o.total FROM users u JOIN orders o ON o.user_id = u._key";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
-        
+
         assert!(sdbql.contains("FOR u IN users"));
         assert!(sdbql.contains("FOR o IN orders"));
         assert!(sdbql.contains("FILTER o.user_id == u._key"));
     }
-    
+
     #[test]
     fn test_explicit_inner_join() {
         let sql = "SELECT * FROM users INNER JOIN orders ON orders.user_id = users._key";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
-        
+
         assert!(sdbql.contains("FOR doc IN users"));
-        assert!(sdbql.contains("FOR j0 IN orders"));  // j0 for first join without alias
+        assert!(sdbql.contains("FOR j0 IN orders")); // j0 for first join without alias
         assert!(sdbql.contains("MERGE(doc, j0)"));
     }
-    
+
     #[test]
     fn test_left_join() {
         let sql = "SELECT * FROM users LEFT JOIN orders ON orders.user_id = users._key";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
-        
+
         assert!(sdbql.contains("FOR doc IN users"));
-        assert!(sdbql.contains("FOR j0 IN orders"));  // j0 for first join without alias
+        assert!(sdbql.contains("FOR j0 IN orders")); // j0 for first join without alias
     }
-    
+
     #[test]
     fn test_multiple_joins() {
         let sql = "SELECT u.name FROM users u JOIN orders o ON o.user_id = u._key JOIN products p ON p._key = o.product_id";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
-        
+
         assert!(sdbql.contains("FOR u IN users"));
         assert!(sdbql.contains("FOR o IN orders"));
         assert!(sdbql.contains("FOR p IN products"));
     }
-    
+
     #[test]
     fn test_complex_join_with_group_by() {
         let sql = "SELECT u.name, u.email, COUNT(o.id) as order_count FROM users u JOIN orders o ON u.id = o.user_id WHERE u.created_at > '2024-01-01' GROUP BY u.id HAVING COUNT(o.id) > 5 ORDER BY order_count DESC LIMIT 10";
         let sdbql = translate_sql_to_sdbql(sql).unwrap();
         println!("Complex query translation:\n{}", sdbql);
-        
+
         assert!(sdbql.contains("FOR u IN users"));
         assert!(sdbql.contains("FOR o IN orders"));
         assert!(sdbql.contains("COLLECT"));
