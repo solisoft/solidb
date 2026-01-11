@@ -370,6 +370,324 @@ items |> FILTER(x -> x.active) |> FIRST() ?? { name: "None" }</code></pre>
                 </div>
               </div>
             </div>
+
+            <!-- Optional Chaining -->
+            <div
+              class="bg-gradient-to-r from-rose-500/10 to-pink-500/10 rounded-xl border border-rose-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-rose-500/20 bg-rose-500/5">
+                <h3 class="text-lg font-bold text-rose-300 flex items-center">
+                  <span
+                    class="bg-rose-500/20 text-rose-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >?.</span
+                  >
+                  Optional Chaining
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  The <code class="text-rose-300">?.</code> operator safely accesses nested properties.
+                  If the base is <code class="text-rose-300">null</code> or not an object, it returns <code class="text-rose-300">null</code>
+                  instead of throwing an error.
+                </p>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">-- Safe nested access
+FOR doc IN users
+  RETURN {
+    name: doc.name,
+    city: doc.address?.city,           -- null if no address
+    lat: doc.address?.location?.lat    -- null if address or location missing
+  }
+
+-- Chained optional access
+doc.profile?.settings?.theme?.color    -- null at any missing level</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-rose-300 font-bold mb-2 text-sm">Without Optional Chaining</h5>
+                    <pre><code class="language-sql text-xs">-- Verbose null checks
+doc.address != null
+  ? (doc.address.location != null
+      ? doc.address.location.lat
+      : null)
+  : null</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-rose-300 font-bold mb-2 text-sm">With Optional Chaining</h5>
+                    <pre><code class="language-sql text-xs">-- Clean and concise
+doc.address?.location?.lat</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-rose-300 font-bold mb-2 text-sm">Combine with ?? for Defaults</h5>
+                  <pre><code class="language-sql text-xs">-- Optional chaining + null coalescing
+FOR doc IN users
+  RETURN {
+    name: doc.name,
+    city: doc.address?.city ?? "Unknown",
+    theme: doc.profile?.settings?.theme ?? "light"
+  }</code></pre>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-rose-300 font-bold mb-2 text-sm">Use in FILTER</h5>
+                  <pre><code class="language-sql text-xs">-- Filter safely with optional chaining
+FOR doc IN users
+  FILTER doc.address?.city == "New York"
+  RETURN doc
+
+-- Find users with missing data
+FOR doc IN users
+  FILTER doc.address?.city == null
+  RETURN doc.name</code></pre>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">
+                  <span class="text-rose-400 font-bold">Note:</span>
+                  <code class="text-rose-300">?.</code> returns <code class="text-rose-300">null</code> for non-object types (arrays, strings, numbers).
+                  For array element access, use regular bracket notation with null checks.
+                </p>
+              </div>
+            </div>
+
+            <!-- CASE/WHEN Expressions -->
+            <div
+              class="bg-gradient-to-r from-indigo-500/10 to-violet-500/10 rounded-xl border border-indigo-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-indigo-500/20 bg-indigo-500/5">
+                <h3 class="text-lg font-bold text-indigo-300 flex items-center">
+                  <span
+                    class="bg-indigo-500/20 text-indigo-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >CASE</span
+                  >
+                  CASE/WHEN Expressions
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  SQL-style conditional expressions with two forms:
+                  <code class="text-indigo-300">Simple CASE</code> for value matching and
+                  <code class="text-indigo-300">Searched CASE</code> for condition evaluation.
+                </p>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-indigo-300 font-bold mb-2 text-sm">Simple CASE</h5>
+                    <pre><code class="language-sql text-xs">-- Match expression against values
+CASE doc.category
+    WHEN "electronics" THEN "Tech"
+    WHEN "books" THEN "Reading"
+    WHEN "clothing" THEN "Fashion"
+    ELSE "Other"
+END</code></pre>
+                  </div>
+                  <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-indigo-300 font-bold mb-2 text-sm">Searched CASE</h5>
+                    <pre><code class="language-sql text-xs">-- Evaluate conditions
+CASE
+    WHEN doc.price >= 500 THEN "premium"
+    WHEN doc.price >= 100 THEN "mid-range"
+    WHEN doc.price >= 50 THEN "budget"
+    ELSE "bargain"
+END</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-indigo-300 font-bold mb-2 text-sm">Practical Example</h5>
+                  <pre><code class="language-sql text-sm">FOR doc IN products
+  RETURN {
+    name: doc.name,
+    price_tier: CASE
+      WHEN doc.price >= 500 THEN "premium"
+      WHEN doc.price >= 100 THEN "mid-range"
+      ELSE "budget"
+    END,
+    availability: CASE
+      WHEN doc.stock == 0 THEN "Out of Stock"
+      WHEN doc.stock < 50 THEN "Low Stock"
+      ELSE "In Stock"
+    END
+  }</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-indigo-300 font-bold mb-2 text-sm">Use in LET for Reuse</h5>
+                    <pre><code class="language-sql text-xs">FOR doc IN products
+  LET tier = CASE
+    WHEN doc.price >= 100 THEN "high"
+    ELSE "low"
+  END
+  FILTER tier == "high"
+  RETURN doc</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-indigo-300 font-bold mb-2 text-sm">Custom Sort Order</h5>
+                    <pre><code class="language-sql text-xs">FOR doc IN tasks
+  LET priority = CASE doc.status
+    WHEN "urgent" THEN 1
+    WHEN "high" THEN 2
+    WHEN "normal" THEN 3
+    ELSE 4
+  END
+  SORT priority
+  RETURN doc</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-indigo-300 font-bold mb-2 text-sm">Nested CASE and Combining with Other Features</h5>
+                  <pre><code class="language-sql text-xs">-- Nested CASE
+CASE doc.category
+  WHEN "electronics" THEN CASE
+    WHEN doc.stock == 0 THEN "Tech - Unavailable"
+    ELSE "Tech - Available"
+  END
+  ELSE "Other Product"
+END
+
+-- With optional chaining and null coalescing
+CASE doc.customer?.tier ?? "standard"
+  WHEN "gold" THEN 20
+  WHEN "silver" THEN 10
+  ELSE 0
+END</code></pre>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">
+                  <span class="text-indigo-400 font-bold">Note:</span>
+                  CASE returns <code class="text-indigo-300">null</code> if no WHEN matches and no ELSE is provided.
+                  WHEN clauses are evaluated in order - first match wins.
+                </p>
+              </div>
+            </div>
+
+            <!-- Window Functions -->
+            <div
+              class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-amber-500/20 bg-amber-500/5">
+                <h3 class="text-lg font-bold text-amber-300 flex items-center">
+                  <span
+                    class="bg-amber-500/20 text-amber-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >OVER</span
+                  >
+                  Window Functions
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Window functions perform calculations across rows related to the current row without collapsing them.
+                  Use <code class="text-amber-300">OVER</code> clause with optional <code class="text-amber-300">PARTITION BY</code>
+                  and <code class="text-amber-300">ORDER BY</code> to define the window.
+                </p>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">-- Row numbering
+FOR doc IN sales
+  RETURN {
+    date: doc.date,
+    row_num: ROW_NUMBER() OVER (ORDER BY doc.date)
+  }
+
+-- Partitioned row numbers (restart per region)
+FOR doc IN sales
+  RETURN {
+    region: doc.region,
+    row_in_region: ROW_NUMBER() OVER (PARTITION BY doc.region ORDER BY doc.date)
+  }
+
+-- Running total
+FOR doc IN sales
+  RETURN {
+    date: doc.date,
+    amount: doc.amount,
+    running_total: SUM(doc.amount) OVER (ORDER BY doc.date)
+  }</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-amber-300 font-bold mb-2 text-sm">Ranking Functions</h5>
+                    <pre><code class="language-sql text-xs">-- ROW_NUMBER: Sequential numbers
+ROW_NUMBER() OVER (ORDER BY score DESC)
+-- Result: 1, 2, 3, 4, 5...
+
+-- RANK: Same rank for ties, gaps after
+RANK() OVER (ORDER BY score DESC)
+-- Scores: 100, 100, 90 → Ranks: 1, 1, 3
+
+-- DENSE_RANK: Same rank for ties, no gaps
+DENSE_RANK() OVER (ORDER BY score DESC)
+-- Scores: 100, 100, 90 → Ranks: 1, 1, 2</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-amber-300 font-bold mb-2 text-sm">Navigation Functions</h5>
+                    <pre><code class="language-sql text-xs">-- LAG: Access previous row value
+LAG(doc.amount) OVER (ORDER BY doc.date)
+
+-- LEAD: Access next row value
+LEAD(doc.amount) OVER (ORDER BY doc.date)
+
+-- FIRST_VALUE: First value in partition
+FIRST_VALUE(doc.amount) OVER (
+  PARTITION BY doc.region ORDER BY doc.date
+)
+
+-- LAST_VALUE: Last value in partition
+LAST_VALUE(doc.amount) OVER (
+  PARTITION BY doc.region ORDER BY doc.date
+)</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-amber-300 font-bold mb-2 text-sm">Running Aggregates</h5>
+                  <p class="text-xs text-gray-400 mb-2">
+                    Use aggregate functions with OVER for cumulative calculations.
+                  </p>
+                  <pre><code class="language-sql text-xs">FOR doc IN transactions
+  FILTER doc.account_id == "acc123"
+  SORT doc.date
+  RETURN {
+    date: doc.date,
+    amount: doc.amount,
+    running_sum: SUM(doc.amount) OVER (ORDER BY doc.date),
+    running_avg: AVG(doc.amount) OVER (ORDER BY doc.date),
+    running_count: COUNT(doc._key) OVER (ORDER BY doc.date),
+    running_min: MIN(doc.amount) OVER (ORDER BY doc.date),
+    running_max: MAX(doc.amount) OVER (ORDER BY doc.date)
+  }</code></pre>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-amber-300 font-bold mb-2 text-sm">Practical Example: Compare to Previous</h5>
+                  <pre><code class="language-sql text-xs">-- Calculate day-over-day change
+FOR doc IN daily_sales
+  SORT doc.date
+  LET prev = LAG(doc.revenue) OVER (ORDER BY doc.date)
+  RETURN {
+    date: doc.date,
+    revenue: doc.revenue,
+    prev_revenue: prev,
+    change: prev != null ? doc.revenue - prev : null,
+    pct_change: prev != null ? ROUND((doc.revenue - prev) / prev * 100, 2) : null
+  }</code></pre>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">
+                  <span class="text-amber-400 font-bold">Supported Functions:</span>
+                  ROW_NUMBER, RANK, DENSE_RANK, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM, AVG, COUNT, MIN, MAX
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>

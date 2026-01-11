@@ -990,6 +990,116 @@ impl Parser {
         false
     }
 
+    /// Parse window function after detecting OVER keyword
+    /// Already consumed: FUNC(args), current token is OVER
+    fn parse_window_function(
+        &mut self,
+        function: String,
+        arguments: Vec<Expression>,
+    ) -> DbResult<Expression> {
+        self.expect(Token::Over)?;
+        self.expect(Token::LeftParen)?;
+
+        let over_clause = self.parse_window_spec()?;
+
+        self.expect(Token::RightParen)?;
+
+        Ok(Expression::WindowFunctionCall {
+            function: function.to_uppercase(),
+            arguments,
+            over_clause,
+        })
+    }
+
+    /// Parse window specification inside OVER(...)
+    /// Handles: PARTITION BY expr, ... ORDER BY expr [ASC|DESC], ...
+    fn parse_window_spec(&mut self) -> DbResult<WindowSpec> {
+        let mut partition_by = Vec::new();
+        let mut order_by = Vec::new();
+
+        // Parse PARTITION BY (optional)
+        if matches!(self.current_token(), Token::Partition) {
+            self.advance(); // consume PARTITION
+
+            // Expect BY keyword - check for identifier "BY"
+            match self.current_token() {
+                Token::Identifier(s) if s.to_uppercase() == "BY" => {
+                    self.advance(); // consume BY
+                }
+                _ => {
+                    return Err(DbError::ParseError(
+                        "Expected BY after PARTITION".to_string(),
+                    ));
+                }
+            }
+
+            // Parse partition expressions
+            loop {
+                partition_by.push(self.parse_expression()?);
+                if matches!(self.current_token(), Token::Comma) {
+                    // Check if next is ORDER or end of spec
+                    if matches!(self.peek_token(1), Token::Sort | Token::Identifier(_))
+                        && matches!(self.peek_token(1), Token::Sort)
+                    {
+                        break;
+                    }
+                    // Check if it's ORDER BY coming
+                    if let Token::Identifier(s) = self.peek_token(1) {
+                        if s.to_uppercase() == "ORDER" {
+                            break;
+                        }
+                    }
+                    self.advance(); // consume comma
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Parse ORDER BY (optional) - reusing Sort token for ORDER
+        if matches!(self.current_token(), Token::Sort) {
+            self.advance(); // consume ORDER (Sort token)
+
+            // Expect BY keyword
+            match self.current_token() {
+                Token::Identifier(s) if s.to_uppercase() == "BY" => {
+                    self.advance(); // consume BY
+                }
+                _ => {
+                    return Err(DbError::ParseError("Expected BY after ORDER".to_string()));
+                }
+            }
+
+            // Parse order expressions with optional ASC/DESC
+            loop {
+                let expr = self.parse_expression()?;
+                let ascending = match self.current_token() {
+                    Token::Desc => {
+                        self.advance();
+                        false
+                    }
+                    Token::Asc => {
+                        self.advance();
+                        true
+                    }
+                    _ => true, // Default ascending
+                };
+                order_by.push((expr, ascending));
+
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(WindowSpec {
+            partition_by,
+            order_by,
+        })
+    }
+
     fn parse_or_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_and_expression()?;
 
@@ -1273,6 +1383,18 @@ impl Parser {
                         ));
                     }
                 }
+                Token::QuestionDot => {
+                    self.advance();
+                    if let Token::Identifier(field) = self.current_token() {
+                        let field_name = field.clone();
+                        self.advance();
+                        expr = Expression::OptionalFieldAccess(Box::new(expr), field_name);
+                    } else {
+                        return Err(DbError::ParseError(
+                            "Expected field name after '?.'".to_string(),
+                        ));
+                    }
+                }
                 Token::LeftBracket => {
                     self.advance();
 
@@ -1371,9 +1493,50 @@ impl Parser {
 
                     self.expect(Token::RightParen)?;
 
+                    // Check for OVER clause - if present, this is a window function
+                    if matches!(self.current_token(), Token::Over) {
+                        return self.parse_window_function(name, args);
+                    }
+
                     Ok(Expression::FunctionCall { name, args })
                 } else {
                     Ok(Expression::Variable(name))
+                }
+            }
+
+            // Handle COUNT as a function call (it's a separate token but can be used as a function)
+            Token::Count => {
+                self.advance();
+                let name = "COUNT".to_string();
+
+                // Must be followed by LeftParen for function call
+                if matches!(self.current_token(), Token::LeftParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+
+                    // Parse arguments
+                    while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                        args.push(self.parse_expression()?);
+
+                        if matches!(self.current_token(), Token::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    self.expect(Token::RightParen)?;
+
+                    // Check for OVER clause - if present, this is a window function
+                    if matches!(self.current_token(), Token::Over) {
+                        return self.parse_window_function(name, args);
+                    }
+
+                    Ok(Expression::FunctionCall { name, args })
+                } else {
+                    Err(DbError::ParseError(
+                        "Expected '(' after COUNT".to_string(),
+                    ))
                 }
             }
 
@@ -1450,11 +1613,76 @@ impl Parser {
                 Ok(Expression::Subquery(Box::new(subquery)))
             }
 
+            // CASE expression
+            Token::Case => self.parse_case_expression(),
+
             _ => Err(DbError::ParseError(format!(
                 "Unexpected token in expression: {:?}",
                 self.current_token()
             ))),
         }
+    }
+
+    /// Parse CASE expression
+    /// Simple form: CASE expr WHEN val1 THEN res1 WHEN val2 THEN res2 ELSE default END
+    /// Searched form: CASE WHEN cond1 THEN res1 WHEN cond2 THEN res2 ELSE default END
+    fn parse_case_expression(&mut self) -> DbResult<Expression> {
+        self.advance(); // consume CASE
+
+        // Check if this is a simple or searched CASE
+        let operand = if !matches!(self.current_token(), Token::When) {
+            // Simple CASE: CASE expr WHEN ...
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            // Searched CASE: CASE WHEN ...
+            None
+        };
+
+        // Parse WHEN clauses
+        let mut when_clauses = Vec::new();
+        while matches!(self.current_token(), Token::When) {
+            self.advance(); // consume WHEN
+
+            let condition = self.parse_expression()?;
+
+            if !matches!(self.current_token(), Token::Then) {
+                return Err(DbError::ParseError(
+                    "Expected THEN after WHEN condition".to_string(),
+                ));
+            }
+            self.advance(); // consume THEN
+
+            let result = self.parse_expression()?;
+            when_clauses.push((condition, result));
+        }
+
+        if when_clauses.is_empty() {
+            return Err(DbError::ParseError(
+                "CASE expression requires at least one WHEN clause".to_string(),
+            ));
+        }
+
+        // Parse optional ELSE clause
+        let else_clause = if matches!(self.current_token(), Token::Else) {
+            self.advance(); // consume ELSE
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        // Expect END
+        if !matches!(self.current_token(), Token::End) {
+            return Err(DbError::ParseError(
+                "Expected END to close CASE expression".to_string(),
+            ));
+        }
+        self.advance(); // consume END
+
+        Ok(Expression::Case {
+            operand,
+            when_clauses,
+            else_clause,
+        })
     }
 
     fn parse_object_expression(&mut self) -> DbResult<Expression> {
@@ -1472,9 +1700,33 @@ impl Parser {
                 self.advance();
                 k
             } else {
-                return Err(DbError::ParseError(
-                    "Expected field name in object".to_string(),
-                ));
+                // Handle keyword tokens that can be used as field names
+                let keyword_name = match self.current_token() {
+                    Token::Sort => Some("order"),
+                    Token::Count => Some("count"),
+                    Token::Filter => Some("filter"),
+                    Token::Return => Some("return"),
+                    Token::In => Some("in"),
+                    Token::For => Some("for"),
+                    Token::Let => Some("let"),
+                    Token::Limit => Some("limit"),
+                    Token::Partition => Some("partition"),
+                    Token::Over => Some("over"),
+                    Token::Case => Some("case"),
+                    Token::When => Some("when"),
+                    Token::Then => Some("then"),
+                    Token::Else => Some("else"),
+                    Token::End => Some("end"),
+                    _ => None,
+                };
+                if let Some(name) = keyword_name {
+                    self.advance();
+                    name.to_string()
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected field name in object".to_string(),
+                    ));
+                }
             };
 
             // Support shorthand syntax: { city } means { city: city }

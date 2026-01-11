@@ -39,6 +39,17 @@ pub enum Token {
     Graph,
     To,
 
+    // Window function keywords
+    Over,      // OVER
+    Partition, // PARTITION (BY is handled separately)
+
+    // CASE expression keywords
+    Case,  // CASE
+    When,  // WHEN
+    Then,  // THEN
+    Else,  // ELSE
+    End,   // END
+
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters
@@ -88,6 +99,7 @@ pub enum Token {
     RightParen,   // )
     Colon,        // :
     Question,     // ?
+    QuestionDot,  // ?. (optional chaining)
 
     // Special
     Eof,
@@ -232,7 +244,7 @@ impl Lexer {
             "FOR" => Token::For,
             "IN" => Token::In,
             "FILTER" => Token::Filter,
-            "SORT" => Token::Sort,
+            "SORT" | "ORDER" => Token::Sort,
             "LIMIT" => Token::Limit,
             "RETURN" => Token::Return,
             "LET" => Token::Let,
@@ -259,6 +271,15 @@ impl Lexer {
             "SHORTEST_PATH" => Token::ShortestPath,
             "GRAPH" => Token::Graph,
             "TO" => Token::To,
+            // Window function keywords
+            "OVER" => Token::Over,
+            "PARTITION" => Token::Partition,
+            // CASE expression keywords
+            "CASE" => Token::Case,
+            "WHEN" => Token::When,
+            "THEN" => Token::Then,
+            "ELSE" => Token::Else,
+            "END" => Token::End,
             // Aggregation keywords
             "COLLECT" => Token::Collect,
             "AGGREGATE" => Token::Aggregate,
@@ -460,6 +481,9 @@ impl Lexer {
                 if self.current_char == Some('?') {
                     self.advance();
                     Token::NullCoalesce
+                } else if self.current_char == Some('.') {
+                    self.advance();
+                    Token::QuestionDot
                 } else {
                     Token::Question
                 }
