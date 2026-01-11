@@ -2649,11 +2649,77 @@ FOR m IN matches RETURN m.doc</code></pre>
             Array
           </h3>
 
-          <h4
-            class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3"
+          <!-- Array Spread Operator -->
+          <div
+            class="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-xl border border-orange-500/20 overflow-hidden mb-8"
           >
-            Access Functions
-          </h4>
+            <div class="p-5 border-b border-orange-500/20 bg-orange-500/5">
+              <h4 class="text-lg font-bold text-orange-300 flex items-center">
+                <span
+                  class="bg-orange-500/20 text-orange-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                  >[*]</span
+                >
+                Array Spread Operator
+              </h4>
+            </div>
+            <div class="p-5 space-y-4">
+              <p class="text-gray-300 leading-relaxed">
+                The array spread operator <code class="text-orange-400">[*]</code> extracts a specific field from all elements in an array, returning a new array with just those values. This is similar to a map operation.
+              </p>
+
+              <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+                <pre><code class="language-sql text-sm">// Extract user_key from all attendees
+FOR event IN events
+  RETURN event.attendees[*].user_key
+// Result: [["u1", "u2"], ["u3"]]
+
+// Nested field extraction
+FOR doc IN data
+  RETURN doc.items[*].user.name
+// Result: [["Alice", "Bob"]]</code></pre>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div
+                  class="bg-gray-800/30 rounded-xl p-4 border border-white/5"
+                >
+                  <h5 class="text-orange-300 font-bold mb-2 text-sm">Basic Usage</h5>
+                  <pre><code class="language-sql text-xs">// Given: {items: [{name: "A"}, {name: "B"}]}
+doc.items[*].name  // ["A", "B"]</code></pre>
+                </div>
+                <div
+                  class="bg-gray-800/30 rounded-xl p-4 border border-white/5"
+                >
+                  <h5 class="text-orange-300 font-bold mb-2 text-sm">Chained Spread</h5>
+                  <pre><code class="language-sql text-xs">// Given: {items: [{tags: ["a","b"]}, {tags: ["c"]}]}
+doc.items[*].tags[*]  // ["a", "b", "c"]</code></pre>
+                </div>
+                <div
+                  class="bg-gray-800/30 rounded-xl p-4 border border-white/5"
+                >
+                  <h5 class="text-orange-300 font-bold mb-2 text-sm">Missing Fields</h5>
+                  <pre><code class="language-sql text-xs">// Given: {items: [{name: "A"}, {other: "B"}]}
+doc.items[*].name  // ["A", null]</code></pre>
+                </div>
+                <div
+                  class="bg-gray-800/30 rounded-xl p-4 border border-white/5"
+                >
+                  <h5 class="text-orange-300 font-bold mb-2 text-sm">Bare Spread</h5>
+                  <pre><code class="language-sql text-xs">// Given: {values: [1, 2, 3]}
+doc.values[*]  // [1, 2, 3]</code></pre>
+                </div>
+              </div>
+
+              <div class="bg-gray-800/40 rounded-lg p-4 border border-white/5 mt-4">
+                <p class="text-sm text-gray-400">
+                  <span class="text-orange-400 font-bold">Note:</span>
+                  If the base value is not an array, an empty array is returned.
+                  When a field is missing from an array element, <code class="text-gray-300">null</code> is included in the result.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <h4
             class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3"
           >
