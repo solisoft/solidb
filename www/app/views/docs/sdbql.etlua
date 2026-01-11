@@ -568,6 +568,101 @@ END</code></pre>
               </div>
             </div>
 
+            <!-- String Interpolation -->
+            <div
+              class="bg-gradient-to-r from-teal-500/10 to-cyan-500/10 rounded-xl border border-teal-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-teal-500/20 bg-teal-500/5">
+                <h3 class="text-lg font-bold text-teal-300 flex items-center">
+                  <span
+                    class="bg-teal-500/20 text-teal-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >$""</span
+                  >
+                  String Interpolation
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Template strings with <code class="text-teal-300">${expression}</code> syntax for cleaner string building.
+                  Use <code class="text-teal-300">$"..."</code> or <code class="text-teal-300">$'...'</code> prefix.
+                </p>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-red-400 font-bold mb-2 text-sm">Before (Verbose)</h5>
+                    <pre><code class="language-sql text-xs">RETURN CONCAT("Hello, ", doc.name, "! You have ", TO_STRING(doc.points), " points.")</code></pre>
+                  </div>
+                  <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-green-400 font-bold mb-2 text-sm">After (Clean)</h5>
+                    <pre><code class="language-sql text-xs">RETURN $"Hello, ${doc.name}! You have ${doc.points} points."</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-teal-300 font-bold mb-2 text-sm">Expressions Inside ${...}</h5>
+                  <pre><code class="language-sql text-sm">FOR doc IN products
+  RETURN {
+    -- Simple field access
+    greeting: $"Welcome, ${doc.name}!",
+
+    -- Arithmetic expressions
+    total: $"Total: $$${doc.price * doc.qty}",
+
+    -- Function calls
+    formatted: $"Name: ${UPPER(doc.name)}",
+
+    -- Ternary expressions
+    status: $"Status: ${doc.active ? 'Active' : 'Inactive'}",
+
+    -- Optional chaining
+    city: $"City: ${doc.address?.city ?? 'Unknown'}"
+  }</code></pre>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-teal-300 font-bold mb-2 text-sm">Type Coercion</h5>
+                    <pre><code class="language-sql text-xs">-- Numbers, booleans, null auto-convert
+$"Count: ${42}"         -- "Count: 42"
+$"Active: ${true}"      -- "Active: true"
+$"Value: ${null}"       -- "Value: null"
+
+-- Arrays and objects serialize to JSON
+$"Tags: ${['a','b']}"   -- 'Tags: ["a","b"]'</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-teal-300 font-bold mb-2 text-sm">Escape Sequences</h5>
+                    <pre><code class="language-sql text-xs">-- Literal dollar sign
+$"Price: $$50"          -- "Price: $50"
+
+-- Literal ${
+$"Code: \${x}"          -- "Code: ${x}"
+
+-- Standard escapes
+$"Line1\nLine2"         -- newline
+$"Col1\tCol2"           -- tab</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4 mt-4">
+                  <h5 class="text-teal-300 font-bold mb-2 text-sm">Practical Example</h5>
+                  <pre><code class="language-sql text-xs">FOR user IN users
+  FOR order IN orders
+    FILTER order.user_id == user._key
+    RETURN $"${user.name} ordered ${order.items} items (Total: $$${order.total}) on ${order.date}"
+
+-- Output: "Alice ordered 3 items (Total: $150) on 2024-01-15"</code></pre>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">
+                  <span class="text-teal-400 font-bold">Note:</span>
+                  String interpolation is secure - expressions are parsed at compile time as AST nodes,
+                  not evaluated as strings at runtime. User data cannot inject code.
+                </p>
+              </div>
+            </div>
+
             <!-- Window Functions -->
             <div
               class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden mt-6"

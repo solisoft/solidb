@@ -185,6 +185,15 @@ pub struct ReturnClause {
     pub expression: Expression,
 }
 
+/// Part of a template string (used in AST after parsing)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateStringPart {
+    /// Static text between interpolations
+    Literal(String),
+    /// Parsed expression inside ${...}
+    Expression(Box<Expression>),
+}
+
 /// Expression types
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
@@ -280,6 +289,12 @@ pub enum Expression {
         function: String,
         arguments: Vec<Expression>,
         over_clause: WindowSpec,
+    },
+
+    /// Template string with interpolated expressions: $"Hello ${name}!"
+    /// Syntax: $"text ${expression} more text"
+    TemplateString {
+        parts: Vec<TemplateStringPart>,
     },
 }
 

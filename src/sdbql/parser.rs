@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::ast::*;
-use super::lexer::{Lexer, Token};
+use super::lexer::{Lexer, TemplatePart, Token};
 use crate::error::{DbError, DbResult};
 
 pub struct Parser {
@@ -1365,6 +1365,47 @@ impl Parser {
         }
     }
 
+    /// Get field name from current token - handles both identifiers and keywords
+    fn get_field_name(&self) -> Option<String> {
+        match self.current_token() {
+            Token::Identifier(name) => Some(name.clone()),
+            // Allow keywords as field names
+            Token::Sort => Some("sort".to_string()),
+            Token::Count => Some("count".to_string()),
+            Token::Filter => Some("filter".to_string()),
+            Token::Return => Some("return".to_string()),
+            Token::In => Some("in".to_string()),
+            Token::For => Some("for".to_string()),
+            Token::Let => Some("let".to_string()),
+            Token::Limit => Some("limit".to_string()),
+            Token::Partition => Some("partition".to_string()),
+            Token::Over => Some("over".to_string()),
+            Token::Case => Some("case".to_string()),
+            Token::When => Some("when".to_string()),
+            Token::Then => Some("then".to_string()),
+            Token::Else => Some("else".to_string()),
+            Token::End => Some("end".to_string()),
+            Token::True => Some("true".to_string()),
+            Token::False => Some("false".to_string()),
+            Token::Null => Some("null".to_string()),
+            Token::And => Some("and".to_string()),
+            Token::Or => Some("or".to_string()),
+            Token::Not => Some("not".to_string()),
+            Token::Like => Some("like".to_string()),
+            Token::Insert => Some("insert".to_string()),
+            Token::Update => Some("update".to_string()),
+            Token::Remove => Some("remove".to_string()),
+            Token::Upsert => Some("upsert".to_string()),
+            Token::Into => Some("into".to_string()),
+            Token::With => Some("with".to_string()),
+            Token::Collect => Some("collect".to_string()),
+            Token::Aggregate => Some("aggregate".to_string()),
+            Token::Asc => Some("asc".to_string()),
+            Token::Desc => Some("desc".to_string()),
+            _ => None,
+        }
+    }
+
     fn parse_postfix_expression(&mut self) -> DbResult<Expression> {
         let mut expr = self.parse_primary_expression()?;
 
@@ -1373,8 +1414,7 @@ impl Parser {
             match self.current_token() {
                 Token::Dot => {
                     self.advance();
-                    if let Token::Identifier(field) = self.current_token() {
-                        let field_name = field.clone();
+                    if let Some(field_name) = self.get_field_name() {
                         self.advance();
                         expr = Expression::FieldAccess(Box::new(expr), field_name);
                     } else {
@@ -1385,8 +1425,7 @@ impl Parser {
                 }
                 Token::QuestionDot => {
                     self.advance();
-                    if let Token::Identifier(field) = self.current_token() {
-                        let field_name = field.clone();
+                    if let Some(field_name) = self.get_field_name() {
                         self.advance();
                         expr = Expression::OptionalFieldAccess(Box::new(expr), field_name);
                     } else {
@@ -1616,6 +1655,13 @@ impl Parser {
             // CASE expression
             Token::Case => self.parse_case_expression(),
 
+            // Template string: $"Hello ${name}!"
+            Token::TemplateString(parts) => {
+                let parts = parts.clone();
+                self.advance();
+                self.parse_template_string(parts)
+            }
+
             _ => Err(DbError::ParseError(format!(
                 "Unexpected token in expression: {:?}",
                 self.current_token()
@@ -1682,6 +1728,31 @@ impl Parser {
             operand,
             when_clauses,
             else_clause,
+        })
+    }
+
+    /// Parse template string parts from lexer into AST nodes
+    /// Each Expression(string) part gets parsed as a full SDBQL expression
+    fn parse_template_string(&mut self, parts: Vec<TemplatePart>) -> DbResult<Expression> {
+        let mut parsed_parts = Vec::new();
+
+        for part in parts {
+            match part {
+                TemplatePart::Literal(s) => {
+                    parsed_parts.push(TemplateStringPart::Literal(s));
+                }
+                TemplatePart::Expression(expr_str) => {
+                    // Parse the expression string as a full SDBQL expression
+                    let mut expr_parser = Parser::new(&expr_str)?;
+                    // Parse just the expression, not a full query
+                    let expr = expr_parser.parse_expression()?;
+                    parsed_parts.push(TemplateStringPart::Expression(Box::new(expr)));
+                }
+            }
+        }
+
+        Ok(Expression::TemplateString {
+            parts: parsed_parts,
         })
     }
 

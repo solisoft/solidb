@@ -2850,6 +2850,49 @@ impl<'a> QueryExecutor<'a> {
                     function
                 )))
             }
+
+            Expression::TemplateString { parts } => {
+                let mut result = String::new();
+
+                for part in parts {
+                    match part {
+                        TemplateStringPart::Literal(s) => {
+                            result.push_str(s);
+                        }
+                        TemplateStringPart::Expression(expr) => {
+                            let value = self.evaluate_expr_with_context(expr, ctx)?;
+                            // Type coercion to string
+                            match value {
+                                Value::String(s) => result.push_str(&s),
+                                Value::Number(n) => {
+                                    // Format integers without decimal point
+                                    if let Some(i) = n.as_i64() {
+                                        result.push_str(&i.to_string());
+                                    } else if let Some(f) = n.as_f64() {
+                                        // Check if it's a whole number
+                                        if f.fract() == 0.0 && f.abs() < (i64::MAX as f64) {
+                                            result.push_str(&(f as i64).to_string());
+                                        } else {
+                                            result.push_str(&f.to_string());
+                                        }
+                                    } else {
+                                        result.push_str(&n.to_string());
+                                    }
+                                }
+                                Value::Bool(b) => result.push_str(&b.to_string()),
+                                Value::Null => result.push_str("null"),
+                                Value::Array(_) | Value::Object(_) => {
+                                    result.push_str(
+                                        &serde_json::to_string(&value).unwrap_or_default(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(Value::String(result))
+            }
         }
     }
 
@@ -8057,6 +8100,10 @@ fn contains_window_functions(expr: &Expression) -> bool {
         Expression::Pipeline { left, right } => {
             contains_window_functions(left) || contains_window_functions(right)
         }
+        Expression::TemplateString { parts } => parts.iter().any(|p| match p {
+            TemplateStringPart::Expression(e) => contains_window_functions(e),
+            _ => false,
+        }),
         _ => false,
     }
 }
@@ -8179,6 +8226,13 @@ fn extract_window_functions_impl(
         Expression::Pipeline { left, right } => {
             extract_window_functions_impl(left, result);
             extract_window_functions_impl(right, result);
+        }
+        Expression::TemplateString { parts } => {
+            for part in parts {
+                if let TemplateStringPart::Expression(e) = part {
+                    extract_window_functions_impl(e, result);
+                }
+            }
         }
         _ => {}
     }

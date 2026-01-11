@@ -1,5 +1,14 @@
 use crate::error::{DbError, DbResult};
 
+/// Part of a template string (used in lexer output)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplatePart {
+    /// Static text between interpolations
+    Literal(String),
+    /// Raw expression text inside ${...}
+    Expression(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
@@ -56,6 +65,7 @@ pub enum Token {
     Integer(i64),
     Float(f64),
     String(String),
+    TemplateString(Vec<TemplatePart>), // $"..." with interpolation
 
     // Operators
     Equal,         // ==
@@ -126,6 +136,11 @@ impl Lexer {
     fn advance(&mut self) {
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
+    }
+
+    /// Peek at the next character without consuming it
+    fn peek_char(&self) -> Option<char> {
+        self.input.get(self.position + 1).copied()
     }
 
     fn skip_whitespace(&mut self) {
@@ -206,6 +221,94 @@ impl Lexer {
         }
 
         Err(DbError::ParseError("Unterminated string".to_string()))
+    }
+
+    /// Read a template string: $"..." or $'...' with ${expression} interpolation
+    fn read_template_string(&mut self) -> DbResult<Token> {
+        self.advance(); // skip $
+        let quote = self.current_char.unwrap(); // " or '
+        self.advance(); // skip opening quote
+
+        let mut parts = Vec::new();
+        let mut current_literal = String::new();
+
+        while let Some(ch) = self.current_char {
+            if ch == quote {
+                // End of template
+                if !current_literal.is_empty() {
+                    parts.push(TemplatePart::Literal(current_literal));
+                }
+                self.advance();
+                return Ok(Token::TemplateString(parts));
+            } else if ch == '$' && self.peek_char() == Some('{') {
+                // Start of interpolation
+                if !current_literal.is_empty() {
+                    parts.push(TemplatePart::Literal(current_literal));
+                    current_literal = String::new();
+                }
+                self.advance(); // skip $
+                self.advance(); // skip {
+
+                // Read until matching }
+                let expr = self.read_until_closing_brace()?;
+                parts.push(TemplatePart::Expression(expr));
+            } else if ch == '$' && self.peek_char() == Some('$') {
+                // Escaped $$ -> $
+                current_literal.push('$');
+                self.advance();
+                self.advance();
+            } else if ch == '\\' {
+                // Handle escapes
+                self.advance();
+                if let Some(escaped) = self.current_char {
+                    current_literal.push(match escaped {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '$' => '$',
+                        '"' => '"',
+                        '\'' => '\'',
+                        _ => escaped,
+                    });
+                    self.advance();
+                }
+            } else {
+                current_literal.push(ch);
+                self.advance();
+            }
+        }
+
+        Err(DbError::ParseError(
+            "Unterminated template string".to_string(),
+        ))
+    }
+
+    /// Read expression text inside ${...}, handling nested braces
+    fn read_until_closing_brace(&mut self) -> DbResult<String> {
+        let mut expr = String::new();
+        let mut brace_depth = 1;
+
+        while let Some(ch) = self.current_char {
+            if ch == '{' {
+                brace_depth += 1;
+                expr.push(ch);
+            } else if ch == '}' {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    self.advance();
+                    return Ok(expr);
+                }
+                expr.push(ch);
+            } else {
+                expr.push(ch);
+            }
+            self.advance();
+        }
+
+        Err(DbError::ParseError(
+            "Unterminated interpolation ${}".to_string(),
+        ))
     }
 
     fn read_quoted_identifier(&mut self) -> DbResult<Token> {
@@ -319,6 +422,10 @@ impl Lexer {
 
             Some(ch) if ch.is_numeric() => {
                 return self.read_number();
+            }
+
+            Some('$') if matches!(self.peek_char(), Some('"') | Some('\'')) => {
+                return self.read_template_string();
             }
 
             Some('"') | Some('\'') => {
