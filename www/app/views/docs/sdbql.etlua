@@ -207,6 +207,92 @@ FOR i IN 1..n
                 </div>
               </div>
             </div>
+
+            <!-- Pipeline Operator -->
+            <div
+              class="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/20 overflow-hidden mt-6"
+            >
+              <div class="p-5 border-b border-purple-500/20 bg-purple-500/5">
+                <h3 class="text-lg font-bold text-purple-300 flex items-center">
+                  <span
+                    class="bg-purple-500/20 text-purple-400 text-xs font-mono px-2 py-1 rounded mr-3"
+                    >|></span
+                  >
+                  Pipeline Operator
+                  <span class="ml-3 px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded">NEW</span>
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">
+                  Chain function calls for readable data transformations. The
+                  <code class="text-purple-300">|></code> operator passes the left value as the
+                  <strong>first argument</strong> to the right-side function.
+                </p>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <pre><code class="language-sql text-sm">-- String transformations
+RETURN "  hello world  " |> TRIM() |> UPPER() |> SPLIT(" ")
+-- Result: ["HELLO", "WORLD"]
+
+-- Array operations
+RETURN [3, 1, 4, 1, 5] |> UNIQUE() |> SORTED() |> REVERSE() |> FIRST()
+-- Result: 5
+
+-- With extra arguments
+RETURN 3.14159 |> ROUND(2) |> TO_STRING()
+-- Result: "3.14"</code></pre>
+                </div>
+
+                <h4
+                  class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4"
+                >
+                  Lambda Expressions
+                </h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Use <code class="text-purple-300">x -> expression</code> syntax for inline transformations
+                  with higher-order functions like FILTER, MAP, ANY, and ALL.
+                </p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-purple-300 font-bold mb-2 text-sm">FILTER with Lambda</h5>
+                    <pre><code class="language-sql text-xs">[1, 2, 3, 4, 5] |> FILTER(x -> x > 2)
+-- Result: [3, 4, 5]
+
+-- Complex condition
+items |> FILTER(i -> i.price > 50 AND i.stock > 0)</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-purple-300 font-bold mb-2 text-sm">MAP with Lambda</h5>
+                    <pre><code class="language-sql text-xs">[1, 2, 3] |> MAP(x -> x * 2)
+-- Result: [2, 4, 6]
+
+-- Extract fields
+users |> MAP(u -> u.name)</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-purple-300 font-bold mb-2 text-sm">ANY / ALL</h5>
+                    <pre><code class="language-sql text-xs">[1, 2, 3] |> ANY(x -> x > 2)  // true
+[1, 2, 3] |> ALL(x -> x > 0)  // true</code></pre>
+                  </div>
+                  <div class="bg-gray-800/30 rounded-lg border border-white/5 p-4">
+                    <h5 class="text-purple-300 font-bold mb-2 text-sm">Chaining</h5>
+                    <pre><code class="language-sql text-xs">orders
+  |> FILTER(o -> o.status == "pending")
+  |> MAP(o -> o.total)
+  |> SORTED()
+  |> FIRST()</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800/40 rounded-lg p-4 border border-white/5 mt-4">
+                  <p class="text-sm text-gray-400">
+                    <span class="text-purple-400 font-bold">Supported Functions:</span>
+                    FIRST, LAST, LENGTH, REVERSE, SORTED, UNIQUE, FLATTEN, UPPER, LOWER, TRIM, SPLIT,
+                    ROUND, ABS, FLOOR, CEIL, TO_STRING, TO_NUMBER, FILTER, MAP, ANY, ALL, FIND, REDUCE
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

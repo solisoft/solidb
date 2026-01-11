@@ -71,6 +71,10 @@ pub enum Token {
     LeftShift,  // <<
     RightShift, // >>
 
+    // Pipeline operators
+    PipeRight, // |> (pipeline)
+    Arrow,     // -> (lambda)
+
     // Delimiters
     Dot,          // .
     DotDot,       // .. (range operator)
@@ -369,7 +373,12 @@ impl Lexer {
             }
             Some('-') => {
                 self.advance();
-                Token::Minus
+                if self.current_char == Some('>') {
+                    self.advance();
+                    Token::Arrow
+                } else {
+                    Token::Minus
+                }
             }
             Some('*') => {
                 self.advance();
@@ -389,7 +398,12 @@ impl Lexer {
             }
             Some('|') => {
                 self.advance();
-                Token::Pipe
+                if self.current_char == Some('>') {
+                    self.advance();
+                    Token::PipeRight
+                } else {
+                    Token::Pipe
+                }
             }
             Some('^') => {
                 self.advance();

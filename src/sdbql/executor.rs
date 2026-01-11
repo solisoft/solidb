@@ -213,6 +213,16 @@ fn format_expression(expr: &Expression) -> String {
                 .join(", ");
             format!("{}({})", name, args_str)
         }
+        Expression::Pipeline { left, right } => {
+            format!("{} |> {}", format_expression(left), format_expression(right))
+        }
+        Expression::Lambda { params, body } => {
+            if params.len() == 1 {
+                format!("{} -> {}", params[0], format_expression(body))
+            } else {
+                format!("({}) -> {}", params.join(", "), format_expression(body))
+            }
+        }
         _ => format!("{:?}", expr), // Fallback to debug for complex expressions
     }
 }
@@ -2704,6 +2714,392 @@ impl<'a> QueryExecutor<'a> {
                     self.evaluate_expr_with_context(false_expr, ctx)
                 }
             }
+
+            Expression::Pipeline { left, right } => {
+                // Evaluate left side first
+                let left_val = self.evaluate_expr_with_context(left, ctx)?;
+
+                // Right side must be a FunctionCall - prepend left_val to args
+                match right.as_ref() {
+                    Expression::FunctionCall { name, args } => {
+                        // Check if any arg is a lambda - if so, use HOF evaluation
+                        let has_lambda = args
+                            .iter()
+                            .any(|a| matches!(a, Expression::Lambda { .. }));
+
+                        if has_lambda {
+                            // Pass left_val as first evaluated arg, keep original args for lambda
+                            return self.evaluate_hof_with_lambda(
+                                &name.to_uppercase(),
+                                &[left_val],
+                                args,
+                                ctx,
+                            );
+                        }
+
+                        // No lambda - evaluate all args normally
+                        let mut evaluated_args = vec![left_val];
+                        for arg in args {
+                            evaluated_args.push(self.evaluate_expr_with_context(arg, ctx)?);
+                        }
+                        self.evaluate_function_with_values(&name.to_uppercase(), &evaluated_args)
+                    }
+                    _ => Err(DbError::ExecutionError(
+                        "Pipeline operator |> requires a function call on the right side"
+                            .to_string(),
+                    )),
+                }
+            }
+
+            Expression::Lambda { params, body: _ } => {
+                // Lambdas cannot be evaluated directly - they must be used with HOFs
+                // Return an error if someone tries to evaluate a lambda standalone
+                Err(DbError::ExecutionError(format!(
+                    "Lambda expression with params {:?} cannot be evaluated directly. \
+                     Use it with higher-order functions like FILTER, MAP, etc.",
+                    params
+                )))
+            }
+        }
+    }
+
+    /// Evaluate a higher-order function with lambda argument
+    fn evaluate_hof_with_lambda(
+        &self,
+        name: &str,
+        evaluated_args: &[Value],
+        original_args: &[Expression],
+        ctx: &Context,
+    ) -> DbResult<Value> {
+        // First arg should be array (already evaluated)
+        let arr = match evaluated_args.first() {
+            Some(Value::Array(a)) => a.clone(),
+            Some(other) => {
+                return Err(DbError::ExecutionError(format!(
+                    "{} expects an array as first argument, got {:?}",
+                    name, other
+                )))
+            }
+            None => return Err(DbError::ExecutionError(format!("{} requires arguments", name))),
+        };
+
+        // Find the lambda in original args (skip first which is the piped value)
+        let lambda = original_args.iter().find_map(|arg| match arg {
+            Expression::Lambda { params, body } => Some((params.clone(), body.clone())),
+            _ => None,
+        });
+
+        let (params, body) = match lambda {
+            Some(l) => l,
+            None => {
+                return Err(DbError::ExecutionError(format!(
+                    "{} requires a lambda argument",
+                    name
+                )))
+            }
+        };
+
+        match name {
+            "FILTER" => {
+                let filtered: Vec<Value> = arr
+                    .into_iter()
+                    .filter(|item| {
+                        let mut lambda_ctx = ctx.clone();
+                        if let Some(param) = params.first() {
+                            lambda_ctx.insert(param.clone(), item.clone());
+                        }
+                        self.evaluate_expr_with_context(&body, &lambda_ctx)
+                            .map(|v| to_bool(&v))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                Ok(Value::Array(filtered))
+            }
+            "MAP" => {
+                let mapped: DbResult<Vec<Value>> = arr
+                    .into_iter()
+                    .map(|item| {
+                        let mut lambda_ctx = ctx.clone();
+                        if let Some(param) = params.first() {
+                            lambda_ctx.insert(param.clone(), item.clone());
+                        }
+                        self.evaluate_expr_with_context(&body, &lambda_ctx)
+                    })
+                    .collect();
+                Ok(Value::Array(mapped?))
+            }
+            "FIND" | "FIND_FIRST" => {
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    if self
+                        .evaluate_expr_with_context(&body, &lambda_ctx)
+                        .map(|v| to_bool(&v))
+                        .unwrap_or(false)
+                    {
+                        return Ok(item);
+                    }
+                }
+                Ok(Value::Null)
+            }
+            "ALL" | "EVERY" => {
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    if !self
+                        .evaluate_expr_with_context(&body, &lambda_ctx)
+                        .map(|v| to_bool(&v))
+                        .unwrap_or(false)
+                    {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
+            "ANY" | "SOME" => {
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    if self
+                        .evaluate_expr_with_context(&body, &lambda_ctx)
+                        .map(|v| to_bool(&v))
+                        .unwrap_or(false)
+                    {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                Ok(Value::Bool(false))
+            }
+            "REDUCE" => {
+                // REDUCE needs initial value as third arg
+                let initial = evaluated_args.get(1).cloned().unwrap_or(Value::Null);
+                let mut acc = initial;
+
+                // Lambda should have 2 params: (acc, item)
+                for item in arr {
+                    let mut lambda_ctx = ctx.clone();
+                    if params.len() >= 2 {
+                        lambda_ctx.insert(params[0].clone(), acc.clone());
+                        lambda_ctx.insert(params[1].clone(), item.clone());
+                    } else if let Some(param) = params.first() {
+                        lambda_ctx.insert(param.clone(), item.clone());
+                    }
+                    acc = self.evaluate_expr_with_context(&body, &lambda_ctx)?;
+                }
+                Ok(acc)
+            }
+            _ => Err(DbError::ExecutionError(format!(
+                "Function {} does not support lambda arguments",
+                name
+            ))),
+        }
+    }
+
+    /// Evaluate function with pre-evaluated values (for pipeline operator)
+    fn evaluate_function_with_values(&self, name: &str, args: &[Value]) -> DbResult<Value> {
+        // Helper to convert value to f64
+        fn val_to_f64(v: &Value) -> f64 {
+            match v {
+                Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(true) => 1.0,
+                Value::Bool(false) => 0.0,
+                _ => 0.0,
+            }
+        }
+
+        // Helper to flatten array
+        fn flatten_arr(arr: &[Value], depth: usize) -> Vec<Value> {
+            if depth == 0 {
+                return arr.to_vec();
+            }
+            let mut result = Vec::new();
+            for item in arr {
+                if let Value::Array(inner) = item {
+                    result.extend(flatten_arr(inner, depth - 1));
+                } else {
+                    result.push(item.clone());
+                }
+            }
+            result
+        }
+
+        match name {
+            // Array functions
+            "FIRST" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    Ok(arr.first().cloned().unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "LAST" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    Ok(arr.last().cloned().unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "LENGTH" => match args.first() {
+                Some(Value::Array(arr)) => Ok(Value::Number(arr.len().into())),
+                Some(Value::String(s)) => Ok(Value::Number(s.len().into())),
+                _ => Ok(Value::Number(0.into())),
+            },
+            "REVERSE" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    let mut reversed = arr.clone();
+                    reversed.reverse();
+                    Ok(Value::Array(reversed))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "SORTED" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    let mut sorted = arr.clone();
+                    sorted.sort_by(|a, b| compare_values(a, b));
+                    Ok(Value::Array(sorted))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "UNIQUE" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    let mut unique = Vec::new();
+                    for v in arr {
+                        if !unique.iter().any(|u| values_equal(u, v)) {
+                            unique.push(v.clone());
+                        }
+                    }
+                    Ok(Value::Array(unique))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "FLATTEN" => {
+                if let Some(Value::Array(arr)) = args.first() {
+                    let depth = args
+                        .get(1)
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(1)
+                        .max(0) as usize;
+                    Ok(Value::Array(flatten_arr(arr, depth)))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            // String functions
+            "UPPER" => {
+                if let Some(Value::String(s)) = args.first() {
+                    Ok(Value::String(s.to_uppercase()))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "LOWER" => {
+                if let Some(Value::String(s)) = args.first() {
+                    Ok(Value::String(s.to_lowercase()))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "TRIM" => {
+                if let Some(Value::String(s)) = args.first() {
+                    Ok(Value::String(s.trim().to_string()))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "SPLIT" => {
+                if let Some(Value::String(s)) = args.first() {
+                    let sep = args.get(1).and_then(|v| v.as_str()).unwrap_or(" ");
+                    let parts: Vec<Value> =
+                        s.split(sep).map(|p| Value::String(p.to_string())).collect();
+                    Ok(Value::Array(parts))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            // Numeric functions
+            "ROUND" => {
+                if let Some(v) = args.first() {
+                    let num = val_to_f64(v);
+                    let precision = args.get(1).map(|v| val_to_f64(v) as i32).unwrap_or(0);
+                    let factor = 10f64.powi(precision);
+                    let rounded = (num * factor).round() / factor;
+                    Ok(serde_json::Number::from_f64(rounded)
+                        .map(Value::Number)
+                        .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "ABS" => {
+                if let Some(v) = args.first() {
+                    let num = val_to_f64(v).abs();
+                    Ok(serde_json::Number::from_f64(num)
+                        .map(Value::Number)
+                        .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "FLOOR" => {
+                if let Some(v) = args.first() {
+                    let num = val_to_f64(v).floor();
+                    Ok(serde_json::Number::from_f64(num)
+                        .map(Value::Number)
+                        .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "CEIL" => {
+                if let Some(v) = args.first() {
+                    let num = val_to_f64(v).ceil();
+                    Ok(serde_json::Number::from_f64(num)
+                        .map(Value::Number)
+                        .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            // Type conversion
+            "TO_STRING" => {
+                if let Some(v) = args.first() {
+                    let s = match v {
+                        Value::String(s) => s.clone(),
+                        Value::Number(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        Value::Null => "null".to_string(),
+                        Value::Array(a) => serde_json::to_string(a).unwrap_or_default(),
+                        Value::Object(o) => serde_json::to_string(o).unwrap_or_default(),
+                    };
+                    Ok(Value::String(s))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            "TO_NUMBER" => {
+                if let Some(v) = args.first() {
+                    let num = val_to_f64(v);
+                    Ok(serde_json::Number::from_f64(num)
+                        .map(Value::Number)
+                        .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            _ => Err(DbError::ExecutionError(format!(
+                "Function {} is not supported in pipeline context or doesn't exist",
+                name
+            ))),
         }
     }
 

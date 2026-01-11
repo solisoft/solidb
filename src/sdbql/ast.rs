@@ -244,6 +244,20 @@ pub enum Expression {
         true_expr: Box<Expression>,
         false_expr: Box<Expression>,
     },
+
+    /// Pipeline operation (value |> FUNC(args))
+    /// Left value becomes first argument to right-side function call
+    Pipeline {
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+
+    /// Lambda expression (x -> expr) or ((a, b) -> expr)
+    /// Used as arguments to higher-order functions like FILTER, MAP
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

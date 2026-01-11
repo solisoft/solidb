@@ -830,7 +830,7 @@ impl Parser {
     /// Parse ternary expression: condition ? true_expr : false_expr
     /// Lowest precedence, right-associative
     fn parse_ternary_expression(&mut self) -> DbResult<Expression> {
-        let condition = self.parse_or_expression()?;
+        let condition = self.parse_pipeline_expression()?;
 
         if matches!(self.current_token(), Token::Question) {
             self.advance(); // consume '?'
@@ -845,6 +845,130 @@ impl Parser {
         } else {
             Ok(condition)
         }
+    }
+
+    /// Parse pipeline expression: expr |> FUNC(args) |> FUNC2(args)
+    /// Left-associative, precedence between ternary and OR
+    fn parse_pipeline_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_or_expression()?;
+
+        while matches!(self.current_token(), Token::PipeRight) {
+            self.advance(); // consume |>
+
+            // Parse function name - can be an identifier or a keyword that doubles as a function
+            let func_name = self.parse_pipeline_function_name()?;
+
+            // Expect opening paren
+            self.expect(Token::LeftParen)?;
+
+            // Parse arguments
+            let mut args = Vec::new();
+            while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                args.push(self.parse_expression()?);
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Token::RightParen)?;
+
+            let right = Expression::FunctionCall {
+                name: func_name,
+                args,
+            };
+
+            left = Expression::Pipeline {
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse function name in pipeline context - allows keywords that double as functions
+    fn parse_pipeline_function_name(&mut self) -> DbResult<String> {
+        let name = match self.current_token() {
+            Token::Identifier(name) => name.clone(),
+            // Keywords that can also be function names
+            Token::Filter => "FILTER".to_string(),
+            Token::Sort => "SORT".to_string(),
+            Token::Count => "COUNT".to_string(),
+            Token::Any => "ANY".to_string(),
+            Token::Return => "RETURN".to_string(),
+            Token::In => "IN".to_string(),
+            _ => {
+                return Err(DbError::ParseError(format!(
+                    "Expected function name after |>, got {:?}",
+                    self.current_token()
+                )));
+            }
+        };
+        self.advance();
+        Ok(name)
+    }
+
+    /// Parse lambda expression: x -> expr or (a, b) -> expr
+    fn parse_lambda_expression(&mut self) -> DbResult<Expression> {
+        let mut params = Vec::new();
+
+        // Handle parenthesized parameters: (a, b) -> expr
+        if matches!(self.current_token(), Token::LeftParen) {
+            self.advance(); // consume (
+            while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                if let Token::Identifier(name) = self.current_token() {
+                    params.push(name.clone());
+                    self.advance();
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected parameter name in lambda".to_string(),
+                    ));
+                }
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Token::RightParen)?;
+        } else if let Token::Identifier(name) = self.current_token() {
+            // Single parameter without parentheses: x -> expr
+            params.push(name.clone());
+            self.advance();
+        }
+
+        self.expect(Token::Arrow)?;
+        let body = self.parse_expression()?;
+
+        Ok(Expression::Lambda {
+            params,
+            body: Box::new(body),
+        })
+    }
+
+    /// Check if the current position looks like the start of a lambda: (params) ->
+    fn is_lambda_params(&self) -> bool {
+        // We're at '(' - scan ahead to see if it's (ident, ident, ...) ->
+        let mut pos = self.position + 1;
+        let mut depth = 1;
+
+        while let Some(tok) = self.tokens.get(pos) {
+            match tok {
+                Token::LeftParen => depth += 1,
+                Token::RightParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // Check if next token is Arrow
+                        return matches!(self.tokens.get(pos + 1), Some(Token::Arrow));
+                    }
+                }
+                Token::Comma | Token::Identifier(_) => {}
+                _ => return false, // Not a simple param list
+            }
+            pos += 1;
+        }
+        false
     }
 
     fn parse_or_expression(&mut self) -> DbResult<Expression> {
@@ -1202,6 +1326,11 @@ impl Parser {
     fn parse_primary_expression(&mut self) -> DbResult<Expression> {
         match self.current_token() {
             Token::Identifier(name) => {
+                // Check for lambda: x -> expr
+                if matches!(self.peek_token(1), Token::Arrow) {
+                    return self.parse_lambda_expression();
+                }
+
                 let name = name.clone();
                 self.advance();
 
@@ -1277,6 +1406,11 @@ impl Parser {
             Token::LeftBracket => self.parse_array_expression(),
 
             Token::LeftParen => {
+                // Check for lambda: (params) -> expr
+                if self.is_lambda_params() {
+                    return self.parse_lambda_expression();
+                }
+
                 self.advance();
                 // Check if this is a subquery (starts with FOR or LET)
                 if matches!(self.current_token(), Token::For | Token::Let) {
