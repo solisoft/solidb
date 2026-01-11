@@ -203,6 +203,10 @@ pub enum Expression {
     /// Array element access (e.g., arr[0], arr[i])
     ArrayAccess(Box<Expression>, Box<Expression>),
 
+    /// Array spread access (e.g., arr[*].field extracts field from all elements)
+    /// field_path is None for bare [*], Some("field.nested") for chained access
+    ArraySpreadAccess(Box<Expression>, Option<String>),
+
     /// Literal value
     Literal(Value),
 
@@ -313,7 +317,7 @@ mod tests {
             Box::new(Expression::Variable("doc".to_string())),
             "name".to_string(),
         );
-        
+
         if let Expression::FieldAccess(base, field) = expr {
             assert_eq!(*base, Expression::Variable("doc".to_string()));
             assert_eq!(field, "name");
@@ -329,7 +333,7 @@ mod tests {
             op: BinaryOperator::Add,
             right: Box::new(Expression::Literal(json!(1))),
         };
-        
+
         if let Expression::BinaryOp { left, op, right } = expr {
             assert_eq!(*left, Expression::Variable("a".to_string()));
             assert_eq!(op, BinaryOperator::Add);
@@ -347,7 +351,7 @@ mod tests {
             source_variable: None,
             source_expression: None,
         };
-        
+
         assert_eq!(clause.variable, "doc");
         assert_eq!(clause.collection, "users");
     }
@@ -357,7 +361,7 @@ mod tests {
         let clause = FilterClause {
             expression: Expression::Literal(json!(true)),
         };
-        
+
         assert_eq!(clause.expression, Expression::Literal(json!(true)));
     }
 
@@ -367,7 +371,7 @@ mod tests {
             offset: Expression::Literal(json!(0)),
             count: Expression::Literal(json!(10)),
         };
-        
+
         assert_eq!(clause.offset, Expression::Literal(json!(0)));
         assert_eq!(clause.count, Expression::Literal(json!(10)));
     }
@@ -375,14 +379,15 @@ mod tests {
     #[test]
     fn test_sort_clause() {
         let clause = SortClause {
-            fields: vec![
-                (Expression::FieldAccess(
+            fields: vec![(
+                Expression::FieldAccess(
                     Box::new(Expression::Variable("doc".to_string())),
                     "age".to_string(),
-                ), true),
-            ],
+                ),
+                true,
+            )],
         };
-        
+
         assert_eq!(clause.fields.len(), 1);
         assert!(clause.fields[0].1); // ascending
     }
@@ -393,7 +398,7 @@ mod tests {
             variable: "x".to_string(),
             expression: Expression::Literal(json!(42)),
         };
-        
+
         assert_eq!(clause.variable, "x");
     }
 
@@ -403,7 +408,7 @@ mod tests {
             document: Expression::Object(vec![]),
             collection: "users".to_string(),
         };
-        
+
         assert_eq!(clause.collection, "users");
     }
 
@@ -444,7 +449,7 @@ mod tests {
             return_clause: None,
             body_clauses: vec![],
         };
-        
+
         assert!(query.for_clauses.is_empty());
         assert!(query.return_clause.is_none());
     }
@@ -452,15 +457,18 @@ mod tests {
     #[test]
     fn test_collect_clause() {
         let clause = CollectClause {
-            group_vars: vec![("category".to_string(), Expression::FieldAccess(
-                Box::new(Expression::Variable("doc".to_string())),
-                "cat".to_string(),
-            ))],
+            group_vars: vec![(
+                "category".to_string(),
+                Expression::FieldAccess(
+                    Box::new(Expression::Variable("doc".to_string())),
+                    "cat".to_string(),
+                ),
+            )],
             into_var: Some("items".to_string()),
             count_var: Some("cnt".to_string()),
             aggregates: vec![],
         };
-        
+
         assert_eq!(clause.group_vars.len(), 1);
         assert_eq!(clause.into_var, Some("items".to_string()));
         assert_eq!(clause.count_var, Some("cnt".to_string()));
@@ -476,7 +484,7 @@ mod tests {
                 "price".to_string(),
             )),
         };
-        
+
         assert_eq!(agg.variable, "total");
         assert_eq!(agg.function, "SUM");
         assert!(agg.argument.is_some());
@@ -489,7 +497,7 @@ mod tests {
             Expression::Literal(json!(2)),
             Expression::Literal(json!(3)),
         ]);
-        
+
         if let Expression::Array(items) = expr {
             assert_eq!(items.len(), 3);
         } else {
@@ -503,7 +511,7 @@ mod tests {
             ("name".to_string(), Expression::Literal(json!("test"))),
             ("value".to_string(), Expression::Literal(json!(42))),
         ]);
-        
+
         if let Expression::Object(fields) = expr {
             assert_eq!(fields.len(), 2);
             assert_eq!(fields[0].0, "name");
@@ -518,7 +526,7 @@ mod tests {
             Box::new(Expression::Literal(json!(1))),
             Box::new(Expression::Literal(json!(5))),
         );
-        
+
         if let Expression::Range(start, end) = expr {
             assert_eq!(*start, Expression::Literal(json!(1)));
             assert_eq!(*end, Expression::Literal(json!(5)));
@@ -533,7 +541,7 @@ mod tests {
             name: "LENGTH".to_string(),
             args: vec![Expression::Variable("arr".to_string())],
         };
-        
+
         if let Expression::FunctionCall { name, args } = expr {
             assert_eq!(name, "LENGTH");
             assert_eq!(args.len(), 1);
@@ -549,8 +557,13 @@ mod tests {
             true_expr: Box::new(Expression::Literal(json!(1))),
             false_expr: Box::new(Expression::Literal(json!(0))),
         };
-        
-        if let Expression::Ternary { condition, true_expr, false_expr } = expr {
+
+        if let Expression::Ternary {
+            condition,
+            true_expr,
+            false_expr,
+        } = expr
+        {
             assert_eq!(*condition, Expression::Variable("flag".to_string()));
             assert_eq!(*true_expr, Expression::Literal(json!(1)));
             assert_eq!(*false_expr, Expression::Literal(json!(0)));
@@ -559,4 +572,3 @@ mod tests {
         }
     }
 }
-
