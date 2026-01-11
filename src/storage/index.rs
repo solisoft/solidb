@@ -354,7 +354,7 @@ mod tests {
         let ngrams1 = generate_ngrams("hello", 3);
         let ngrams2 = generate_ngrams("hello", 3);
         assert!((ngram_similarity(&ngrams1, &ngrams2) - 1.0).abs() < 1e-10);
-        
+
         let ngrams3 = generate_ngrams("world", 3);
         let sim = ngram_similarity(&ngrams1, &ngrams3);
         assert!(sim < 1.0);
@@ -372,7 +372,7 @@ mod tests {
         // If term appears in all docs, IDF should be low/negative
         let idf_all = calculate_idf(100, 100);
         let idf_few = calculate_idf(100, 5);
-        
+
         // Term appearing in fewer docs should have higher IDF
         assert!(idf_few > idf_all);
     }
@@ -391,7 +391,7 @@ mod tests {
             IndexType::Persistent,
             true,
         );
-        
+
         assert_eq!(index.name, "idx_name");
         assert_eq!(index.fields.len(), 2);
         assert_eq!(index.index_type, IndexType::Persistent);
@@ -400,12 +400,8 @@ mod tests {
 
     #[test]
     fn test_ttl_index_new() {
-        let ttl_idx = TtlIndex::new(
-            "ttl_idx".to_string(),
-            "expires_at".to_string(),
-            3600,
-        );
-        
+        let ttl_idx = TtlIndex::new("ttl_idx".to_string(), "expires_at".to_string(), 3600);
+
         assert_eq!(ttl_idx.name, "ttl_idx");
         assert_eq!(ttl_idx.field, "expires_at");
         assert_eq!(ttl_idx.expire_after_seconds, 3600);
@@ -414,7 +410,7 @@ mod tests {
     #[test]
     fn test_extract_field_value_simple() {
         let doc = json!({"name": "Alice", "age": 30});
-        
+
         assert_eq!(extract_field_value(&doc, "name"), json!("Alice"));
         assert_eq!(extract_field_value(&doc, "age"), json!(30));
         assert_eq!(extract_field_value(&doc, "missing"), Value::Null);
@@ -429,7 +425,7 @@ mod tests {
                 }
             }
         });
-        
+
         assert_eq!(extract_field_value(&doc, "user.profile.name"), json!("Bob"));
         assert_eq!(extract_field_value(&doc, "user.missing"), Value::Null);
     }
@@ -441,7 +437,7 @@ mod tests {
             score: 2.5,
             matched_terms: vec!["hello".to_string()],
         };
-        
+
         assert_eq!(match_result.doc_key, "doc1");
         assert!((match_result.score - 2.5).abs() < 1e-10);
     }
@@ -454,11 +450,11 @@ mod tests {
             IndexType::Hash,
             false,
         );
-        
+
         let json = serde_json::to_string(&index).unwrap();
         assert!(json.contains("test_idx"));
         assert!(json.contains("Hash"));
-        
+
         let deserialized: Index = serde_json::from_str(&json).unwrap();
         assert_eq!(index.name, deserialized.name);
     }
@@ -474,7 +470,7 @@ mod tests {
             unique_values: 500,
             indexed_documents: 1000,
         };
-        
+
         assert_eq!(stats.indexed_documents, 1000);
         assert_eq!(stats.unique_values, 500);
     }
@@ -484,9 +480,8 @@ mod tests {
         let query_terms: Vec<String> = vec![];
         let doc_terms: Vec<String> = vec![];
         let term_doc_freq = std::collections::HashMap::new();
-        
+
         let score = bm25_score(&query_terms, &doc_terms, 0, 1.0, 1, &term_doc_freq);
         assert!((score - 0.0).abs() < 1e-10);
     }
 }
-

@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use tracing::{info, error};
+use tracing::{error, info};
 
+use super::health::HealthMonitor;
 use super::node::Node;
 use super::state::{ClusterState, NodeStatus};
 use super::stats::NodeBasicStats;
-use super::health::HealthMonitor;
-use super::transport::{Transport, ClusterMessage};
+use super::transport::{ClusterMessage, Transport};
 
 pub struct ClusterManager {
     local_node: Node,
@@ -26,7 +26,7 @@ impl ClusterManager {
     ) -> Self {
         // Add local node to state
         state.add_member(local_node.clone(), NodeStatus::Active);
-        
+
         Self {
             local_node,
             state,
@@ -70,40 +70,51 @@ impl ClusterManager {
         if node_id == self.local_node.id {
             return true;
         }
-        
+
         if let Some(member) = self.state.get_member(node_id) {
             // Check status
-            if member.status == NodeStatus::Dead || member.status == NodeStatus::Leaving || member.status == NodeStatus::Syncing || member.status == NodeStatus::Joining || member.status == NodeStatus::Suspected {
+            if member.status == NodeStatus::Dead
+                || member.status == NodeStatus::Leaving
+                || member.status == NodeStatus::Syncing
+                || member.status == NodeStatus::Joining
+                || member.status == NodeStatus::Suspected
+            {
                 return false;
             }
-            
+
             // Check heartbeat timeout (30 seconds)
             let now = chrono::Utc::now().timestamp_millis() as u64;
             let timeout_ms = 30_000; // 30 seconds
             if now - member.last_heartbeat > timeout_ms {
                 return false;
             }
-            
+
             true
         } else {
             // Unknown node is considered unhealthy
             false
         }
     }
-    
+
     /// Get all healthy node IDs
     pub fn get_healthy_nodes(&self) -> Vec<String> {
         let local_id = self.local_node.id.clone();
-        
-        self.state.get_all_members()
+
+        self.state
+            .get_all_members()
             .into_iter()
             .filter(|m| {
                 // Local node is always considered healthy
                 if m.node.id == local_id {
                     return true;
                 }
-                
-                if m.status == NodeStatus::Dead || m.status == NodeStatus::Leaving || m.status == NodeStatus::Syncing || m.status == NodeStatus::Joining || m.status == NodeStatus::Suspected {
+
+                if m.status == NodeStatus::Dead
+                    || m.status == NodeStatus::Leaving
+                    || m.status == NodeStatus::Syncing
+                    || m.status == NodeStatus::Joining
+                    || m.status == NodeStatus::Suspected
+                {
                     return false;
                 }
                 let now = chrono::Utc::now().timestamp_millis() as u64;
@@ -114,21 +125,19 @@ impl ClusterManager {
             .collect()
     }
 
-
-
     pub fn set_health_monitor(&mut self, monitor: HealthMonitor) {
         self.health_monitor = Some(monitor);
     }
 
     pub async fn start(&self) {
         info!("Starting ClusterManager for node {}", self.local_node.id);
-        
+
         // Start health monitor if configured
         if let Some(_monitor) = &self.health_monitor {
-            // In a real impl, we'd spawn this. For now, since monitor.start consumes self, 
+            // In a real impl, we'd spawn this. For now, since monitor.start consumes self,
             // we need to handle ownership or cloning.
-             // tokio::spawn(async move { monitor.start().await });
-             // For this stubs we just leave it for now
+            // tokio::spawn(async move { monitor.start().await });
+            // For this stubs we just leave it for now
         }
 
         // Heartbeat Loop
@@ -153,20 +162,20 @@ impl ClusterManager {
                     let mut total_live_size = 0;
 
                     for db_name in databases {
-                         if let Ok(db) = storage.get_database(&db_name) {
-                             for coll_name in db.list_collections() {
-                                 if let Ok(coll) = db.get_collection(&coll_name) {
-                                     let s = coll.stats();
-                                     total_chunk_count += s.chunk_count as u64;
-                                     total_file_count += s.disk_usage.num_sst_files;
-                                     storage_bytes += s.disk_usage.sst_files_size;
-                                     total_memtable_size += s.disk_usage.memtable_size;
-                                     total_live_size += s.disk_usage.live_data_size;
-                                 }
-                             }
-                         }
+                        if let Ok(db) = storage.get_database(&db_name) {
+                            for coll_name in db.list_collections() {
+                                if let Ok(coll) = db.get_collection(&coll_name) {
+                                    let s = coll.stats();
+                                    total_chunk_count += s.chunk_count as u64;
+                                    total_file_count += s.disk_usage.num_sst_files;
+                                    storage_bytes += s.disk_usage.sst_files_size;
+                                    total_memtable_size += s.disk_usage.memtable_size;
+                                    total_live_size += s.disk_usage.live_data_size;
+                                }
+                            }
+                        }
                     }
-                    
+
                     Some(NodeBasicStats {
                         total_chunk_count,
                         total_file_count,
@@ -174,7 +183,7 @@ impl ClusterManager {
                         total_memtable_size,
                         total_live_size,
                         cpu_usage_percent: 0.0, // TODO: Add sysinfo if needed
-                        memory_used_mb: 0,     // TODO: Add sysinfo if needed
+                        memory_used_mb: 0,      // TODO: Add sysinfo if needed
                     })
                 } else {
                     None
@@ -190,14 +199,16 @@ impl ClusterManager {
 
                 // 3. Send Heartbeat
                 for peer in peers {
-                    if peer.id == local_node_id { continue; }
-                    
-                    let msg = ClusterMessage::Heartbeat { 
-                        from: local_node_id.clone(), 
+                    if peer.id == local_node_id {
+                        continue;
+                    }
+
+                    let msg = ClusterMessage::Heartbeat {
+                        from: local_node_id.clone(),
                         sequence: current_seq,
-                        stats: stats.clone() 
+                        stats: stats.clone(),
                     };
-                    
+
                     // We don't await strictly or handle error to prevent blocking loop
                     let _ = transport.send(&peer.address, msg).await;
                 }
@@ -217,22 +228,25 @@ impl ClusterManager {
             ClusterMessage::JoinRequest(node) => {
                 info!("Node {} wants to join", node.id);
                 self.state.add_member(node.clone(), NodeStatus::Active);
-                
+
                 // Respond with current peers
                 let peers = self.state.active_nodes();
-                let response = ClusterMessage::JoinResponse { 
-                    success: true, 
-                    peers 
+                let response = ClusterMessage::JoinResponse {
+                    success: true,
+                    peers,
                 };
-                
-                // We would need to send back response here. 
+
+                // We would need to send back response here.
                 // Currently Transport specific send requires address.
                 let _ = self.transport.send(&node.address, response).await;
             }
             ClusterMessage::JoinResponse { success, peers } => {
                 if success {
-                    info!("Successfully joined cluster. Received {} peers.", peers.len());
-                        for peer in peers {
+                    info!(
+                        "Successfully joined cluster. Received {} peers.",
+                        peers.len()
+                    );
+                    for peer in peers {
                         if peer.id != self.local_node.id {
                             let is_new = self.state.add_member(peer.clone(), NodeStatus::Active);
                             if is_new {
@@ -244,7 +258,10 @@ impl ClusterManager {
                                 tokio::spawn(async move {
                                     let join_msg = ClusterMessage::JoinRequest(local_node);
                                     if let Err(e) = transport.send(&peer_addr, join_msg).await {
-                                        error!("Failed to handshake with new peer {}: {}", peer_addr, e);
+                                        error!(
+                                            "Failed to handshake with new peer {}: {}",
+                                            peer_addr, e
+                                        );
                                     }
                                 });
                             }
@@ -252,11 +269,20 @@ impl ClusterManager {
                     }
                 }
             }
-            ClusterMessage::Heartbeat { from, sequence, stats } => {
+            ClusterMessage::Heartbeat {
+                from,
+                sequence,
+                stats,
+            } => {
                 // trace!("Received heartbeat from {} seq {}", from, sequence);
                 // self.state.update_heartbeat(&from, sequence);
                 // Using trace! for heartbeats
-                tracing::trace!("Received heartbeat from {} seq {} stats {:?}", from, sequence, stats);
+                tracing::trace!(
+                    "Received heartbeat from {} seq {} stats {:?}",
+                    from,
+                    sequence,
+                    stats
+                );
                 self.state.update_heartbeat(&from, sequence, stats);
             }
             ClusterMessage::Leave { from } => {
@@ -264,24 +290,24 @@ impl ClusterManager {
                 self.state.remove_member(&from);
             }
             ClusterMessage::Replication(sync_msg) => {
-                 self.handle_sync_message(sync_msg).await;
+                self.handle_sync_message(sync_msg).await;
             }
         }
     }
-    
+
     async fn handle_sync_message(&self, msg: crate::sync::SyncMessage) {
-        use crate::sync::{SyncMessage, Operation};
+        use crate::sync::{Operation, SyncMessage};
         use std::collections::HashMap;
-        
+
         match msg {
             SyncMessage::SyncBatch { entries, .. } => {
                 let total_entries = entries.len();
                 if total_entries == 0 {
                     return;
                 }
-                
+
                 tracing::debug!("Received {} sync entries", total_entries);
-                
+
                 // Filter entries (loop detection)
                 let mut valid_entries = Vec::with_capacity(total_entries);
                 for entry in entries {
@@ -289,27 +315,35 @@ impl ClusterManager {
                     if entry.origin_node == self.local_node.id {
                         continue;
                     }
-                    
+
                     // Cycle Detection via sequence
-                    if !self.state.check_and_update_origin_sequence(entry.origin_node.clone(), entry.origin_sequence) {
+                    if !self.state.check_and_update_origin_sequence(
+                        entry.origin_node.clone(),
+                        entry.origin_sequence,
+                    ) {
                         continue;
                     }
                     valid_entries.push(entry);
                 }
-                
+
                 if valid_entries.is_empty() {
                     return;
                 }
-                
+
                 // Group entries by (database, collection) for batched application
-                let mut insert_update_groups: HashMap<(String, String), Vec<(String, serde_json::Value)>> = HashMap::new();
+                let mut insert_update_groups: HashMap<
+                    (String, String),
+                    Vec<(String, serde_json::Value)>,
+                > = HashMap::new();
                 let mut other_entries = Vec::new();
-                
+
                 for entry in &valid_entries {
                     match entry.operation {
                         Operation::Insert | Operation::Update => {
                             if let Some(data) = &entry.document_data {
-                                if let Ok(doc_value) = serde_json::from_slice::<serde_json::Value>(data) {
+                                if let Ok(doc_value) =
+                                    serde_json::from_slice::<serde_json::Value>(data)
+                                {
                                     let key = (entry.database.clone(), entry.collection.clone());
                                     insert_update_groups
                                         .entry(key)
@@ -323,14 +357,16 @@ impl ClusterManager {
                         }
                     }
                 }
-                
+
                 // Apply batched inserts/updates
                 if let Some(storage) = &self.storage {
                     let storage = storage.clone();
                     let insert_update_groups = insert_update_groups;
-                    
+
                     // Compute node topology
-                    let mut all_nodes: Vec<String> = self.state.get_all_members()
+                    let mut all_nodes: Vec<String> = self
+                        .state
+                        .get_all_members()
                         .iter()
                         .map(|m| m.node.address.clone())
                         .collect();
@@ -338,7 +374,7 @@ impl ClusterManager {
                     let my_addr = self.local_node.address.clone();
                     let my_index = all_nodes.iter().position(|n| n == &my_addr);
                     let num_nodes = all_nodes.len();
-                    
+
                     // Spawn blocking task for RocksDB writes
                     let result = tokio::task::spawn_blocking(move || {
                         for ((db_name, coll_name), docs) in insert_update_groups {
@@ -385,11 +421,11 @@ impl ClusterManager {
                             }
                         }
                     }).await;
-                    
+
                     if let Err(e) = result {
                         error!("Blocking task panicked: {}", e);
                     }
-                    
+
                     // Apply non-insert/update operations
                     for entry in other_entries {
                         if let Err(e) = self.apply_sync_entry(&entry) {
@@ -397,7 +433,7 @@ impl ClusterManager {
                         }
                     }
                 }
-                
+
                 info!("Applied {} sync entries", valid_entries.len());
             }
             _ => {}
@@ -407,46 +443,66 @@ impl ClusterManager {
     fn apply_sync_entry(&self, entry: &crate::sync::SyncEntry) -> anyhow::Result<()> {
         use crate::sync::Operation;
         if let Some(storage) = &self.storage {
-             match entry.operation {
+            match entry.operation {
                 Operation::CreateCollection => {
                     let db = storage.get_database(&entry.database)?;
-                    
+
                     // Extract collection type from metadata
                     let collection_type = if let Some(data) = &entry.document_data {
-                        let metadata: serde_json::Value = serde_json::from_slice(data).unwrap_or_default();
-                        metadata.get("type").and_then(|v| v.as_str()).map(|s| s.to_string())
+                        let metadata: serde_json::Value =
+                            serde_json::from_slice(data).unwrap_or_default();
+                        metadata
+                            .get("type")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
                     } else {
                         None
                     };
-                    
+
                     // Create the collection
-                    if let Err(e) = db.create_collection(entry.collection.clone(), collection_type.clone()) {
+                    if let Err(e) =
+                        db.create_collection(entry.collection.clone(), collection_type.clone())
+                    {
                         // Ignore if already exists (idempotency)
                         if !e.to_string().contains("already exists") {
                             return Err(anyhow::anyhow!("Create collection failed: {}", e));
                         }
                     }
-                    
+
                     // Apply shard config if present
                     if let Some(data) = &entry.document_data {
-                        let metadata: serde_json::Value = serde_json::from_slice(data).unwrap_or_default();
-                        
+                        let metadata: serde_json::Value =
+                            serde_json::from_slice(data).unwrap_or_default();
+
                         // Set collection type
                         if let Some(ctype) = collection_type {
                             if let Ok(coll) = db.get_collection(&entry.collection) {
                                 let _ = coll.set_type(&ctype);
                             }
                         }
-                        
+
                         // Set shard config
                         if let Some(shard_config_val) = metadata.get("shardConfig") {
                             if !shard_config_val.is_null() {
                                 if let Ok(coll) = db.get_collection(&entry.collection) {
-                                    let config = crate::sharding::coordinator::CollectionShardConfig {
-                                        num_shards: shard_config_val.get("num_shards").and_then(|v| v.as_u64()).unwrap_or(1) as u16,
-                                        shard_key: shard_config_val.get("shard_key").and_then(|v| v.as_str()).unwrap_or("_key").to_string(),
-                                        replication_factor: shard_config_val.get("replication_factor").and_then(|v| v.as_u64()).unwrap_or(1) as u16,
-                                    };
+                                    let config =
+                                        crate::sharding::coordinator::CollectionShardConfig {
+                                            num_shards: shard_config_val
+                                                .get("num_shards")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(1)
+                                                as u16,
+                                            shard_key: shard_config_val
+                                                .get("shard_key")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("_key")
+                                                .to_string(),
+                                            replication_factor: shard_config_val
+                                                .get("replication_factor")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(1)
+                                                as u16,
+                                        };
                                     let _ = coll.set_shard_config(&config);
                                 }
                             }
@@ -462,10 +518,10 @@ impl ClusterManager {
                     }
                 }
                 Operation::Delete => {
-                     let db = storage.get_database(&entry.database)?;
-                     let collection = db.get_collection(&entry.collection)?;
-                     // Ignore error if doc doesn't exist (idempotency)
-                     let _ = collection.delete(&entry.document_key);
+                    let db = storage.get_database(&entry.database)?;
+                    let collection = db.get_collection(&entry.collection)?;
+                    // Ignore error if doc doesn't exist (idempotency)
+                    let _ = collection.delete(&entry.document_key);
                 }
                 Operation::DeleteCollection => {
                     let db = storage.get_database(&entry.database)?;
@@ -478,16 +534,22 @@ impl ClusterManager {
                         // Check if sharded and truncate physical shards
                         if let Some(shard_config) = collection.get_shard_config() {
                             if shard_config.num_shards > 0 {
-                                tracing::info!("TRUNCATE: Truncating {} shards for {}.{}", shard_config.num_shards, entry.database, entry.collection);
+                                tracing::info!(
+                                    "TRUNCATE: Truncating {} shards for {}.{}",
+                                    shard_config.num_shards,
+                                    entry.database,
+                                    entry.collection
+                                );
                                 for shard_id in 0..shard_config.num_shards {
-                                    let physical_name = format!("{}_s{}", entry.collection, shard_id);
+                                    let physical_name =
+                                        format!("{}_s{}", entry.collection, shard_id);
                                     if let Ok(shard_coll) = db.get_collection(&physical_name) {
-                                         let _ = shard_coll.truncate();
+                                        let _ = shard_coll.truncate();
                                     }
                                 }
                             }
                         }
-                        
+
                         let _ = collection.truncate();
                     }
                 }
@@ -503,7 +565,7 @@ impl ClusterManager {
                     // PutBlobChunk, DeleteBlob - implement later if needed
                     tracing::debug!("Unhandled sync operation: {:?}", entry.operation);
                 }
-             }
+            }
         }
         Ok(())
     }

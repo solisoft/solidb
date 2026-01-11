@@ -1,6 +1,6 @@
 use axum::{
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response, Json},
+    response::{IntoResponse, Json, Response},
 };
 use serde::Serialize;
 
@@ -48,20 +48,14 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
                 // This makes it compatible with JSON structure and most clients
                 match rmp_serde::to_vec_named(&self.data) {
                     Ok(bytes) => {
-                        (
-                            [(header::CONTENT_TYPE, "application/msgpack")],
-                            bytes
-                        ).into_response()
+                        ([(header::CONTENT_TYPE, "application/msgpack")], bytes).into_response()
                     }
                     Err(e) => {
                         // Fallback to JSON error if serialization fails
                         let err_body = serde_json::json!({
                             "error": format!("Serialization error: {}", e)
                         });
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(err_body)
-                        ).into_response()
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(err_body)).into_response()
                     }
                 }
             }
@@ -136,4 +130,3 @@ mod tests {
         assert_eq!(response.format, ApiFormat::MsgPack);
     }
 }
-

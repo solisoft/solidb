@@ -120,7 +120,10 @@ mod tests {
         assert_eq!(err.to_string(), "Transaction 'tx123' not found");
 
         let err = DbError::TransactionConflict("write-write conflict".to_string());
-        assert_eq!(err.to_string(), "Transaction conflict: write-write conflict");
+        assert_eq!(
+            err.to_string(),
+            "Transaction conflict: write-write conflict"
+        );
 
         let err = DbError::DeadlockDetected("cycle detected".to_string());
         assert_eq!(err.to_string(), "Deadlock detected: cycle detected");
@@ -148,4 +151,3 @@ mod tests {
         assert!(err_result.is_err());
     }
 }
-

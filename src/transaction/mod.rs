@@ -1,6 +1,6 @@
+pub mod lock_manager;
 pub mod manager;
 pub mod wal;
-pub mod lock_manager;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn test_transaction_operations() {
         let mut tx = Transaction::new(IsolationLevel::ReadCommitted);
-        
+
         tx.add_operation(Operation::Insert {
             database: "_system".to_string(),
             collection: "users".to_string(),
@@ -322,13 +322,13 @@ mod tests {
     fn test_transaction_validation_errors() {
         let mut tx = Transaction::new(IsolationLevel::ReadCommitted);
         assert!(!tx.has_validation_errors());
-        
+
         tx.add_validation_error("Error 1".to_string());
         tx.add_validation_error("Error 2".to_string());
-        
+
         assert!(tx.has_validation_errors());
         assert_eq!(tx.get_validation_errors().len(), 2);
-        
+
         tx.clear_validation_errors();
         assert!(!tx.has_validation_errors());
     }
@@ -342,7 +342,7 @@ mod tests {
             old_data: serde_json::json!({"a": 1}),
             new_data: serde_json::json!({"a": 2}),
         };
-        
+
         assert_eq!(op.database(), "db");
         assert_eq!(op.collection(), "coll");
         assert_eq!(op.key(), "key1");
@@ -356,7 +356,7 @@ mod tests {
             key: "doc1".to_string(),
             old_data: serde_json::json!({}),
         };
-        
+
         assert_eq!(op.database(), "mydb");
         assert_eq!(op.collection(), "mycoll");
         assert_eq!(op.key(), "doc1");
@@ -371,7 +371,7 @@ mod tests {
             chunk_index: 0,
             data: vec![1, 2, 3, 4],
         };
-        
+
         assert_eq!(op.database(), "blobs");
         assert_eq!(op.collection(), "files");
         assert_eq!(op.key(), "file1");
@@ -384,7 +384,7 @@ mod tests {
             collection: "files".to_string(),
             key: "file2".to_string(),
         };
-        
+
         assert_eq!(op.database(), "blobs");
         assert_eq!(op.key(), "file2");
     }
@@ -397,7 +397,7 @@ mod tests {
             IsolationLevel::RepeatableRead,
             IsolationLevel::Serializable,
         ];
-        
+
         for level in levels {
             let tx = Transaction::new(level);
             assert_eq!(tx.isolation_level, level);
@@ -407,12 +407,12 @@ mod tests {
     #[test]
     fn test_transaction_state_variants() {
         let mut tx = Transaction::new(IsolationLevel::ReadCommitted);
-        
+
         assert_eq!(tx.state, TransactionState::Active);
-        
+
         tx.prepare();
         assert_eq!(tx.state, TransactionState::Preparing);
-        
+
         tx.commit();
         assert_eq!(tx.state, TransactionState::Committed);
     }
@@ -422,9 +422,8 @@ mod tests {
         let tx = Transaction::new(IsolationLevel::ReadCommitted);
         let json = serde_json::to_string(&tx).unwrap();
         assert!(json.contains("Active"));
-        
+
         let deserialized: Transaction = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id.as_u64(), tx.id.as_u64());
     }
 }
-

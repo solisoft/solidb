@@ -6,11 +6,13 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use super::ast::*;
+use crate::error::{DbError, DbResult};
+use crate::storage::{
+    distance_meters, AggregateOp, Collection, ColumnarCollection, GeoPoint, StorageEngine,
+};
+use crate::sync::log::LogEntry;
 use crate::sync::log::SyncLog;
 use crate::sync::protocol::Operation;
-use crate::sync::log::LogEntry;
-use crate::error::{DbError, DbResult};
-use crate::storage::{distance_meters, Collection, GeoPoint, StorageEngine, ColumnarCollection, AggregateOp};
 
 /// Convert f64 to serde_json::Number, returning 0 for NaN/Infinity instead of panicking
 fn number_from_f64(f: f64) -> serde_json::Number {
@@ -20,7 +22,7 @@ fn number_from_f64(f: f64) -> serde_json::Number {
 /// Parse a date value (timestamp or ISO string) into DateTime<Utc>
 fn parse_datetime(value: &Value) -> DbResult<chrono::DateTime<Utc>> {
     use chrono::{DateTime, TimeZone};
-    
+
     match value {
         Value::Number(n) => {
             let timestamp_ms = if let Some(i) = n.as_i64() {
@@ -34,15 +36,18 @@ fn parse_datetime(value: &Value) -> DbResult<chrono::DateTime<Utc>> {
             let nanos = ((timestamp_ms % 1000) * 1_000_000) as u32;
             match Utc.timestamp_opt(secs, nanos) {
                 chrono::LocalResult::Single(dt) => Ok(dt),
-                _ => Err(DbError::ExecutionError(format!("Invalid timestamp: {}", timestamp_ms))),
+                _ => Err(DbError::ExecutionError(format!(
+                    "Invalid timestamp: {}",
+                    timestamp_ms
+                ))),
             }
         }
-        Value::String(s) => {
-            DateTime::parse_from_rfc3339(s)
-                .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|e| DbError::ExecutionError(format!("Invalid ISO 8601 date '{}': {}", s, e)))
-        }
-        _ => Err(DbError::ExecutionError("Date must be a timestamp or ISO 8601 string".to_string())),
+        Value::String(s) => DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DbError::ExecutionError(format!("Invalid ISO 8601 date '{}': {}", s, e))),
+        _ => Err(DbError::ExecutionError(
+            "Date must be a timestamp or ISO 8601 string".to_string(),
+        )),
     }
 }
 
@@ -183,10 +188,21 @@ fn format_expression(expr: &Expression) -> String {
             format!("{}.{}", format_expression(base), field)
         }
         Expression::DynamicFieldAccess(base, field_expr) => {
-            format!("{}[{}]", format_expression(base), format_expression(field_expr))
+            format!(
+                "{}[{}]",
+                format_expression(base),
+                format_expression(field_expr)
+            )
         }
         Expression::ArrayAccess(base, index) => {
             format!("{}[{}]", format_expression(base), format_expression(index))
+        }
+        Expression::ArraySpreadAccess(base, field_path) => {
+            let base_str = format_expression(base);
+            match field_path {
+                Some(path) => format!("{}[*].{}", base_str, path),
+                None => format!("{}[*]", base_str),
+            }
         }
         Expression::Literal(value) => format!("{}", value),
         Expression::FunctionCall { name, args } => {
@@ -260,7 +276,10 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Set shard coordinator for scatter-gather queries on sharded collections
-    pub fn with_shard_coordinator(mut self, coordinator: std::sync::Arc<crate::sharding::ShardCoordinator>) -> Self {
+    pub fn with_shard_coordinator(
+        mut self,
+        coordinator: std::sync::Arc<crate::sharding::ShardCoordinator>,
+    ) -> Self {
         self.shard_coordinator = Some(coordinator);
         self
     }
@@ -334,15 +353,18 @@ impl<'a> QueryExecutor<'a> {
 
         // Get collection once
         let collection = self.get_collection(&insert_clause.collection)?;
-        
+
         // Disable streaming bulk insert for sharded collections (fall back to generic path for routing)
         if let Some(config) = collection.get_shard_config() {
             if config.num_shards > 0 {
-                tracing::debug!("Streaming insert disabled for sharded collection: {}", insert_clause.collection);
+                tracing::debug!(
+                    "Streaming insert disabled for sharded collection: {}",
+                    insert_clause.collection
+                );
                 return Ok(None);
             }
         }
-        
+
         let has_indexes = !collection.list_indexes().is_empty();
 
         let var_name = &for_clause.variable;
@@ -358,10 +380,7 @@ impl<'a> QueryExecutor<'a> {
             let mut documents = Vec::with_capacity(batch_size);
             for i in current..=batch_end {
                 let mut ctx = initial_bindings.clone();
-                ctx.insert(
-                    var_name.clone(),
-                    Value::Number(serde_json::Number::from(i)),
-                );
+                ctx.insert(var_name.clone(), Value::Number(serde_json::Number::from(i)));
                 let doc_value = self.evaluate_expr_with_context(&insert_clause.document, &ctx)?;
                 documents.push(doc_value);
             }
@@ -453,7 +472,7 @@ impl<'a> QueryExecutor<'a> {
 
         if let (Some(repl), Some(db)) = (repl_clone, db_clone) {
             let collection = collection.to_string();
-            
+
             // Serialize documents upfront
             let entries: Vec<LogEntry> = docs
                 .iter()
@@ -551,18 +570,15 @@ impl<'a> QueryExecutor<'a> {
         }
 
         // Load columnar collection
-        let columnar = match ColumnarCollection::load(
-            collection_name.clone(),
-            db_name,
-            database.db_arc(),
-        ) {
-            Ok(c) => c,
-            Err(_) => return Ok(None),
-        };
+        let columnar =
+            match ColumnarCollection::load(collection_name.clone(), db_name, database.db_arc()) {
+                Ok(c) => c,
+                Err(_) => return Ok(None),
+            };
 
         // Extract group by columns (from COLLECT var1 = x.field1, var2 = x.field2)
         use crate::storage::columnar::GroupByColumn;
-        
+
         // Helper to extract grouping definition definition
         let parse_group_expr = |expr: &Expression| -> Option<GroupByColumn> {
             match expr {
@@ -578,17 +594,25 @@ impl<'a> QueryExecutor<'a> {
                     if args.len() == 2 {
                         // Arg 0 must be field access
                         let col = if let Expression::FieldAccess(base, field) = &args[0] {
-                             if let Expression::Variable(var) = base.as_ref() {
+                            if let Expression::Variable(var) = base.as_ref() {
                                 if var == &for_clause.variable {
                                     Some(field.clone())
-                                } else { None }
-                             } else { None }
-                        } else { None }?;
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }?;
 
                         // Arg 1 must be literal string (interval)
                         let interval = if let Expression::Literal(Value::String(s)) = &args[1] {
                             Some(s.clone())
-                        } else { None }?;
+                        } else {
+                            None
+                        }?;
 
                         Some(GroupByColumn::TimeBucket(col, interval))
                     } else {
@@ -607,7 +631,7 @@ impl<'a> QueryExecutor<'a> {
 
         // If we couldn't parse all group vars, abort optimization
         if group_defs.len() != collect_clause.group_vars.len() {
-             return Ok(None);
+            return Ok(None);
         }
 
         // Process aggregations
@@ -698,7 +722,9 @@ impl<'a> QueryExecutor<'a> {
         // Optimization: Streaming bulk INSERT for range-based FOR loops
         // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
         // This avoids materializing millions of row contexts in memory
-        if let Some((results, insert_count)) = self.try_streaming_bulk_insert(query, &initial_bindings)? {
+        if let Some((results, insert_count)) =
+            self.try_streaming_bulk_insert(query, &initial_bindings)?
+        {
             return Ok(QueryExecutionResult {
                 results,
                 mutations: MutationStats {
@@ -726,12 +752,20 @@ impl<'a> QueryExecutor<'a> {
             if query.body_clauses.len() == 1 && sort.fields.len() == 1 {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
                     let (sort_expr, sort_asc) = &sort.fields[0];
-                    
+
                     // Evaluate limit expressions
-                    let limit_offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-                    let limit_count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
-                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+                    let limit_offset = self
+                        .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
+                    let limit_count = self
+                        .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
 
                     // Check if the sort field is on the loop variable
                     // Check if sort expression is a simple field access on the loop variable
@@ -751,26 +785,27 @@ impl<'a> QueryExecutor<'a> {
                                         let end = (start + limit_count).min(docs.len());
                                         let docs = &docs[start..end];
 
-                                        let results = if let Some(ref return_clause) = query.return_clause {
-                                            let results: DbResult<Vec<Value>> = docs
-                                                .iter()
-                                                .map(|doc| {
-                                                    let mut ctx = initial_bindings.clone();
-                                                    ctx.insert(
-                                                        for_clause.variable.clone(),
-                                                        doc.to_value(),
-                                                    );
-                                                    self.evaluate_expr_with_context(
-                                                        &return_clause.expression,
-                                                        &ctx,
-                                                    )
-                                                })
-                                                .collect();
-                                            results?
-                                        } else {
-                                            // No RETURN clause - return empty array
-                                            vec![]
-                                        };
+                                        let results =
+                                            if let Some(ref return_clause) = query.return_clause {
+                                                let results: DbResult<Vec<Value>> = docs
+                                                    .iter()
+                                                    .map(|doc| {
+                                                        let mut ctx = initial_bindings.clone();
+                                                        ctx.insert(
+                                                            for_clause.variable.clone(),
+                                                            doc.to_value(),
+                                                        );
+                                                        self.evaluate_expr_with_context(
+                                                            &return_clause.expression,
+                                                            &ctx,
+                                                        )
+                                                    })
+                                                    .collect();
+                                                results?
+                                            } else {
+                                                // No RETURN clause - return empty array
+                                                vec![]
+                                            };
                                         // Index-sorted optimization is read-only, no mutations
                                         return Ok(QueryExecutionResult {
                                             results,
@@ -800,11 +835,19 @@ impl<'a> QueryExecutor<'a> {
 
             if for_count == 1 && filter_count == 0 {
                 query.limit_clause.as_ref().map(|l| {
-                     let offset = self.evaluate_expr_with_context(&l.offset, &initial_bindings)
-                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-                     let count = self.evaluate_expr_with_context(&l.count, &initial_bindings)
-                        .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-                     offset + count
+                    let offset = self
+                        .evaluate_expr_with_context(&l.offset, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
+                    let count = self
+                        .evaluate_expr_with_context(&l.count, &initial_bindings)
+                        .ok()
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize)
+                        .unwrap_or(0);
+                    offset + count
                 })
             } else {
                 None
@@ -845,11 +888,7 @@ impl<'a> QueryExecutor<'a> {
 
                     let cmp = compare_values(&a_val, &b_val);
                     if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending {
-                            cmp
-                        } else {
-                            cmp.reverse()
-                        };
+                        return if *ascending { cmp } else { cmp.reverse() };
                     }
                 }
                 std::cmp::Ordering::Equal
@@ -858,10 +897,18 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply LIMIT
         if let Some(limit) = &query.limit_clause {
-            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let offset = self
+                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
+            let count = self
+                .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
 
             let start = offset.min(rows.len());
             let end = (start + count).min(rows.len());
@@ -1009,43 +1056,58 @@ impl<'a> QueryExecutor<'a> {
                             .unwrap_or(false)
                     });
                 }
-                 BodyClause::Insert(insert_clause) => {
+                BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&insert_clause.collection)?;
 
                     // SHARDING SUPPORT - Use batch insert for performance
-                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                    if let (Some(config), Some(coordinator)) =
+                        (collection.get_shard_config(), &self.shard_coordinator)
+                    {
                         if config.num_shards > 0 {
-                             tracing::info!("INSERT: Using ShardCoordinator BATCH for {} documents into {}", rows.len(), insert_clause.collection);
-                             
-                             // Evaluate all documents first
-                             let mut documents = Vec::with_capacity(rows.len());
-                             for ctx in &rows {
-                                 let doc_value = self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
-                                 documents.push(doc_value);
-                             }
-                             
-                             // Use batch insert via coordinator (groups by shard internally)
-                             let handle = tokio::runtime::Handle::current();
-                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
-                             let coll_name = insert_clause.collection.clone();
-                             let config = config.clone();
-                             let coord = coordinator.clone();
-                             
-                             let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                             
-                             handle.spawn(async move {
-                                 let res = coord.insert_batch(&db_name, &coll_name, &config, documents).await;
-                                 let _ = tx.send(res);
-                             });
-                             
-                             // Wait for batch result
-                             let result = rx.recv().map_err(|_| DbError::InternalError("Sharded batch insert failed".to_string()))??;
-                             tracing::debug!("INSERT: Sharded batch completed - {} success, {} failed", result.0, result.1);
-                             stats.documents_inserted += result.0;
+                            tracing::info!(
+                                "INSERT: Using ShardCoordinator BATCH for {} documents into {}",
+                                rows.len(),
+                                insert_clause.collection
+                            );
 
-                             i += 1; // CRITICAL: Advance to next clause before continuing
-                             continue; // Skip standard insert logic
+                            // Evaluate all documents first
+                            let mut documents = Vec::with_capacity(rows.len());
+                            for ctx in &rows {
+                                let doc_value =
+                                    self.evaluate_expr_with_context(&insert_clause.document, ctx)?;
+                                documents.push(doc_value);
+                            }
+
+                            // Use batch insert via coordinator (groups by shard internally)
+                            let handle = tokio::runtime::Handle::current();
+                            let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                            let coll_name = insert_clause.collection.clone();
+                            let config = config.clone();
+                            let coord = coordinator.clone();
+
+                            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+
+                            handle.spawn(async move {
+                                let res = coord
+                                    .insert_batch(&db_name, &coll_name, &config, documents)
+                                    .await;
+                                let _ = tx.send(res);
+                            });
+
+                            // Wait for batch result
+                            let result = rx.recv().map_err(|_| {
+                                DbError::InternalError("Sharded batch insert failed".to_string())
+                            })??;
+                            tracing::debug!(
+                                "INSERT: Sharded batch completed - {} success, {} failed",
+                                result.0,
+                                result.1
+                            );
+                            stats.documents_inserted += result.0;
+
+                            i += 1; // CRITICAL: Advance to next clause before continuing
+                            continue; // Skip standard insert logic
                         }
                     }
 
@@ -1139,47 +1201,72 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Update(update_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&update_clause.collection)?;
-                    
+
                     // SHARDING SUPPORT
-                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                    if let (Some(config), Some(coordinator)) =
+                        (collection.get_shard_config(), &self.shard_coordinator)
+                    {
                         if config.num_shards > 0 {
-                             tracing::debug!("UPDATE: Delegating to ShardCoordinator for {}", update_clause.collection);
-                             let handle = tokio::runtime::Handle::current();
-                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
-                             let coll_name = update_clause.collection.clone();
-                             let config = config.clone();
-                             
-                             for ctx in &mut rows {
+                            tracing::debug!(
+                                "UPDATE: Delegating to ShardCoordinator for {}",
+                                update_clause.collection
+                            );
+                            let handle = tokio::runtime::Handle::current();
+                            let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                            let coll_name = update_clause.collection.clone();
+                            let config = config.clone();
+
+                            for ctx in &mut rows {
                                 // Evaluate selector (Duplicated logic)
-                                let selector_value = self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
+                                let selector_value =
+                                    self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
                                 let key = match &selector_value {
                                     Value::String(s) => s.clone(),
-                                    Value::Object(obj) => obj.get("_key").and_then(|v| v.as_str()).map(|s| s.to_string()).ok_or_else(|| DbError::ExecutionError("UPDATE: missing _key".to_string()))?,
-                                    _ => return Err(DbError::ExecutionError("UPDATE: invalid selector".to_string())),
+                                    Value::Object(obj) => obj
+                                        .get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| {
+                                            DbError::ExecutionError(
+                                                "UPDATE: missing _key".to_string(),
+                                            )
+                                        })?,
+                                    _ => {
+                                        return Err(DbError::ExecutionError(
+                                            "UPDATE: invalid selector".to_string(),
+                                        ))
+                                    }
                                 };
-                                let changes = self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                                if !changes.is_object() { return Err(DbError::ExecutionError("UPDATE: changes must be object".to_string())); }
-                                
+                                let changes =
+                                    self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
+                                if !changes.is_object() {
+                                    return Err(DbError::ExecutionError(
+                                        "UPDATE: changes must be object".to_string(),
+                                    ));
+                                }
+
                                 let coord = coordinator.clone();
                                 let db = db_name.clone();
                                 let coll = coll_name.clone();
                                 let conf = config.clone();
                                 let k = key;
                                 let doc = changes;
-                                
+
                                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                                 handle.spawn(async move {
-                                      let res = coord.update(&db, &coll, &conf, &k, doc).await;
-                                      let _ = tx.send(res);
+                                    let res = coord.update(&db, &coll, &conf, &k, doc).await;
+                                    let _ = tx.send(res);
                                 });
-                                let updated_doc = rx.recv().map_err(|_| DbError::InternalError("Sharded update task failed".to_string()))??;
+                                let updated_doc = rx.recv().map_err(|_| {
+                                    DbError::InternalError("Sharded update task failed".to_string())
+                                })??;
                                 stats.documents_updated += 1;
 
                                 // Inject NEW variable
                                 ctx.insert("NEW".to_string(), updated_doc.clone());
-                             }
-                             i += 1; // CRITICAL: Advance to next clause
-                             continue;
+                            }
+                            i += 1; // CRITICAL: Advance to next clause
+                            continue;
                         }
                     }
 
@@ -1235,41 +1322,61 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Remove(remove_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection(&remove_clause.collection)?;
-                    
+
                     // SHARDING SUPPORT
-                    if let (Some(config), Some(coordinator)) = (collection.get_shard_config(), &self.shard_coordinator) {
+                    if let (Some(config), Some(coordinator)) =
+                        (collection.get_shard_config(), &self.shard_coordinator)
+                    {
                         if config.num_shards > 0 {
-                             tracing::debug!("REMOVE: Delegating to ShardCoordinator for {}", remove_clause.collection);
-                             let handle = tokio::runtime::Handle::current();
-                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();
-                             let coll_name = remove_clause.collection.clone();
-                             let config = config.clone();
-                             
-                             for ctx in &rows {
+                            tracing::debug!(
+                                "REMOVE: Delegating to ShardCoordinator for {}",
+                                remove_clause.collection
+                            );
+                            let handle = tokio::runtime::Handle::current();
+                            let db_name = self.database.as_deref().unwrap_or("_system").to_string();
+                            let coll_name = remove_clause.collection.clone();
+                            let config = config.clone();
+
+                            for ctx in &rows {
                                 // Evaluate selector (Duplicated logic)
-                                let selector_value = self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
+                                let selector_value =
+                                    self.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
                                 let key = match &selector_value {
                                     Value::String(s) => s.clone(),
-                                    Value::Object(obj) => obj.get("_key").and_then(|v| v.as_str()).map(|s| s.to_string()).ok_or_else(|| DbError::ExecutionError("REMOVE: missing _key".to_string()))?,
-                                    _ => return Err(DbError::ExecutionError("REMOVE: invalid selector".to_string())),
+                                    Value::Object(obj) => obj
+                                        .get("_key")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .ok_or_else(|| {
+                                            DbError::ExecutionError(
+                                                "REMOVE: missing _key".to_string(),
+                                            )
+                                        })?,
+                                    _ => {
+                                        return Err(DbError::ExecutionError(
+                                            "REMOVE: invalid selector".to_string(),
+                                        ))
+                                    }
                                 };
-                                
+
                                 let coord = coordinator.clone();
                                 let db = db_name.clone();
                                 let coll = coll_name.clone();
                                 let conf = config.clone();
                                 let k = key;
-                                
+
                                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                                 handle.spawn(async move {
-                                      let res = coord.delete(&db, &coll, &conf, &k).await;
-                                      let _ = tx.send(res);
+                                    let res = coord.delete(&db, &coll, &conf, &k).await;
+                                    let _ = tx.send(res);
                                 });
-                                let _ = rx.recv().map_err(|_| DbError::InternalError("Sharded remove task failed".to_string()))??;
+                                let _ = rx.recv().map_err(|_| {
+                                    DbError::InternalError("Sharded remove task failed".to_string())
+                                })??;
                                 stats.documents_removed += 1;
-                             }
-                             i += 1; // CRITICAL: Advance to next clause
-                             continue;
+                            }
+                            i += 1; // CRITICAL: Advance to next clause
+                            continue;
                         }
                     }
 
@@ -1304,31 +1411,35 @@ impl<'a> QueryExecutor<'a> {
                 }
                 BodyClause::Upsert(upsert_clause) => {
                     let collection = self.get_collection(&upsert_clause.collection)?;
-                    
+
                     for ctx in &mut rows {
-                        let search_value = self.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
-                        
+                        let search_value =
+                            self.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
+
                         let mut found_doc_key: Option<String> = None;
-                        
+
                         if let Some(s) = search_value.as_str() {
-                             if collection.get(s).is_ok() {
-                                 found_doc_key = Some(s.to_string());
-                             }
+                            if collection.get(s).is_ok() {
+                                found_doc_key = Some(s.to_string());
+                            }
                         } else if let Some(obj) = search_value.as_object() {
-                              if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
-                                   if let Some(ks) = k.as_str() {
-                                        if collection.get(ks).is_ok() {
-                                             found_doc_key = Some(ks.to_string());
-                                        }
-                                   }
-                              }
+                            if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
+                                if let Some(ks) = k.as_str() {
+                                    if collection.get(ks).is_ok() {
+                                        found_doc_key = Some(ks.to_string());
+                                    }
+                                }
+                            }
                         }
 
                         if let Some(key) = found_doc_key {
                             // Update
-                            let update_value = self.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
+                            let update_value =
+                                self.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
                             if !update_value.is_object() {
-                                return Err(DbError::ExecutionError("UPSERT: update expression must be an object".to_string()));
+                                return Err(DbError::ExecutionError(
+                                    "UPSERT: update expression must be an object".to_string(),
+                                ));
                             }
 
                             let doc = collection.update(&key, update_value)?;
@@ -1341,10 +1452,10 @@ impl<'a> QueryExecutor<'a> {
                                 Some(&doc.to_value()),
                             );
                             ctx.insert("NEW".to_string(), doc.to_value());
-
                         } else {
-                             // Insert
-                            let insert_value = self.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
+                            // Insert
+                            let insert_value =
+                                self.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
                             let doc = collection.insert(insert_value)?;
                             stats.documents_inserted += 1;
 
@@ -1367,17 +1478,22 @@ impl<'a> QueryExecutor<'a> {
                         let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
                         let start_id = match &start_value {
                             Value::String(s) => s.clone(),
-                            _ => return Err(DbError::ExecutionError(
-                                "Start vertex must be a string (e.g., 'users/alice')".to_string()
-                            )),
+                            _ => {
+                                return Err(DbError::ExecutionError(
+                                    "Start vertex must be a string (e.g., 'users/alice')"
+                                        .to_string(),
+                                ))
+                            }
                         };
 
                         // Get edge collection
                         let edge_collection = self.get_collection(&gt.edge_collection)?;
 
                         // BFS traversal
-                        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
-                        let mut queue: std::collections::VecDeque<(String, usize, Option<Value>)> = std::collections::VecDeque::new();
+                        let mut visited: std::collections::HashSet<String> =
+                            std::collections::HashSet::new();
+                        let mut queue: std::collections::VecDeque<(String, usize, Option<Value>)> =
+                            std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
                         queue.push_back((start_id.clone(), 0, None));
 
@@ -1389,9 +1505,15 @@ impl<'a> QueryExecutor<'a> {
                                     if let Ok(vertex_coll) = self.get_collection(coll_name) {
                                         if let Ok(vertex_doc) = vertex_coll.get(key) {
                                             let mut new_ctx = ctx.clone();
-                                            new_ctx.insert(gt.vertex_var.clone(), vertex_doc.to_value());
+                                            new_ctx.insert(
+                                                gt.vertex_var.clone(),
+                                                vertex_doc.to_value(),
+                                            );
                                             if let Some(ref edge_var) = gt.edge_var {
-                                                new_ctx.insert(edge_var.clone(), edge.clone().unwrap_or(Value::Null));
+                                                new_ctx.insert(
+                                                    edge_var.clone(),
+                                                    edge.clone().unwrap_or(Value::Null),
+                                                );
                                             }
                                             new_rows.push(new_ctx);
                                         }
@@ -1415,19 +1537,25 @@ impl<'a> QueryExecutor<'a> {
                                     EdgeDirection::Outbound => {
                                         if from == Some(current_id.as_str()) {
                                             to.map(|s| s.to_string())
-                                        } else { None }
+                                        } else {
+                                            None
+                                        }
                                     }
                                     EdgeDirection::Inbound => {
                                         if to == Some(current_id.as_str()) {
                                             from.map(|s| s.to_string())
-                                        } else { None }
+                                        } else {
+                                            None
+                                        }
                                     }
                                     EdgeDirection::Any => {
                                         if from == Some(current_id.as_str()) {
                                             to.map(|s| s.to_string())
                                         } else if to == Some(current_id.as_str()) {
                                             from.map(|s| s.to_string())
-                                        } else { None }
+                                        } else {
+                                            None
+                                        }
                                     }
                                 };
 
@@ -1450,27 +1578,42 @@ impl<'a> QueryExecutor<'a> {
                         let start_value = self.evaluate_expr_with_context(&sp.start_vertex, ctx)?;
                         let start_id = match &start_value {
                             Value::String(s) => s.clone(),
-                            _ => return Err(DbError::ExecutionError("Start vertex must be a string".to_string())),
+                            _ => {
+                                return Err(DbError::ExecutionError(
+                                    "Start vertex must be a string".to_string(),
+                                ))
+                            }
                         };
 
                         let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
                         let end_id = match &end_value {
                             Value::String(s) => s.clone(),
-                            _ => return Err(DbError::ExecutionError("End vertex must be a string".to_string())),
+                            _ => {
+                                return Err(DbError::ExecutionError(
+                                    "End vertex must be a string".to_string(),
+                                ))
+                            }
                         };
 
                         let edge_collection = self.get_collection(&sp.edge_collection)?;
 
                         // BFS with parent tracking
-                        let mut visited: std::collections::HashMap<String, (Option<String>, Option<Value>)> = std::collections::HashMap::new();
-                        let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+                        let mut visited: std::collections::HashMap<
+                            String,
+                            (Option<String>, Option<Value>),
+                        > = std::collections::HashMap::new();
+                        let mut queue: std::collections::VecDeque<String> =
+                            std::collections::VecDeque::new();
 
                         visited.insert(start_id.clone(), (None, None));
                         queue.push_back(start_id.clone());
                         let mut found = false;
 
                         while let Some(current_id) = queue.pop_front() {
-                            if current_id == end_id { found = true; break; }
+                            if current_id == end_id {
+                                found = true;
+                                break;
+                            }
 
                             let edges = edge_collection.scan(None);
                             for edge_doc in edges {
@@ -1480,21 +1623,36 @@ impl<'a> QueryExecutor<'a> {
 
                                 let next_id = match sp.direction {
                                     EdgeDirection::Outbound => {
-                                        if from == Some(current_id.as_str()) { to.map(|s| s.to_string()) } else { None }
+                                        if from == Some(current_id.as_str()) {
+                                            to.map(|s| s.to_string())
+                                        } else {
+                                            None
+                                        }
                                     }
                                     EdgeDirection::Inbound => {
-                                        if to == Some(current_id.as_str()) { from.map(|s| s.to_string()) } else { None }
+                                        if to == Some(current_id.as_str()) {
+                                            from.map(|s| s.to_string())
+                                        } else {
+                                            None
+                                        }
                                     }
                                     EdgeDirection::Any => {
-                                        if from == Some(current_id.as_str()) { to.map(|s| s.to_string()) }
-                                        else if to == Some(current_id.as_str()) { from.map(|s| s.to_string()) }
-                                        else { None }
+                                        if from == Some(current_id.as_str()) {
+                                            to.map(|s| s.to_string())
+                                        } else if to == Some(current_id.as_str()) {
+                                            from.map(|s| s.to_string())
+                                        } else {
+                                            None
+                                        }
                                     }
                                 };
 
                                 if let Some(next) = next_id {
                                     if !visited.contains_key(&next) {
-                                        visited.insert(next.clone(), (Some(current_id.clone()), Some(edge_val.clone())));
+                                        visited.insert(
+                                            next.clone(),
+                                            (Some(current_id.clone()), Some(edge_val.clone())),
+                                        );
                                         queue.push_back(next);
                                     }
                                 }
@@ -1508,7 +1666,11 @@ impl<'a> QueryExecutor<'a> {
 
                             while let Some((parent, edge)) = visited.get(&current) {
                                 path.push((current.clone(), edge.clone()));
-                                if let Some(p) = parent { current = p.clone(); } else { break; }
+                                if let Some(p) = parent {
+                                    current = p.clone();
+                                } else {
+                                    break;
+                                }
                             }
                             path.reverse();
 
@@ -1517,9 +1679,15 @@ impl<'a> QueryExecutor<'a> {
                                     if let Ok(vertex_coll) = self.get_collection(coll_name) {
                                         if let Ok(vertex_doc) = vertex_coll.get(key) {
                                             let mut new_ctx = ctx.clone();
-                                            new_ctx.insert(sp.vertex_var.clone(), vertex_doc.to_value());
+                                            new_ctx.insert(
+                                                sp.vertex_var.clone(),
+                                                vertex_doc.to_value(),
+                                            );
                                             if let Some(ref edge_var) = sp.edge_var {
-                                                new_ctx.insert(edge_var.clone(), edge.unwrap_or(Value::Null));
+                                                new_ctx.insert(
+                                                    edge_var.clone(),
+                                                    edge.unwrap_or(Value::Null),
+                                                );
                                             }
                                             new_rows.push(new_ctx);
                                         }
@@ -1533,68 +1701,65 @@ impl<'a> QueryExecutor<'a> {
 
                 BodyClause::Collect(collect) => {
                     use std::collections::HashMap;
-                    
+
                     // Group rows by the collect key(s)
                     let mut groups: HashMap<String, (Context, Vec<Context>, i64)> = HashMap::new();
-                    
+
                     for ctx in rows {
                         // Evaluate group key expressions
                         let mut key_parts = Vec::new();
                         let mut group_ctx = Context::new();
-                        
+
                         for (var_name, expr) in &collect.group_vars {
                             let val = self.evaluate_expr_with_context(expr, &ctx)?;
                             key_parts.push(serde_json::to_string(&val).unwrap_or_default());
                             group_ctx.insert(var_name.clone(), val);
                         }
-                        
+
                         let group_key = key_parts.join("|");
-                        
-                        let entry = groups.entry(group_key).or_insert_with(|| {
-                            (group_ctx.clone(), Vec::new(), 0)
-                        });
-                        
+
+                        let entry = groups
+                            .entry(group_key)
+                            .or_insert_with(|| (group_ctx.clone(), Vec::new(), 0));
+
                         // Collect into groups
                         entry.1.push(ctx.clone());
                         entry.2 += 1;
                     }
-                    
+
                     // Build result rows from groups
                     let mut new_rows = Vec::new();
-                    
+
                     for (_key, (mut group_ctx, group_docs, count)) in groups {
                         // Add INTO variable if present
                         if let Some(ref into_var) = collect.into_var {
-                            let group_array: Vec<Value> = group_docs.iter()
+                            let group_array: Vec<Value> = group_docs
+                                .iter()
                                 .map(|ctx| {
                                     // Create an object with all variables in the context
-                                    let obj: serde_json::Map<String, Value> = ctx.iter()
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect();
+                                    let obj: serde_json::Map<String, Value> =
+                                        ctx.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     Value::Object(obj)
                                 })
                                 .collect();
                             group_ctx.insert(into_var.clone(), Value::Array(group_array));
                         }
-                        
+
                         // Add COUNT variable if present
                         if let Some(ref count_var) = collect.count_var {
                             group_ctx.insert(count_var.clone(), Value::Number(count.into()));
                         }
-                        
+
                         // Compute aggregates
                         for agg in &collect.aggregates {
-                            let agg_value = self.compute_aggregate(
-                                &agg.function,
-                                &agg.argument,
-                                &group_docs,
-                            )?;
+                            let agg_value =
+                                self.compute_aggregate(&agg.function, &agg.argument, &group_docs)?;
                             group_ctx.insert(agg.variable.clone(), agg_value);
                         }
-                        
+
                         new_rows.push(group_ctx);
                     }
-                    
+
                     rows = new_rows;
                 }
             }
@@ -1642,7 +1807,9 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                 }
-                Ok(Value::Number(serde_json::Number::from_f64(sum).unwrap_or_else(|| (sum as i64).into())))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(sum).unwrap_or_else(|| (sum as i64).into()),
+                ))
             }
             "AVG" => {
                 let mut sum = 0.0f64;
@@ -1663,7 +1830,9 @@ impl<'a> QueryExecutor<'a> {
                     Ok(Value::Null)
                 } else {
                     let avg = sum / (count as f64);
-                    Ok(Value::Number(serde_json::Number::from_f64(avg).unwrap_or_else(|| (avg as i64).into())))
+                    Ok(Value::Number(
+                        serde_json::Number::from_f64(avg).unwrap_or_else(|| (avg as i64).into()),
+                    ))
                 }
             }
             "MIN" => {
@@ -1671,15 +1840,21 @@ impl<'a> QueryExecutor<'a> {
                 if let Some(expr) = argument {
                     for ctx in group_docs {
                         let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if val.is_null() { continue; }
-                        
+                        if val.is_null() {
+                            continue;
+                        }
+
                         if min.is_none() {
                             min = Some(val);
-                        } else if let (Some(cur), Some(new)) = (min.as_ref().and_then(|v| v.as_f64()), val.as_f64()) {
+                        } else if let (Some(cur), Some(new)) =
+                            (min.as_ref().and_then(|v| v.as_f64()), val.as_f64())
+                        {
                             if new < cur {
                                 min = Some(val);
                             }
-                        } else if let (Some(cur_str), Some(new_str)) = (min.as_ref().and_then(|v| v.as_str()), val.as_str()) {
+                        } else if let (Some(cur_str), Some(new_str)) =
+                            (min.as_ref().and_then(|v| v.as_str()), val.as_str())
+                        {
                             if new_str < cur_str {
                                 min = Some(val);
                             }
@@ -1693,15 +1868,21 @@ impl<'a> QueryExecutor<'a> {
                 if let Some(expr) = argument {
                     for ctx in group_docs {
                         let val = self.evaluate_expr_with_context(expr, ctx)?;
-                        if val.is_null() { continue; }
-                        
+                        if val.is_null() {
+                            continue;
+                        }
+
                         if max.is_none() {
                             max = Some(val);
-                        } else if let (Some(cur), Some(new)) = (max.as_ref().and_then(|v| v.as_f64()), val.as_f64()) {
+                        } else if let (Some(cur), Some(new)) =
+                            (max.as_ref().and_then(|v| v.as_f64()), val.as_f64())
+                        {
                             if new > cur {
                                 max = Some(val);
                             }
-                        } else if let (Some(cur_str), Some(new_str)) = (max.as_ref().and_then(|v| v.as_str()), val.as_str()) {
+                        } else if let (Some(cur_str), Some(new_str)) =
+                            (max.as_ref().and_then(|v| v.as_str()), val.as_str())
+                        {
                             if new_str > cur_str {
                                 max = Some(val);
                             }
@@ -1732,7 +1913,8 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(list))
             }
             _ => Err(DbError::ExecutionError(format!(
-                "Unknown aggregate function: {}", function
+                "Unknown aggregate function: {}",
+                function
             ))),
         }
     }
@@ -1785,13 +1967,12 @@ impl<'a> QueryExecutor<'a> {
         if let Some(shard_config) = collection.get_shard_config() {
             if shard_config.num_shards > 0 {
                 if let Some(ref coordinator) = self.shard_coordinator {
-                    tracing::debug!("[SDBQL] Using scatter-gather for sharded collection {} ({} shards)", 
-                        for_clause.collection, shard_config.num_shards);
-                    return self.scatter_gather_docs(
-                        &for_clause.collection,
-                        coordinator,
-                        limit,
+                    tracing::debug!(
+                        "[SDBQL] Using scatter-gather for sharded collection {} ({} shards)",
+                        for_clause.collection,
+                        shard_config.num_shards
                     );
+                    return self.scatter_gather_docs(&for_clause.collection, coordinator, limit);
                 }
             }
         }
@@ -1812,20 +1993,28 @@ impl<'a> QueryExecutor<'a> {
         coordinator: &crate::sharding::ShardCoordinator,
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
-        let db_name = self.database.as_ref()
-            .ok_or_else(|| DbError::ExecutionError("No database context for scatter-gather".to_string()))?;
+        let db_name = self.database.as_ref().ok_or_else(|| {
+            DbError::ExecutionError("No database context for scatter-gather".to_string())
+        })?;
 
         // Get shard table to know which node owns each shard
         let Some(table) = coordinator.get_shard_table(db_name, collection_name) else {
-            tracing::debug!("[SCATTER-GATHER] No shard table found for {}, falling back to local scan", collection_name);
+            tracing::debug!(
+                "[SCATTER-GATHER] No shard table found for {}, falling back to local scan",
+                collection_name
+            );
             let collection = self.get_collection(collection_name)?;
-            return Ok(collection.scan(limit).into_iter().map(|d| d.to_value()).collect());
+            return Ok(collection
+                .scan(limit)
+                .into_iter()
+                .map(|d| d.to_value())
+                .collect());
         };
-        
+
         let my_node_id = coordinator.my_node_id();
         let mut all_docs: Vec<Value> = Vec::new();
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-        
+
         // Build client for remote queries
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
@@ -1833,20 +2022,23 @@ impl<'a> QueryExecutor<'a> {
             .build()
             .unwrap_or_else(|_| reqwest::blocking::Client::new());
         let cluster_secret = coordinator.cluster_secret();
-        
+
         // Query each shard's primary node
         for shard_id in 0..table.num_shards {
             let physical_coll = format!("{}_s{}", collection_name, shard_id);
-            
+
             if let Some(assignment) = table.assignments.get(&shard_id) {
                 // Check if we have this shard locally (either as primary or replica)
-                let is_primary = assignment.primary_node == my_node_id || assignment.primary_node == "local";
+                let is_primary =
+                    assignment.primary_node == my_node_id || assignment.primary_node == "local";
                 let is_replica = assignment.replica_nodes.contains(&my_node_id);
-                
+
                 if is_primary || is_replica {
                     // This shard is local - scan it directly
-                    if let Ok(coll) = self.storage.get_database(db_name)
-                        .and_then(|db| db.get_collection(&physical_coll)) 
+                    if let Ok(coll) = self
+                        .storage
+                        .get_database(db_name)
+                        .and_then(|db| db.get_collection(&physical_coll))
                     {
                         for doc in coll.scan(limit) {
                             let value = doc.to_value();
@@ -1861,32 +2053,38 @@ impl<'a> QueryExecutor<'a> {
                     // This shard is remote - try primary first, then replicas
                     let mut nodes_to_try = vec![assignment.primary_node.clone()];
                     nodes_to_try.extend(assignment.replica_nodes.clone());
-                    
+
                     let mut found = false;
                     for node_id in &nodes_to_try {
                         if let Some(addr) = coordinator.get_node_api_address(node_id) {
                             // Query physical shard collection directly via SDBQL
-                            let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME").unwrap_or_else(|_| "http".to_string());
-                            let url = format!("{}://{}/_api/database/{}/cursor", scheme, addr, db_name);
+                            let scheme = std::env::var("SOLIDB_CLUSTER_SCHEME")
+                                .unwrap_or_else(|_| "http".to_string());
+                            let url =
+                                format!("{}://{}/_api/database/{}/cursor", scheme, addr, db_name);
                             let query = if let Some(n) = limit {
                                 format!("FOR doc IN `{}` LIMIT {} RETURN doc", physical_coll, n)
                             } else {
                                 format!("FOR doc IN `{}` RETURN doc", physical_coll)
                             };
-                            
+
                             let response = client
                                 .post(&url)
                                 .header("X-Scatter-Gather", "true")
                                 .header("X-Cluster-Secret", &cluster_secret)
                                 .json(&serde_json::json!({ "query": query }))
                                 .send();
-                                
+
                             match response {
                                 Ok(resp) => {
                                     if let Ok(body) = resp.json::<serde_json::Value>() {
-                                        if let Some(results) = body.get("result").and_then(|r| r.as_array()) {
+                                        if let Some(results) =
+                                            body.get("result").and_then(|r| r.as_array())
+                                        {
                                             for doc in results {
-                                                if let Some(key) = doc.get("_key").and_then(|k| k.as_str()) {
+                                                if let Some(key) =
+                                                    doc.get("_key").and_then(|k| k.as_str())
+                                                {
                                                     if seen_keys.insert(key.to_string()) {
                                                         all_docs.push(doc.clone());
                                                     }
@@ -1904,14 +2102,14 @@ impl<'a> QueryExecutor<'a> {
                             }
                         }
                     }
-                    
+
                     if !found {
                         tracing::error!("[SCATTER-GATHER] CRITICAL: Could not get data for shard {} from any node. Data may be missing!", shard_id);
                     }
                 }
             }
         }
-        
+
         // Apply final limit
         if let Some(n) = limit {
             if all_docs.len() > n {
@@ -1921,7 +2119,9 @@ impl<'a> QueryExecutor<'a> {
 
         tracing::info!(
             "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} shards",
-            collection_name, all_docs.len(), table.num_shards
+            collection_name,
+            all_docs.len(),
+            table.num_shards
         );
 
         Ok(all_docs)
@@ -1953,10 +2153,11 @@ impl<'a> QueryExecutor<'a> {
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();
             let is_subquery = matches!(let_clause.expression, Expression::Subquery(_));
-            let value = self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
+            let value =
+                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
             initial_bindings.insert(let_clause.variable.clone(), value);
             let clause_time = clause_start.elapsed();
-            
+
             let_bindings_info.push(LetBinding {
                 variable: let_clause.variable.clone(),
                 is_subquery,
@@ -1967,31 +2168,31 @@ impl<'a> QueryExecutor<'a> {
         let mut let_clauses_us = let_clauses_time.as_micros() as u64;
 
         // Execution Phase - Measure everything
-        
+
         let mut total_docs_scanned = 0usize;
         let mut rows: Vec<Context> = vec![initial_bindings.clone()];
 
         // Iterate through body clauses (FOR, FILTER, etc.)
         let clauses = if !query.body_clauses.is_empty() {
-             &query.body_clauses
+            &query.body_clauses
         } else {
-             // Fallback for empty body clauses (legacy path not fully instrumented here)
-             &query.body_clauses
+            // Fallback for empty body clauses (legacy path not fully instrumented here)
+            &query.body_clauses
         };
 
         let mut i = 0;
         while i < clauses.len() {
-             match &clauses[i] {
-                 BodyClause::For(for_clause) => {
-                     let scan_start = Instant::now();
-                     
-                     // Optimization: Check for Index Usage (Index Scan)
-                     let mut used_index = false;
-                     let mut index_name: Option<String> = None;
-                     let mut index_type: Option<String> = None;
-                     
-                     // Check if next clause is a FILTER that can use an index
-                     if i + 1 < clauses.len() {
+            match &clauses[i] {
+                BodyClause::For(for_clause) => {
+                    let scan_start = Instant::now();
+
+                    // Optimization: Check for Index Usage (Index Scan)
+                    let mut used_index = false;
+                    let mut index_name: Option<String> = None;
+                    let mut index_type: Option<String> = None;
+
+                    // Check if next clause is a FILTER that can use an index
+                    if i + 1 < clauses.len() {
                         if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
                             let is_collection = if let Some(src) = &for_clause.source_variable {
                                 src == &for_clause.collection
@@ -2000,19 +2201,23 @@ impl<'a> QueryExecutor<'a> {
                             };
 
                             if is_collection {
-                                if let Ok(collection) = self.get_collection(&for_clause.collection) {
-                                                                      if let Some(condition) = self.extract_indexable_condition(
+                                if let Ok(collection) = self.get_collection(&for_clause.collection)
+                                {
+                                    if let Some(condition) = self.extract_indexable_condition(
                                         &filter_clause.expression,
                                         &for_clause.variable,
                                     ) {
-                                        if let Some(docs) = self.use_index_for_condition(&collection, &condition) {
+                                        if let Some(docs) =
+                                            self.use_index_for_condition(&collection, &condition)
+                                        {
                                             // Found index usage!
                                             used_index = true;
                                             // Identify index name
                                             for idx in collection.list_indexes() {
                                                 if idx.field == condition.field {
                                                     index_name = Some(idx.name.clone());
-                                                    index_type = Some(format!("{:?}", idx.index_type));
+                                                    index_type =
+                                                        Some(format!("{:?}", idx.index_type));
                                                     break;
                                                 }
                                             }
@@ -2021,7 +2226,10 @@ impl<'a> QueryExecutor<'a> {
                                             for ctx in &rows {
                                                 for doc in &docs {
                                                     let mut new_ctx = ctx.clone();
-                                                    new_ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                                    new_ctx.insert(
+                                                        for_clause.variable.clone(),
+                                                        doc.to_value(),
+                                                    );
                                                     new_rows.push(new_ctx);
                                                 }
                                             }
@@ -2033,14 +2241,14 @@ impl<'a> QueryExecutor<'a> {
                                 }
                             }
                         }
-                     }
-                     
-                     if !used_index {
-                         // Full Scan or Range
-                         let mut new_rows = Vec::new();
-                         let mut clause_docs_scanned = 0;
-                         
-                         for ctx in &rows {
+                    }
+
+                    if !used_index {
+                        // Full Scan or Range
+                        let mut new_rows = Vec::new();
+                        let mut clause_docs_scanned = 0;
+
+                        for ctx in &rows {
                             // Measure iterator creation/fetching time as part of scan
                             let docs = self.get_for_source_docs(for_clause, ctx, None)?;
                             clause_docs_scanned += docs.len();
@@ -2049,58 +2257,65 @@ impl<'a> QueryExecutor<'a> {
                                 new_ctx.insert(for_clause.variable.clone(), doc);
                                 new_rows.push(new_ctx);
                             }
-                         }
-                         rows = new_rows;
-                         total_docs_scanned += clause_docs_scanned;
-                         i += 1;
-                     }
-                     
-                     collection_scan_us += scan_start.elapsed().as_micros() as u64;
-                     
-                     // Record Collection Info
-                     collections_info.push(CollectionAccess {
+                        }
+                        rows = new_rows;
+                        total_docs_scanned += clause_docs_scanned;
+                        i += 1;
+                    }
+
+                    collection_scan_us += scan_start.elapsed().as_micros() as u64;
+
+                    // Record Collection Info
+                    collections_info.push(CollectionAccess {
                         name: for_clause.collection.clone(),
                         variable: for_clause.variable.clone(),
-                        access_type: if used_index { "index_lookup".to_string() } else { "full_scan".to_string() },
+                        access_type: if used_index {
+                            "index_lookup".to_string()
+                        } else {
+                            "full_scan".to_string()
+                        },
                         index_used: index_name,
                         index_type: index_type,
                         documents_count: if used_index { 0 } else { 0 }, // Simplified
-                     });
-                 }
-                 BodyClause::Filter(filter_clause) => {
-                     let filter_start = Instant::now();
-                     let before_count = rows.len();
-                     rows.retain(|ctx| {
-                         self.evaluate_filter_with_context(&filter_clause.expression, ctx).unwrap_or(false)
-                     });
-                     let after_count = rows.len();
-                     let duration = filter_start.elapsed().as_micros() as u64;
-                     filter_us += duration;
-                     
-                     filters_info.push(FilterInfo {
-                         expression: format_expression(&filter_clause.expression),
-                         index_candidate: None,
-                         can_use_index: false, // Already checked in FOR loop optimization
-                         documents_before: before_count,
-                         documents_after: after_count,
-                         time_us: duration,
-                     });
-                     i += 1;
-                 }
-                 BodyClause::Let(let_clause) => {
-                     let let_start = Instant::now();
-                     for ctx in &mut rows {
-                         let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                         ctx.insert(let_clause.variable.clone(), value);
-                     }
-                     let_clauses_us += let_start.elapsed().as_micros() as u64;
-                     i += 1;
-                 }
-                 BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => {
-                     i += 1; 
-                 }
-                 _ => { i += 1; }
-             }
+                    });
+                }
+                BodyClause::Filter(filter_clause) => {
+                    let filter_start = Instant::now();
+                    let before_count = rows.len();
+                    rows.retain(|ctx| {
+                        self.evaluate_filter_with_context(&filter_clause.expression, ctx)
+                            .unwrap_or(false)
+                    });
+                    let after_count = rows.len();
+                    let duration = filter_start.elapsed().as_micros() as u64;
+                    filter_us += duration;
+
+                    filters_info.push(FilterInfo {
+                        expression: format_expression(&filter_clause.expression),
+                        index_candidate: None,
+                        can_use_index: false, // Already checked in FOR loop optimization
+                        documents_before: before_count,
+                        documents_after: after_count,
+                        time_us: duration,
+                    });
+                    i += 1;
+                }
+                BodyClause::Let(let_clause) => {
+                    let let_start = Instant::now();
+                    for ctx in &mut rows {
+                        let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+                        ctx.insert(let_clause.variable.clone(), value);
+                    }
+                    let_clauses_us += let_start.elapsed().as_micros() as u64;
+                    i += 1;
+                }
+                BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => {
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
         }
 
         // Apply SORT
@@ -2108,8 +2323,12 @@ impl<'a> QueryExecutor<'a> {
             let sort_start = Instant::now();
             rows.sort_by(|a, b| {
                 for (expr, ascending) in &sort.fields {
-                    let a_val = self.evaluate_expr_with_context(expr, a).unwrap_or(Value::Null);
-                    let b_val = self.evaluate_expr_with_context(expr, b).unwrap_or(Value::Null);
+                    let a_val = self
+                        .evaluate_expr_with_context(expr, a)
+                        .unwrap_or(Value::Null);
+                    let b_val = self
+                        .evaluate_expr_with_context(expr, b)
+                        .unwrap_or(Value::Null);
                     let cmp = compare_values(&a_val, &b_val);
                     if cmp != std::cmp::Ordering::Equal {
                         return if *ascending { cmp } else { cmp.reverse() };
@@ -2124,10 +2343,18 @@ impl<'a> QueryExecutor<'a> {
         let mut documents_returned = rows.len();
         if let Some(limit) = &query.limit_clause {
             let limit_start = Instant::now();
-            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let offset = self
+                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
+            let count = self
+                .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
 
             let start = offset.min(rows.len());
             let end = (start + count).min(rows.len());
@@ -2152,8 +2379,17 @@ impl<'a> QueryExecutor<'a> {
             let_bindings: let_bindings_info,
             filters: filters_info,
             sort: query.sort_clause.as_ref().map(|s| SortInfo {
-                field: s.fields.iter().map(|(e, _)| format_expression(e)).collect::<Vec<_>>().join(", "),
-                direction: if s.fields.first().map(|(_, asc)| *asc).unwrap_or(true) { "ASC".to_string() } else { "DESC".to_string() },
+                field: s
+                    .fields
+                    .iter()
+                    .map(|(e, _)| format_expression(e))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                direction: if s.fields.first().map(|(_, asc)| *asc).unwrap_or(true) {
+                    "ASC".to_string()
+                } else {
+                    "DESC".to_string()
+                },
                 time_us: sort_us,
             }),
             limit: query.limit_clause.as_ref().map(|_l| LimitInfo {
@@ -2177,7 +2413,6 @@ impl<'a> QueryExecutor<'a> {
 
     /// Build all row combinations from multiple FOR clauses
     /// This creates the Cartesian product for JOINs
-
 
     /// Build all row combinations from multiple FOR clauses with initial context (LET bindings)
     /// This creates the Cartesian product for JOINs
@@ -2331,33 +2566,55 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            Expression::Literal(value) => Ok(value.clone()),
+            Expression::ArraySpreadAccess(base, field_path) => {
+                let base_value = self.evaluate_expr_with_context(base, ctx)?;
 
-            Expression::BinaryOp { left, op, right } => {
-                match op {
-                    BinaryOperator::And => {
-                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
-                        if !to_bool(&left_val) {
-                            return Ok(Value::Bool(false));
-                        }
-                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
-                        Ok(Value::Bool(to_bool(&right_val)))
+                match base_value {
+                    Value::Array(arr) => {
+                        let results: Vec<Value> = arr
+                            .iter()
+                            .flat_map(|elem| match field_path {
+                                Some(ref path) => vec![get_field_value(elem, path)],
+                                None => {
+                                    // Flatten nested arrays when no field path
+                                    match elem {
+                                        Value::Array(inner) => inner.clone(),
+                                        other => vec![other.clone()],
+                                    }
+                                }
+                            })
+                            .collect();
+                        Ok(Value::Array(results))
                     }
-                    BinaryOperator::Or => {
-                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
-                        if to_bool(&left_val) {
-                            return Ok(Value::Bool(true));
-                        }
-                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
-                        Ok(Value::Bool(to_bool(&right_val)))
-                    }
-                    _ => {
-                        let left_val = self.evaluate_expr_with_context(left, ctx)?;
-                        let right_val = self.evaluate_expr_with_context(right, ctx)?;
-                        evaluate_binary_op(&left_val, op, &right_val)
-                    }
+                    _ => Ok(Value::Array(vec![])), // Non-array returns empty array
                 }
             }
+
+            Expression::Literal(value) => Ok(value.clone()),
+
+            Expression::BinaryOp { left, op, right } => match op {
+                BinaryOperator::And => {
+                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                    if !to_bool(&left_val) {
+                        return Ok(Value::Bool(false));
+                    }
+                    let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                    Ok(Value::Bool(to_bool(&right_val)))
+                }
+                BinaryOperator::Or => {
+                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                    if to_bool(&left_val) {
+                        return Ok(Value::Bool(true));
+                    }
+                    let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                    Ok(Value::Bool(to_bool(&right_val)))
+                }
+                _ => {
+                    let left_val = self.evaluate_expr_with_context(left, ctx)?;
+                    let right_val = self.evaluate_expr_with_context(right, ctx)?;
+                    evaluate_binary_op(&left_val, op, &right_val)
+                }
+            },
 
             Expression::UnaryOp { op, operand } => {
                 let val = self.evaluate_expr_with_context(operand, ctx)?;
@@ -2502,11 +2759,7 @@ impl<'a> QueryExecutor<'a> {
 
                     let cmp = compare_values(&a_val, &b_val);
                     if cmp != std::cmp::Ordering::Equal {
-                        return if *ascending {
-                            cmp
-                        } else {
-                            cmp.reverse()
-                        };
+                        return if *ascending { cmp } else { cmp.reverse() };
                     }
                 }
                 std::cmp::Ordering::Equal
@@ -2515,10 +2768,18 @@ impl<'a> QueryExecutor<'a> {
 
         // Apply LIMIT
         if let Some(limit) = &query.limit_clause {
-            let offset = self.evaluate_expr_with_context(&limit.offset, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
-            let count = self.evaluate_expr_with_context(&limit.count, &initial_bindings)
-                .ok().and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(0);
+            let offset = self
+                .evaluate_expr_with_context(&limit.offset, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
+            let count = self
+                .evaluate_expr_with_context(&limit.count, &initial_bindings)
+                .ok()
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(0);
 
             let start = offset.min(rows.len());
             let end = (start + count).min(rows.len());
@@ -2689,7 +2950,8 @@ impl<'a> QueryExecutor<'a> {
             "TIME_BUCKET" => {
                 if evaluated_args.len() != 2 {
                     return Err(DbError::ExecutionError(
-                        "TIME_BUCKET requires 2 arguments: timestamp, interval (e.g. '5m')".to_string(),
+                        "TIME_BUCKET requires 2 arguments: timestamp, interval (e.g. '5m')"
+                            .to_string(),
                     ));
                 }
 
@@ -2700,11 +2962,13 @@ impl<'a> QueryExecutor<'a> {
 
                 let len = interval_str.len();
                 if len < 2 {
-                     return Err(DbError::ExecutionError("TIME_BUCKET: invalid interval format".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "TIME_BUCKET: invalid interval format".to_string(),
+                    ));
                 }
 
-                let unit = &interval_str[len-1..];
-                let val_str = &interval_str[..len-1];
+                let unit = &interval_str[len - 1..];
+                let val_str = &interval_str[..len - 1];
                 let val: u64 = val_str.parse().map_err(|_| {
                     DbError::ExecutionError("TIME_BUCKET: invalid interval number".to_string())
                 })?;
@@ -2714,45 +2978,59 @@ impl<'a> QueryExecutor<'a> {
                     "m" => val * 1000 * 60,
                     "h" => val * 1000 * 60 * 60,
                     "d" => val * 1000 * 60 * 60 * 24,
-                    _ => return Err(DbError::ExecutionError("TIME_BUCKET: valid units are s, m, h, d".to_string())),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "TIME_BUCKET: valid units are s, m, h, d".to_string(),
+                        ))
+                    }
                 };
 
                 if interval_ms == 0 {
-                    return Err(DbError::ExecutionError("TIME_BUCKET: interval cannot be 0".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "TIME_BUCKET: interval cannot be 0".to_string(),
+                    ));
                 }
 
                 // Parse timestamp
                 match &evaluated_args[0] {
                     Value::Number(n) => {
                         let ts = n.as_i64().ok_or_else(|| {
-                            DbError::ExecutionError("TIME_BUCKET: timestamp must be a valid number".to_string())
+                            DbError::ExecutionError(
+                                "TIME_BUCKET: timestamp must be a valid number".to_string(),
+                            )
                         })?;
                         // Bucket (use div_euclid to handle negative timestamps correctly)
                         let bucket = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
                         Ok(Value::Number(bucket.into()))
-                    },
+                    }
                     Value::String(s) => {
-                         let dt = chrono::DateTime::parse_from_rfc3339(s).map_err(|_| {
-                             DbError::ExecutionError("TIME_BUCKET: invalid timestamp string".to_string())
-                         })?;
-                         let ts = dt.timestamp_millis();
-                         let bucket_ts = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
-                         
-                         // Convert back to string (UTC)
-                         // We use basic arithmetic to get seconds/nanos for safe reconstruction
-                         let seconds = bucket_ts.div_euclid(1000);
-                         let nanos = (bucket_ts.rem_euclid(1000) * 1_000_000) as u32;
-                         
-                         // Try standard DateTime construction (compatible with most chrono versions)
-                         // We rely on Utc being available
-                         if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
-                             Ok(Value::String(dt.to_rfc3339()))
-                         } else {
-                             // Fallback or error path
-                             Err(DbError::ExecutionError("TIME_BUCKET: failed to construct date".to_string()))
-                         }
-                    },
-                    _ => Err(DbError::ExecutionError("TIME_BUCKET: timestamp must be number or string".to_string()))
+                        let dt = chrono::DateTime::parse_from_rfc3339(s).map_err(|_| {
+                            DbError::ExecutionError(
+                                "TIME_BUCKET: invalid timestamp string".to_string(),
+                            )
+                        })?;
+                        let ts = dt.timestamp_millis();
+                        let bucket_ts = ts.div_euclid(interval_ms as i64) * (interval_ms as i64);
+
+                        // Convert back to string (UTC)
+                        // We use basic arithmetic to get seconds/nanos for safe reconstruction
+                        let seconds = bucket_ts.div_euclid(1000);
+                        let nanos = (bucket_ts.rem_euclid(1000) * 1_000_000) as u32;
+
+                        // Try standard DateTime construction (compatible with most chrono versions)
+                        // We rely on Utc being available
+                        if let Some(dt) = chrono::DateTime::from_timestamp(seconds, nanos) {
+                            Ok(Value::String(dt.to_rfc3339()))
+                        } else {
+                            // Fallback or error path
+                            Err(DbError::ExecutionError(
+                                "TIME_BUCKET: failed to construct date".to_string(),
+                            ))
+                        }
+                    }
+                    _ => Err(DbError::ExecutionError(
+                        "TIME_BUCKET: timestamp must be number or string".to_string(),
+                    )),
                 }
             }
 
@@ -2876,23 +3154,22 @@ impl<'a> QueryExecutor<'a> {
                         "LENGTH requires 1 argument".to_string(),
                     ));
                 }
-                let len = match &evaluated_args[0] {
-                    Value::Array(arr) => arr.len(),
-                    Value::String(s) => {
-                        // First try to treat it as a collection name
-                        match self.get_collection(s) {
-                            Ok(collection) => collection.count(),
-                            Err(_) => s.len(), // Fallback to string length if not a valid collection
+                let len =
+                    match &evaluated_args[0] {
+                        Value::Array(arr) => arr.len(),
+                        Value::String(s) => {
+                            // First try to treat it as a collection name
+                            match self.get_collection(s) {
+                                Ok(collection) => collection.count(),
+                                Err(_) => s.len(), // Fallback to string length if not a valid collection
+                            }
                         }
-                    }
-                    Value::Object(obj) => obj.len(),
-                    _ => {
-                        return Err(DbError::ExecutionError(
+                        Value::Object(obj) => obj.len(),
+                        _ => return Err(DbError::ExecutionError(
                             "LENGTH: argument must be array, string, object, or collection name"
                                 .to_string(),
-                        ))
-                    }
-                };
+                        )),
+                    };
                 Ok(Value::Number(serde_json::Number::from(len)))
             }
 
@@ -3296,7 +3573,9 @@ impl<'a> QueryExecutor<'a> {
                 } else if let Some(f) = evaluated_args[1].as_f64() {
                     f as i64
                 } else {
-                    return Err(DbError::ExecutionError("NTH: second argument must be a number".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "NTH: second argument must be a number".to_string(),
+                    ));
                 } as usize;
                 Ok(arr.get(index).cloned().unwrap_or(Value::Null))
             }
@@ -3515,12 +3794,10 @@ impl<'a> QueryExecutor<'a> {
                     .collect();
 
                 if sort_keys {
-                   keys.sort();
+                    keys.sort();
                 }
 
-                Ok(Value::Array(
-                    keys.into_iter().map(Value::String).collect(),
-                ))
+                Ok(Value::Array(keys.into_iter().map(Value::String).collect()))
             }
 
             // VALUES(doc, removeInternal?) - return top-level attribute values
@@ -3587,7 +3864,7 @@ impl<'a> QueryExecutor<'a> {
                             // Usually SDBQL functions are permissive. But KEEP errors.
                             // Let's mirror KEEP behavior but maybe loosen it if needed.
                             // However, strictly following KEEP pattern:
-                             return Err(DbError::ExecutionError(
+                            return Err(DbError::ExecutionError(
                                 "UNSET: attribute names must be strings".to_string(),
                             ));
                         }
@@ -3664,7 +3941,9 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let search = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("CONTAINS: second argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "CONTAINS: second argument must be a string".to_string(),
+                    )
                 })?;
 
                 let return_index = if evaluated_args.len() > 2 {
@@ -3705,28 +3984,32 @@ impl<'a> QueryExecutor<'a> {
                         ));
                     }
                     if evaluated_args.len() == 3 {
-                         evaluated_args[2].as_i64().or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
+                        evaluated_args[2]
+                            .as_i64()
+                            .or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
                     } else {
                         None
                     }
                 } else {
-                     // Replace mode: SUBSTITUTE(value, search, replace, limit?)
-                     if evaluated_args.len() < 3 {
+                    // Replace mode: SUBSTITUTE(value, search, replace, limit?)
+                    if evaluated_args.len() < 3 {
                         return Err(DbError::ExecutionError(
                             "SUBSTITUTE requires search and replace strings".to_string(),
                         ));
-                     }
-                      if evaluated_args.len() == 4 {
-                        evaluated_args[3].as_i64().or_else(|| evaluated_args[3].as_f64().map(|f| f as i64))
-                     } else {
+                    }
+                    if evaluated_args.len() == 4 {
+                        evaluated_args[3]
+                            .as_i64()
+                            .or_else(|| evaluated_args[3].as_f64().map(|f| f as i64))
+                    } else {
                         None
-                     }
+                    }
                 };
 
                 let count_limit = match limit {
                     Some(n) if n > 0 => Some(n as usize),
                     Some(_) => Some(0), // 0 or negative limit means 0 replacements? Actually ArangoDB might handle 0 as replace nothing? Or all? Docs say "optional limit to restrict the number of replacements". Usually 0 means 0.
-                    None => None, // None means replace all
+                    None => None,       // None means replace all
                 };
 
                 // Perform substitution
@@ -3741,7 +4024,7 @@ impl<'a> QueryExecutor<'a> {
                     let mut result = text.to_string();
                     let replacements_left = count_limit;
 
-                     for (search, replace_val) in mapping {
+                    for (search, replace_val) in mapping {
                         let replace = replace_val.as_str().unwrap_or(""); // Treat non-string values as empty string or stringify? Docs say "mapping values are converted to strings".
                         let replace_str = if replace_val.is_string() {
                             replace.to_string()
@@ -3750,30 +4033,36 @@ impl<'a> QueryExecutor<'a> {
                         };
 
                         if let Some(limit_val) = replacements_left {
-                             if limit_val == 0 { break; }
-                             // Rust's replacen doesn't return how many replaced.
-                             // We might need to handle this manually if we want global limit across all keys.
-                             // But wait, "limit" in mapping mode usually means "limit per search term" or "total replacements"?
-                             // Arango docs: "limit argument can be used to restrict the number of replacements". It usually applies *per* operation or total?
-                             // "length of the search and replace list must be equal".
-                             // Let's assume global limit for now? Or per key?
-                             // Actually, if using `replacen`, it's per key.
-                             // Let's stick to simple iterative replacement.
-                             result = result.replacen(search, &replace_str, limit_val);
-                             // To correctly track total replacements we'd need a different approach.
-                             // Given ArangoDB's undefined order for keys, maybe it doesn't matter much for complex cases.
-                             // Let's assume the limit is applied per key for now as it's the simplest interpretation of iterative application.
+                            if limit_val == 0 {
+                                break;
+                            }
+                            // Rust's replacen doesn't return how many replaced.
+                            // We might need to handle this manually if we want global limit across all keys.
+                            // But wait, "limit" in mapping mode usually means "limit per search term" or "total replacements"?
+                            // Arango docs: "limit argument can be used to restrict the number of replacements". It usually applies *per* operation or total?
+                            // "length of the search and replace list must be equal".
+                            // Let's assume global limit for now? Or per key?
+                            // Actually, if using `replacen`, it's per key.
+                            // Let's stick to simple iterative replacement.
+                            result = result.replacen(search, &replace_str, limit_val);
+                            // To correctly track total replacements we'd need a different approach.
+                            // Given ArangoDB's undefined order for keys, maybe it doesn't matter much for complex cases.
+                            // Let's assume the limit is applied per key for now as it's the simplest interpretation of iterative application.
                         } else {
-                             result = result.replace(search, &replace_str);
+                            result = result.replace(search, &replace_str);
                         }
                     }
                     Ok(Value::String(result))
                 } else {
                     let search = evaluated_args[1].as_str().ok_or_else(|| {
-                         DbError::ExecutionError("SUBSTITUTE: search argument must be a string".to_string())
+                        DbError::ExecutionError(
+                            "SUBSTITUTE: search argument must be a string".to_string(),
+                        )
                     })?;
                     let replace = evaluated_args[2].as_str().ok_or_else(|| {
-                         DbError::ExecutionError("SUBSTITUTE: replace argument must be a string".to_string())
+                        DbError::ExecutionError(
+                            "SUBSTITUTE: replace argument must be a string".to_string(),
+                        )
                     })?;
 
                     if let Some(n) = count_limit {
@@ -3801,7 +4090,9 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let limit = if evaluated_args.len() > 2 {
-                    evaluated_args[2].as_i64().or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
+                    evaluated_args[2]
+                        .as_i64()
+                        .or_else(|| evaluated_args[2].as_f64().map(|f| f as i64))
                 } else {
                     None
                 };
@@ -3809,27 +4100,33 @@ impl<'a> QueryExecutor<'a> {
                 let parts: Vec<Value> = match limit {
                     Some(n) if n > 0 => {
                         // Split into at most n parts from left
-                        value.splitn(n as usize, separator)
-                             .map(|s| Value::String(s.to_string()))
-                             .collect()
-                    },
+                        value
+                            .splitn(n as usize, separator)
+                            .map(|s| Value::String(s.to_string()))
+                            .collect()
+                    }
                     Some(n) if n < 0 => {
-                         // Split into at most abs(n) parts from right
-                         // rsplitn returns parts in reverse order, so we need to reverse them back
-                         let mut p: Vec<Value> = value.rsplitn(n.abs() as usize, separator)
-                             .map(|s| Value::String(s.to_string()))
-                             .collect();
-                         p.reverse();
-                         p
-                    },
+                        // Split into at most abs(n) parts from right
+                        // rsplitn returns parts in reverse order, so we need to reverse them back
+                        let mut p: Vec<Value> = value
+                            .rsplitn(n.abs() as usize, separator)
+                            .map(|s| Value::String(s.to_string()))
+                            .collect();
+                        p.reverse();
+                        p
+                    }
                     _ => {
                         // Split all (limit 0 or None)
                         if separator.is_empty() {
-                            value.chars().map(|c| Value::String(c.to_string())).collect()
+                            value
+                                .chars()
+                                .map(|c| Value::String(c.to_string()))
+                                .collect()
                         } else {
-                            value.split(separator)
-                                 .map(|s| Value::String(s.to_string()))
-                                 .collect()
+                            value
+                                .split(separator)
+                                .map(|s| Value::String(s.to_string()))
+                                .collect()
                         }
                     }
                 };
@@ -3840,7 +4137,7 @@ impl<'a> QueryExecutor<'a> {
             // TRIM(value, type_or_chars?)
             "TRIM" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "TRIM requires 1-2 arguments: value, [type/chars]".to_string(),
                     ));
                 }
@@ -3854,8 +4151,8 @@ impl<'a> QueryExecutor<'a> {
                         let t = evaluated_args[1].as_i64().unwrap_or(0);
                         (Some(t), None)
                     } else if evaluated_args[1].is_string() {
-                         // Chars
-                         (None, evaluated_args[1].as_str())
+                        // Chars
+                        (None, evaluated_args[1].as_str())
                     } else {
                         // Invalid type
                         (Some(0), None) // Fallback or strict error? Arango ignores invalid? Let's assume strict or default.
@@ -3877,7 +4174,7 @@ impl<'a> QueryExecutor<'a> {
             // LTRIM(value, chars?)
             "LTRIM" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "LTRIM requires 1-2 arguments: value, [chars]".to_string(),
                     ));
                 }
@@ -3886,10 +4183,12 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let result = if evaluated_args.len() == 2 {
-                     let chars = evaluated_args[1].as_str().ok_or_else(|| {
-                        DbError::ExecutionError("LTRIM: second argument must be a string".to_string())
-                     })?;
-                     value.trim_start_matches(|ch| chars.contains(ch))
+                    let chars = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "LTRIM: second argument must be a string".to_string(),
+                        )
+                    })?;
+                    value.trim_start_matches(|ch| chars.contains(ch))
                 } else {
                     value.trim_start()
                 };
@@ -3899,7 +4198,7 @@ impl<'a> QueryExecutor<'a> {
             // RTRIM(value, chars?)
             "RTRIM" => {
                 if evaluated_args.is_empty() || evaluated_args.len() > 2 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "RTRIM requires 1-2 arguments: value, [chars]".to_string(),
                     ));
                 }
@@ -3908,10 +4207,12 @@ impl<'a> QueryExecutor<'a> {
                 })?;
 
                 let result = if evaluated_args.len() == 2 {
-                     let chars = evaluated_args[1].as_str().ok_or_else(|| {
-                        DbError::ExecutionError("RTRIM: second argument must be a string".to_string())
-                     })?;
-                     value.trim_end_matches(|ch| chars.contains(ch))
+                    let chars = evaluated_args[1].as_str().ok_or_else(|| {
+                        DbError::ExecutionError(
+                            "RTRIM: second argument must be a string".to_string(),
+                        )
+                    })?;
+                    value.trim_end_matches(|ch| chars.contains(ch))
                 } else {
                     value.trim_end()
                 };
@@ -3921,7 +4222,7 @@ impl<'a> QueryExecutor<'a> {
             // JSON_PARSE(text)
             "JSON_PARSE" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "JSON_PARSE requires 1 argument: text".to_string(),
                     ));
                 }
@@ -3938,7 +4239,7 @@ impl<'a> QueryExecutor<'a> {
             // JSON_STRINGIFY(value)
             "JSON_STRINGIFY" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "JSON_STRINGIFY requires 1 argument: value".to_string(),
                     ));
                 }
@@ -3950,7 +4251,7 @@ impl<'a> QueryExecutor<'a> {
 
             // UUIDV4()
             "UUIDV4" => {
-                 if !evaluated_args.is_empty() {
+                if !evaluated_args.is_empty() {
                     return Err(DbError::ExecutionError(
                         "UUIDV4 requires 0 arguments".to_string(),
                     ));
@@ -3960,7 +4261,7 @@ impl<'a> QueryExecutor<'a> {
 
             // UUIDV7()
             "UUIDV7" => {
-                 if !evaluated_args.is_empty() {
+                if !evaluated_args.is_empty() {
                     return Err(DbError::ExecutionError(
                         "UUIDV7 requires 0 arguments".to_string(),
                     ));
@@ -3971,7 +4272,9 @@ impl<'a> QueryExecutor<'a> {
             // MD5(string)
             "MD5" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("MD5 requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "MD5 requires 1 argument".to_string(),
+                    ));
                 }
                 let input = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("MD5: argument must be a string".to_string())
@@ -3983,12 +4286,14 @@ impl<'a> QueryExecutor<'a> {
             // SHA256(string)
             "SHA256" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SHA256 requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SHA256 requires 1 argument".to_string(),
+                    ));
                 }
                 let input = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("SHA256: argument must be a string".to_string())
                 })?;
-                use sha2::{Sha256, Digest};
+                use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(input.as_bytes());
                 Ok(Value::String(hex::encode(hasher.finalize())))
@@ -3997,37 +4302,49 @@ impl<'a> QueryExecutor<'a> {
             // BASE64_ENCODE(string)
             "BASE64_ENCODE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("BASE64_ENCODE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "BASE64_ENCODE requires 1 argument".to_string(),
+                    ));
                 }
                 let input = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("BASE64_ENCODE: argument must be a string".to_string())
                 })?;
-                use base64::{Engine as _, engine::general_purpose};
+                use base64::{engine::general_purpose, Engine as _};
                 Ok(Value::String(general_purpose::STANDARD.encode(input)))
             }
 
             // BASE64_DECODE(string)
             "BASE64_DECODE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("BASE64_DECODE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "BASE64_DECODE requires 1 argument".to_string(),
+                    ));
                 }
                 let input = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("BASE64_DECODE: argument must be a string".to_string())
                 })?;
-                use base64::{Engine as _, engine::general_purpose};
+                use base64::{engine::general_purpose, Engine as _};
                 match general_purpose::STANDARD.decode(input) {
                     Ok(bytes) => {
-                        let s = String::from_utf8(bytes).map_err(|_| DbError::ExecutionError("BASE64_DECODE: result is not valid utf8".to_string()))?;
+                        let s = String::from_utf8(bytes).map_err(|_| {
+                            DbError::ExecutionError(
+                                "BASE64_DECODE: result is not valid utf8".to_string(),
+                            )
+                        })?;
                         Ok(Value::String(s))
-                    },
-                    Err(_) => Err(DbError::ExecutionError("BASE64_DECODE: invalid base64".to_string()))
+                    }
+                    Err(_) => Err(DbError::ExecutionError(
+                        "BASE64_DECODE: invalid base64".to_string(),
+                    )),
                 }
             }
 
             // SLEEP(ms)
             "SLEEP" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SLEEP requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SLEEP requires 1 argument".to_string(),
+                    ));
                 }
                 let ms = evaluated_args[0].as_u64().ok_or_else(|| {
                     DbError::ExecutionError("SLEEP: argument must be a positive number".to_string())
@@ -4039,7 +4356,9 @@ impl<'a> QueryExecutor<'a> {
             // ASSERT(condition, message)
             "ASSERT" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("ASSERT requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ASSERT requires 2 arguments".to_string(),
+                    ));
                 }
                 let condition = to_bool(&evaluated_args[0]);
                 if !condition {
@@ -4049,10 +4368,10 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Bool(true))
             }
 
-             // TO_BOOL(value)
+            // TO_BOOL(value)
             "TO_BOOL" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "TO_BOOL requires 1 argument: value".to_string(),
                     ));
                 }
@@ -4069,7 +4388,7 @@ impl<'a> QueryExecutor<'a> {
                         } else {
                             true // Should be covered
                         }
-                    },
+                    }
                     Value::String(s) => !s.is_empty(),
                     Value::Array(_) => true,
                     Value::Object(_) => true,
@@ -4080,19 +4399,19 @@ impl<'a> QueryExecutor<'a> {
             // TO_NUMBER(value)
             "TO_NUMBER" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "TO_NUMBER requires 1 argument: value".to_string(),
                     ));
                 }
-                
+
                 let mut current = &evaluated_args[0];
                 // Unwrap arrays with single element
                 while let Value::Array(arr) = current {
                     if arr.len() == 1 {
                         current = &arr[0];
                     } else {
-                         // Empty or >1 elements -> 0
-                         return Ok(Value::Number(serde_json::Number::from(0)));
+                        // Empty or >1 elements -> 0
+                        return Ok(Value::Number(serde_json::Number::from(0)));
                     }
                 }
 
@@ -4100,31 +4419,31 @@ impl<'a> QueryExecutor<'a> {
                     Value::Null => 0.0,
                     Value::Bool(true) => 1.0,
                     Value::Bool(false) => 0.0,
-                    Value::Number(n) => n.as_f64().unwrap_or(0.0), 
+                    Value::Number(n) => n.as_f64().unwrap_or(0.0),
                     Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
-                    Value::Array(_) => 0.0, 
+                    Value::Array(_) => 0.0,
                     Value::Object(_) => 0.0,
                 };
 
                 // Return as integer if it's a whole number
                 if num_val.fract() == 0.0 {
-                     // Check range? i64 range.
-                     if num_val >= (i64::MIN as f64) && num_val <= (i64::MAX as f64) {
-                         return Ok(Value::Number(serde_json::Number::from(num_val as i64)));
-                     }
+                    // Check range? i64 range.
+                    if num_val >= (i64::MIN as f64) && num_val <= (i64::MAX as f64) {
+                        return Ok(Value::Number(serde_json::Number::from(num_val as i64)));
+                    }
                 }
-                
-               if let Some(n) = serde_json::Number::from_f64(num_val) {
-                   Ok(Value::Number(n))
-               } else {
-                   Ok(Value::Number(serde_json::Number::from(0)))
-               }
+
+                if let Some(n) = serde_json::Number::from_f64(num_val) {
+                    Ok(Value::Number(n))
+                } else {
+                    Ok(Value::Number(serde_json::Number::from(0)))
+                }
             }
 
             // TO_STRING(value)
             "TO_STRING" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "TO_STRING requires 1 argument: value".to_string(),
                     ));
                 }
@@ -4144,7 +4463,7 @@ impl<'a> QueryExecutor<'a> {
             // TO_ARRAY(value)
             "TO_ARRAY" => {
                 if evaluated_args.len() != 1 {
-                     return Err(DbError::ExecutionError(
+                    return Err(DbError::ExecutionError(
                         "TO_ARRAY requires 1 argument: value".to_string(),
                     ));
                 }
@@ -4155,7 +4474,7 @@ impl<'a> QueryExecutor<'a> {
                     Value::Object(obj) => {
                         let values: Vec<Value> = obj.values().cloned().collect();
                         Ok(Value::Array(values))
-                    },
+                    }
                     _ => Ok(Value::Array(vec![val.clone()])),
                 }
             }
@@ -4334,9 +4653,7 @@ impl<'a> QueryExecutor<'a> {
                 };
                 let factor = 10_f64.powi(precision);
                 let rounded = (num * factor).round() / factor;
-                Ok(Value::Number(
-                    number_from_f64(rounded),
-                ))
+                Ok(Value::Number(number_from_f64(rounded)))
             }
 
             // ABS(number) - absolute value
@@ -4349,23 +4666,23 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ABS: argument must be a number".to_string())
                 })?;
-                Ok(Value::Number(
-                    number_from_f64(num.abs()),
-                ))
+                Ok(Value::Number(number_from_f64(num.abs())))
             }
-
-
 
             // SQRT(n) - square root
             "SQRT" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SQRT requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SQRT requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
-                     DbError::ExecutionError("SQRT: argument must be a number".to_string())
+                    DbError::ExecutionError("SQRT: argument must be a number".to_string())
                 })?;
                 if num < 0.0 {
-                    return Err(DbError::ExecutionError("SQRT: cannot take square root of negative number".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SQRT: cannot take square root of negative number".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.sqrt())))
             }
@@ -4373,7 +4690,9 @@ impl<'a> QueryExecutor<'a> {
             // POW(base, exp) - power
             "POW" | "POWER" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("POW requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "POW requires 2 arguments".to_string(),
+                    ));
                 }
                 let base = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("POW: base must be a number".to_string())
@@ -4381,7 +4700,7 @@ impl<'a> QueryExecutor<'a> {
                 let exp = evaluated_args[1].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("POW: exponent must be a number".to_string())
                 })?;
-                
+
                 Ok(Value::Number(number_from_f64(base.powf(exp))))
             }
 
@@ -4395,9 +4714,7 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("FLOOR: argument must be a number".to_string())
                 })?;
-                Ok(Value::Number(
-                    number_from_f64(num.floor()),
-                ))
+                Ok(Value::Number(number_from_f64(num.floor())))
             }
 
             // CEIL(number) - ceiling
@@ -4410,9 +4727,7 @@ impl<'a> QueryExecutor<'a> {
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("CEIL: argument must be a number".to_string())
                 })?;
-                Ok(Value::Number(
-                    number_from_f64(num.ceil()),
-                ))
+                Ok(Value::Number(number_from_f64(num.ceil())))
             }
 
             // RANDOM() - random float between 0 and 1
@@ -4424,21 +4739,23 @@ impl<'a> QueryExecutor<'a> {
                 }
                 use rand::Rng;
                 let random_val: f64 = rand::thread_rng().gen();
-                Ok(Value::Number(
-                    number_from_f64(random_val),
-                ))
+                Ok(Value::Number(number_from_f64(random_val)))
             }
 
             // LOG(x) - natural logarithm (ln)
             "LOG" | "LN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LOG requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("LOG: argument must be a number".to_string())
                 })?;
                 if num <= 0.0 {
-                    return Err(DbError::ExecutionError("LOG: argument must be positive".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG: argument must be positive".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.ln())))
             }
@@ -4446,13 +4763,17 @@ impl<'a> QueryExecutor<'a> {
             // LOG10(x) - base-10 logarithm
             "LOG10" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LOG10 requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG10 requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("LOG10: argument must be a number".to_string())
                 })?;
                 if num <= 0.0 {
-                    return Err(DbError::ExecutionError("LOG10: argument must be positive".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG10: argument must be positive".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.log10())))
             }
@@ -4460,13 +4781,17 @@ impl<'a> QueryExecutor<'a> {
             // LOG2(x) - base-2 logarithm
             "LOG2" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("LOG2 requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG2 requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("LOG2: argument must be a number".to_string())
                 })?;
                 if num <= 0.0 {
-                    return Err(DbError::ExecutionError("LOG2: argument must be positive".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LOG2: argument must be positive".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.log2())))
             }
@@ -4474,7 +4799,9 @@ impl<'a> QueryExecutor<'a> {
             // EXP(x) - e^x
             "EXP" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("EXP requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "EXP requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("EXP: argument must be a number".to_string())
@@ -4485,7 +4812,9 @@ impl<'a> QueryExecutor<'a> {
             // SIN(x) - sine (x in radians)
             "SIN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("SIN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "SIN requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("SIN: argument must be a number".to_string())
@@ -4496,7 +4825,9 @@ impl<'a> QueryExecutor<'a> {
             // COS(x) - cosine (x in radians)
             "COS" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("COS requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "COS requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("COS: argument must be a number".to_string())
@@ -4507,7 +4838,9 @@ impl<'a> QueryExecutor<'a> {
             // TAN(x) - tangent (x in radians)
             "TAN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("TAN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "TAN requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("TAN: argument must be a number".to_string())
@@ -4518,13 +4851,17 @@ impl<'a> QueryExecutor<'a> {
             // ASIN(x) - arc sine
             "ASIN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("ASIN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ASIN requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ASIN: argument must be a number".to_string())
                 })?;
                 if num < -1.0 || num > 1.0 {
-                    return Err(DbError::ExecutionError("ASIN: argument must be between -1 and 1".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ASIN: argument must be between -1 and 1".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.asin())))
             }
@@ -4532,13 +4869,17 @@ impl<'a> QueryExecutor<'a> {
             // ACOS(x) - arc cosine
             "ACOS" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("ACOS requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ACOS requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ACOS: argument must be a number".to_string())
                 })?;
                 if num < -1.0 || num > 1.0 {
-                    return Err(DbError::ExecutionError("ACOS: argument must be between -1 and 1".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ACOS: argument must be between -1 and 1".to_string(),
+                    ));
                 }
                 Ok(Value::Number(number_from_f64(num.acos())))
             }
@@ -4546,7 +4887,9 @@ impl<'a> QueryExecutor<'a> {
             // ATAN(x) - arc tangent
             "ATAN" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("ATAN requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ATAN requires 1 argument".to_string(),
+                    ));
                 }
                 let num = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ATAN: argument must be a number".to_string())
@@ -4557,7 +4900,9 @@ impl<'a> QueryExecutor<'a> {
             // ATAN2(y, x) - arc tangent of y/x
             "ATAN2" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("ATAN2 requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "ATAN2 requires 2 arguments".to_string(),
+                    ));
                 }
                 let y = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("ATAN2: y must be a number".to_string())
@@ -4589,7 +4934,9 @@ impl<'a> QueryExecutor<'a> {
             // LEFT(str, n) - get first n characters
             "LEFT" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("LEFT requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "LEFT requires 2 arguments".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("LEFT: first argument must be a string".to_string())
@@ -4604,7 +4951,9 @@ impl<'a> QueryExecutor<'a> {
             // RIGHT(str, n) - get last n characters
             "RIGHT" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("RIGHT requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "RIGHT requires 2 arguments".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("RIGHT: first argument must be a string".to_string())
@@ -4621,7 +4970,9 @@ impl<'a> QueryExecutor<'a> {
             // CHAR_LENGTH(str) - character count (unicode-aware)
             "CHAR_LENGTH" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("CHAR_LENGTH requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "CHAR_LENGTH requires 1 argument".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("CHAR_LENGTH: argument must be a string".to_string())
@@ -4632,24 +4983,30 @@ impl<'a> QueryExecutor<'a> {
             // FIND_FIRST(str, search, start?) - find first occurrence, return index or -1
             "FIND_FIRST" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("FIND_FIRST requires 2-3 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "FIND_FIRST requires 2-3 arguments".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("FIND_FIRST: first argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "FIND_FIRST: first argument must be a string".to_string(),
+                    )
                 })?;
                 let search = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("FIND_FIRST: second argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "FIND_FIRST: second argument must be a string".to_string(),
+                    )
                 })?;
                 let start = if evaluated_args.len() == 3 {
                     evaluated_args[2].as_f64().unwrap_or(0.0) as usize
                 } else {
                     0
                 };
-                
+
                 if start >= s.len() {
                     return Ok(Value::Number(serde_json::Number::from(-1)));
                 }
-                
+
                 match s[start..].find(search) {
                     Some(idx) => Ok(Value::Number(serde_json::Number::from(start + idx))),
                     None => Ok(Value::Number(serde_json::Number::from(-1))),
@@ -4659,20 +5016,26 @@ impl<'a> QueryExecutor<'a> {
             // FIND_LAST(str, search, end?) - find last occurrence, return index or -1
             "FIND_LAST" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("FIND_LAST requires 2-3 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "FIND_LAST requires 2-3 arguments".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("FIND_LAST: first argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "FIND_LAST: first argument must be a string".to_string(),
+                    )
                 })?;
                 let search = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("FIND_LAST: second argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "FIND_LAST: second argument must be a string".to_string(),
+                    )
                 })?;
                 let end = if evaluated_args.len() == 3 {
                     evaluated_args[2].as_f64().unwrap_or(s.len() as f64) as usize
                 } else {
                     s.len()
                 };
-                
+
                 let search_str = &s[..end.min(s.len())];
                 match search_str.rfind(search) {
                     Some(idx) => Ok(Value::Number(serde_json::Number::from(idx))),
@@ -4683,18 +5046,27 @@ impl<'a> QueryExecutor<'a> {
             // REGEX_TEST(str, pattern) - test if string matches regex pattern
             "REGEX_TEST" | "REGEX_MATCH" => {
                 if evaluated_args.len() != 2 {
-                    return Err(DbError::ExecutionError("REGEX_TEST requires 2 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "REGEX_TEST requires 2 arguments".to_string(),
+                    ));
                 }
                 let s = evaluated_args[0].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("REGEX_TEST: first argument must be a string".to_string())
+                    DbError::ExecutionError(
+                        "REGEX_TEST: first argument must be a string".to_string(),
+                    )
                 })?;
                 let pattern = evaluated_args[1].as_str().ok_or_else(|| {
-                    DbError::ExecutionError("REGEX_TEST: second argument must be a string (pattern)".to_string())
+                    DbError::ExecutionError(
+                        "REGEX_TEST: second argument must be a string (pattern)".to_string(),
+                    )
                 })?;
-                
+
                 use regex::Regex;
                 let re = Regex::new(pattern).map_err(|e| {
-                    DbError::ExecutionError(format!("REGEX_TEST: invalid regex '{}': {}", pattern, e))
+                    DbError::ExecutionError(format!(
+                        "REGEX_TEST: invalid regex '{}': {}",
+                        pattern, e
+                    ))
                 })?;
                 Ok(Value::Bool(re.is_match(s)))
             }
@@ -4702,7 +5074,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_YEAR(date) - extract year from date
             "DATE_YEAR" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_YEAR requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_YEAR requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Datelike;
@@ -4712,7 +5086,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_MONTH(date) - extract month from date (1-12)
             "DATE_MONTH" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_MONTH requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_MONTH requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Datelike;
@@ -4722,7 +5098,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_DAY(date) - extract day of month from date (1-31)
             "DATE_DAY" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_DAY requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_DAY requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Datelike;
@@ -4732,7 +5110,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_HOUR(date) - extract hour from date (0-23)
             "DATE_HOUR" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_HOUR requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_HOUR requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Timelike;
@@ -4742,7 +5122,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_MINUTE(date) - extract minute from date (0-59)
             "DATE_MINUTE" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_MINUTE requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_MINUTE requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Timelike;
@@ -4752,7 +5134,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_SECOND(date) - extract second from date (0-59)
             "DATE_SECOND" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_SECOND requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_SECOND requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Timelike;
@@ -4762,7 +5146,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_DAYOFWEEK(date) - extract day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
             "DATE_DAYOFWEEK" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_DAYOFWEEK requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_DAYOFWEEK requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Datelike;
@@ -4774,7 +5160,9 @@ impl<'a> QueryExecutor<'a> {
             // DATE_QUARTER(date) - extract quarter (1-4)
             "DATE_QUARTER" => {
                 if evaluated_args.len() != 1 {
-                    return Err(DbError::ExecutionError("DATE_QUARTER requires 1 argument".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "DATE_QUARTER requires 1 argument".to_string(),
+                    ));
                 }
                 let dt = parse_datetime(&evaluated_args[0])?;
                 use chrono::Datelike;
@@ -4785,7 +5173,9 @@ impl<'a> QueryExecutor<'a> {
             // RANGE(start, end, step?) - generate array of numbers
             "RANGE" => {
                 if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
-                    return Err(DbError::ExecutionError("RANGE requires 2-3 arguments".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "RANGE requires 2-3 arguments".to_string(),
+                    ));
                 }
                 let start = evaluated_args[0].as_f64().ok_or_else(|| {
                     DbError::ExecutionError("RANGE: start must be a number".to_string())
@@ -4800,11 +5190,13 @@ impl<'a> QueryExecutor<'a> {
                 } else {
                     1
                 };
-                
+
                 if step == 0 {
-                    return Err(DbError::ExecutionError("RANGE: step cannot be 0".to_string()));
+                    return Err(DbError::ExecutionError(
+                        "RANGE: step cannot be 0".to_string(),
+                    ));
                 }
-                
+
                 let mut result = Vec::new();
                 if step > 0 {
                     let mut i = start;
@@ -4821,7 +5213,6 @@ impl<'a> QueryExecutor<'a> {
                 }
                 Ok(Value::Array(result))
             }
-
 
             // UPPER(string) - uppercase
             "UPPER" => {
@@ -6464,10 +6855,6 @@ impl<'a> QueryExecutor<'a> {
     }
 }
 
-
-
-
-
 #[inline]
 fn get_field_value(value: &Value, field_path: &str) -> Value {
     let mut current = value;
@@ -6508,28 +6895,26 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(
             compare_values(left, right) != std::cmp::Ordering::Less,
         )),
-        BinaryOperator::In => {
-            match right {
-                Value::Array(arr) => {
-                    let mut found = false;
-                    for val in arr {
-                        if values_equal(left, val) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    Ok(Value::Bool(found))
-                }
-                Value::Object(obj) => {
-                    if let Some(s) = left.as_str() {
-                        Ok(Value::Bool(obj.contains_key(s)))
-                    } else {
-                        Ok(Value::Bool(false))
+        BinaryOperator::In => match right {
+            Value::Array(arr) => {
+                let mut found = false;
+                for val in arr {
+                    if values_equal(left, val) {
+                        found = true;
+                        break;
                     }
                 }
-                _ => Ok(Value::Bool(false)),
+                Ok(Value::Bool(found))
             }
-        }
+            Value::Object(obj) => {
+                if let Some(s) = left.as_str() {
+                    Ok(Value::Bool(obj.contains_key(s)))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            _ => Ok(Value::Bool(false)),
+        },
 
         BinaryOperator::Like | BinaryOperator::NotLike => {
             let s = left.as_str().unwrap_or("");
@@ -6543,7 +6928,8 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
                 match c {
                     '%' => regex_pattern.push_str(".*"),
                     '_' => regex_pattern.push('.'),
-                    '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\' => {
+                    '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
+                    | '\\' => {
                         regex_pattern.push('\\');
                         regex_pattern.push(c);
                     }
@@ -6648,7 +7034,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::BitwiseAnd => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from(
-                    (a as i64) & (b as i64)
+                    (a as i64) & (b as i64),
                 )))
             } else {
                 Err(DbError::ExecutionError(
@@ -6660,7 +7046,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::BitwiseOr => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from(
-                    (a as i64) | (b as i64)
+                    (a as i64) | (b as i64),
                 )))
             } else {
                 Err(DbError::ExecutionError(
@@ -6672,7 +7058,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::BitwiseXor => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from(
-                    (a as i64) ^ (b as i64)
+                    (a as i64) ^ (b as i64),
                 )))
             } else {
                 Err(DbError::ExecutionError(
@@ -6684,7 +7070,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::LeftShift => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from(
-                    (a as i64) << (b as i64)
+                    (a as i64) << (b as i64),
                 )))
             } else {
                 Err(DbError::ExecutionError(
@@ -6696,7 +7082,7 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
         BinaryOperator::RightShift => {
             if let (Some(a), Some(b)) = (left.as_f64(), right.as_f64()) {
                 Ok(Value::Number(serde_json::Number::from(
-                    (a as i64) >> (b as i64)
+                    (a as i64) >> (b as i64),
                 )))
             } else {
                 Err(DbError::ExecutionError(

@@ -6,8 +6,8 @@
 //! 2. Distinct placement of replicas (Anti-affinity with primary and other replicas).
 //! 3. Load balancing for replicas.
 
-use std::collections::HashMap;
 use crate::sharding::coordinator::ShardAssignment;
+use std::collections::HashMap;
 
 /// Compute shard assignments based on available nodes and configuration
 ///
@@ -46,7 +46,7 @@ pub fn compute_assignments(
     // 1. Assign Primaries using Load-Balanced Stability
     for shard_id in 0..num_shards {
         let mut candidates = sorted_nodes.clone();
-        
+
         // Pick primary based on:
         // 1. primary_load (ascending)
         // 2. stability (prefer existing roles for THIS shard)
@@ -57,40 +57,80 @@ pub fn compute_assignments(
         candidates.sort_by(|a, b| {
             let load_a = primary_load.get(a).unwrap_or(&0);
             let load_b = primary_load.get(b).unwrap_or(&0);
-            
+
             match load_a.cmp(load_b) {
                 std::cmp::Ordering::Equal => {
                     let prev_map = previous_assignments;
                     let prev_this = prev_map.and_then(|p| p.get(&shard_id));
-                    
+
                     // Priority A: Stability for THIS shard
                     let a_was_primary = prev_this.map(|p| p.primary_node == *a).unwrap_or(false);
                     let b_was_primary = prev_this.map(|p| p.primary_node == *b).unwrap_or(false);
-                    
+
                     if a_was_primary != b_was_primary {
-                        return if a_was_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                        return if a_was_primary {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Greater
+                        };
                     }
-                    
-                    let a_was_replica = prev_this.map(|p| p.replica_nodes.contains(a)).unwrap_or(false);
-                    let b_was_replica = prev_this.map(|p| p.replica_nodes.contains(b)).unwrap_or(false);
-                    
+
+                    let a_was_replica = prev_this
+                        .map(|p| p.replica_nodes.contains(a))
+                        .unwrap_or(false);
+                    let b_was_replica = prev_this
+                        .map(|p| p.replica_nodes.contains(b))
+                        .unwrap_or(false);
+
                     if a_was_replica != b_was_replica {
-                        return if a_was_replica { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                        return if a_was_replica {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Greater
+                        };
                     }
 
                     // Priority B: Avoid nodes used for other shards in OLD map
-                    let a_is_primary_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && v.primary_node == *a)).unwrap_or(false);
-                    let b_is_primary_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && v.primary_node == *b)).unwrap_or(false);
-                    
+                    let a_is_primary_elsewhere = prev_map
+                        .map(|p| {
+                            p.values()
+                                .any(|v| v.shard_id != shard_id && v.primary_node == *a)
+                        })
+                        .unwrap_or(false);
+                    let b_is_primary_elsewhere = prev_map
+                        .map(|p| {
+                            p.values()
+                                .any(|v| v.shard_id != shard_id && v.primary_node == *b)
+                        })
+                        .unwrap_or(false);
+
                     if a_is_primary_elsewhere != b_is_primary_elsewhere {
-                        return if a_is_primary_elsewhere { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                        return if a_is_primary_elsewhere {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            std::cmp::Ordering::Less
+                        };
                     }
-                    
-                    let a_is_replica_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && v.replica_nodes.contains(a))).unwrap_or(false);
-                    let b_is_replica_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && v.replica_nodes.contains(b))).unwrap_or(false);
-                    
+
+                    let a_is_replica_elsewhere = prev_map
+                        .map(|p| {
+                            p.values()
+                                .any(|v| v.shard_id != shard_id && v.replica_nodes.contains(a))
+                        })
+                        .unwrap_or(false);
+                    let b_is_replica_elsewhere = prev_map
+                        .map(|p| {
+                            p.values()
+                                .any(|v| v.shard_id != shard_id && v.replica_nodes.contains(b))
+                        })
+                        .unwrap_or(false);
+
                     if a_is_replica_elsewhere != b_is_replica_elsewhere {
-                        return if a_is_replica_elsewhere { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                        return if a_is_replica_elsewhere {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            std::cmp::Ordering::Less
+                        };
                     }
 
                     // Tie-break with total load and ID
@@ -109,11 +149,14 @@ pub fn compute_assignments(
         *primary_load.entry(best.clone()).or_default() += 1;
         *total_load.entry(best.clone()).or_default() += 1;
 
-        assignments.insert(shard_id, ShardAssignment {
+        assignments.insert(
             shard_id,
-            primary_node: best,
-            replica_nodes: Vec::new(),
-        });
+            ShardAssignment {
+                shard_id,
+                primary_node: best,
+                replica_nodes: Vec::new(),
+            },
+        );
     }
 
     // 2. Assign Replicas using Total Load Balance
@@ -124,15 +167,27 @@ pub fn compute_assignments(
         } else {
             for shard_id in 0..num_shards {
                 let primary = assignments.get(&shard_id).unwrap().primary_node.clone();
-                
+
                 for _ in 0..target_replicas {
-                    let mut candidates: Vec<String> = sorted_nodes.iter()
-                        .filter(|&n| *n != primary && !assignments.get(&shard_id).unwrap().replica_nodes.contains(n))
+                    let mut candidates: Vec<String> = sorted_nodes
+                        .iter()
+                        .filter(|&n| {
+                            *n != primary
+                                && !assignments
+                                    .get(&shard_id)
+                                    .unwrap()
+                                    .replica_nodes
+                                    .contains(n)
+                        })
                         .cloned()
                         .collect();
 
                     if candidates.is_empty() {
-                        tracing::warn!("Not enough nodes for replication factor {} on shard {}", replication_factor, shard_id);
+                        tracing::warn!(
+                            "Not enough nodes for replication factor {} on shard {}",
+                            replication_factor,
+                            shard_id
+                        );
                         break;
                     }
 
@@ -144,26 +199,54 @@ pub fn compute_assignments(
                     candidates.sort_by(|a, b| {
                         let load_a = total_load.get(a).unwrap_or(&0);
                         let load_b = total_load.get(b).unwrap_or(&0);
-                        
+
                         match load_a.cmp(load_b) {
                             std::cmp::Ordering::Equal => {
                                 let prev_map = previous_assignments;
                                 let prev_this = prev_map.and_then(|p| p.get(&shard_id));
-                                
-                                let a_was_replica = prev_this.map(|p| p.replica_nodes.contains(a)).unwrap_or(false);
-                                let b_was_replica = prev_this.map(|p| p.replica_nodes.contains(b)).unwrap_or(false);
-                                
+
+                                let a_was_replica = prev_this
+                                    .map(|p| p.replica_nodes.contains(a))
+                                    .unwrap_or(false);
+                                let b_was_replica = prev_this
+                                    .map(|p| p.replica_nodes.contains(b))
+                                    .unwrap_or(false);
+
                                 if a_was_replica != b_was_replica {
-                                    return if a_was_replica { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                                    return if a_was_replica {
+                                        std::cmp::Ordering::Less
+                                    } else {
+                                        std::cmp::Ordering::Greater
+                                    };
                                 }
-                                
-                                let a_used_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && (v.primary_node == *a || v.replica_nodes.contains(a)))).unwrap_or(false);
-                                let b_used_elsewhere = prev_map.map(|p| p.values().any(|v| v.shard_id != shard_id && (v.primary_node == *b || v.replica_nodes.contains(b)))).unwrap_or(false);
-                                
+
+                                let a_used_elsewhere = prev_map
+                                    .map(|p| {
+                                        p.values().any(|v| {
+                                            v.shard_id != shard_id
+                                                && (v.primary_node == *a
+                                                    || v.replica_nodes.contains(a))
+                                        })
+                                    })
+                                    .unwrap_or(false);
+                                let b_used_elsewhere = prev_map
+                                    .map(|p| {
+                                        p.values().any(|v| {
+                                            v.shard_id != shard_id
+                                                && (v.primary_node == *b
+                                                    || v.replica_nodes.contains(b))
+                                        })
+                                    })
+                                    .unwrap_or(false);
+
                                 if a_used_elsewhere != b_used_elsewhere {
-                                    return if a_used_elsewhere { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                                    return if a_used_elsewhere {
+                                        std::cmp::Ordering::Greater
+                                    } else {
+                                        std::cmp::Ordering::Less
+                                    };
                                 }
-                                
+
                                 a.cmp(b)
                             }
                             other => other,
@@ -171,10 +254,14 @@ pub fn compute_assignments(
                     });
 
                     let best_replica = candidates[0].clone();
-                    assignments.get_mut(&shard_id).unwrap().replica_nodes.push(best_replica.clone());
+                    assignments
+                        .get_mut(&shard_id)
+                        .unwrap()
+                        .replica_nodes
+                        .push(best_replica.clone());
                     *total_load.entry(best_replica).or_default() += 1;
                 }
-                
+
                 assignments.get_mut(&shard_id).unwrap().replica_nodes.sort();
             }
         }
@@ -190,7 +277,11 @@ mod tests {
 
     #[test]
     fn test_compute_assignments_basic() {
-        let nodes = vec!["node1".to_string(), "node2".to_string(), "node3".to_string()];
+        let nodes = vec![
+            "node1".to_string(),
+            "node2".to_string(),
+            "node3".to_string(),
+        ];
         let assignments = compute_assignments(&nodes, 3, 1, None).unwrap();
 
         assert_eq!(assignments.len(), 3);
@@ -202,7 +293,11 @@ mod tests {
 
     #[test]
     fn test_compute_assignments_replicas() {
-        let nodes = vec!["node1".to_string(), "node2".to_string(), "node3".to_string()];
+        let nodes = vec![
+            "node1".to_string(),
+            "node2".to_string(),
+            "node3".to_string(),
+        ];
         // 3 shards, RF=2 (1 primary + 1 replica)
         let assignments = compute_assignments(&nodes, 3, 2, None).unwrap();
 
@@ -243,11 +338,31 @@ mod tests {
 
         // let nodes = vec!["node2".to_string(), "node3".to_string()];
 
-
         let mut old_assignments = HashMap::new();
-        old_assignments.insert(0, ShardAssignment { shard_id: 0, primary_node: "node1".to_string(), replica_nodes: vec!["node2".to_string()] });
-        old_assignments.insert(1, ShardAssignment { shard_id: 1, primary_node: "node2".to_string(), replica_nodes: vec!["node3".to_string()] });
-        old_assignments.insert(2, ShardAssignment { shard_id: 2, primary_node: "node3".to_string(), replica_nodes: vec!["node1".to_string()] });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "node1".to_string(),
+                replica_nodes: vec!["node2".to_string()],
+            },
+        );
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "node2".to_string(),
+                replica_nodes: vec!["node3".to_string()],
+            },
+        );
+        old_assignments.insert(
+            2,
+            ShardAssignment {
+                shard_id: 2,
+                primary_node: "node3".to_string(),
+                replica_nodes: vec!["node1".to_string()],
+            },
+        );
 
         // This fails with current implementation because it reshuffles (S0 primary -> node2 is incidental modulo, but might not be if nodes change differently)
         // Let's force a case where modulo check fails?
@@ -265,7 +380,14 @@ mod tests {
 
         let nodes_3 = vec!["B".to_string(), "C".to_string(), "D".to_string()];
         let mut old_map = HashMap::new();
-        old_map.insert(0, ShardAssignment { shard_id: 0, primary_node: "A".to_string(), replica_nodes: vec!["C".to_string()] });
+        old_map.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "A".to_string(),
+                replica_nodes: vec!["C".to_string()],
+            },
+        );
 
         // Pass None for now to show it acts stateless (compile error needs fix first though)
         // I will temporarily invoke with None to prove failure, but first I need to update signature essentially.
@@ -276,9 +398,18 @@ mod tests {
         // Check S0
         let s0 = &assignments[&0];
         assert_eq!(s0.primary_node, "C", "Should promote replica C to primary");
-        assert!(!s0.replica_nodes.contains(&"C".to_string()), "Primary C should not be in replicas");
-        assert!(s0.replica_nodes.contains(&"B".to_string()), "Available node B should be replica");
-        assert!(s0.replica_nodes.contains(&"D".to_string()), "Available node D should be replica");
+        assert!(
+            !s0.replica_nodes.contains(&"C".to_string()),
+            "Primary C should not be in replicas"
+        );
+        assert!(
+            s0.replica_nodes.contains(&"B".to_string()),
+            "Available node B should be replica"
+        );
+        assert!(
+            s0.replica_nodes.contains(&"D".to_string()),
+            "Available node D should be replica"
+        );
     }
 
     #[test]
@@ -297,7 +428,12 @@ mod tests {
     #[test]
     fn test_replicas_no_duplicates_within_shard() {
         // Test that no single shard has duplicate nodes in its replica list
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         // Test with high replication factor to stress test duplicate prevention
         let assignments = compute_assignments(&nodes, 2, 4, None).unwrap();
@@ -308,19 +444,36 @@ mod tests {
             let original_len = replicas.len();
             replicas.sort();
             replicas.dedup();
-            assert_eq!(original_len, replicas.len(),
-                "Shard {} has duplicate replicas: {:?}", shard_id, assignment.replica_nodes);
+            assert_eq!(
+                original_len,
+                replicas.len(),
+                "Shard {} has duplicate replicas: {:?}",
+                shard_id,
+                assignment.replica_nodes
+            );
 
             // Check primary is not in replicas
-            assert!(!assignment.replica_nodes.contains(&assignment.primary_node),
-                "Shard {} primary {} is also in replicas: {:?}", shard_id, assignment.primary_node, assignment.replica_nodes);
+            assert!(
+                !assignment.replica_nodes.contains(&assignment.primary_node),
+                "Shard {} primary {} is also in replicas: {:?}",
+                shard_id,
+                assignment.primary_node,
+                assignment.replica_nodes
+            );
         }
     }
 
     #[test]
     fn test_replicas_prefer_unique_distribution() {
         // Test that the algorithm prefers unique replica distribution when possible
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string(), "E".to_string(), "F".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+            "E".to_string(),
+            "F".to_string(),
+        ];
 
         // Use 3 shards with replication factor 2 (1 replica each)
         // With 6 nodes and 3 shards, we have enough nodes to avoid replica conflicts
@@ -330,7 +483,10 @@ mod tests {
         let mut replica_usage: HashMap<String, Vec<u16>> = HashMap::new();
         for (shard_id, assignment) in &assignments {
             for replica in &assignment.replica_nodes {
-                replica_usage.entry(replica.clone()).or_default().push(*shard_id);
+                replica_usage
+                    .entry(replica.clone())
+                    .or_default()
+                    .push(*shard_id);
             }
         }
 
@@ -345,11 +501,21 @@ mod tests {
 
         // With 6 nodes for 3 shards with 1 replica each, we should have no conflicts
         // (3 primaries + 3 unique replicas = 6 nodes used)
-        assert_eq!(conflicts, 0, "Should avoid replica conflicts when sufficient nodes available");
+        assert_eq!(
+            conflicts, 0,
+            "Should avoid replica conflicts when sufficient nodes available"
+        );
 
         // Also verify primaries are unique
-        let primaries: HashSet<String> = assignments.values().map(|a| a.primary_node.clone()).collect();
-        assert_eq!(primaries.len(), assignments.len(), "Some nodes are primary for multiple shards");
+        let primaries: HashSet<String> = assignments
+            .values()
+            .map(|a| a.primary_node.clone())
+            .collect();
+        assert_eq!(
+            primaries.len(),
+            assignments.len(),
+            "Some nodes are primary for multiple shards"
+        );
     }
 
     /// REGRESSION TEST: Prevent data loss during resharding after node recovery
@@ -358,7 +524,12 @@ mod tests {
     fn test_regression_failed_nodes_avoided_as_sources() {
         // This test ensures that nodes recently marked as failed are not used as
         // data sources during shard healing/resharding operations
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
         let assignments = compute_assignments(&nodes, 3, 2, None).unwrap();
 
         // Simulate that node "B" has failed and been recovered
@@ -376,11 +547,17 @@ mod tests {
         // With 4 nodes and 3 shards (1 replica each with RF=2), total 3 replica assignments
         // Should be distributed as evenly as possible
         let total_replicas: usize = node_replica_count.values().sum();
-        assert_eq!(total_replicas, 3, "Should have correct total replica assignments");
+        assert_eq!(
+            total_replicas, 3,
+            "Should have correct total replica assignments"
+        );
 
         // Verify that replicas are distributed (not all on one node)
         let max_replicas = node_replica_count.values().max().unwrap_or(&0);
-        assert!(*max_replicas <= 3, "No node should have excessive replica load (more than 3 replicas)");
+        assert!(
+            *max_replicas <= 3,
+            "No node should have excessive replica load (more than 3 replicas)"
+        );
     }
 
     /// REGRESSION TEST: Prevent server hanging during shard expansion
@@ -388,29 +565,54 @@ mod tests {
     #[test]
     fn test_regression_large_shard_expansion_handling() {
         // Test with more shards to ensure algorithm scales and doesn't have performance issues
-        let nodes = vec!["node1".to_string(), "node2".to_string(), "node3".to_string(), "node4".to_string(), "node5".to_string()];
+        let nodes = vec![
+            "node1".to_string(),
+            "node2".to_string(),
+            "node3".to_string(),
+            "node4".to_string(),
+            "node5".to_string(),
+        ];
 
         // Test expansion from smaller to larger shard count
         let assignments = compute_assignments(&nodes, 10, 2, None).unwrap();
 
-        assert_eq!(assignments.len(), 10, "Should create correct number of shards");
+        assert_eq!(
+            assignments.len(),
+            10,
+            "Should create correct number of shards"
+        );
 
         // Verify all shards have assignments
         for shard_id in 0..10 {
-            assert!(assignments.contains_key(&shard_id), "Missing assignment for shard {}", shard_id);
+            assert!(
+                assignments.contains_key(&shard_id),
+                "Missing assignment for shard {}",
+                shard_id
+            );
             let assignment = &assignments[&shard_id];
-            assert!(!assignment.replica_nodes.is_empty(), "Shard {} should have replicas", shard_id);
+            assert!(
+                !assignment.replica_nodes.is_empty(),
+                "Shard {} should have replicas",
+                shard_id
+            );
         }
 
         // Verify load distribution is reasonable
         let mut primary_count: HashMap<String, usize> = HashMap::new();
         for assignment in assignments.values() {
-            *primary_count.entry(assignment.primary_node.clone()).or_default() += 1;
+            *primary_count
+                .entry(assignment.primary_node.clone())
+                .or_default() += 1;
         }
 
         // With 10 shards and 5 nodes, each node should have ~2 primaries
         for (node, count) in primary_count {
-            assert!((count >= 1 && count <= 3), "Node {} primary count {} is unreasonable", node, count);
+            assert!(
+                (count >= 1 && count <= 3),
+                "Node {} primary count {} is unreasonable",
+                node,
+                count
+            );
         }
     }
 
@@ -418,26 +620,56 @@ mod tests {
     /// This test verifies that shrinking maintains data integrity
     #[test]
     fn test_regression_shrink_data_integrity() {
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         // Test shrinking from 4 to 3 shards
         let assignments = compute_assignments(&nodes, 3, 2, None).unwrap();
 
-        assert_eq!(assignments.len(), 3, "Should create correct number of shards after shrinking");
+        assert_eq!(
+            assignments.len(),
+            3,
+            "Should create correct number of shards after shrinking"
+        );
 
         // Verify all assignments are valid
         for (shard_id, assignment) in &assignments {
-            assert_eq!(assignment.shard_id, *shard_id, "Assignment shard_id mismatch");
-            assert!(nodes.contains(&assignment.primary_node), "Primary node {} not in cluster", assignment.primary_node);
+            assert_eq!(
+                assignment.shard_id, *shard_id,
+                "Assignment shard_id mismatch"
+            );
+            assert!(
+                nodes.contains(&assignment.primary_node),
+                "Primary node {} not in cluster",
+                assignment.primary_node
+            );
             for replica in &assignment.replica_nodes {
-                assert!(nodes.contains(replica), "Replica node {} not in cluster", replica);
-                assert_ne!(replica, &assignment.primary_node, "Primary cannot be its own replica");
+                assert!(
+                    nodes.contains(replica),
+                    "Replica node {} not in cluster",
+                    replica
+                );
+                assert_ne!(
+                    replica, &assignment.primary_node,
+                    "Primary cannot be its own replica"
+                );
             }
         }
 
         // Verify no duplicate primaries
-        let primaries: HashSet<String> = assignments.values().map(|a| a.primary_node.clone()).collect();
-        assert_eq!(primaries.len(), assignments.len(), "All primaries should be unique");
+        let primaries: HashSet<String> = assignments
+            .values()
+            .map(|a| a.primary_node.clone())
+            .collect();
+        assert_eq!(
+            primaries.len(),
+            assignments.len(),
+            "All primaries should be unique"
+        );
     }
 
     /// REGRESSION TEST: Load balancing priority over replica conflicts
@@ -455,9 +687,13 @@ mod tests {
         let mut total_assignments_per_node: HashMap<String, usize> = HashMap::new();
 
         for assignment in assignments.values() {
-            *total_assignments_per_node.entry(assignment.primary_node.clone()).or_default() += 1;
+            *total_assignments_per_node
+                .entry(assignment.primary_node.clone())
+                .or_default() += 1;
             for replica in &assignment.replica_nodes {
-                *total_assignments_per_node.entry(replica.clone()).or_default() += 1;
+                *total_assignments_per_node
+                    .entry(replica.clone())
+                    .or_default() += 1;
             }
         }
 
@@ -465,13 +701,25 @@ mod tests {
         // Total assignments: 3 primaries + 6 replicas = 9
         // With 3 nodes: each should have ~3 assignments
         for (node, load) in total_assignments_per_node {
-            assert!((load >= 2 && load <= 4), "Node {} load {} is not well balanced", node, load);
+            assert!(
+                (load >= 2 && load <= 4),
+                "Node {} load {} is not well balanced",
+                node,
+                load
+            );
         }
 
         // Verify the assignment structure is still valid
         for assignment in assignments.values() {
-            assert_eq!(assignment.replica_nodes.len(), 2, "Each shard should have 2 replicas");
-            assert!(!assignment.replica_nodes.contains(&assignment.primary_node), "Primary cannot be replica");
+            assert_eq!(
+                assignment.replica_nodes.len(),
+                2,
+                "Each shard should have 2 replicas"
+            );
+            assert!(
+                !assignment.replica_nodes.contains(&assignment.primary_node),
+                "Primary cannot be replica"
+            );
         }
     }
 
@@ -479,7 +727,12 @@ mod tests {
     /// This test ensures that existing assignments are preserved when possible
     #[test]
     fn test_regression_stability_with_previous_assignments() {
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         // Create initial assignments
         let old_assignments = compute_assignments(&nodes, 3, 2, None).unwrap();
@@ -508,22 +761,36 @@ mod tests {
         }
 
         // Should preserve some assignments for stability (exact numbers may vary based on algorithm)
-        assert!(preserved_primaries >= 1, "Should preserve at least some primaries for stability");
-        assert!(preserved_replicas >= 1, "Should preserve some replicas for stability");
+        assert!(
+            preserved_primaries >= 1,
+            "Should preserve at least some primaries for stability"
+        );
+        assert!(
+            preserved_replicas >= 1,
+            "Should preserve some replicas for stability"
+        );
     }
 
     #[test]
     fn test_replicas_no_duplicates_with_previous_assignments() {
         // Test that previous assignments with potential duplicates don't cause issues
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         let mut old_assignments = HashMap::new();
         // Shard 0: Previous assignment with multiple replicas on same node (shouldn't happen but test robustness)
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "A".to_string(),
-            replica_nodes: vec!["B".to_string(), "B".to_string(), "C".to_string()], // Duplicate B
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "A".to_string(),
+                replica_nodes: vec!["B".to_string(), "B".to_string(), "C".to_string()], // Duplicate B
+            },
+        );
 
         let assignments = compute_assignments(&nodes, 1, 3, Some(&old_assignments)).unwrap();
 
@@ -537,8 +804,12 @@ mod tests {
         let original_len = replicas.len();
         replicas.sort();
         replicas.dedup();
-        assert_eq!(original_len, replicas.len(),
-            "Final assignment has duplicate replicas: {:?}", s0.replica_nodes);
+        assert_eq!(
+            original_len,
+            replicas.len(),
+            "Final assignment has duplicate replicas: {:?}",
+            s0.replica_nodes
+        );
     }
 
     #[test]
@@ -562,7 +833,12 @@ mod tests {
     #[test]
     fn test_prefers_unused_nodes() {
         // Test that assignment prefers nodes not already used in any shards
-        let nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         // Create assignments for 2 shards first
         let partial_nodes = vec!["A".to_string(), "B".to_string(), "C".to_string()];
@@ -576,8 +852,10 @@ mod tests {
 
         // For shard 2, prefer unused nodes (D) over used ones (A,B,C)
         // D should be primary since it's completely unused
-        assert_eq!(shard_2.primary_node, "D",
-            "Should prefer completely unused node D for new shard");
+        assert_eq!(
+            shard_2.primary_node, "D",
+            "Should prefer completely unused node D for new shard"
+        );
 
         // Replicas should also prefer unused nodes, but since D is primary,
         // it should pick from remaining unused nodes first, then used ones
@@ -589,25 +867,39 @@ mod tests {
     fn test_avoids_reusing_nodes_when_possible() {
         // Test the user's scenario: when adding a new node to the cluster,
         // prefer it over reusing already busy nodes
-        let nodes = vec!["6745".to_string(), "6746".to_string(), "6747".to_string(), "6748".to_string()];
+        let nodes = vec![
+            "6745".to_string(),
+            "6746".to_string(),
+            "6747".to_string(),
+            "6748".to_string(),
+        ];
 
         // Simulate existing assignments using 6745, 6746, 6747
         let mut old_assignments = HashMap::new();
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "6745".to_string(),
-            replica_nodes: vec!["6746".to_string()],
-        });
-        old_assignments.insert(1, ShardAssignment {
-            shard_id: 1,
-            primary_node: "6746".to_string(),
-            replica_nodes: vec!["6747".to_string()],
-        });
-        old_assignments.insert(2, ShardAssignment {
-            shard_id: 2,
-            primary_node: "6747".to_string(),
-            replica_nodes: vec!["6745".to_string()],
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "6745".to_string(),
+                replica_nodes: vec!["6746".to_string()],
+            },
+        );
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "6746".to_string(),
+                replica_nodes: vec!["6747".to_string()],
+            },
+        );
+        old_assignments.insert(
+            2,
+            ShardAssignment {
+                shard_id: 2,
+                primary_node: "6747".to_string(),
+                replica_nodes: vec!["6745".to_string()],
+            },
+        );
 
         // Now add a 4th shard with all nodes available (simulating adding 6748)
         let new_assignments = compute_assignments(&nodes, 4, 2, Some(&old_assignments)).unwrap();
@@ -615,33 +907,47 @@ mod tests {
         let shard_3 = &new_assignments[&3];
 
         // The new shard should prefer the unused node 6748 as primary
-        assert_eq!(shard_3.primary_node, "6748",
-            "Should prefer unused node 6748 over already busy nodes 6745, 6746, 6747");
+        assert_eq!(
+            shard_3.primary_node, "6748",
+            "Should prefer unused node 6748 over already busy nodes 6745, 6746, 6747"
+        );
     }
 
     #[test]
     fn test_promotion_prefers_non_primary_replicas() {
         // Test that when promoting replicas to primary, prefer replicas that are not already primaries for other shards
-        let _nodes = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let _nodes = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
 
         let mut old_assignments = HashMap::new();
         // Shard 0: Primary=A (healthy), Replica=D - this will be processed first
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "A".to_string(),
-            replica_nodes: vec!["D".to_string()],
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "A".to_string(),
+                replica_nodes: vec!["D".to_string()],
+            },
+        );
         // Shard 1: Primary=B (will fail), Replicas=A,C (A is already primary for shard 0)
-        old_assignments.insert(1, ShardAssignment {
-            shard_id: 1,
-            primary_node: "B".to_string(),
-            replica_nodes: vec!["A".to_string(), "C".to_string()],
-        });
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "B".to_string(),
+                replica_nodes: vec!["A".to_string(), "C".to_string()],
+            },
+        );
 
         // Fail node B
         let available_nodes = vec!["A".to_string(), "C".to_string(), "D".to_string()];
 
-        let assignments = compute_assignments(&available_nodes, 2, 2, Some(&old_assignments)).unwrap();
+        let assignments =
+            compute_assignments(&available_nodes, 2, 2, Some(&old_assignments)).unwrap();
 
         // Shard 0: A is healthy, stays primary
         assert_eq!(assignments[&0].primary_node, "A");
@@ -664,11 +970,14 @@ mod tests {
         let nodes = vec!["6746".to_string(), "6747".to_string(), "6748".to_string()];
         let mut old_assignments = HashMap::new();
         // S0: P=6745, R=[6746, 6747]
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "6745".to_string(),
-            replica_nodes: vec!["6746".to_string(), "6747".to_string()]
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "6745".to_string(),
+                replica_nodes: vec!["6746".to_string(), "6747".to_string()],
+            },
+        );
 
         // Compute with RF=3 (implied by 3 initial nodes)
         let assignments = compute_assignments(&nodes, 1, 3, Some(&old_assignments)).unwrap();
@@ -677,13 +986,22 @@ mod tests {
         println!("S0: P={}, R={:?}", s0.primary_node, s0.replica_nodes);
 
         // 1. Primary should be one of the old replicas (6746 or 6747) to save data
-        assert!(vec!["6746", "6747"].contains(&s0.primary_node.as_str()), "Should promote existing replica");
+        assert!(
+            vec!["6746", "6747"].contains(&s0.primary_node.as_str()),
+            "Should promote existing replica"
+        );
 
         // 2. Primary should NOT be in replicas
-        assert!(!s0.replica_nodes.contains(&s0.primary_node), "Primary should not be in replicas");
+        assert!(
+            !s0.replica_nodes.contains(&s0.primary_node),
+            "Primary should not be in replicas"
+        );
 
         // 3. New node 6748 MUST be in replicas (to maintain RF=3)
-        assert!(s0.replica_nodes.contains(&"6748".to_string()), "Free node 6748 should be recruited");
+        assert!(
+            s0.replica_nodes.contains(&"6748".to_string()),
+            "Free node 6748 should be recruited"
+        );
 
         // 4. Total replicas should be 2 (RF=3 => 1P + 2R)
         assert_eq!(s0.replica_nodes.len(), 2);
@@ -697,11 +1015,32 @@ mod tests {
 
         let mut old_assignments = HashMap::new();
         // S0: P=6746, R=[6747]
-        old_assignments.insert(0, ShardAssignment { shard_id: 0, primary_node: "6746".to_string(), replica_nodes: vec!["6747".to_string()] });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "6746".to_string(),
+                replica_nodes: vec!["6747".to_string()],
+            },
+        );
         // S1: P=6746, R=[6745] (Replica fails)
-        old_assignments.insert(1, ShardAssignment { shard_id: 1, primary_node: "6746".to_string(), replica_nodes: vec!["6745".to_string()] });
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "6746".to_string(),
+                replica_nodes: vec!["6745".to_string()],
+            },
+        );
         // S2: P=6745, R=[6747] (Primary fails)
-        old_assignments.insert(2, ShardAssignment { shard_id: 2, primary_node: "6745".to_string(), replica_nodes: vec!["6747".to_string()] });
+        old_assignments.insert(
+            2,
+            ShardAssignment {
+                shard_id: 2,
+                primary_node: "6745".to_string(),
+                replica_nodes: vec!["6747".to_string()],
+            },
+        );
 
         // RF=2
         let assignments = compute_assignments(&nodes, 3, 2, Some(&old_assignments)).unwrap();
@@ -709,13 +1048,22 @@ mod tests {
         // Check S1 (Replica 6745 dead)
         let s1 = &assignments[&1];
         // 6746 is already primary for S0, so prefer 6748 (load 0) over 6746 (load 1)
-        assert_eq!(s1.primary_node, "6748", "S1: Should pick 6748 (load balancing)");
-        assert!(s1.replica_nodes.contains(&"6746".to_string()), "S1: Should pick 6746 as replica (was primary)");
+        assert_eq!(
+            s1.primary_node, "6748",
+            "S1: Should pick 6748 (load balancing)"
+        );
+        assert!(
+            s1.replica_nodes.contains(&"6746".to_string()),
+            "S1: Should pick 6746 as replica (was primary)"
+        );
 
         // Check S2 (Primary 6745 dead)
         let s2 = &assignments[&2];
         assert_eq!(s2.primary_node, "6747", "S2: Promote R=6747 to P");
-        assert!(s2.replica_nodes.contains(&"6748".to_string()), "S2: Should recruit 6748 (load=0)");
+        assert!(
+            s2.replica_nodes.contains(&"6748".to_string()),
+            "S2: Should recruit 6748 (load=0)"
+        );
     }
 
     #[test]
@@ -726,23 +1074,29 @@ mod tests {
         let mut old_assignments = HashMap::new();
 
         // Shard 0: Primary=C (will fail), Replicas=A,B
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "C".to_string(),
-            replica_nodes: vec!["A".to_string(), "B".to_string()]
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "C".to_string(),
+                replica_nodes: vec!["A".to_string(), "B".to_string()],
+            },
+        );
 
         // Kill C, available nodes: A,B,D
         let available_nodes = vec!["A".to_string(), "B".to_string(), "D".to_string()];
 
-        let assignments = compute_assignments(&available_nodes, 1, 3, Some(&old_assignments)).unwrap();
+        let assignments =
+            compute_assignments(&available_nodes, 1, 3, Some(&old_assignments)).unwrap();
         let s0 = &assignments[&0];
 
         // Primary C failed, should promote from healthy replicas A,B, or recruit D
         // Since A and B are replicas, one of them should be promoted
         // But if A is already primary elsewhere, B should be preferred
-        assert!(vec!["A", "B", "D"].contains(&s0.primary_node.as_str()),
-            "Primary should be one of the available nodes: A, B, or D");
+        assert!(
+            vec!["A", "B", "D"].contains(&s0.primary_node.as_str()),
+            "Primary should be one of the available nodes: A, B, or D"
+        );
 
         // Should have 2 replicas (RF=3 means 1P + 2R)
         assert_eq!(s0.replica_nodes.len(), 2);
@@ -755,27 +1109,36 @@ mod tests {
 
         // Shard 0: Primary=C (fails), Replicas=A,B
         // Shard 1: Primary=A (healthy) - makes A busy
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "C".to_string(),
-            replica_nodes: vec!["A".to_string(), "B".to_string()]
-        });
-        old_assignments.insert(1, ShardAssignment {
-            shard_id: 1,
-            primary_node: "A".to_string(),
-            replica_nodes: vec!["D".to_string()]
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "C".to_string(),
+                replica_nodes: vec!["A".to_string(), "B".to_string()],
+            },
+        );
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "A".to_string(),
+                replica_nodes: vec!["D".to_string()],
+            },
+        );
 
         // Available nodes: A,B,D (C failed)
         let available_nodes = vec!["A".to_string(), "B".to_string(), "D".to_string()];
 
-        let assignments = compute_assignments(&available_nodes, 2, 2, Some(&old_assignments)).unwrap();
+        let assignments =
+            compute_assignments(&available_nodes, 2, 2, Some(&old_assignments)).unwrap();
 
         // Shard 0: Primary C failed, replicas A and B available
         // A is already primary for shard 1, so B should be promoted over A
         let s0 = &assignments[&0];
-        assert_eq!(s0.primary_node, "B",
-            "Should promote B (not already primary) instead of A (already primary for shard 1)");
+        assert_eq!(
+            s0.primary_node, "B",
+            "Should promote B (not already primary) instead of A (already primary for shard 1)"
+        );
 
         // Shard 1: A stays primary
         let s1 = &assignments[&1];
@@ -793,23 +1156,33 @@ mod tests {
         // Shard 0: Primary=C (failed), Replica=A (but A is busy)
         // Shard 1: Primary=A (already has load)
         // Shard 2: Primary=B
-        old_assignments.insert(0, ShardAssignment {
-            shard_id: 0,
-            primary_node: "C".to_string(), // Failed
-            replica_nodes: vec!["A".to_string()] // But A is already primary elsewhere
-        });
-        old_assignments.insert(1, ShardAssignment {
-            shard_id: 1,
-            primary_node: "A".to_string(),
-            replica_nodes: vec!["B".to_string()]
-        });
-        old_assignments.insert(2, ShardAssignment {
-            shard_id: 2,
-            primary_node: "B".to_string(),
-            replica_nodes: vec!["D".to_string()]
-        });
+        old_assignments.insert(
+            0,
+            ShardAssignment {
+                shard_id: 0,
+                primary_node: "C".to_string(),        // Failed
+                replica_nodes: vec!["A".to_string()], // But A is already primary elsewhere
+            },
+        );
+        old_assignments.insert(
+            1,
+            ShardAssignment {
+                shard_id: 1,
+                primary_node: "A".to_string(),
+                replica_nodes: vec!["B".to_string()],
+            },
+        );
+        old_assignments.insert(
+            2,
+            ShardAssignment {
+                shard_id: 2,
+                primary_node: "B".to_string(),
+                replica_nodes: vec!["D".to_string()],
+            },
+        );
 
-        let assignments = compute_assignments(&available_nodes, 3, 2, Some(&old_assignments)).unwrap();
+        let assignments =
+            compute_assignments(&available_nodes, 3, 2, Some(&old_assignments)).unwrap();
 
         // Shard 0 primary C failed, replica A exists but let's assume it gets promoted
         // The key test is that the fallback logic works correctly
@@ -847,6 +1220,9 @@ mod tests {
         let b_count = primaries.iter().filter(|&&p| p == "B").count();
         let _c_count = primaries.iter().filter(|&&p| p == "C").count();
 
-        assert!(a_count >= 1 && b_count >= 1, "Should distribute primaries across nodes");
+        assert!(
+            a_count >= 1 && b_count >= 1,
+            "Should distribute primaries across nodes"
+        );
     }
 }

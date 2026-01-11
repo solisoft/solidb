@@ -7,15 +7,17 @@
 //! - Invalid schema handling
 //! - Schema removal
 
-use solidb::storage::StorageEngine;
 use serde_json::json;
+use solidb::storage::StorageEngine;
 use tempfile::TempDir;
 
 fn create_test_engine() -> (StorageEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
     let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
         .expect("Failed to create storage engine");
-    engine.initialize().expect("Failed to initialize storage engine");
+    engine
+        .initialize()
+        .expect("Failed to initialize storage engine");
     (engine, tmp_dir)
 }
 
@@ -61,7 +63,11 @@ fn test_set_schema_strict() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Schema should be retrievable
@@ -100,7 +106,11 @@ fn test_schema_rejects_invalid_document() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Invalid document (missing required field, wrong type)
@@ -114,8 +124,11 @@ fn test_schema_rejects_invalid_document() {
     // Error should mention schema validation
     if let Err(e) = result {
         let error_msg = e.to_string();
-        assert!(error_msg.contains("schema") || error_msg.contains("Schema"), 
-            "Error should mention schema validation: {}", error_msg);
+        assert!(
+            error_msg.contains("schema") || error_msg.contains("Schema"),
+            "Error should mention schema validation: {}",
+            error_msg
+        );
     }
 }
 
@@ -139,7 +152,11 @@ fn test_schema_lenient_mode() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Lenient))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Lenient,
+        ))
         .unwrap();
 
     // Invalid document should still be accepted in lenient mode
@@ -148,7 +165,10 @@ fn test_schema_lenient_mode() {
         "age": "not_a_number" // Wrong type but lenient
     });
     let result = collection.insert(doc);
-    assert!(result.is_ok(), "Document should be accepted in lenient mode");
+    assert!(
+        result.is_ok(),
+        "Document should be accepted in lenient mode"
+    );
 }
 
 #[test]
@@ -171,7 +191,11 @@ fn test_schema_validation_on_update() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Insert valid document with explicit key
@@ -215,7 +239,11 @@ fn test_remove_schema() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Schema should be present
@@ -257,7 +285,11 @@ fn test_schema_additional_properties_false() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Document with only allowed fields should work
@@ -307,7 +339,11 @@ fn test_schema_with_nested_objects() {
 
     use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
     collection
-        .set_json_schema(CollectionSchema::new("default".to_string(), schema, SchemaValidationMode::Strict))
+        .set_json_schema(CollectionSchema::new(
+            "default".to_string(),
+            schema,
+            SchemaValidationMode::Strict,
+        ))
         .unwrap();
 
     // Valid nested document should work

@@ -1,14 +1,14 @@
 //! Driver Client Tests
-//! 
+//!
 //! Tests for the SoliDB native driver client, including:
 //! - SoliDBClientBuilder configuration
 //! - Response extraction helpers
 //! - Transaction state management
 //! - Error handling
 
-use solidb::driver::protocol::{Response, DriverError};
-use solidb::driver::client::SoliDBClientBuilder;
 use serde_json::json;
+use solidb::driver::client::SoliDBClientBuilder;
+use solidb::driver::protocol::{DriverError, Response};
 
 // ============================================================================
 // SoliDBClientBuilder Tests
@@ -24,15 +24,13 @@ fn test_builder_new() {
 
 #[test]
 fn test_builder_with_auth() {
-    let builder = SoliDBClientBuilder::new("localhost:6745")
-        .auth("mydb", "admin", "password");
+    let builder = SoliDBClientBuilder::new("localhost:6745").auth("mydb", "admin", "password");
     let _ = builder;
 }
 
 #[test]
 fn test_builder_with_timeout() {
-    let builder = SoliDBClientBuilder::new("localhost:6745")
-        .timeout_ms(5000);
+    let builder = SoliDBClientBuilder::new("localhost:6745").timeout_ms(5000);
     let _ = builder;
 }
 
@@ -51,7 +49,7 @@ fn test_builder_chained() {
 #[test]
 fn test_response_ok_with_data() {
     let response = Response::ok(json!({"_key": "abc", "name": "Test"}));
-    
+
     match response {
         Response::Ok { data, count, tx_id } => {
             assert!(data.is_some());
@@ -68,7 +66,7 @@ fn test_response_ok_with_data() {
 #[test]
 fn test_response_ok_empty() {
     let response = Response::ok_empty();
-    
+
     match response {
         Response::Ok { data, count, tx_id } => {
             assert!(data.is_none());
@@ -82,7 +80,7 @@ fn test_response_ok_empty() {
 #[test]
 fn test_response_ok_count() {
     let response = Response::ok_count(42);
-    
+
     match response {
         Response::Ok { data, count, tx_id } => {
             assert!(data.is_none());
@@ -96,7 +94,7 @@ fn test_response_ok_count() {
 #[test]
 fn test_response_ok_tx() {
     let response = Response::ok_tx("tx:12345".to_string());
-    
+
     match response {
         Response::Ok { data, count, tx_id } => {
             assert!(data.is_none());
@@ -110,7 +108,7 @@ fn test_response_ok_tx() {
 #[test]
 fn test_response_pong() {
     let response = Response::pong();
-    
+
     match response {
         Response::Pong { timestamp } => {
             assert!(timestamp > 0);
@@ -123,16 +121,14 @@ fn test_response_pong() {
 fn test_response_error() {
     let error = DriverError::DatabaseError("Collection not found".to_string());
     let response = Response::error(error);
-    
+
     match response {
-        Response::Error { error } => {
-            match error {
-                DriverError::DatabaseError(msg) => {
-                    assert!(msg.contains("Collection not found"));
-                }
-                _ => panic!("Wrong error type"),
+        Response::Error { error } => match error {
+            DriverError::DatabaseError(msg) => {
+                assert!(msg.contains("Collection not found"));
             }
-        }
+            _ => panic!("Wrong error type"),
+        },
         _ => panic!("Expected Error response"),
     }
 }
@@ -144,9 +140,9 @@ fn test_response_batch() {
         Response::ok(json!({"id": 2})),
         Response::error(DriverError::DatabaseError("Not found".to_string())),
     ];
-    
+
     let batch = Response::Batch { responses };
-    
+
     match batch {
         Response::Batch { responses } => {
             assert_eq!(responses.len(), 3);
@@ -216,11 +212,11 @@ fn test_driver_error_display_invalid_command() {
 #[tokio::test]
 async fn test_connect_invalid_address() {
     use solidb::driver::SoliDBClient;
-    
+
     // Try to connect to an invalid address
     let result = SoliDBClient::connect("invalid-host:99999").await;
     assert!(result.is_err());
-    
+
     if let Err(err) = result {
         match err {
             DriverError::ConnectionError(msg) => {
@@ -234,7 +230,7 @@ async fn test_connect_invalid_address() {
 #[tokio::test]
 async fn test_connect_refused() {
     use solidb::driver::SoliDBClient;
-    
+
     // Try to connect to a port that's likely not listening
     let result = SoliDBClient::connect("127.0.0.1:59999").await;
     assert!(result.is_err());
@@ -242,10 +238,8 @@ async fn test_connect_refused() {
 
 #[tokio::test]
 async fn test_builder_connect_invalid() {
-    let result = SoliDBClientBuilder::new("invalid:99999")
-        .build()
-        .await;
-    
+    let result = SoliDBClientBuilder::new("invalid:99999").build().await;
+
     assert!(result.is_err());
 }
 
@@ -265,9 +259,9 @@ fn test_response_ok_with_nested_data() {
             }
         }
     });
-    
+
     let response = Response::ok(nested.clone());
-    
+
     match response {
         Response::Ok { data, .. } => {
             let d = data.unwrap();
@@ -285,9 +279,9 @@ fn test_response_ok_with_array_data() {
         {"id": 2, "name": "Second"},
         {"id": 3, "name": "Third"}
     ]);
-    
+
     let response = Response::ok(array);
-    
+
     match response {
         Response::Ok { data, .. } => {
             let arr = data.unwrap();
@@ -303,7 +297,7 @@ fn test_response_ok_with_array_data() {
 #[test]
 fn test_response_ok_with_null_data() {
     let response = Response::ok(json!(null));
-    
+
     match response {
         Response::Ok { data, .. } => {
             assert!(data.unwrap().is_null());
@@ -315,7 +309,7 @@ fn test_response_ok_with_null_data() {
 #[test]
 fn test_response_ok_with_numeric_data() {
     let response = Response::ok(json!(42));
-    
+
     match response {
         Response::Ok { data, .. } => {
             assert_eq!(data.unwrap(), 42);
@@ -327,7 +321,7 @@ fn test_response_ok_with_numeric_data() {
 #[test]
 fn test_response_ok_with_string_data() {
     let response = Response::ok(json!("Hello, World!"));
-    
+
     match response {
         Response::Ok { data, .. } => {
             assert_eq!(data.unwrap(), "Hello, World!");
@@ -339,7 +333,7 @@ fn test_response_ok_with_string_data() {
 #[test]
 fn test_response_ok_with_boolean_data() {
     let response = Response::ok(json!(true));
-    
+
     match response {
         Response::Ok { data, .. } => {
             assert_eq!(data.unwrap(), true);
@@ -357,9 +351,9 @@ fn test_response_ok_with_large_array() {
     let large_array: Vec<serde_json::Value> = (0..1000)
         .map(|i| json!({"id": i, "data": format!("item_{}", i)}))
         .collect();
-    
+
     let response = Response::ok(json!(large_array));
-    
+
     match response {
         Response::Ok { data, .. } => {
             let arr = data.unwrap();
@@ -373,7 +367,7 @@ fn test_response_ok_with_large_array() {
 fn test_response_ok_with_large_string() {
     let large_string = "a".repeat(100_000);
     let response = Response::ok(json!({"content": large_string.clone()}));
-    
+
     match response {
         Response::Ok { data, .. } => {
             let d = data.unwrap();
@@ -396,7 +390,7 @@ fn test_response_ok_with_unicode() {
         "emoji": "🎉🚀💻",
         "mixed": "Hello 世界 🌍"
     }));
-    
+
     match response {
         Response::Ok { data, .. } => {
             let d = data.unwrap();
@@ -418,7 +412,7 @@ fn test_response_ok_with_special_characters() {
         "newlines": "Line1\nLine2\nLine3",
         "tabs": "Col1\tCol2\tCol3"
     }));
-    
+
     match response {
         Response::Ok { data, .. } => {
             let d = data.unwrap();
@@ -446,7 +440,7 @@ fn test_all_error_types() {
         DriverError::MessageTooLarge,
         DriverError::InvalidCommand("cmd err".to_string()),
     ];
-    
+
     for err in errors {
         // All errors should implement Display
         let _ = format!("{}", err);
@@ -462,7 +456,7 @@ fn test_all_error_types() {
 #[test]
 fn test_response_batch_empty() {
     let batch = Response::Batch { responses: vec![] };
-    
+
     match batch {
         Response::Batch { responses } => {
             assert_eq!(responses.len(), 0);
@@ -480,25 +474,25 @@ fn test_response_batch_mixed() {
         Response::ok_count(100),
         Response::ok_tx("tx:abc".to_string()),
     ];
-    
+
     let batch = Response::Batch { responses };
-    
+
     match batch {
         Response::Batch { responses } => {
             assert_eq!(responses.len(), 5);
-            
+
             // Verify first is ok with data
             match &responses[0] {
                 Response::Ok { data, .. } => assert!(data.is_some()),
                 _ => panic!("Expected Ok"),
             }
-            
+
             // Verify second is error
             match &responses[1] {
                 Response::Error { .. } => {}
                 _ => panic!("Expected Error"),
             }
-            
+
             // Verify third is pong
             match &responses[2] {
                 Response::Pong { .. } => {}
@@ -534,13 +528,13 @@ fn test_builder_with_different_port() {
 }
 
 // ============================================================================
-// Count Response Tests  
+// Count Response Tests
 // ============================================================================
 
 #[test]
 fn test_response_ok_count_zero() {
     let response = Response::ok_count(0);
-    
+
     match response {
         Response::Ok { count, .. } => {
             assert_eq!(count, Some(0));
@@ -552,7 +546,7 @@ fn test_response_ok_count_zero() {
 #[test]
 fn test_response_ok_count_large() {
     let response = Response::ok_count(1_000_000);
-    
+
     match response {
         Response::Ok { count, .. } => {
             assert_eq!(count, Some(1_000_000));

@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::handlers::AppState;
 use super::auth::Claims;
+use super::handlers::AppState;
 use crate::error::DbError;
 use crate::scripting::{Script, ScriptContext, ScriptEngine, ScriptUser};
-use crate::sync::{Operation, LogEntry};
+use crate::sync::{LogEntry, Operation};
 
 /// System collection for storing scripts
 pub const SCRIPTS_COLLECTION: &str = "_scripts";
@@ -99,7 +99,7 @@ pub async fn create_script_handler(
     } else {
         format!("{}_{}", db_name, sanitize_path_to_key(&req.path))
     };
-    
+
     let now = chrono::Utc::now().to_rfc3339();
 
     // Check if script with same path already exists
@@ -128,7 +128,12 @@ pub async fn create_script_handler(
 
     collection.insert(doc_value.clone())?;
 
-    tracing::info!("Lua script '{}' created for path '{}' in db '{}'", req.name, req.path, db_name);
+    tracing::info!(
+        "Lua script '{}' created for path '{}' in db '{}'",
+        req.name,
+        req.path,
+        db_name
+    );
 
     // Record write for replication
     if let Some(ref log) = state.replication_log {
@@ -317,7 +322,10 @@ pub async fn get_script_stats_handler(
 pub async fn execute_script_handler(
     State(state): State<AppState>,
     claims: Option<axum::Extension<Claims>>,
-    ws_res: Result<axum::extract::ws::WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
+    ws_res: Result<
+        axum::extract::ws::WebSocketUpgrade,
+        axum::extract::ws::rejection::WebSocketUpgradeRejection,
+    >,
     method: axum::http::Method,
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     headers: axum::http::HeaderMap,
@@ -327,20 +335,23 @@ pub async fn execute_script_handler(
     let uri_path = uri.path().to_string();
     let prefix = "/api/custom/";
     let remaining = uri_path.strip_prefix(prefix).unwrap_or(&uri_path);
-    
+
     // Parse db/path
     let parts: Vec<&str> = remaining.splitn(2, '/').collect();
     if parts.len() < 2 {
-        return Err(DbError::BadRequest("Invalid custom API path. Expected /api/custom/:db/:path".to_string()));
+        return Err(DbError::BadRequest(
+            "Invalid custom API path. Expected /api/custom/:db/:path".to_string(),
+        ));
     }
-    
+
     let db_name = parts[0];
     let script_path = parts[1];
-    
+
     let is_ws_upgrade = ws_res.is_ok();
-    
+
     // Find matching script
-    let script = find_script_for_scoped_path(&state, db_name, script_path, method.as_str(), is_ws_upgrade)?;
+    let script =
+        find_script_for_scoped_path(&state, db_name, script_path, method.as_str(), is_ws_upgrade)?;
 
     // Build context
     let query_params: HashMap<String, String> = uri
@@ -380,29 +391,41 @@ pub async fn execute_script_handler(
         params: extract_path_params(&script.path, script_path),
         headers: headers_map,
         body: body.map(|b| b.0),
-        is_websocket: ws_res.is_ok() && headers.get("upgrade").and_then(|v| v.to_str().ok()).unwrap_or_default().to_lowercase() == "websocket",
+        is_websocket: ws_res.is_ok()
+            && headers
+                .get("upgrade")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_lowercase()
+                == "websocket",
         user,
     };
 
     // Execute script
     let engine = ScriptEngine::new(state.storage.clone(), state.script_stats.clone());
-    
+
     // Handle WebSocket upgrade
     if context.is_websocket {
         if let Ok(ws) = ws_res {
             let db_name = db_name.to_string();
-            return Ok(ws.on_upgrade(move |socket| async move {
-                if let Err(e) = engine.execute_ws(&script, &db_name, &context, socket).await {
-                    tracing::error!("WebSocket script execution failed: {}", e);
-                }
-            }).into_response());
+            return Ok(ws
+                .on_upgrade(move |socket| async move {
+                    if let Err(e) = engine.execute_ws(&script, &db_name, &context, socket).await {
+                        tracing::error!("WebSocket script execution failed: {}", e);
+                    }
+                })
+                .into_response());
         }
     }
 
     // Auto-select DB in Lua context using the path's db_name
     let result = engine.execute(&script, db_name, &context).await?;
 
-    Ok((StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK), Json(result.body)).into_response())
+    Ok((
+        StatusCode::from_u16(result.status).unwrap_or(StatusCode::OK),
+        Json(result.body),
+    )
+        .into_response())
 }
 
 // ==================== Helper Functions ====================
@@ -440,11 +463,9 @@ fn find_script_for_scoped_path(
         }
 
         // Check if method matches
-        if !script
-            .methods
-            .iter()
-            .any(|m| m.eq_ignore_ascii_case(method) || (is_ws_upgrade && m.eq_ignore_ascii_case("WS")))
-        {
+        if !script.methods.iter().any(|m| {
+            m.eq_ignore_ascii_case(method) || (is_ws_upgrade && m.eq_ignore_ascii_case("WS"))
+        }) {
             continue;
         }
 
@@ -562,7 +583,9 @@ pub async fn repl_eval_handler(
     let _ = state.storage.get_database(&db_name)?;
 
     // Get or create session
-    let mut session = state.repl_sessions.get_or_create(req.session_id.as_deref(), &db_name);
+    let mut session = state
+        .repl_sessions
+        .get_or_create(req.session_id.as_deref(), &db_name);
 
     // Get history BEFORE adding new code (so we don't replay current command)
     let history: Vec<String> = session.history.clone();
@@ -575,13 +598,15 @@ pub async fn repl_eval_handler(
 
     // Execute with session variables and history for function replay
     let mut output_capture: Vec<String> = Vec::new();
-    let result = engine.execute_repl(
-        &req.code,
-        &db_name,
-        &session.variables,
-        &history,
-        &mut output_capture,
-    ).await;
+    let result = engine
+        .execute_repl(
+            &req.code,
+            &db_name,
+            &session.variables,
+            &history,
+            &mut output_capture,
+        )
+        .await;
 
     let duration = start.elapsed();
 
@@ -629,7 +654,10 @@ fn parse_lua_error(error: &str) -> (String, Option<u32>, Option<u32>) {
         if let Some(caps) = re.captures(error) {
             let line = caps.get(1).and_then(|m| m.as_str().parse().ok());
             let column = caps.get(2).and_then(|m| m.as_str().parse().ok());
-            let message = caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_else(|| error.to_string());
+            let message = caps
+                .get(3)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_else(|| error.to_string());
             return (message, line, column);
         }
     }

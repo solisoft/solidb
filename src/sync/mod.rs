@@ -12,16 +12,16 @@
 //! - Non-sharded collections replicate to ALL nodes
 //! - Sharded collections route by shard owner with replication_factor copies
 
+pub mod blob_replication;
+pub mod log;
 pub mod protocol;
+pub mod state;
 pub mod transport;
 pub mod worker;
-pub mod state;
-pub mod log;
-pub mod blob_replication;
 
 // Re-export key types
-pub use protocol::{Operation, SyncEntry, SyncMessage, ShardConfig, NodeStats};
+pub use log::{LogEntry, SyncLog};
+pub use protocol::{NodeStats, Operation, ShardConfig, SyncEntry, SyncMessage};
 pub use state::SyncState;
 pub use transport::{ConnectionPool, SyncServer, TransportError};
-pub use worker::{SyncWorker, SyncConfig, SyncCommand, create_command_channel};
-pub use log::{SyncLog, LogEntry};
+pub use worker::{create_command_channel, SyncCommand, SyncConfig, SyncWorker};

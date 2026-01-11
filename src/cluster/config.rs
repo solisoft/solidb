@@ -20,7 +20,12 @@ pub struct ClusterConfig {
 
 impl ClusterConfig {
     /// Create a new cluster configuration
-    pub fn new(node_id: Option<String>, peers: Vec<String>, replication_port: u16, keyfile_path: Option<String>) -> Self {
+    pub fn new(
+        node_id: Option<String>,
+        peers: Vec<String>,
+        replication_port: u16,
+        keyfile_path: Option<String>,
+    ) -> Self {
         let node_id = node_id.unwrap_or_else(|| {
             // Generate a stable node ID based on hostname + random suffix
             let hostname = hostname::get()
@@ -30,35 +35,36 @@ impl ClusterConfig {
         });
 
         // Read keyfile content if path is provided
-        let keyfile = keyfile_path.and_then(|path| {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let trimmed = content.trim().to_string();
-                    if trimmed.is_empty() {
-                        tracing::warn!("Keyfile at {} is empty", path);
-                        None
-                    } else {
-                        tracing::debug!("Loaded keyfile from {}", path);
-                        Some(trimmed)
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to read keyfile at {}: {}", path, e);
+        let keyfile = keyfile_path.and_then(|path| match std::fs::read_to_string(&path) {
+            Ok(content) => {
+                let trimmed = content.trim().to_string();
+                if trimmed.is_empty() {
+                    tracing::warn!("Keyfile at {} is empty", path);
                     None
+                } else {
+                    tracing::debug!("Loaded keyfile from {}", path);
+                    Some(trimmed)
                 }
+            }
+            Err(e) => {
+                tracing::error!("Failed to read keyfile at {}: {}", path, e);
+                None
             }
         });
 
         // Trim peer addresses and strip protocol prefixes to handle copy-pasted URLs
-        let peers = peers.into_iter().map(|p| {
-            let mut s = p.trim().to_string();
-            if s.starts_with("http://") {
-                s = s[7..].to_string();
-            } else if s.starts_with("https://") {
-                s = s[8..].to_string();
-            }
-            s
-        }).collect();
+        let peers = peers
+            .into_iter()
+            .map(|p| {
+                let mut s = p.trim().to_string();
+                if s.starts_with("http://") {
+                    s = s[7..].to_string();
+                } else if s.starts_with("https://") {
+                    s = s[8..].to_string();
+                }
+                s
+            })
+            .collect();
 
         Self {
             node_id,
@@ -103,7 +109,7 @@ mod tests {
     #[test]
     fn test_cluster_config_default() {
         let config = ClusterConfig::default();
-        
+
         assert!(!config.node_id.is_empty());
         assert!(config.peers.is_empty());
         assert_eq!(config.replication_port, 6746);
@@ -112,26 +118,16 @@ mod tests {
 
     #[test]
     fn test_cluster_config_new_with_node_id() {
-        let config = ClusterConfig::new(
-            Some("my-node".to_string()),
-            vec![],
-            7000,
-            None,
-        );
-        
+        let config = ClusterConfig::new(Some("my-node".to_string()), vec![], 7000, None);
+
         assert_eq!(config.node_id, "my-node");
         assert_eq!(config.replication_port, 7000);
     }
 
     #[test]
     fn test_cluster_config_auto_node_id() {
-        let config = ClusterConfig::new(
-            None,
-            vec![],
-            6746,
-            None,
-        );
-        
+        let config = ClusterConfig::new(None, vec![], 6746, None);
+
         // Auto-generated node ID should contain hyphen and be non-empty
         assert!(!config.node_id.is_empty());
     }
@@ -148,7 +144,7 @@ mod tests {
             6746,
             None,
         );
-        
+
         assert_eq!(config.peers[0], "peer1:8080");
         assert_eq!(config.peers[1], "peer2:8080");
         assert_eq!(config.peers[2], "peer3:8080");
@@ -162,7 +158,7 @@ mod tests {
             6746,
             None,
         );
-        
+
         assert_eq!(config.peers[0], "peer1:8080");
     }
 
@@ -175,13 +171,8 @@ mod tests {
 
     #[test]
     fn test_replication_addr() {
-        let config = ClusterConfig::new(
-            Some("node".to_string()),
-            vec![],
-            7777,
-            None,
-        );
-        
+        let config = ClusterConfig::new(Some("node".to_string()), vec![], 7777, None);
+
         assert_eq!(config.replication_addr(), "0.0.0.0:7777");
     }
 
@@ -199,11 +190,11 @@ mod tests {
             6746,
             None,
         );
-        
+
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("test-node"));
         assert!(json.contains("peer1:8080"));
-        
+
         let deserialized: ClusterConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config.node_id, deserialized.node_id);
         assert_eq!(config.peers, deserialized.peers);
@@ -217,10 +208,9 @@ mod tests {
             6746,
             None,
         );
-        
+
         let cloned = config.clone();
         assert_eq!(config.node_id, cloned.node_id);
         assert_eq!(config.peers, cloned.peers);
     }
 }
-

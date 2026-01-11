@@ -82,8 +82,8 @@ impl AgentReputation {
         let consistency_factor = self.calculate_consistency_factor();
 
         // Weighted combination
-        self.trust_score = (base_score * 0.5 + recency_factor * 0.3 + consistency_factor * 0.2)
-            .clamp(0.0, 1.0);
+        self.trust_score =
+            (base_score * 0.5 + recency_factor * 0.3 + consistency_factor * 0.2).clamp(0.0, 1.0);
 
         self.updated_at = Utc::now();
     }
@@ -585,8 +585,8 @@ impl AgentMarketplace {
         reputation.record_task(&task.task_type.to_string(), success, duration_ms);
 
         // Save updated reputation
-        let value = serde_json::to_value(&reputation)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let value =
+            serde_json::to_value(&reputation).map_err(|e| DbError::InternalError(e.to_string()))?;
 
         if coll.get(agent_id).is_ok() {
             coll.update(agent_id, value)?;
@@ -598,7 +598,10 @@ impl AgentMarketplace {
     }
 
     /// Initialize reputation for a new agent
-    pub fn initialize_reputation(db: &Database, agent_id: &str) -> Result<AgentReputation, DbError> {
+    pub fn initialize_reputation(
+        db: &Database,
+        agent_id: &str,
+    ) -> Result<AgentReputation, DbError> {
         // Get or create reputations collection
         if db.get_collection("_ai_agent_reputations").is_err() {
             db.create_collection("_ai_agent_reputations".to_string(), None)?;
@@ -614,8 +617,8 @@ impl AgentMarketplace {
         }
 
         let reputation = AgentReputation::new(agent_id.to_string());
-        let value = serde_json::to_value(&reputation)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let value =
+            serde_json::to_value(&reputation).map_err(|e| DbError::InternalError(e.to_string()))?;
         coll.insert(value)?;
 
         Ok(reputation)
@@ -705,8 +708,20 @@ mod tests {
         let mut rep = AgentReputation::new("agent-001".to_string());
         rep.record_task("analyze_contribution", true, 1000);
 
-        assert_eq!(rep.tasks_by_type.get("analyze_contribution").unwrap().completed, 1);
-        assert_eq!(rep.tasks_by_type.get("analyze_contribution").unwrap().failed, 0);
+        assert_eq!(
+            rep.tasks_by_type
+                .get("analyze_contribution")
+                .unwrap()
+                .completed,
+            1
+        );
+        assert_eq!(
+            rep.tasks_by_type
+                .get("analyze_contribution")
+                .unwrap()
+                .failed,
+            0
+        );
         assert_eq!(rep.success_rates.get("analyze_contribution").unwrap(), &1.0);
     }
 

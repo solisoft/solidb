@@ -2,28 +2,30 @@
 //!
 //! Verifies the exposed `string.regex` and `string.regex_replace` functions in Lua.
 
-use solidb::storage::StorageEngine;
 use solidb::scripting::{ScriptEngine, ScriptStats, ScriptUser};
-use tempfile::TempDir;
+use solidb::storage::StorageEngine;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, Arc<ScriptEngine>, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
-    
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
+
     engine.create_database("testdb".to_string()).unwrap();
-    
+
     let stats = Arc::new(ScriptStats::default());
     let script_engine = Arc::new(ScriptEngine::new(engine.clone(), stats));
-    
+
     (engine, script_engine, tmp_dir)
 }
 
 #[tokio::test]
 async fn test_lua_regex_match() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let script = solidb::scripting::Script {
         key: "test_regex".to_string(),
         name: "test_regex".to_string(),
@@ -40,12 +42,13 @@ async fn test_lua_regex_match() {
             local is_not_match = string.regex("invalid-email", "@")
             
             return { match = is_match, not_match = is_not_match }
-        "#.to_string(),
+        "#
+        .to_string(),
         description: None,
         created_at: "now".to_string(),
         updated_at: "now".to_string(),
     };
-    
+
     let context = solidb::scripting::ScriptContext {
         method: "POST".to_string(),
         path: "test".to_string(),
@@ -56,12 +59,15 @@ async fn test_lua_regex_match() {
         is_websocket: false,
         user: ScriptUser::anonymous(),
     };
-    
-    let result = script_engine.execute(&script, "testdb", &context).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &context)
+        .await
+        .unwrap();
     let json = result.body;
-    
+
     assert_eq!(json["match"], true);
-    // Wait, regex "invalid-email" matches "@"? No. 
+    // Wait, regex "invalid-email" matches "@"? No.
     // string.regex is regex::new(pattern).is_match(s).
     // Pattern "@" on "invalid-email" -> false (no @).
     // Pattern ".*" on "invalid-email" -> true.
@@ -71,7 +77,7 @@ async fn test_lua_regex_match() {
 #[tokio::test]
 async fn test_lua_regex_replace() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let script = solidb::scripting::Script {
         key: "test_replace".to_string(),
         name: "test_replace".to_string(),
@@ -89,12 +95,13 @@ async fn test_lua_regex_replace() {
             local masked = string.regex_replace(secret, "\\d+", "*****")
             
             return { text = new_text, masked = masked }
-        "#.to_string(),
+        "#
+        .to_string(),
         description: None,
         created_at: "now".to_string(),
         updated_at: "now".to_string(),
     };
-    
+
     let context = solidb::scripting::ScriptContext {
         method: "POST".to_string(),
         path: "test".to_string(),
@@ -105,10 +112,13 @@ async fn test_lua_regex_replace() {
         is_websocket: false,
         user: ScriptUser::anonymous(),
     };
-    
-    let result = script_engine.execute(&script, "testdb", &context).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &context)
+        .await
+        .unwrap();
     let json = result.body;
-    
+
     assert_eq!(json["text"], "The year is 2024");
     assert_eq!(json["masked"], "My secret is *****");
 }
@@ -116,10 +126,10 @@ async fn test_lua_regex_replace() {
 #[tokio::test]
 async fn test_lua_regex_capture_groups() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     // Rust regex replacement uses ${name} or $1 syntax?
     // Regex crate: $name or ${name} or $0.
-    
+
     let script = solidb::scripting::Script {
         key: "test_groups".to_string(),
         name: "test_groups".to_string(),
@@ -133,12 +143,13 @@ async fn test_lua_regex_capture_groups() {
             local swapped = string.regex_replace(text, "(\\w+) (\\w+)", "$2 $1")
             
             return { swapped = swapped }
-        "#.to_string(),
+        "#
+        .to_string(),
         description: None,
         created_at: "now".to_string(),
         updated_at: "now".to_string(),
     };
-    
+
     let context = solidb::scripting::ScriptContext {
         method: "POST".to_string(),
         path: "test".to_string(),
@@ -149,9 +160,12 @@ async fn test_lua_regex_capture_groups() {
         is_websocket: false,
         user: ScriptUser::anonymous(),
     };
-    
-    let result = script_engine.execute(&script, "testdb", &context).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &context)
+        .await
+        .unwrap();
     let json = result.body;
-    
+
     assert_eq!(json["swapped"], "Doe John");
 }

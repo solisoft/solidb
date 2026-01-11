@@ -30,9 +30,7 @@ pub enum WalEntry {
         timestamp: u64,
     },
     /// Checkpoint marker (can truncate log before this point)
-    Checkpoint {
-        timestamp: u64,
-    },
+    Checkpoint { timestamp: u64 },
 }
 
 impl WalEntry {
@@ -172,7 +170,10 @@ impl WalReader {
             }
 
             let entry: WalEntry = serde_json::from_str(&line).map_err(|e| {
-                DbError::InternalError(format!("Failed to parse WAL entry at line {}: {}", line_num, e))
+                DbError::InternalError(format!(
+                    "Failed to parse WAL entry at line {}: {}",
+                    line_num, e
+                ))
             })?;
 
             entries.push(entry);
@@ -248,7 +249,8 @@ pub fn truncate_wal<P: AsRef<Path>>(path: P) -> DbResult<()> {
                 .map_err(|e| DbError::InternalError(format!("Failed to write temp WAL: {}", e)))?;
         }
 
-        temp_file.sync_all()
+        temp_file
+            .sync_all()
             .map_err(|e| DbError::InternalError(format!("Failed to sync temp WAL: {}", e)))?;
 
         // Atomic rename
@@ -261,8 +263,8 @@ pub fn truncate_wal<P: AsRef<Path>>(path: P) -> DbResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::TransactionState;
+    use super::*;
     use tempfile::tempdir;
 
     #[test]
@@ -333,7 +335,7 @@ mod tests {
         let wal_path = dir.path().join("test.wal");
 
         let writer = WalWriter::new(&wal_path).unwrap();
-        
+
         // Write some entries
         let tx1 = TransactionId::new();
         writer.write_begin(tx1).unwrap();
@@ -353,7 +355,7 @@ mod tests {
         // Should only have entries after checkpoint
         let reader = WalReader::new(&wal_path);
         let entries = reader.read_all().unwrap();
-        
+
         // Should have begin and commit for tx2 only
         assert_eq!(entries.len(), 2);
     }

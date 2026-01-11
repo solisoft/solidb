@@ -152,7 +152,10 @@ impl ReplSessionStore {
     /// Get the number of active sessions
     pub fn active_count(&self) -> usize {
         let sessions = self.sessions.read().unwrap();
-        sessions.values().filter(|s| !s.is_expired(self.timeout)).count()
+        sessions
+            .values()
+            .filter(|s| !s.is_expired(self.timeout))
+            .count()
     }
 
     /// Delete a specific session

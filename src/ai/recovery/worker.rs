@@ -14,7 +14,9 @@ use crate::storage::StorageEngine;
 
 use super::config::RecoveryConfig;
 use super::event::{RecoveryCycleStats, RecoveryEvent, RECOVERY_EVENTS_COLLECTION};
-use super::health::{AgentHealthMetrics, CircuitState, RecoverySystemStatus, AGENT_HEALTH_COLLECTION};
+use super::health::{
+    AgentHealthMetrics, CircuitState, RecoverySystemStatus, AGENT_HEALTH_COLLECTION,
+};
 
 /// The Recovery Worker monitors and recovers from issues
 pub struct RecoveryWorker {
@@ -87,7 +89,9 @@ impl RecoveryWorker {
 
         // 4. Check for stuck contributions
         if let Err(e) = self.check_stuck_contributions(&mut stats) {
-            stats.errors.push(format!("Stuck contribution check: {}", e));
+            stats
+                .errors
+                .push(format!("Stuck contribution check: {}", e));
         }
 
         stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -144,7 +148,9 @@ impl RecoveryWorker {
                         }
                     }
                     Err(e) => {
-                        stats.errors.push(format!("Failed to recover task {}: {}", task.id, e));
+                        stats
+                            .errors
+                            .push(format!("Failed to recover task {}: {}", task.id, e));
                     }
                 }
             }
@@ -167,8 +173,8 @@ impl RecoveryWorker {
             task.completed_at = Some(Utc::now());
             task.error = Some("Max recovery retries exceeded".to_string());
 
-            let task_value = serde_json::to_value(&task)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            let task_value =
+                serde_json::to_value(&task).map_err(|e| DbError::InternalError(e.to_string()))?;
             tasks_coll.update(&task.id, task_value)?;
 
             return Ok(false);
@@ -188,8 +194,8 @@ impl RecoveryWorker {
             task.agent_id = None;
         }
 
-        let task_value = serde_json::to_value(&task)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let task_value =
+            serde_json::to_value(&task).map_err(|e| DbError::InternalError(e.to_string()))?;
         tasks_coll.update(&task.id, task_value)?;
 
         Ok(true)
@@ -221,9 +227,8 @@ impl RecoveryWorker {
 
             // Get or create health metrics
             let mut health = match health_coll.get(&agent.id) {
-                Ok(h) => serde_json::from_value(h.to_value()).unwrap_or_else(|_| {
-                    AgentHealthMetrics::new(agent.id.clone())
-                }),
+                Ok(h) => serde_json::from_value(h.to_value())
+                    .unwrap_or_else(|_| AgentHealthMetrics::new(agent.id.clone())),
                 Err(_) => AgentHealthMetrics::new(agent.id.clone()),
             };
 
@@ -241,8 +246,8 @@ impl RecoveryWorker {
 
             // Update health metrics
             health.updated_at = Utc::now();
-            let health_value = serde_json::to_value(&health)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            let health_value =
+                serde_json::to_value(&health).map_err(|e| DbError::InternalError(e.to_string()))?;
 
             if health_coll.get(&agent.id).is_ok() {
                 health_coll.update(&agent.id, health_value)?;
@@ -375,8 +380,8 @@ impl RecoveryWorker {
             ))?;
         }
 
-        let health_value = serde_json::to_value(&health)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let health_value =
+            serde_json::to_value(&health).map_err(|e| DbError::InternalError(e.to_string()))?;
 
         if health_coll.get(agent_id).is_ok() {
             health_coll.update(agent_id, health_value)?;
@@ -396,8 +401,8 @@ impl RecoveryWorker {
         }
 
         let events_coll = db.get_collection(RECOVERY_EVENTS_COLLECTION)?;
-        let event_value = serde_json::to_value(&event)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let event_value =
+            serde_json::to_value(&event).map_err(|e| DbError::InternalError(e.to_string()))?;
         events_coll.insert(event_value)?;
 
         Ok(())
@@ -485,8 +490,8 @@ impl RecoveryWorker {
         task.agent_id = None;
         task.error = None;
 
-        let task_value = serde_json::to_value(&task)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let task_value =
+            serde_json::to_value(&task).map_err(|e| DbError::InternalError(e.to_string()))?;
         tasks_coll.update(task_id, task_value)?;
 
         self.log_event(
@@ -516,8 +521,8 @@ impl RecoveryWorker {
 
         health.transition_to_closed();
 
-        let health_value = serde_json::to_value(&health)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let health_value =
+            serde_json::to_value(&health).map_err(|e| DbError::InternalError(e.to_string()))?;
         health_coll.update(agent_id, health_value)?;
 
         self.log_event(RecoveryEvent::circuit_closed(agent_id))?;
@@ -526,10 +531,7 @@ impl RecoveryWorker {
     }
 
     /// List recovery events
-    pub fn list_events(
-        &self,
-        limit: Option<usize>,
-    ) -> Result<Vec<RecoveryEvent>, DbError> {
+    pub fn list_events(&self, limit: Option<usize>) -> Result<Vec<RecoveryEvent>, DbError> {
         let db = self.storage.get_database(&self.db_name)?;
 
         if db.get_collection(RECOVERY_EVENTS_COLLECTION).is_err() {

@@ -55,7 +55,7 @@ pub async fn execute_sql_handler(
             ));
         }
     };
-    
+
     // If dry_run, just return the translated SDBQL
     if request.dry_run {
         return Ok(Json(SqlResponse {
@@ -64,7 +64,7 @@ pub async fn execute_sql_handler(
             error: None,
         }));
     }
-    
+
     // Parse the SDBQL string into a Query AST
     let query_ast = match crate::sdbql::parse(&sdbql) {
         Ok(ast) => ast,
@@ -79,14 +79,14 @@ pub async fn execute_sql_handler(
             ));
         }
     };
-    
+
     // Create executor with database context and bind variables
     let executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
         &state.storage,
         db.clone(),
         request.bind_vars,
     );
-    
+
     // Execute the query
     match executor.execute(&query_ast) {
         Ok(results) => Ok(Json(SqlResponse {
@@ -128,14 +128,14 @@ pub async fn translate_sql_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_sql_translate() {
         let result = translate_sql_to_sdbql("SELECT * FROM users").unwrap();
         assert!(result.contains("FOR doc IN users"));
         assert!(result.contains("RETURN doc"));
     }
-    
+
     #[test]
     fn test_sql_with_where() {
         let result = translate_sql_to_sdbql("SELECT * FROM users WHERE age > 18").unwrap();

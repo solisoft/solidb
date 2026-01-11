@@ -17,7 +17,6 @@ use cuckoofilter::CuckooFilter;
 use fastbloom::BloomFilter;
 use std::collections::hash_map::DefaultHasher;
 
-
 /// Key prefixes for different data types
 const DOC_PREFIX: &str = "doc:";
 const IDX_PREFIX: &str = "idx:";
@@ -29,7 +28,7 @@ const FT_META_PREFIX: &str = "ft_meta:"; // Fulltext index metadata
 const FT_TERM_PREFIX: &str = "ft_term:"; // Fulltext term → doc mapping
 const STATS_COUNT_KEY: &str = "_stats:count"; // Document count
 const SHARD_CONFIG_KEY: &str = "_stats:shard_config"; // Sharding configuration
-const SHARD_TABLE_KEY: &str = "_stats:shard_table";   // Sharding assignment table
+const SHARD_TABLE_KEY: &str = "_stats:shard_table"; // Sharding assignment table
 const COLLECTION_TYPE_KEY: &str = "_stats:type"; // Collection type (document, edge)
 const BLO_PREFIX: &str = "blo:"; // Blob chunk prefix
 const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
@@ -62,7 +61,10 @@ pub struct ChangeEvent {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct FulltextIndex {
     name: String,
-    #[serde(alias = "field", deserialize_with = "crate::storage::index::deserialize_fields")]
+    #[serde(
+        alias = "field",
+        deserialize_with = "crate::storage::index::deserialize_fields"
+    )]
     fields: Vec<String>,
     #[serde(default = "default_min_length")]
     min_length: usize,
@@ -80,8 +82,6 @@ pub struct CollectionStats {
     pub chunk_count: usize,
     pub disk_usage: DiskUsage,
 }
-
-
 
 /// Disk usage statistics for a collection
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -180,9 +180,7 @@ impl Collection {
                 let prefix = BLO_PREFIX.as_bytes();
                 db_guard
                     .prefix_iterator_cf(cf, prefix)
-                    .take_while(|r| {
-                         r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix))
-                    })
+                    .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
                     .count()
             } else {
                 0
@@ -229,10 +227,10 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
-        
+
         db.put_cf(cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
-            
+
         // Update in-memory state
         let mut mg = self.collection_type.write().unwrap();
         *mg = type_.to_string();
@@ -248,40 +246,40 @@ impl Collection {
 
         // Check _from field
         match obj.get("_from") {
-            Some(Value::String(s)) if !s.is_empty() => {},
+            Some(Value::String(s)) if !s.is_empty() => {}
             Some(Value::String(_)) => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document _from field must be a non-empty string".to_string()
+                    "Edge document _from field must be a non-empty string".to_string(),
                 ));
             }
             Some(_) => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document _from field must be a string".to_string()
+                    "Edge document _from field must be a string".to_string(),
                 ));
             }
             None => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document requires _from field".to_string()
+                    "Edge document requires _from field".to_string(),
                 ));
             }
         }
 
         // Check _to field
         match obj.get("_to") {
-            Some(Value::String(s)) if !s.is_empty() => {},
+            Some(Value::String(s)) if !s.is_empty() => {}
             Some(Value::String(_)) => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document _to field must be a non-empty string".to_string()
+                    "Edge document _to field must be a non-empty string".to_string(),
                 ));
             }
             Some(_) => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document _to field must be a string".to_string()
+                    "Edge document _to field must be a string".to_string(),
                 ));
             }
             None => {
                 return Err(DbError::InvalidDocument(
-                    "Edge document requires _to field".to_string()
+                    "Edge document requires _to field".to_string(),
                 ));
             }
         }
@@ -358,7 +356,7 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
-        
+
         // Optimize: Check existence first to only increment on new chunks?
         // Or assume overwrite is rare for chunks (immutable mostly).
         // Let's check first to be accurate.
@@ -367,7 +365,7 @@ impl Collection {
 
         db.put_cf(cf, chunk_key, data)
             .map_err(|e| DbError::InternalError(format!("Failed to put blob chunk: {}", e)))?;
-            
+
         if !exists {
             self.chunk_count.fetch_add(1, Ordering::Relaxed);
         }
@@ -381,10 +379,11 @@ impl Collection {
         let cf = db
             .cf_handle(&self.name)
             .expect("Column family should exist");
-        
-        let res = db.get_cf(cf, Self::blo_chunk_key(key, chunk_index))
+
+        let res = db
+            .get_cf(cf, Self::blo_chunk_key(key, chunk_index))
             .map_err(|e| DbError::InternalError(format!("Failed to get blob chunk: {}", e)))?;
-            
+
         Ok(res)
     }
 
@@ -399,19 +398,23 @@ impl Collection {
         let prefix = format!("{}{}:", BLO_PREFIX, key);
         let prefix_bytes = prefix.as_bytes();
 
-        let iter = db.iterator_cf(cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+        let iter = db.iterator_cf(
+            cf,
+            rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward),
+        );
         let mut deleted_count = 0;
-        
+
         for item in iter {
-             if let Ok((k, _)) = item {
-                 if k.starts_with(prefix_bytes) {
-                     db.delete_cf(cf, k)
-                        .map_err(|e| DbError::InternalError(format!("Failed to delete blob chunk: {}", e)))?;
-                     deleted_count += 1;
-                 } else {
-                     break;
-                 }
-             }
+            if let Ok((k, _)) = item {
+                if k.starts_with(prefix_bytes) {
+                    db.delete_cf(cf, k).map_err(|e| {
+                        DbError::InternalError(format!("Failed to delete blob chunk: {}", e))
+                    })?;
+                    deleted_count += 1;
+                } else {
+                    break;
+                }
+            }
         }
 
         if deleted_count > 0 {
@@ -425,11 +428,15 @@ impl Collection {
     pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<usize> {
         // Enforce collection type
         if *self.collection_type.read().unwrap() != "timeseries" {
-             return Err(DbError::OperationNotSupported("Pruning only supported on timeseries collections".to_string()));
+            return Err(DbError::OperationNotSupported(
+                "Pruning only supported on timeseries collections".to_string(),
+            ));
         }
 
         let db = self.db.read().unwrap();
-        let cf = db.cf_handle(&self.name).expect("Column family should exist");
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
 
         // Construct End Key (UUIDv7-compatible lower bound from timestamp)
         // UUIDv7: 48 bits timestamp at the top.
@@ -438,46 +445,46 @@ impl Collection {
         let end_uuid = Uuid::from_u128(end_uuid_int);
         // We construct the key string
         let end_key_str = end_uuid.to_string();
-        
+
         let start_key = Self::doc_key("");
         let end_key = Self::doc_key(&end_key_str);
-        
+
         // Count items to be deleted (scanning keys only)
         // Optimization: For massive retention policies, this scan might be costly.
         // But maintaining accurate doc_count is important.
         let iter = db.iterator_cf(
-            cf, 
-            rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward)
+            cf,
+            rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward),
         );
-        
+
         let mut count = 0;
-        
+
         for item in iter {
-             match item {
-                 Ok((k, _)) => {
-                     // Check if we are still within "doc:" prefix
-                     if !k.starts_with(&start_key[0..4]) {
-                         break; 
-                     }
-                     // Check if we reached the end key
-                     // Lexicographical comparison of bytes matches UUID comparison
-                     if k.as_ref() >= end_key.as_slice() {
-                         break;
-                     }
-                     count += 1;
-                 },
-                 Err(_) => break,
-             }
+            match item {
+                Ok((k, _)) => {
+                    // Check if we are still within "doc:" prefix
+                    if !k.starts_with(&start_key[0..4]) {
+                        break;
+                    }
+                    // Check if we reached the end key
+                    // Lexicographical comparison of bytes matches UUID comparison
+                    if k.as_ref() >= end_key.as_slice() {
+                        break;
+                    }
+                    count += 1;
+                }
+                Err(_) => break,
+            }
         }
-        
+
         if count > 0 {
-             db.delete_range_cf(cf, &start_key, &end_key)
-                 .map_err(|e| DbError::InternalError(format!("Prune failed: {}", e)))?;
-                 
-             self.doc_count.fetch_sub(count, Ordering::Relaxed);
-             self.count_dirty.store(true, Ordering::Relaxed);
+            db.delete_range_cf(cf, &start_key, &end_key)
+                .map_err(|e| DbError::InternalError(format!("Prune failed: {}", e)))?;
+
+            self.doc_count.fetch_sub(count, Ordering::Relaxed);
+            self.count_dirty.store(true, Ordering::Relaxed);
         }
-        
+
         Ok(count)
     }
 
@@ -519,7 +526,7 @@ impl Collection {
                 return filter.clone();
             }
         }
-        
+
         // Try load from disk
         if let Some(filter) = self.load_bloom_filter(index_name) {
             let mut filters = self.bloom_filters.write().unwrap();
@@ -546,11 +553,13 @@ impl Collection {
         let mut filters = self.bloom_filters.write().unwrap();
         filters
             .entry(index_name.to_string())
-            .and_modify(|f| { f.insert(value); })
+            .and_modify(|f| {
+                f.insert(value);
+            })
             .or_insert_with(|| {
-                 let mut f = BloomFilter::with_num_bits(1_000_000).expected_items(100_000);
-                 f.insert(value);
-                 f
+                let mut f = BloomFilter::with_num_bits(1_000_000).expected_items(100_000);
+                f.insert(value);
+                f
             });
     }
 
@@ -576,7 +585,11 @@ impl Collection {
     }
 
     /// Save Cuckoo filter for an index
-    fn save_cuckoo_filter(&self, index_name: &str, filter: &CuckooFilter<DefaultHasher>) -> DbResult<()> {
+    fn save_cuckoo_filter(
+        &self,
+        index_name: &str,
+        filter: &CuckooFilter<DefaultHasher>,
+    ) -> DbResult<()> {
         let db = self.db.write().unwrap();
         let cf = db
             .cf_handle(&self.name)
@@ -585,8 +598,8 @@ impl Collection {
 
         // Export to ExportedCuckooFilter and serialize
         let exported = filter.export();
-        let bytes = serde_json::to_vec(&exported)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let bytes =
+            serde_json::to_vec(&exported).map_err(|e| DbError::InternalError(e.to_string()))?;
         db.put_cf(cf, &idx_key, &bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))
     }
@@ -769,7 +782,7 @@ impl Collection {
 
             // Check if document exists to determine insert vs update
             let exists = db.get_cf(cf, Self::doc_key(&key)).ok().flatten().is_some();
-            
+
             let doc = if exists {
                 // Update existing document
                 if let Ok(bytes) = db.get_cf(cf, Self::doc_key(&key)) {
@@ -799,15 +812,17 @@ impl Collection {
         }
 
         let count = batch.len();
-        
+
         // Write all documents in one batch operation
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
 
         // Update document count (only for new inserts)
         if insert_count > 0 {
-            self.doc_count.fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
-            self.count_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.doc_count
+                .fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
+            self.count_dirty
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
 
         Ok(count)
@@ -862,7 +877,7 @@ impl Collection {
                         .iter()
                         .map(|f| extract_field_value(&doc_value, f))
                         .collect();
-                    
+
                     // Only index if no field is null (strict match)?
                     // Or if at least one is not null?
                     // Legacy behavior: !field_value.is_null() meant skipping nulls.
@@ -936,7 +951,8 @@ impl Collection {
                             let terms = tokenize(text);
                             for term in &terms {
                                 if term.len() >= ft_index.min_length {
-                                    let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                    let term_key =
+                                        Self::ft_term_key(&ft_index.name, term, &doc.key);
                                     batch.put_cf(cf, term_key, doc.key.as_bytes());
                                 }
                             }
@@ -1179,8 +1195,6 @@ impl Collection {
         Ok(doc)
     }
 
-
-
     /// Delete a document
     pub fn delete(&self, key: &str) -> DbResult<()> {
         // Get document for index cleanup
@@ -1247,34 +1261,34 @@ impl Collection {
             if let Ok(Some(bytes)) = db.get_cf(cf, Self::doc_key(key)) {
                 if let Ok(doc) = serde_json::from_slice::<Document>(&bytes) {
                     let doc_value = doc.to_value();
-                    
+
                     // Add to batch
                     batch.delete_cf(cf, Self::doc_key(key));
-                    
+
                     // Handle blobs
                     if *self.collection_type.read().unwrap() == "blob" {
-                        // This might fail partial batch if error? 
+                        // This might fail partial batch if error?
                         // But blob chunks are separate keys.
                         // We can call delete_blob_data (which does its own deletes).
                         // Note: delete_blob_data is not batched in the same batch here.
                         let _ = self.delete_blob_data(key);
                     }
-                    
+
                     // Update indexes (Note: these are separate writes currently)
                     //Ideally indexes would support batching too, but for now we iterate
                     if let Err(e) = self.update_indexes_on_delete(key, &doc_value) {
                         tracing::warn!("Failed to clean indexes for {}: {}", key, e);
                     }
                     if let Err(e) = self.update_fulltext_on_delete(key, &doc_value) {
-                         tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
+                        tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
                     }
-                    
+
                     deleted_docs.push((key.clone(), doc_value));
                     deleted_count += 1;
                 }
             }
         }
-        
+
         if deleted_count == 0 {
             return Ok(0);
         }
@@ -1288,7 +1302,7 @@ impl Collection {
             .fetch_sub(deleted_count, std::sync::atomic::Ordering::Relaxed);
         self.count_dirty
             .store(true, std::sync::atomic::Ordering::Relaxed);
-            
+
         // 4. Send Change Events
         for (key, old_data) in deleted_docs {
             let _ = self.change_sender.send(ChangeEvent {
@@ -1298,7 +1312,7 @@ impl Collection {
                 old_data: Some(old_data),
             });
         }
-        
+
         Ok(deleted_count)
     }
 
@@ -1460,10 +1474,13 @@ impl Collection {
                 crate::transaction::Operation::Insert { key, data, .. } => {
                     // Check if document already exists (defensive against double-recovery)
                     if self.get(key).is_ok() {
-                        tracing::warn!("Skipping duplicate insert of key {} during transaction recovery", key);
+                        tracing::warn!(
+                            "Skipping duplicate insert of key {} during transaction recovery",
+                            key
+                        );
                         continue;
                     }
-                    
+
                     let doc = Document::with_key(&self.name, key.clone(), data.clone());
                     let doc_bytes = serde_json::to_vec(&doc)?;
                     batch.put_cf(cf, Self::doc_key(key), &doc_bytes);
@@ -1521,7 +1538,12 @@ impl Collection {
                         old_data: None, // We don't have old data in transaction op
                     });
                 }
-                crate::transaction::Operation::PutBlobChunk { key, chunk_index, data, .. } => {
+                crate::transaction::Operation::PutBlobChunk {
+                    key,
+                    chunk_index,
+                    data,
+                    ..
+                } => {
                     let blob_key = Self::blo_chunk_key(key, *chunk_index);
                     batch.put_cf(cf, blob_key, data);
                 }
@@ -1529,21 +1551,24 @@ impl Collection {
                     // Iterate and delete all chunks
                     let prefix = format!("{}{}:", crate::storage::collection::BLO_PREFIX, key);
                     let prefix_bytes = prefix.as_bytes();
-                    
+
                     // We need to collect keys first to avoid borrowing issues with iterator?
                     // Actually RocksDB iterator needs DB, batch is separate.
                     // But usually we iterate then delete.
                     // Since we are adding to batch, it's fine.
-                    
-                    let iter = db.iterator_cf(cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+
+                    let iter = db.iterator_cf(
+                        cf,
+                        rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward),
+                    );
                     for item in iter {
-                         if let Ok((k, _)) = item {
-                             if k.starts_with(prefix_bytes) {
-                                 batch.delete_cf(cf, k);
-                             } else {
-                                 break;
-                             }
-                         }
+                        if let Ok((k, _)) = item {
+                            if k.starts_with(prefix_bytes) {
+                                batch.delete_cf(cf, k);
+                            } else {
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -1618,11 +1643,11 @@ impl Collection {
                 .prefix_iterator_cf(cf, prefix)
                 .take_while(|r| r.as_ref().map_or(false, |(k, _)| k.starts_with(prefix)))
                 .count();
-            
+
             // Update the cached count to match reality
             self.doc_count.store(actual_count, Ordering::Relaxed);
             self.count_dirty.store(true, Ordering::Relaxed);
-            
+
             actual_count
         } else {
             0
@@ -1711,7 +1736,7 @@ impl Collection {
     /// Get usage statistics
     pub fn stats(&self) -> CollectionStats {
         let disk_usage = self.disk_usage();
-        
+
         CollectionStats {
             name: self.name.clone(),
             document_count: self.doc_count.load(Ordering::Relaxed),
@@ -1795,8 +1820,6 @@ impl Collection {
         }
     }
 
-
-
     /// Set sharding configuration for this collection
     pub fn set_shard_config(
         &self,
@@ -1810,8 +1833,12 @@ impl Collection {
         let config_bytes = serde_json::to_vec(config)?;
         db.put_cf(cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
-        
-        tracing::info!("[SHARD_CONFIG] Saved config for {}: {:?}", self.name, config);
+
+        tracing::info!(
+            "[SHARD_CONFIG] Saved config for {}: {:?}",
+            self.name,
+            config
+        );
 
         Ok(())
     }
@@ -1840,7 +1867,7 @@ impl Collection {
         let table_bytes = serde_json::to_vec(table)?;
         db.put_cf(cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard table: {}", e)))?;
-        
+
         Ok(())
     }
 
@@ -1854,7 +1881,6 @@ impl Collection {
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
     }
-
 
     /// Check if this collection is sharded
     pub fn is_sharded(&self) -> bool {
@@ -1892,14 +1918,17 @@ impl Collection {
         // 3. Clear fulltext index entries (ft:) - keep metadata
         let ft_prefix = FT_PREFIX.as_bytes();
         let ft_end = get_range_end(ft_prefix);
-        db.delete_range_cf(cf, ft_prefix, &ft_end)
-            .map_err(|e| DbError::InternalError(format!("Failed to clear fulltext indexes: {}", e)))?;
+        db.delete_range_cf(cf, ft_prefix, &ft_end).map_err(|e| {
+            DbError::InternalError(format!("Failed to clear fulltext indexes: {}", e))
+        })?;
 
         // 4. Clear fulltext term entries (ft_term:)
         let ft_term_prefix = FT_TERM_PREFIX.as_bytes();
         let ft_term_end = get_range_end(ft_term_prefix);
         db.delete_range_cf(cf, ft_term_prefix, &ft_term_end)
-            .map_err(|e| DbError::InternalError(format!("Failed to clear fulltext terms: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to clear fulltext terms: {}", e))
+            })?;
 
         // 5. Clear geo index entries (geo:) - keep metadata
         let geo_prefix = GEO_PREFIX.as_bytes();
@@ -1923,7 +1952,9 @@ impl Collection {
         let cfo_idx_prefix = CFO_IDX_PREFIX.as_bytes();
         let cfo_idx_end = get_range_end(cfo_idx_prefix);
         db.delete_range_cf(cf, cfo_idx_prefix, &cfo_idx_end)
-            .map_err(|e| DbError::InternalError(format!("Failed to clear cuckoo filters: {}", e)))?;
+            .map_err(|e| {
+                DbError::InternalError(format!("Failed to clear cuckoo filters: {}", e))
+            })?;
 
         // 9. Clear in-memory filter caches
         {
@@ -2005,15 +2036,17 @@ impl Collection {
         for index in indexes {
             if index.unique {
                 // For compound indexes, extract all field values
-                let field_values: Vec<Value> = index.fields.iter()
+                let field_values: Vec<Value> = index
+                    .fields
+                    .iter()
                     .map(|f| extract_field_value(doc_value, f))
                     .collect();
-                
+
                 // Skip if all values are null
                 if field_values.iter().all(|v| v.is_null()) {
                     continue;
                 }
-                
+
                 let value_str = serde_json::to_string(&field_values).unwrap_or_default();
                 let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
                 let mut iter = db.prefix_iterator_cf(cf, prefix.as_bytes());
@@ -2039,7 +2072,7 @@ impl Collection {
     /// Update indexes on document insert
     fn update_indexes_on_insert(&self, doc_key: &str, doc_value: &Value) -> DbResult<()> {
         let indexes = self.get_all_indexes();
-        
+
         // Preload bloom/cuckoo filters to avoid deadlock during db read lock
         for index in &indexes {
             if index.index_type == IndexType::Bloom {
@@ -2185,7 +2218,7 @@ impl Collection {
                 .iter()
                 .map(|f| extract_field_value(doc_value, f))
                 .collect();
-                
+
             if !field_values.iter().all(|v| v.is_null()) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 db.delete_cf(cf, entry_key).map_err(|e| {
@@ -2255,7 +2288,7 @@ impl Collection {
                 .iter()
                 .map(|f| extract_field_value(&doc_value, f))
                 .collect();
-                
+
             if !field_values.iter().all(|v| v.is_null()) {
                 let entry_key = Self::idx_entry_key(&name, &field_values, &doc.key);
                 db.put_cf(cf, entry_key, doc.key.as_bytes())
@@ -2335,7 +2368,8 @@ impl Collection {
 
     /// List all indexes
     pub fn list_indexes(&self) -> Vec<IndexStats> {
-        let mut stats: Vec<IndexStats> = self.get_all_indexes()
+        let mut stats: Vec<IndexStats> = self
+            .get_all_indexes()
             .iter()
             .filter_map(|idx| self.get_index_stats(&idx.name))
             .collect();
@@ -2348,7 +2382,7 @@ impl Collection {
                 field: idx.fields.first().cloned().unwrap_or_default(),
                 index_type: IndexType::Fulltext,
                 unique: false,
-                unique_values: 0, // Not calculated for fulltext
+                unique_values: 0,     // Not calculated for fulltext
                 indexed_documents: 0, // Not calculated for fulltext
             });
         }
@@ -2474,10 +2508,12 @@ impl Collection {
                 let doc_value = doc.to_value();
                 for index in &indexes {
                     // Extract values for all fields in the compound index
-                    let field_values: Vec<Value> = index.fields.iter()
+                    let field_values: Vec<Value> = index
+                        .fields
+                        .iter()
                         .map(|f| extract_field_value(&doc_value, f))
                         .collect();
-                    
+
                     // Index if at least one field is not null
                     if !field_values.iter().all(|v| v.is_null()) {
                         let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
@@ -2541,7 +2577,8 @@ impl Collection {
                             let terms = tokenize(text);
                             for term in &terms {
                                 if term.len() >= ft_index.min_length {
-                                    let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                    let term_key =
+                                        Self::ft_term_key(&ft_index.name, term, &doc.key);
                                     batch.put_cf(cf, term_key, doc.key.as_bytes());
                                 }
                             }
@@ -2634,12 +2671,20 @@ impl Collection {
         // Fast-path: Check Bloom/Cuckoo Filter if available
         if index.index_type == IndexType::Bloom {
             if !self.bloom_check(&index.name, &value.to_string()) {
-                tracing::debug!("Bloom filter pruning: {} not found in {}", value, index.name);
+                tracing::debug!(
+                    "Bloom filter pruning: {} not found in {}",
+                    value,
+                    index.name
+                );
                 return Some(Vec::new());
             }
         } else if index.index_type == IndexType::Cuckoo {
             if !self.cuckoo_check(&index.name, &value.to_string()) {
-                tracing::debug!("Cuckoo filter pruning: {} not found in {}", value, index.name);
+                tracing::debug!(
+                    "Cuckoo filter pruning: {} not found in {}",
+                    value,
+                    index.name
+                );
                 return Some(Vec::new());
             }
         }
@@ -2746,7 +2791,7 @@ impl Collection {
 
     /// Get documents sorted by indexed field with optional limit
     /// Returns documents in sorted order by the indexed field
-    /// 
+    ///
     /// OPTIMIZATION: For LIMIT 1, uses seek to find first/last entry directly.
     pub fn index_sorted(
         &self,
@@ -2754,43 +2799,43 @@ impl Collection {
         ascending: bool,
         limit: Option<usize>,
     ) -> Option<Vec<Document>> {
-        use rocksdb::{IteratorMode, Direction};
+        use rocksdb::{Direction, IteratorMode};
 
         // OPTIMIZATION: Primary Key Sort (_id or _key)
         // Uses the native storage order of RocksDB (lexicographical on keys)
         if field == "_id" || field == "_key" {
-             let db = self.db.read().unwrap();
-             let cf = match db.cf_handle(&self.name) {
-                 Some(h) => h,
-                 None => return None,
-             };
-             let prefix = DOC_PREFIX.as_bytes();
-             
-             let iter = if ascending {
-                 let mode = IteratorMode::From(prefix, Direction::Forward);
-                 db.iterator_cf(cf, mode)
-             } else {
-                 // For descending, we seek past the end of the prefix
-                 let mut seek_key = prefix.to_vec();
-                 seek_key.push(0xFF);
-                 let mode = IteratorMode::From(&seek_key, Direction::Reverse);
-                 db.iterator_cf(cf, mode)
-             };
+            let db = self.db.read().unwrap();
+            let cf = match db.cf_handle(&self.name) {
+                Some(h) => h,
+                None => return None,
+            };
+            let prefix = DOC_PREFIX.as_bytes();
 
-             let docs: Vec<Document> = iter
-                 // Filter for IO errors
-                 .filter_map(|r| r.ok())
-                 // Stop if we went past the prefix
-                 .take_while(|(k, _)| k.starts_with(prefix))
-                 // Deserialize valid documents
-                 .filter_map(|(_, v)| serde_json::from_slice::<Document>(&v).ok())
-                 // Apply limit early to avoid scanning everything
-                 .take(limit.unwrap_or(usize::MAX))
-                 .collect();
-                 
-             return Some(docs);
+            let iter = if ascending {
+                let mode = IteratorMode::From(prefix, Direction::Forward);
+                db.iterator_cf(cf, mode)
+            } else {
+                // For descending, we seek past the end of the prefix
+                let mut seek_key = prefix.to_vec();
+                seek_key.push(0xFF);
+                let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+                db.iterator_cf(cf, mode)
+            };
+
+            let docs: Vec<Document> = iter
+                // Filter for IO errors
+                .filter_map(|r| r.ok())
+                // Stop if we went past the prefix
+                .take_while(|(k, _)| k.starts_with(prefix))
+                // Deserialize valid documents
+                .filter_map(|(_, v)| serde_json::from_slice::<Document>(&v).ok())
+                // Apply limit early to avoid scanning everything
+                .take(limit.unwrap_or(usize::MAX))
+                .collect();
+
+            return Some(docs);
         }
-        
+
         let index = self.get_index_for_field(field)?;
         let index_name = index.name.clone();
         let prefix = format!("{}{}:", IDX_PREFIX, index_name);
@@ -2799,9 +2844,9 @@ impl Collection {
         let db = self.db.read().unwrap();
         let cf = db.cf_handle(&self.name)?;
         let prefix_bytes = prefix.as_bytes();
-        
+
         // Iterator over index entries
-        // Since we use binary-comparable encoding (wrapped in hex), 
+        // Since we use binary-comparable encoding (wrapped in hex),
         // the lexicographical order of keys matches the logical order of values.
         let iter = if ascending {
             let mode = IteratorMode::From(prefix_bytes, Direction::Forward);
@@ -2824,24 +2869,24 @@ impl Collection {
             .take(limit.unwrap_or(usize::MAX))
             .collect();
 
-        drop(db); 
+        drop(db);
 
         // Fetch documents
         if doc_keys.is_empty() {
-             return Some(Vec::new());
+            return Some(Vec::new());
         }
 
         let docs = self.get_many(&doc_keys);
-        
+
         // Re-order docs based on doc_keys order (get_many might return disordered)
         let doc_map: std::collections::HashMap<_, _> =
             docs.into_iter().map(|d| (d.key.clone(), d)).collect();
-        
+
         let result: Vec<Document> = doc_keys
             .into_iter()
             .filter_map(|key| doc_map.get(&key).cloned())
             .collect();
-        
+
         Some(result)
     }
 
@@ -3161,7 +3206,10 @@ impl Collection {
                         if term.len() >= min_len {
                             let term_key = Self::ft_term_key(&name, term, &doc.key);
                             db.put_cf(cf, term_key, doc.key.as_bytes()).map_err(|e| {
-                                DbError::InternalError(format!("Failed to build fulltext index: {}", e))
+                                DbError::InternalError(format!(
+                                    "Failed to build fulltext index: {}",
+                                    e
+                                ))
                             })?;
                         }
                     }
@@ -3275,7 +3323,10 @@ impl Collection {
                     for ngram in &ngrams {
                         let ngram_key = Self::ft_ngram_key(&ft_index.name, ngram, doc_key);
                         db.put_cf(cf, ngram_key, doc_key.as_bytes()).map_err(|e| {
-                            DbError::InternalError(format!("Failed to update fulltext index: {}", e))
+                            DbError::InternalError(format!(
+                                "Failed to update fulltext index: {}",
+                                e
+                            ))
                         })?;
                     }
                 }
@@ -3521,7 +3572,9 @@ impl Collection {
                 .cf_handle(&self.name)
                 .expect("Column family should exist");
             db.put_cf(cf, Self::ttl_meta_key(&name), &index_bytes)
-                .map_err(|e| DbError::InternalError(format!("Failed to create TTL index: {}", e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create TTL index: {}", e))
+                })?;
         }
 
         Ok(TtlIndexStats {
@@ -3580,7 +3633,10 @@ impl Collection {
             let field_value = extract_field_value(&doc_value, &index.field);
 
             // Check if field is a valid timestamp
-            if let Some(timestamp) = field_value.as_u64().or_else(|| field_value.as_i64().map(|v| v as u64)) {
+            if let Some(timestamp) = field_value
+                .as_u64()
+                .or_else(|| field_value.as_i64().map(|v| v as u64))
+            {
                 // Calculate expiration time
                 let expiration_time = timestamp.saturating_add(index.expire_after_seconds);
 
@@ -3626,9 +3682,8 @@ impl Collection {
     pub fn set_json_schema(&self, schema: CollectionSchema) -> DbResult<()> {
         // Validate the schema by trying to compile it
         if schema.is_enabled() {
-            SchemaValidator::new(schema.clone()).map_err(|e| {
-                DbError::InvalidDocument(format!("Invalid JSON schema: {}", e))
-            })?;
+            SchemaValidator::new(schema.clone())
+                .map_err(|e| DbError::InvalidDocument(format!("Invalid JSON schema: {}", e)))?;
         }
 
         let db = self.db.write().unwrap();
@@ -3814,7 +3869,7 @@ mod tests {
 
         let json = serde_json::to_string(&usage).unwrap();
         let deserialized: DiskUsage = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(usage.sst_files_size, deserialized.sst_files_size);
         assert_eq!(usage.num_sst_files, deserialized.num_sst_files);
     }
@@ -3828,7 +3883,7 @@ mod tests {
     fn test_fulltext_index_deserialization() {
         let json = r#"{"name": "ft_idx", "field": "content", "min_length": 2}"#;
         let idx: FulltextIndex = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(idx.name, "ft_idx");
         assert_eq!(idx.fields.len(), 1);
         assert_eq!(idx.min_length, 2);
@@ -3838,9 +3893,7 @@ mod tests {
     fn test_fulltext_index_default_min_length() {
         let json = r#"{"name": "ft_idx", "field": "content"}"#;
         let idx: FulltextIndex = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(idx.min_length, 3); // default
     }
 }
-
-

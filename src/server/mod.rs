@@ -1,23 +1,25 @@
-pub mod cursor_store;
-pub mod handlers;
-pub mod routes;
-pub mod transaction_handlers;
-pub mod managed_agent_template;
-pub mod auth;
-pub mod script_handlers;
-pub mod queue_handlers;
-pub mod authorization;
-pub mod permission_cache;
-pub mod role_handlers;
-pub mod repl_session;
-pub mod env_handlers;
-pub mod columnar_handlers;
 pub mod ai_handlers;
+pub mod auth;
+pub mod authorization;
+pub mod columnar_handlers;
+pub mod cursor_store;
+pub mod env_handlers;
+pub mod handlers;
+pub mod managed_agent_template;
+pub mod permission_cache;
+pub mod queue_handlers;
+pub mod repl_session;
+pub mod role_handlers;
+pub mod routes;
+pub mod script_handlers;
 pub mod sql_handlers;
+pub mod transaction_handlers;
 
+pub use authorization::{
+    AuthorizationService, Permission, PermissionAction, PermissionScope, Role, UserRole,
+};
 pub use cursor_store::CursorStore;
-pub use routes::create_router;
-pub use authorization::{AuthorizationService, Permission, PermissionAction, PermissionScope, Role, UserRole};
 pub use repl_session::ReplSessionStore;
+pub use routes::create_router;
 pub mod multiplex;
 pub mod response;

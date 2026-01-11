@@ -390,7 +390,6 @@ fn bench_delete_document(client: &Client) {
     println!();
 }
 
-
 fn parse_response<T: serde::de::DeserializeOwned>(response: reqwest::blocking::Response) -> T {
     let headers = response.headers().clone();
     let is_msgpack = headers
@@ -414,7 +413,10 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Begin + Commit (empty transaction)
     let start = Instant::now();
     for _ in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
         let response = client
             .post(&begin_url)
             .json(&json!({}))
@@ -423,7 +425,10 @@ fn bench_transactions(client: &Client) {
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("Begin + Commit (empty tx)", SMALL, start.elapsed());
@@ -431,19 +436,33 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional INSERT (single doc) - using header
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
-        client.post(&doc_url)
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http",
+            SERVER_URL, DATABASE
+        );
+        client
+            .post(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"_key": format!("tx_user_{}", i), "name": format!("User {}", i)}))
             .send()
             .expect("Insert failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX INSERT (1 doc)", SMALL, start.elapsed());
@@ -451,12 +470,22 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional INSERT (5 docs) - using header
     let start = Instant::now();
     for batch in 0..200 {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http",
+            SERVER_URL, DATABASE
+        );
         for i in 0..5 {
             client.post(&doc_url)
                 .header("X-Transaction-ID", tx_id)
@@ -465,7 +494,10 @@ fn bench_transactions(client: &Client) {
                 .expect("Insert failed");
         }
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX INSERT (5 docs/tx)", 200, start.elapsed());
@@ -473,19 +505,33 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional UPDATE - using header
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
-        client.put(&doc_url)
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http/tx_user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client
+            .put(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"updated": true, "timestamp": chrono::Utc::now().timestamp()}))
             .send()
             .expect("Update failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX UPDATE (1 doc)", SMALL, start.elapsed());
@@ -493,8 +539,15 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional SDBQL INSERT - using header
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
@@ -504,7 +557,10 @@ fn bench_transactions(client: &Client) {
             .send()
             .expect("SDBQL INSERT failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX SDBQL INSERT (1 doc)", SMALL, start.elapsed());
@@ -512,8 +568,15 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional SDBQL UPDATE with FOR loop - using header
     let start = Instant::now();
     for _ in 0..100 {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
@@ -524,7 +587,10 @@ fn bench_transactions(client: &Client) {
             .send()
             .expect("SDBQL UPDATE failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX SDBQL UPDATE (FOR loop)", 100, start.elapsed());
@@ -532,19 +598,33 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transaction ROLLBACK - using header
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
-        client.post(&doc_url)
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http",
+            SERVER_URL, DATABASE
+        );
+        client
+            .post(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .json(&json!({"_key": format!("rollback_user_{}", i), "name": "Should not persist"}))
             .send()
             .expect("Insert failed");
 
-        let rollback_url = format!("{}/_api/database/{}/transaction/{}/rollback", SERVER_URL, DATABASE, tx_id);
+        let rollback_url = format!(
+            "{}/_api/database/{}/transaction/{}/rollback",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&rollback_url).send().expect("Rollback failed");
     }
     print_result("TX ROLLBACK", SMALL, start.elapsed());
@@ -552,18 +632,32 @@ fn bench_transactions(client: &Client) {
     // Benchmark: Transactional DELETE - using header
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
-        let response = client.post(&begin_url).json(&json!({})).send().expect("Begin failed");
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
+        let response = client
+            .post(&begin_url)
+            .json(&json!({}))
+            .send()
+            .expect("Begin failed");
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http/tx_user_{}", SERVER_URL, DATABASE, i);
-        client.delete(&doc_url)
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http/tx_user_{}",
+            SERVER_URL, DATABASE, i
+        );
+        client
+            .delete(&doc_url)
             .header("X-Transaction-ID", tx_id)
             .send()
             .expect("Delete failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
 
@@ -575,7 +669,10 @@ fn bench_transactions(client: &Client) {
 
     let start = Instant::now();
     for i in 0..SMALL {
-        let begin_url = format!("{}/_api/database/{}/transaction/begin", SERVER_URL, DATABASE);
+        let begin_url = format!(
+            "{}/_api/database/{}/transaction/begin",
+            SERVER_URL, DATABASE
+        );
         let response = client
             .post(&begin_url)
             .json(&json!({"isolationLevel": "read_uncommitted"}))
@@ -584,14 +681,23 @@ fn bench_transactions(client: &Client) {
         let tx: serde_json::Value = parse_response(response);
         let tx_id = tx["id"].as_str().unwrap();
 
-        let doc_url = format!("{}/_api/database/{}/document/bench_http", SERVER_URL, DATABASE);
-        client.post(&doc_url)
+        let doc_url = format!(
+            "{}/_api/database/{}/document/bench_http",
+            SERVER_URL, DATABASE
+        );
+        client
+            .post(&doc_url)
             .header("X-Transaction-ID", tx_id)
-            .json(&json!({"_key": format!("uncommitted_user_{}", i), "name": format!("User {}", i)}))
+            .json(
+                &json!({"_key": format!("uncommitted_user_{}", i), "name": format!("User {}", i)}),
+            )
             .send()
             .expect("Insert failed");
 
-        let commit_url = format!("{}/_api/database/{}/transaction/{}/commit", SERVER_URL, DATABASE, tx_id);
+        let commit_url = format!(
+            "{}/_api/database/{}/transaction/{}/commit",
+            SERVER_URL, DATABASE, tx_id
+        );
         client.post(&commit_url).send().expect("Commit failed");
     }
     print_result("TX INSERT (read_uncommitted)", SMALL, start.elapsed());
@@ -636,7 +742,8 @@ fn bench_concurrent() {
         let client = Client::new();
         let url = format!("{}/_api/database/{}/cursor", SERVER_URL, DATABASE);
         let query = json!({"query": "FOR u IN bench_http LIMIT 5 RETURN u"});
-        client.post(&url)
+        client
+            .post(&url)
             .json(&query)
             .send()
             .expect("Concurrent SDBQL query failed");

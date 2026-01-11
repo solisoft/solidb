@@ -236,7 +236,13 @@ pub async fn create_columnar_handler(
     db.create_collection(cf_name.clone(), None)?;
 
     // Create the columnar collection
-    let col = ColumnarCollection::new(req.name.clone(), &db_name, db.db_arc(), columns.clone(), compression)?;
+    let col = ColumnarCollection::new(
+        req.name.clone(),
+        &db_name,
+        db.db_arc(),
+        columns.clone(),
+        compression,
+    )?;
 
     // Store metadata reference in a system collection if needed
     // For now, the metadata is stored in the column family itself
@@ -441,7 +447,7 @@ pub async fn aggregate_columnar_handler(
             .iter()
             .map(|s| GroupByColumn::Simple(s.clone()))
             .collect();
-            
+
         let groups = col.group_by(&group_defs, &req.column, op)?;
 
         Ok(Json(AggregateResponse {
@@ -504,7 +510,10 @@ pub async fn query_columnar_handler(
 
     let count = results.len();
 
-    Ok(Json(QueryColumnarResponse { result: results, count }))
+    Ok(Json(QueryColumnarResponse {
+        result: results,
+        count,
+    }))
 }
 
 // ==================== Helper Functions ====================

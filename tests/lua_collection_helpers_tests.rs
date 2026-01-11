@@ -7,17 +7,19 @@
 //! - Count with filters
 //! - Enhanced collection methods
 
-use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
+use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
+use solidb::storage::StorageEngine;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
 
     engine.create_database("testdb".to_string()).unwrap();
 
@@ -58,16 +60,22 @@ fn create_script(code: &str) -> Script {
 #[tokio::test]
 async fn test_collection_find_with_filter() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection and data
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
     let users = db.get_collection("users").unwrap();
-    
-    users.insert(json!({"_key": "1", "name": "Alice", "age": 30, "status": "active"})).unwrap();
-    users.insert(json!({"_key": "2", "name": "Bob", "age": 25, "status": "inactive"})).unwrap();
-    users.insert(json!({"_key": "3", "name": "Charlie", "age": 35, "status": "active"})).unwrap();
-    
+
+    users
+        .insert(json!({"_key": "1", "name": "Alice", "age": 30, "status": "active"}))
+        .unwrap();
+    users
+        .insert(json!({"_key": "2", "name": "Bob", "age": 25, "status": "inactive"}))
+        .unwrap();
+    users
+        .insert(json!({"_key": "3", "name": "Charlie", "age": 35, "status": "active"}))
+        .unwrap();
+
     let code = r#"
         local users = db:collection("users")
         local active_users = users:find({ status = "active", age >= 18 })
@@ -86,13 +94,16 @@ async fn test_collection_find_with_filter() {
             active_users = results
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("count").unwrap().as_i64().unwrap(), 2);
     let active_users = body.get("active_users").unwrap().as_array().unwrap();
     assert_eq!(active_users.len(), 2);
@@ -101,15 +112,19 @@ async fn test_collection_find_with_filter() {
 #[tokio::test]
 async fn test_find_one_single_document() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection and data
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("products".to_string(), None).unwrap();
     let products = db.get_collection("products").unwrap();
-    
-    products.insert(json!({"_key": "1", "name": "Laptop", "price": 999.99, "in_stock": true})).unwrap();
-    products.insert(json!({"_key": "2", "name": "Mouse", "price": 29.99, "in_stock": false})).unwrap();
-    
+
+    products
+        .insert(json!({"_key": "1", "name": "Laptop", "price": 999.99, "in_stock": true}))
+        .unwrap();
+    products
+        .insert(json!({"_key": "2", "name": "Mouse", "price": 29.99, "in_stock": false}))
+        .unwrap();
+
     let code = r#"
         local products = db:collection("products")
         local laptop = products:find_one({ name = "Laptop" })
@@ -124,28 +139,37 @@ async fn test_find_one_single_document() {
             not_found = not_found == nil
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("laptop_found").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("laptop_name").unwrap().as_str().unwrap(), "Laptop");
-    assert_eq!(body.get("out_of_stock_found").unwrap().as_bool().unwrap(), true);
-    assert_eq!(body.get("out_of_stock_name").unwrap().as_str().unwrap(), "Mouse");
+    assert_eq!(
+        body.get("out_of_stock_found").unwrap().as_bool().unwrap(),
+        true
+    );
+    assert_eq!(
+        body.get("out_of_stock_name").unwrap().as_str().unwrap(),
+        "Mouse"
+    );
     assert_eq!(body.get("not_found").unwrap().as_bool().unwrap(), true);
 }
 
 #[tokio::test]
 async fn test_upsert_operation() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("counters".to_string(), None).unwrap();
-    
+
     let code = r#"
         local counters = db:collection("counters")
         
@@ -163,13 +187,16 @@ async fn test_upsert_operation() {
             is_same_key = result1._key == result2._key
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("first_count").unwrap().as_i64().unwrap(), 1);
     assert_eq!(body.get("second_count").unwrap().as_i64().unwrap(), 2);
     assert_eq!(body.get("is_same_key").unwrap().as_bool().unwrap(), true);
@@ -178,11 +205,11 @@ async fn test_upsert_operation() {
 #[tokio::test]
 async fn test_bulk_insert_operation() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("logs".to_string(), None).unwrap();
-    
+
     let code = r#"
         local logs = db:collection("logs")
         
@@ -209,17 +236,20 @@ async fn test_bulk_insert_operation() {
             logs = results
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("inserted_count").unwrap().as_i64().unwrap(), 4);
     let logs = body.get("logs").unwrap().as_array().unwrap();
     assert_eq!(logs.len(), 4);
-    
+
     for i in 0..4 {
         let log = &logs[i];
         assert!(log.get("has_key").unwrap().as_bool().unwrap());
@@ -231,18 +261,28 @@ async fn test_bulk_insert_operation() {
 #[tokio::test]
 async fn test_count_with_filters() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection and data
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("orders".to_string(), None).unwrap();
     let orders = db.get_collection("orders").unwrap();
-    
-    orders.insert(json!({"_key": "1", "status": "completed", "total": 100.0})).unwrap();
-    orders.insert(json!({"_key": "2", "status": "pending", "total": 50.0})).unwrap();
-    orders.insert(json!({"_key": "3", "status": "completed", "total": 200.0})).unwrap();
-    orders.insert(json!({"_key": "4", "status": "cancelled", "total": 75.0})).unwrap();
-    orders.insert(json!({"_key": "5", "status": "completed", "total": 150.0})).unwrap();
-    
+
+    orders
+        .insert(json!({"_key": "1", "status": "completed", "total": 100.0}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "2", "status": "pending", "total": 50.0}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "3", "status": "completed", "total": 200.0}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "4", "status": "cancelled", "total": 75.0}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "5", "status": "completed", "total": 150.0}))
+        .unwrap();
+
     let code = r#"
         local orders = db:collection("orders")
         
@@ -260,13 +300,16 @@ async fn test_count_with_filters() {
             cancelled = cancelled_count
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("total").unwrap().as_i64().unwrap(), 5);
     assert_eq!(body.get("completed").unwrap().as_i64().unwrap(), 3);
     assert_eq!(body.get("high_value").unwrap().as_i64().unwrap(), 3);
@@ -277,17 +320,17 @@ async fn test_count_with_filters() {
 #[tokio::test]
 async fn test_complex_filter_combinations() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection and data
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("events".to_string(), None).unwrap();
     let events = db.get_collection("events").unwrap();
-    
+
     events.insert(json!({"_key": "1", "type": "click", "user_id": "u1", "timestamp": 1640995200, "value": 10.0})).unwrap();
     events.insert(json!({"_key": "2", "type": "view", "user_id": "u2", "timestamp": 1640995260, "value": 5.0})).unwrap();
     events.insert(json!({"_key": "3", "type": "click", "user_id": "u1", "timestamp": 1640995320, "value": 15.0})).unwrap();
     events.insert(json!({"_key": "4", "type": "purchase", "user_id": "u1", "timestamp": 1640995380, "value": 100.0})).unwrap();
-    
+
     let code = r#"
         local events = db:collection("events")
         
@@ -310,14 +353,23 @@ async fn test_complex_filter_combinations() {
             recent_click_count = recent_click_count
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("user1_high_value_count").unwrap().as_i64().unwrap(), 2);
+
+    assert_eq!(
+        body.get("user1_high_value_count")
+            .unwrap()
+            .as_i64()
+            .unwrap(),
+        2
+    );
     assert_eq!(body.get("click_count").unwrap().as_i64().unwrap(), 2);
     assert_eq!(body.get("recent_click_count").unwrap().as_i64().unwrap(), 2);
 }
@@ -325,11 +377,11 @@ async fn test_complex_filter_combinations() {
 #[tokio::test]
 async fn test_bulk_insert_with_validation() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection and schema
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("users".to_string(), None).unwrap();
-    
+
     let code = r#"
         local users = db:collection("users")
         
@@ -374,13 +426,16 @@ async fn test_bulk_insert_with_validation() {
             invalid_detected = invalid_count
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("valid_insertions").unwrap().as_i64().unwrap(), 2);
     assert_eq!(body.get("invalid_detected").unwrap().as_i64().unwrap(), 2);
 }
@@ -388,11 +443,11 @@ async fn test_bulk_insert_with_validation() {
 #[tokio::test]
 async fn test_collection_helper_chaining() {
     let (engine, script_engine, _tmp) = create_test_env();
-    
+
     // Create test collection
     let db = engine.get_database("testdb").unwrap();
     db.create_collection("metrics".to_string(), None).unwrap();
-    
+
     let code = r#"
         local metrics = db:collection("metrics")
         
@@ -424,13 +479,16 @@ async fn test_collection_helper_chaining() {
             high_cpu_count = #high_cpu
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("total_inserted").unwrap().as_i64().unwrap(), 4);
     assert_eq!(body.get("cpu_metrics_count").unwrap().as_i64().unwrap(), 2);
     assert_eq!(body.get("server1_count").unwrap().as_i64().unwrap(), 2);

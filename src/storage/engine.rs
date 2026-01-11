@@ -58,14 +58,14 @@ impl StorageEngine {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        
+
         // Limit WAL file size to prevent unbounded disk growth
         // Max total WAL size across all column families: 50MB
         opts.set_max_total_wal_size(50 * 1024 * 1024);
-        
+
         // Keep fewer LOG files (RocksDB info logs, not WALs)
         opts.set_keep_log_file_num(5);
-        
+
         // Recycle LOG files instead of deleting
         opts.set_recycle_log_file_num(3);
 
@@ -330,7 +330,7 @@ impl StorageEngine {
         if db.cf_handle(&name).is_some() {
             return Err(DbError::CollectionAlreadyExists(name));
         }
-        
+
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
@@ -338,11 +338,13 @@ impl StorageEngine {
         let opts = Options::default();
         db.create_cf(&name, &opts)
             .map_err(|e| DbError::InternalError(format!("Failed to create collection: {}", e)))?;
-            
+
         // Persist collection type
         if let Some(cf) = db.cf_handle(&name) {
             db.put_cf(cf, "_stats:type".as_bytes(), type_.as_bytes())
-                .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to set collection type: {}", e))
+                })?;
         }
 
         Ok(())
@@ -440,11 +442,11 @@ impl StorageEngine {
         }
 
         let wal_path = self.path.join("transaction.wal");
-        
+
         // Recover any committed transactions from WAL BEFORE creating manager
         // This ensures we don't double-apply on restart
         self.recover_transactions()?;
-        
+
         let manager = TransactionManager::new(wal_path)?;
 
         // Now acquire write lock to store manager
@@ -466,10 +468,10 @@ impl StorageEngine {
                 return Ok(manager.clone());
             }
         }
-        
+
         // Not initialized, so initialize it
         self.initialize_transactions()?;
-        
+
         // Read again after initialization
         let tx_mgr = self.transaction_manager.read().unwrap();
         Ok(tx_mgr.as_ref().unwrap().clone())
@@ -491,7 +493,10 @@ impl StorageEngine {
             return Ok(());
         }
 
-        tracing::info!("Recovering {} committed transactions from WAL", committed_txs.len());
+        tracing::info!(
+            "Recovering {} committed transactions from WAL",
+            committed_txs.len()
+        );
 
         // Apply each committed transaction
         for tx in committed_txs {
@@ -525,10 +530,7 @@ impl StorageEngine {
     }
 
     /// Commit a transaction by applying all operations atomically
-    pub fn commit_transaction(
-        &self,
-        tx_id: crate::transaction::TransactionId,
-    ) -> DbResult<()> {
+    pub fn commit_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = {
             let tx_mgr = self.transaction_manager.read().unwrap();
             tx_mgr
@@ -571,10 +573,7 @@ impl StorageEngine {
     }
 
     /// Rollback a transaction (operations already in WAL as aborted)
-    pub fn rollback_transaction(
-        &self,
-        tx_id: crate::transaction::TransactionId,
-    ) -> DbResult<()> {
+    pub fn rollback_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = {
             let tx_mgr = self.transaction_manager.read().unwrap();
             tx_mgr

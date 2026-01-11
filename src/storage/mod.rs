@@ -1,3 +1,4 @@
+pub mod codec;
 pub mod collection;
 pub mod columnar;
 pub mod database;
@@ -6,7 +7,6 @@ pub mod engine;
 pub mod geo;
 pub mod index;
 pub mod schema;
-pub mod codec;
 
 pub use collection::{Collection, CollectionStats, DiskUsage};
 pub use columnar::{
@@ -21,4 +21,7 @@ pub use index::{
     bm25_score, calculate_idf, levenshtein_distance, tokenize, FulltextMatch, Index, IndexStats,
     IndexType, TtlIndex, TtlIndexStats,
 };
-pub use schema::{CollectionSchema, SchemaValidationMode, SchemaValidator, SchemaCompilationError, SchemaValidationError, ValidationViolation, ValidationResult};
+pub use schema::{
+    CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,
+    SchemaValidator, ValidationResult, ValidationViolation,
+};

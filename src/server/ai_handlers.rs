@@ -9,11 +9,11 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::handlers::AppState;
 use super::auth::Claims;
+use super::handlers::AppState;
 use crate::ai::{
     AITask, AITaskStatus, Agent, AgentStatus, AgentType, Contribution, ContributionStatus,
-    ListAgentsResponse, ListAITasksResponse, ListContributionsResponse, Priority,
+    ListAITasksResponse, ListAgentsResponse, ListContributionsResponse, Priority,
     ReviewContributionRequest, SubmitContributionRequest, SubmitContributionResponse,
 };
 use crate::error::DbError;
@@ -161,7 +161,8 @@ pub async fn list_contributions_handler(
     // Apply pagination
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(100);
-    let contributions: Vec<Contribution> = contributions.into_iter().skip(offset).take(limit).collect();
+    let contributions: Vec<Contribution> =
+        contributions.into_iter().skip(offset).take(limit).collect();
 
     Ok(Json(ListContributionsResponse {
         contributions,
@@ -258,7 +259,9 @@ pub async fn reject_contribution_handler(
 
     // Can reject from most statuses (not already rejected/cancelled/merged)
     match contribution.status {
-        ContributionStatus::Rejected | ContributionStatus::Cancelled | ContributionStatus::Merged => {
+        ContributionStatus::Rejected
+        | ContributionStatus::Cancelled
+        | ContributionStatus::Merged => {
             return Err(DbError::BadRequest(format!(
                 "Cannot reject contribution in {} status",
                 contribution.status
@@ -304,7 +307,9 @@ pub async fn cancel_contribution_handler(
 
     // Cannot cancel already completed contributions
     match contribution.status {
-        ContributionStatus::Merged | ContributionStatus::Rejected | ContributionStatus::Cancelled => {
+        ContributionStatus::Merged
+        | ContributionStatus::Rejected
+        | ContributionStatus::Cancelled => {
             return Err(DbError::BadRequest(format!(
                 "Cannot cancel contribution in {} status",
                 contribution.status
@@ -511,11 +516,8 @@ pub async fn complete_ai_task_handler(
     task.complete(request.output.clone());
 
     // Run orchestration to determine next steps
-    let orchestration = TaskOrchestrator::on_task_complete(
-        &task,
-        &contribution,
-        request.output.as_ref(),
-    );
+    let orchestration =
+        TaskOrchestrator::on_task_complete(&task, &contribution, request.output.as_ref());
 
     // Update contribution status if specified
     if let Some(new_status) = orchestration.contribution_status {
@@ -695,19 +697,29 @@ pub async fn register_agent_handler(
         db.create_collection("_ai_agents".to_string(), None)?;
     }
 
-    let mut agent = Agent::new(request.name.clone(), request.agent_type, request.capabilities.clone());
+    let mut agent = Agent::new(
+        request.name.clone(),
+        request.agent_type,
+        request.capabilities.clone(),
+    );
     agent.url = request.url;
 
     // Merge config with model and system_prompt if provided
     let mut config = request.config.unwrap_or_else(|| serde_json::json!({}));
     if let Some(model) = &request.model {
         if let Some(obj) = config.as_object_mut() {
-            obj.insert("model".to_string(), serde_json::Value::String(model.clone()));
+            obj.insert(
+                "model".to_string(),
+                serde_json::Value::String(model.clone()),
+            );
         }
     }
     if let Some(system_prompt) = &request.system_prompt {
         if let Some(obj) = config.as_object_mut() {
-            obj.insert("system_prompt".to_string(), serde_json::Value::String(system_prompt.clone()));
+            obj.insert(
+                "system_prompt".to_string(),
+                serde_json::Value::String(system_prompt.clone()),
+            );
         }
     }
     agent.config = if config.as_object().map(|o| o.is_empty()).unwrap_or(true) {
@@ -720,7 +732,7 @@ pub async fn register_agent_handler(
     if request.managed {
         if let (Some(url), Some(key)) = (request.llm_url.as_ref(), request.llm_key.as_ref()) {
             let agent_id = agent.id.clone();
-            
+
             // 1. Store Credentials in _env
             // Ensure _env collection exists
             if db.get_collection("_env").is_err() {
@@ -735,7 +747,8 @@ pub async fn register_agent_handler(
             env_coll.insert(serde_json::json!({ "_key": env_api_key, "value": key }))?;
 
             // 2. Generate Script from Template
-            let caps_json = serde_json::to_string(&request.capabilities).unwrap_or_else(|_| "[]".to_string());
+            let caps_json =
+                serde_json::to_string(&request.capabilities).unwrap_or_else(|_| "[]".to_string());
             let script_code = crate::server::managed_agent_template::MANAGED_AGENT_TEMPLATE
                 .replace("{{AGENT_NAME}}", &request.name)
                 .replace("{{AGENT_TYPE}}", &request.agent_type.to_string())
@@ -746,10 +759,17 @@ pub async fn register_agent_handler(
 
             // 3. Save Script to _scripts
             // Ensure _scripts collection exists
-            if db.get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION).is_err() {
-                db.create_collection(crate::server::script_handlers::SCRIPTS_COLLECTION.to_string(), None)?;
+            if db
+                .get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION)
+                .is_err()
+            {
+                db.create_collection(
+                    crate::server::script_handlers::SCRIPTS_COLLECTION.to_string(),
+                    None,
+                )?;
             }
-            let scripts_coll = db.get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION)?;
+            let scripts_coll =
+                db.get_collection(crate::server::script_handlers::SCRIPTS_COLLECTION)?;
 
             let script_path = format!("managed/{}", agent_id);
             let script_key = format!("{}_{}", db_name, script_path.replace('/', "_"));
@@ -775,7 +795,9 @@ pub async fn register_agent_handler(
                 "env_api_key": env_api_key
             }));
         } else {
-             return Err(DbError::BadRequest("Managed agents require llm_url and llm_key".to_string()));
+            return Err(DbError::BadRequest(
+                "Managed agents require llm_url and llm_key".to_string(),
+            ));
         }
     }
 
@@ -895,9 +917,7 @@ fn default_true() -> bool {
 pub async fn run_validation_handler(
     Json(request): Json<RunValidationRequest>,
 ) -> Result<Json<ValidationResult>, DbError> {
-    let project_root = request
-        .project_root
-        .unwrap_or_else(|| ".".to_string());
+    let project_root = request.project_root.unwrap_or_else(|| ".".to_string());
 
     // Verify the path exists
     if !crate::ai::validation::path_exists(&project_root) {
@@ -973,16 +993,17 @@ pub async fn discover_agents_handler(
     let db = state.storage.get_database(&db_name)?;
 
     // Parse agent type if provided
-    let agent_type = params.agent_type.as_ref().and_then(|t| {
-        match t.to_lowercase().as_str() {
+    let agent_type = params
+        .agent_type
+        .as_ref()
+        .and_then(|t| match t.to_lowercase().as_str() {
             "analyzer" => Some(crate::ai::AgentType::Analyzer),
             "coder" => Some(crate::ai::AgentType::Coder),
             "tester" => Some(crate::ai::AgentType::Tester),
             "reviewer" => Some(crate::ai::AgentType::Reviewer),
             "integrator" => Some(crate::ai::AgentType::Integrator),
             _ => None,
-        }
-    });
+        });
 
     // Parse capabilities
     let required_capabilities = params.capabilities.map(|c| {
@@ -1107,14 +1128,15 @@ impl ListFeedbackQueryParams {
                     _ => None,
                 }
             }),
-            outcome: self.outcome.as_ref().and_then(|o| {
-                match o.to_lowercase().as_str() {
+            outcome: self
+                .outcome
+                .as_ref()
+                .and_then(|o| match o.to_lowercase().as_str() {
                     "positive" => Some(FeedbackOutcome::Positive),
                     "negative" => Some(FeedbackOutcome::Negative),
                     "neutral" => Some(FeedbackOutcome::Neutral),
                     _ => None,
-                }
-            }),
+                }),
             contribution_id: self.contribution_id.clone(),
             agent_id: self.agent_id.clone(),
             processed: self.processed,
@@ -1170,8 +1192,10 @@ impl ListPatternsQueryParams {
                     _ => None,
                 }
             }),
-            task_type: self.task_type.as_ref().and_then(|t| {
-                match t.to_lowercase().as_str() {
+            task_type: self
+                .task_type
+                .as_ref()
+                .and_then(|t| match t.to_lowercase().as_str() {
                     "analyze_contribution" => Some(crate::ai::AITaskType::AnalyzeContribution),
                     "generate_code" => Some(crate::ai::AITaskType::GenerateCode),
                     "validate_code" => Some(crate::ai::AITaskType::ValidateCode),
@@ -1179,8 +1203,7 @@ impl ListPatternsQueryParams {
                     "prepare_review" => Some(crate::ai::AITaskType::PrepareReview),
                     "merge_changes" => Some(crate::ai::AITaskType::MergeChanges),
                     _ => None,
-                }
-            }),
+                }),
             min_confidence: self.min_confidence,
             limit: self.limit,
         }
@@ -1283,9 +1306,7 @@ pub async fn get_recommendations_handler(
 // Recovery System Handlers
 // ============================================================================
 
-use crate::ai::{
-    ListRecoveryEventsResponse, RecoveryConfig, RecoverySystemStatus, RecoveryWorker,
-};
+use crate::ai::{ListRecoveryEventsResponse, RecoveryConfig, RecoverySystemStatus, RecoveryWorker};
 
 /// GET /_api/database/{db}/ai/recovery/status - Get recovery system status
 ///
@@ -1427,7 +1448,7 @@ pub async fn update_agent_handler(
 
     // Update config if needed
     let mut config = agent.config.unwrap_or_else(|| serde_json::json!({}));
-    
+
     // Merge provided config
     if let Some(new_config) = request.config {
         if let Some(obj) = config.as_object_mut() {
@@ -1437,7 +1458,7 @@ pub async fn update_agent_handler(
                 }
             }
         } else {
-             config = new_config;
+            config = new_config;
         }
     }
 
@@ -1449,7 +1470,10 @@ pub async fn update_agent_handler(
     }
     if let Some(system_prompt) = request.system_prompt {
         if let Some(obj) = config.as_object_mut() {
-            obj.insert("system_prompt".to_string(), serde_json::Value::String(system_prompt));
+            obj.insert(
+                "system_prompt".to_string(),
+                serde_json::Value::String(system_prompt),
+            );
         }
     }
 

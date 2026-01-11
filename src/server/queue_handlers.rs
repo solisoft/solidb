@@ -7,9 +7,9 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 use super::handlers::AppState;
-use std::str::FromStr;
 use crate::error::DbError;
 use crate::queue::{Job, JobStatus};
+use std::str::FromStr;
 
 #[derive(Debug, Serialize)]
 pub struct QueueStats {
@@ -41,7 +41,7 @@ pub async fn list_queues_handler(
     Path(db_name): Path<String>,
 ) -> Result<Json<Vec<QueueStats>>, DbError> {
     let db = state.storage.get_database(&db_name)?;
-    
+
     if db.get_collection("_jobs").is_err() {
         return Ok(Json(Vec::new()));
     }
@@ -52,7 +52,7 @@ pub async fn list_queues_handler(
     for doc in jobs_coll.scan(None) {
         let job: Job = serde_json::from_value(doc.to_value())
             .map_err(|_| DbError::InternalError("Corrupted job data".to_string()))?;
-        
+
         let entry = stats_map.entry(job.queue.clone()).or_insert(QueueStats {
             name: job.queue.clone(),
             pending: 0,
@@ -98,7 +98,7 @@ pub async fn list_jobs_handler(
                     .unwrap_or_default()
                     .trim_matches('"')
                     .to_string();
-                
+
                 if &job_status_str != status_str {
                     continue;
                 }
@@ -132,7 +132,9 @@ pub async fn cancel_job_handler(
         .map_err(|_| DbError::InternalError("Corrupted job data".to_string()))?;
 
     if job.status == JobStatus::Running {
-        return Err(DbError::BadRequest("Cannot cancel a running job".to_string()));
+        return Err(DbError::BadRequest(
+            "Cannot cancel a running job".to_string(),
+        ));
     }
 
     jobs_coll.delete(&job_id)?;
@@ -182,7 +184,7 @@ pub async fn list_cron_jobs_handler(
         return Ok(Json(Vec::new()));
     }
     let cron_coll = db.get_collection("_cron_jobs")?;
-    
+
     let mut jobs = Vec::new();
     for doc in cron_coll.scan(None) {
         let job: crate::queue::CronJob = serde_json::from_value(doc.to_value())
@@ -241,23 +243,31 @@ pub async fn update_cron_job_handler(
 ) -> Result<Json<crate::queue::CronJob>, DbError> {
     let db = state.storage.get_database(&db_name)?;
     let cron_coll = db.get_collection("_cron_jobs")?;
-    
+
     let doc = cron_coll.get(&job_id)?;
     let mut cron_job: crate::queue::CronJob = serde_json::from_value(doc.to_value())
-         .map_err(|_| DbError::InternalError("Corrupted cron job".to_string()))?;
+        .map_err(|_| DbError::InternalError("Corrupted cron job".to_string()))?;
 
-    if let Some(name) = req.name { cron_job.name = name; }
-    if let Some(cron) = req.cron_expression { 
+    if let Some(name) = req.name {
+        cron_job.name = name;
+    }
+    if let Some(cron) = req.cron_expression {
         if cron::Schedule::from_str(&cron).is_err() {
             return Err(DbError::BadRequest("Invalid cron expression".to_string()));
         }
-        cron_job.cron_expression = cron; 
+        cron_job.cron_expression = cron;
         // Reset next run to trigger recalculation
         cron_job.next_run = None;
     }
-    if let Some(script) = req.script { cron_job.script_path = script; }
-    if let Some(params) = req.params { cron_job.params = params; }
-    if let Some(p) = req.priority { cron_job.priority = p; }
+    if let Some(script) = req.script {
+        cron_job.script_path = script;
+    }
+    if let Some(params) = req.params {
+        cron_job.params = params;
+    }
+    if let Some(p) = req.priority {
+        cron_job.priority = p;
+    }
 
     let rev = cron_job.revision.clone().unwrap_or_default();
     let doc_val = serde_json::to_value(&cron_job).unwrap();
@@ -282,11 +292,11 @@ pub async fn enqueue_job_handler(
     Json(req): Json<EnqueueRequest>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let db = state.storage.get_database(&db_name)?;
-    
+
     if db.get_collection("_jobs").is_err() {
         db.create_collection("_jobs".to_string(), None)?;
     }
-    
+
     let jobs_coll = db.get_collection("_jobs")?;
 
     let now = std::time::SystemTime::now()

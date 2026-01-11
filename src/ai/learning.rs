@@ -544,9 +544,10 @@ impl LearningSystem {
                     // Mark feedback as processed
                     event.processed = true;
                     if let Err(e) = Self::save_feedback(storage, db_name, &event) {
-                        result
-                            .errors
-                            .push(format!("Failed to mark event {} as processed: {}", event.id, e));
+                        result.errors.push(format!(
+                            "Failed to mark event {} as processed: {}",
+                            event.id, e
+                        ));
                     }
                     result.processed_count += 1;
                 }
@@ -840,11 +841,12 @@ impl LearningSystem {
             // Update existing pattern
             existing_pattern.occurrence_count += 1;
             existing_pattern.updated_at = Utc::now();
-            existing_pattern.source_feedback_ids.push(feedback_id.to_string());
+            existing_pattern
+                .source_feedback_ids
+                .push(feedback_id.to_string());
 
             // Increase confidence with more occurrences (up to 0.95)
-            existing_pattern.confidence =
-                (existing_pattern.confidence + 0.05).min(0.95);
+            existing_pattern.confidence = (existing_pattern.confidence + 0.05).min(0.95);
 
             Self::save_pattern(storage, db_name, &existing_pattern)?;
             Ok(false)
@@ -882,9 +884,7 @@ impl LearningSystem {
                 .count();
 
             // If more than half the keywords match, consider it the same pattern
-            if !signature.keywords.is_empty()
-                && overlap > signature.keywords.len() / 2
-            {
+            if !signature.keywords.is_empty() && overlap > signature.keywords.len() / 2 {
                 return Ok(Some(pattern));
             }
         }
@@ -1337,7 +1337,10 @@ mod tests {
 
         let pattern = LearningSystem::extract_error_pattern(&event).unwrap();
         assert_eq!(pattern.pattern_type, PatternType::ErrorPattern);
-        assert!(pattern.signature.keywords.contains(&"type_error".to_string()));
+        assert!(pattern
+            .signature
+            .keywords
+            .contains(&"type_error".to_string()));
         assert!(pattern
             .signature
             .error_categories
@@ -1355,7 +1358,7 @@ mod tests {
             outcome: FeedbackOutcome::Negative,
             context: FeedbackContext {
                 error_messages: Some(vec![
-                    "error[E0502]: cannot borrow `x` as mutable".to_string(),
+                    "error[E0502]: cannot borrow `x` as mutable".to_string()
                 ]),
                 ..Default::default()
             },
@@ -1437,7 +1440,10 @@ mod tests {
             .signature
             .keywords
             .contains(&"includes_tests".to_string()));
-        assert!(pattern.signature.keywords.contains(&"rust_code".to_string()));
+        assert!(pattern
+            .signature
+            .keywords
+            .contains(&"rust_code".to_string()));
     }
 
     #[test]
@@ -1450,7 +1456,9 @@ mod tests {
             agent_id: Some("agent-001".to_string()),
             outcome: FeedbackOutcome::Neutral,
             context: FeedbackContext {
-                comments: Some("Task timeout after 10 minutes, stuck on complex parsing".to_string()),
+                comments: Some(
+                    "Task timeout after 10 minutes, stuck on complex parsing".to_string(),
+                ),
                 task_type: Some(AITaskType::GenerateCode),
                 ..Default::default()
             },

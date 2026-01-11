@@ -7,17 +7,19 @@
 //! - CORS headers
 //! - File downloads
 
-use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
+use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
+use solidb::storage::StorageEngine;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
 
     engine.create_database("testdb".to_string()).unwrap();
 
@@ -58,15 +60,15 @@ fn create_script(code: &str) -> Script {
 #[tokio::test]
 async fn test_redirect_functionality() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         solidb.redirect("https://example.com/target")
         return { should_not_reach = "here" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
+
     match script_engine.execute(&script, "testdb", &ctx).await {
         Ok(_) => panic!("Expected redirect error, but got success"),
         Err(e) => {
@@ -79,7 +81,7 @@ async fn test_redirect_functionality() {
 #[tokio::test]
 async fn test_cookie_setting() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local options = {
             expires = "2024-12-31T23:59:59Z",
@@ -93,20 +95,23 @@ async fn test_cookie_setting() {
         
         return { success = true }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
 }
 
 #[tokio::test]
 async fn test_cache_operations() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Store data in cache
         local data = {
@@ -122,13 +127,16 @@ async fn test_cache_operations() {
             user_data = data
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("cached").unwrap().as_bool().unwrap(), true);
     assert!(body.contains_key("user_data"));
 }
@@ -136,7 +144,7 @@ async fn test_cache_operations() {
 #[tokio::test]
 async fn test_cors_headers() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local cors_options = {
             origins = {"https://example.com", "https://app.example.com"},
@@ -150,20 +158,26 @@ async fn test_cors_headers() {
         
         return { message = "CORS headers set" }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("message").unwrap().as_str().unwrap(), "CORS headers set");
+
+    assert_eq!(
+        body.get("message").unwrap().as_str().unwrap(),
+        "CORS headers set"
+    );
 }
 
 #[tokio::test]
 async fn test_response_helpers() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Test HTML response
         local html_content = "<html><body><h1>Hello World</h1></body></html>"
@@ -178,21 +192,27 @@ async fn test_response_helpers() {
             json_result = json_result
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("html_content").unwrap().as_str().unwrap(), "<html><body><h1>Hello World</h1></body></html>");
+
+    assert_eq!(
+        body.get("html_content").unwrap().as_str().unwrap(),
+        "<html><body><h1>Hello World</h1></body></html>"
+    );
     assert!(body.get("json_result").is_some());
 }
 
 #[tokio::test]
 async fn test_file_download_response() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Test file download response
         local file_path = "/tmp/test_file.txt"
@@ -203,21 +223,27 @@ async fn test_file_download_response() {
             success = download_result ~= nil
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("file_path").unwrap().as_str().unwrap(), "/tmp/test_file.txt");
+
+    assert_eq!(
+        body.get("file_path").unwrap().as_str().unwrap(),
+        "/tmp/test_file.txt"
+    );
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
 }
 
 #[tokio::test]
 async fn test_streaming_response() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Test streaming response
         local stream_data = {
@@ -233,13 +259,16 @@ async fn test_streaming_response() {
             success = stream_result ~= nil
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("chunks_count").unwrap().as_i64().unwrap(), 3);
     assert_eq!(body.get("success").unwrap().as_bool().unwrap(), true);
 }
@@ -247,7 +276,7 @@ async fn test_streaming_response() {
 #[tokio::test]
 async fn test_cookie_options_validation() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Test cookie with various options
         local test_cases = {
@@ -284,16 +313,19 @@ async fn test_cookie_options_validation() {
         
         return { results = results }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     let results = body.get("results").unwrap().as_array().unwrap();
     assert_eq!(results.len(), 3);
-    
+
     for i in 0..3 {
         let test_result = &results[i];
         assert_eq!(test_result.get("success").unwrap().as_bool().unwrap(), true);
@@ -303,7 +335,7 @@ async fn test_cookie_options_validation() {
 #[tokio::test]
 async fn test_cache_with_ttl_expiration() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         -- Test cache with different TTL values
         local test_cases = {
@@ -329,16 +361,19 @@ async fn test_cache_with_ttl_expiration() {
         
         return { results = results }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     let results = body.get("results").unwrap().as_array().unwrap();
     assert_eq!(results.len(), 4);
-    
+
     for i in 0..4 {
         let test_result = &results[i];
         assert_eq!(test_result.get("cached").unwrap().as_bool().unwrap(), true);

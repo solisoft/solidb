@@ -1,17 +1,26 @@
-use serde::{Deserialize, Serialize};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::AsyncWriteExt;
-use anyhow::Result;
 use super::node::Node;
 use super::stats::NodeBasicStats;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
 
 /// Message types for cluster management
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClusterMessage {
     JoinRequest(Node),
-    JoinResponse { success: bool, peers: Vec<Node> },
-    Heartbeat { from: String, sequence: u64, stats: Option<NodeBasicStats> },
-    Leave { from: String },
+    JoinResponse {
+        success: bool,
+        peers: Vec<Node>,
+    },
+    Heartbeat {
+        from: String,
+        sequence: u64,
+        stats: Option<NodeBasicStats>,
+    },
+    Leave {
+        from: String,
+    },
     Replication(crate::sync::SyncMessage),
 }
 

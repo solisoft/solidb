@@ -8,11 +8,11 @@
 //! - Filtering and querying
 //! - Group by operations
 
-use solidb::{
-    AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection,
-    CompressionType, StorageEngine,
-};
 use serde_json::json;
+use solidb::{
+    AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection, CompressionType,
+    StorageEngine,
+};
 use tempfile::TempDir;
 
 // ============================================================================
@@ -66,10 +66,7 @@ fn create_test_columns() -> Vec<ColumnDef> {
 
 #[test]
 fn test_column_type_inference_bool() {
-    assert_eq!(
-        ColumnType::infer_from_value(&json!(true)),
-        ColumnType::Bool
-    );
+    assert_eq!(ColumnType::infer_from_value(&json!(true)), ColumnType::Bool);
     assert_eq!(
         ColumnType::infer_from_value(&json!(false)),
         ColumnType::Bool
@@ -78,10 +75,7 @@ fn test_column_type_inference_bool() {
 
 #[test]
 fn test_column_type_inference_int() {
-    assert_eq!(
-        ColumnType::infer_from_value(&json!(42)),
-        ColumnType::Int64
-    );
+    assert_eq!(ColumnType::infer_from_value(&json!(42)), ColumnType::Int64);
     assert_eq!(
         ColumnType::infer_from_value(&json!(-100)),
         ColumnType::Int64
@@ -106,10 +100,7 @@ fn test_column_type_inference_string() {
         ColumnType::infer_from_value(&json!("hello")),
         ColumnType::String
     );
-    assert_eq!(
-        ColumnType::infer_from_value(&json!("")),
-        ColumnType::String
-    );
+    assert_eq!(ColumnType::infer_from_value(&json!("")), ColumnType::String);
 }
 
 #[test]
@@ -370,13 +361,14 @@ fn test_read_column_specific_rows() {
     )
     .unwrap();
 
-    let inserted_ids = col.insert_rows(vec![
-        json!({"name": "Alice", "age": 30, "score": 95.5, "active": true}),
-        json!({"name": "Bob", "age": 25, "score": 88.0, "active": true}),
-        json!({"name": "Charlie", "age": 35, "score": 92.0, "active": false}),
-        json!({"name": "Diana", "age": 28, "score": 90.0, "active": true}),
-    ])
-    .unwrap();
+    let inserted_ids = col
+        .insert_rows(vec![
+            json!({"name": "Alice", "age": 30, "score": 95.5, "active": true}),
+            json!({"name": "Bob", "age": 25, "score": 88.0, "active": true}),
+            json!({"name": "Charlie", "age": 35, "score": 92.0, "active": false}),
+            json!({"name": "Diana", "age": 28, "score": 90.0, "active": true}),
+        ])
+        .unwrap();
 
     // Read specific rows by UUID (first and third row)
     let selected_ids = vec![inserted_ids[0].clone(), inserted_ids[2].clone()];
@@ -729,11 +721,15 @@ fn test_group_by_single_column() {
     ])
     .unwrap();
 
-    let results = col.group_by(
-        &[solidb::storage::columnar::GroupByColumn::Simple("active".to_string())], 
-        "score", 
-        AggregateOp::Avg
-    ).unwrap();
+    let results = col
+        .group_by(
+            &[solidb::storage::columnar::GroupByColumn::Simple(
+                "active".to_string(),
+            )],
+            "score",
+            AggregateOp::Avg,
+        )
+        .unwrap();
 
     assert_eq!(results.len(), 2); // true and false groups
 }
@@ -799,7 +795,8 @@ fn test_compression_effectiveness() {
 
     // Create without compression
     let cf_name_none = "_columnar_compress_none";
-    db.create_collection(cf_name_none.to_string(), None).unwrap();
+    db.create_collection(cf_name_none.to_string(), None)
+        .unwrap();
 
     let col_none = ColumnarCollection::new(
         "compress_none".to_string(),
@@ -830,7 +827,10 @@ fn test_compression_effectiveness() {
 
     // Both should have valid stats
     assert!(stats_lz4.compressed_size_bytes > 0, "LZ4 should have data");
-    assert!(stats_none.compressed_size_bytes > 0, "No compression should have data");
+    assert!(
+        stats_none.compressed_size_bytes > 0,
+        "No compression should have data"
+    );
 
     // No compression should have ratio of exactly 1.0
     assert!(

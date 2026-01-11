@@ -1,15 +1,15 @@
-pub mod sdbql;
 pub mod cluster;
+pub mod driver;
 pub mod error;
+pub mod queue;
+pub mod scripting;
+pub mod sdbql;
 pub mod server;
+pub mod sharding;
+pub mod sql;
 pub mod storage;
 pub mod transaction;
-pub mod scripting;
-pub mod sharding;
-pub mod queue;
 pub mod ttl;
-pub mod driver;
-pub mod sql;
 
 // Synchronization module (new architecture)
 pub mod sync;
@@ -18,17 +18,36 @@ pub mod sync;
 pub mod ai;
 
 // Schema validation module
-pub use storage::schema::{CollectionSchema as JsonSchema, SchemaValidationMode, SchemaValidator, SchemaCompilationError, SchemaValidationError, ValidationViolation, ValidationResult};
+pub use storage::schema::{
+    CollectionSchema as JsonSchema, SchemaCompilationError, SchemaValidationError,
+    SchemaValidationMode, SchemaValidator, ValidationResult, ValidationViolation,
+};
 
-pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use error::{DbError, DbResult};
+pub use sdbql::{parse, BindVars, QueryExecutor, QueryExplain};
 pub use server::create_router;
 pub use storage::{
-    distance_meters, Collection, Document, GeoIndex, GeoIndexStats, GeoPoint, Index, IndexStats,
-    IndexType, StorageEngine, TtlIndex, TtlIndexStats,
+    distance_meters,
     // Columnar storage types
-    AggregateOp, ColumnDef, ColumnFilter, ColumnType, ColumnarCollection, ColumnarCollectionMeta,
-    ColumnarStats, CompressionType,
+    AggregateOp,
+    Collection,
+    ColumnDef,
+    ColumnFilter,
+    ColumnType,
+    ColumnarCollection,
+    ColumnarCollectionMeta,
+    ColumnarStats,
+    CompressionType,
+    Document,
+    GeoIndex,
+    GeoIndexStats,
+    GeoPoint,
+    Index,
+    IndexStats,
+    IndexType,
+    StorageEngine,
+    TtlIndex,
+    TtlIndexStats,
 };
 pub use transaction::{
     manager::TransactionManager, IsolationLevel, Operation, Transaction, TransactionId,

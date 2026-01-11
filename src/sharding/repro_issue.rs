@@ -1,9 +1,9 @@
 #[cfg(test)]
-use std::collections::HashMap;
-#[cfg(test)]
 use crate::sharding::coordinator::ShardAssignment;
 #[cfg(test)]
 use crate::sharding::distribution::compute_assignments;
+#[cfg(test)]
+use std::collections::HashMap;
 
 #[test]
 fn test_reproduce_user_overload_issue() {
@@ -12,9 +12,30 @@ fn test_reproduce_user_overload_issue() {
     // S1: P=6746, R=[6747]
     // S2: P=6747, R=[6745]
     let mut old_assignments = HashMap::new();
-    old_assignments.insert(0, ShardAssignment { shard_id: 0, primary_node: "6745".to_string(), replica_nodes: vec!["6746".to_string()] });
-    old_assignments.insert(1, ShardAssignment { shard_id: 1, primary_node: "6746".to_string(), replica_nodes: vec!["6747".to_string()] });
-    old_assignments.insert(2, ShardAssignment { shard_id: 2, primary_node: "6747".to_string(), replica_nodes: vec!["6745".to_string()] });
+    old_assignments.insert(
+        0,
+        ShardAssignment {
+            shard_id: 0,
+            primary_node: "6745".to_string(),
+            replica_nodes: vec!["6746".to_string()],
+        },
+    );
+    old_assignments.insert(
+        1,
+        ShardAssignment {
+            shard_id: 1,
+            primary_node: "6746".to_string(),
+            replica_nodes: vec!["6747".to_string()],
+        },
+    );
+    old_assignments.insert(
+        2,
+        ShardAssignment {
+            shard_id: 2,
+            primary_node: "6747".to_string(),
+            replica_nodes: vec!["6745".to_string()],
+        },
+    );
 
     // 6745 goes DOWN. 6748 comes UP.
     let nodes = vec!["6746".to_string(), "6747".to_string(), "6748".to_string()];
@@ -25,7 +46,10 @@ fn test_reproduce_user_overload_issue() {
     // Print results for debugging
     for id in 0..3 {
         let a = &assignments[&id];
-        println!("Shard {}: P={}, R={:?}", id, a.primary_node, a.replica_nodes);
+        println!(
+            "Shard {}: P={}, R={:?}",
+            id, a.primary_node, a.replica_nodes
+        );
     }
 
     // Check for "assigned twice" as primary

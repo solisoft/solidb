@@ -5,7 +5,7 @@
 //! - solidb.auth.has_role(role) - Check if user has a role
 //! - solidb.auth.require_role(role) - Guard that requires a role
 
-use mlua::{Lua, Result as LuaResult, Function, Table};
+use mlua::{Function, Lua, Result as LuaResult, Table};
 use serde::{Deserialize, Serialize};
 
 /// User information available to Lua scripts
@@ -94,9 +94,7 @@ pub fn create_auth_table(lua: &Lua, user: &ScriptUser) -> LuaResult<Table> {
 
     // solidb.auth.is_authenticated() -> boolean
     let is_auth = user_clone.authenticated;
-    let is_authenticated_fn = lua.create_function(move |_, (): ()| {
-        Ok(is_auth)
-    })?;
+    let is_authenticated_fn = lua.create_function(move |_, (): ()| Ok(is_auth))?;
     auth_table.set("is_authenticated", is_authenticated_fn)?;
 
     // solidb.auth.require_auth() -> throws error if not authenticated
@@ -133,7 +131,7 @@ fn create_require_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Funct
     lua.create_function(move |_, role: String| {
         if !authenticated {
             return Err(mlua::Error::RuntimeError(
-                "UNAUTHORIZED:401:Authentication required".to_string()
+                "UNAUTHORIZED:401:Authentication required".to_string(),
             ));
         }
 
@@ -143,9 +141,10 @@ fn create_require_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Funct
         }
 
         if !roles.contains(&role) {
-            return Err(mlua::Error::RuntimeError(
-                format!("FORBIDDEN:403:Role '{}' required", role)
-            ));
+            return Err(mlua::Error::RuntimeError(format!(
+                "FORBIDDEN:403:Role '{}' required",
+                role
+            )));
         }
 
         Ok(true)
@@ -159,7 +158,7 @@ fn create_require_auth_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Funct
     lua.create_function(move |_, (): ()| {
         if !authenticated {
             return Err(mlua::Error::RuntimeError(
-                "UNAUTHORIZED:401:Authentication required".to_string()
+                "UNAUTHORIZED:401:Authentication required".to_string(),
             ));
         }
         Ok(true)

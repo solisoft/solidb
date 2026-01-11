@@ -8,17 +8,19 @@
 //! - Password Hashing (Argon2)
 //! - Key Exchange (Curve25519)
 
-use solidb::storage::StorageEngine;
-use solidb::scripting::{ScriptEngine, Script, ScriptContext, ScriptStats, ScriptUser};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
+use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
+use solidb::storage::StorageEngine;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 fn create_test_env() -> (Arc<StorageEngine>, ScriptEngine, TempDir) {
     let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-    let engine = Arc::new(StorageEngine::new(tmp_dir.path().to_str().unwrap())
-        .expect("Failed to create storage engine"));
+    let engine = Arc::new(
+        StorageEngine::new(tmp_dir.path().to_str().unwrap())
+            .expect("Failed to create storage engine"),
+    );
 
     // Create DB
     engine.create_database("testdb".to_string()).unwrap();
@@ -60,7 +62,7 @@ fn create_script(code: &str) -> Script {
 #[tokio::test]
 async fn test_lua_crypto_hashing() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         return { 
             md5 = crypto.md5("hello"),
@@ -68,21 +70,30 @@ async fn test_lua_crypto_hashing() {
             sha512 = crypto.sha512("hello")
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("md5").unwrap().as_str().unwrap(), "5d41402abc4b2a76b9719d911017c592");
-    assert_eq!(body.get("sha256").unwrap().as_str().unwrap(), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+
+    assert_eq!(
+        body.get("md5").unwrap().as_str().unwrap(),
+        "5d41402abc4b2a76b9719d911017c592"
+    );
+    assert_eq!(
+        body.get("sha256").unwrap().as_str().unwrap(),
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    );
 }
 
 #[tokio::test]
 async fn test_lua_crypto_encoding() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local original = "Hello World"
         local b64 = crypto.base64_encode(original)
@@ -95,22 +106,34 @@ async fn test_lua_crypto_encoding() {
             decoded_hex = crypto.hex_decode(hex)
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert_eq!(body.get("b64").unwrap().as_str().unwrap(), "SGVsbG8gV29ybGQ=");
-    assert_eq!(body.get("decoded_b64").unwrap().as_str().unwrap(), "Hello World");
-    assert_eq!(body.get("decoded_hex").unwrap().as_str().unwrap(), "Hello World");
+
+    assert_eq!(
+        body.get("b64").unwrap().as_str().unwrap(),
+        "SGVsbG8gV29ybGQ="
+    );
+    assert_eq!(
+        body.get("decoded_b64").unwrap().as_str().unwrap(),
+        "Hello World"
+    );
+    assert_eq!(
+        body.get("decoded_hex").unwrap().as_str().unwrap(),
+        "Hello World"
+    );
 }
 
 #[tokio::test]
 async fn test_lua_crypto_password() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local password = "my_secret_password"
         local hash = crypto.hash_password(password)
@@ -123,14 +146,22 @@ async fn test_lua_crypto_password() {
             invalid = invalid
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
-    assert!(body.get("hash").unwrap().as_str().unwrap().starts_with("$argon2"));
+
+    assert!(body
+        .get("hash")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .starts_with("$argon2"));
     assert_eq!(body.get("valid").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("invalid").unwrap().as_bool().unwrap(), false);
 }
@@ -138,7 +169,7 @@ async fn test_lua_crypto_password() {
 #[tokio::test]
 async fn test_lua_crypto_jwt() {
     let (_engine, script_engine, _tmp) = create_test_env();
-    
+
     let code = r#"
         local claims = { sub = "123", name = "John Doe", admin = true }
         local secret = "my_jwt_secret"
@@ -153,16 +184,19 @@ async fn test_lua_crypto_jwt() {
             decoded_admin = decoded.admin
         }
     "#;
-    
+
     let script = create_script(code);
     let ctx = create_context();
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     let token = body.get("token").unwrap().as_str().unwrap();
     assert!(token.split('.').count() == 3);
-    
+
     assert_eq!(body.get("decoded_sub").unwrap().as_str().unwrap(), "123");
     assert_eq!(body.get("decoded_admin").unwrap().as_bool().unwrap(), true);
 }
@@ -194,12 +228,15 @@ async fn test_lua_crypto_curve25519() {
              len = #alice_shared
         }
     "#;
-    
+
     let script = create_script(code);
-    
-    let result = script_engine.execute(&script, "testdb", &ctx).await.unwrap();
+
+    let result = script_engine
+        .execute(&script, "testdb", &ctx)
+        .await
+        .unwrap();
     let body = result.body.as_object().unwrap();
-    
+
     assert_eq!(body.get("match").unwrap().as_bool().unwrap(), true);
     assert_eq!(body.get("len").unwrap().as_i64().unwrap(), 32);
 }

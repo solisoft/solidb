@@ -248,7 +248,10 @@ impl Parser {
             // Range expression: min..max ...
 
             // Look ahead to see if we find OUTBOUND/INBOUND/ANY
-            if matches!(self.peek_token(1), Token::Outbound | Token::Inbound | Token::Any) {
+            if matches!(
+                self.peek_token(1),
+                Token::Outbound | Token::Inbound | Token::Any
+            ) {
                 // Case: 1 OUTBOUND ...
                 true
             } else if matches!(self.peek_token(1), Token::DotDot) {
@@ -334,8 +337,6 @@ impl Parser {
             expression,
         })
     }
-
-
 
     fn parse_filter_clause(&mut self) -> DbResult<FilterClause> {
         self.expect(Token::Filter)?;
@@ -448,11 +449,11 @@ impl Parser {
 
         // Expect UPDATE or REPLACE
         let replace = if matches!(self.current_token(), Token::Replace) {
-             self.advance();
-             true
+            self.advance();
+            true
         } else {
-             self.expect(Token::Update)?;
-             false
+            self.expect(Token::Update)?;
+            false
         };
 
         self.allow_in_operator = false;
@@ -503,15 +504,15 @@ impl Parser {
                 } else {
                     break;
                 }
-                
+
                 let name = var_name.clone();
                 self.advance(); // consume identifier
                 self.advance(); // consume =
-                
+
                 // Parse the grouping expression
                 let expr = self.parse_expression()?;
                 group_vars.push((name, expr));
-                
+
                 // Check for comma for more group variables
                 if matches!(self.current_token(), Token::Comma) {
                     self.advance();
@@ -545,14 +546,14 @@ impl Parser {
                 ));
             }
             self.advance(); // consume COUNT
-            
+
             if !matches!(self.current_token(), Token::Into) {
                 return Err(DbError::ParseError(
                     "Expected INTO after WITH COUNT".to_string(),
                 ));
             }
             self.advance(); // consume INTO
-            
+
             if let Token::Identifier(var_name) = self.current_token() {
                 count_var = Some(var_name.clone());
                 self.advance();
@@ -566,31 +567,31 @@ impl Parser {
         // Parse optional AGGREGATE var = FUNC(expr) [, ...]
         if matches!(self.current_token(), Token::Aggregate) {
             self.advance(); // consume AGGREGATE
-            
+
             loop {
                 // Parse var = FUNC(expr)
                 if let Token::Identifier(var_name) = self.current_token() {
                     let var = var_name.clone();
                     self.advance();
-                    
+
                     self.expect(Token::Assign)?;
-                    
+
                     // Parse function call: FUNC(expr)
                     if let Token::Identifier(func_name) = self.current_token() {
                         let func = func_name.to_uppercase();
                         self.advance();
-                        
+
                         self.expect(Token::LeftParen)?;
-                        
+
                         // Parse optional argument
                         let arg = if matches!(self.current_token(), Token::RightParen) {
                             None
                         } else {
                             Some(self.parse_expression()?)
                         };
-                        
+
                         self.expect(Token::RightParen)?;
-                        
+
                         aggregates.push(AggregateExpr {
                             variable: var,
                             function: func,
@@ -601,7 +602,7 @@ impl Parser {
                             "Expected aggregate function name".to_string(),
                         ));
                     }
-                    
+
                     // Check for comma for more aggregates
                     if matches!(self.current_token(), Token::Comma) {
                         self.advance();
@@ -1059,7 +1060,10 @@ impl Parser {
     fn parse_multiplicative_expression(&mut self) -> DbResult<Expression> {
         let mut left = self.parse_unary_expression()?;
 
-        while matches!(self.current_token(), Token::Star | Token::Slash | Token::Percent) {
+        while matches!(
+            self.current_token(),
+            Token::Star | Token::Slash | Token::Percent
+        ) {
             let op = match self.current_token() {
                 Token::Star => BinaryOperator::Multiply,
                 Token::Slash => BinaryOperator::Divide,
@@ -1128,6 +1132,41 @@ impl Parser {
                 }
                 Token::LeftBracket => {
                     self.advance();
+
+                    // Check for [*] array spread syntax
+                    if matches!(self.current_token(), Token::Star) {
+                        self.advance(); // consume '*'
+                        self.expect(Token::RightBracket)?;
+
+                        // Collect subsequent dot-separated field path
+                        let field_path = if matches!(self.current_token(), Token::Dot) {
+                            let mut path = String::new();
+                            while matches!(self.current_token(), Token::Dot) {
+                                self.advance();
+                                if let Token::Identifier(name) = self.current_token() {
+                                    let name = name.clone();
+                                    if !path.is_empty() {
+                                        path.push('.');
+                                    }
+                                    path.push_str(&name);
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                            if path.is_empty() {
+                                None
+                            } else {
+                                Some(path)
+                            }
+                        } else {
+                            None
+                        };
+
+                        expr = Expression::ArraySpreadAccess(Box::new(expr), field_path);
+                        continue; // Continue loop for chained [*]
+                    }
+
                     let index_expr = self.parse_expression()?;
                     self.expect(Token::RightBracket)?;
 
@@ -1327,8 +1366,6 @@ impl Parser {
 
         Ok(Expression::Array(elements))
     }
-
-
 }
 
 pub fn parse(input: &str) -> DbResult<Query> {
@@ -1364,25 +1401,37 @@ mod tests {
     #[test]
     fn test_parse_insert() {
         let query = parse("INSERT { name: \"Alice\" } INTO users").unwrap();
-        assert!(query.body_clauses.iter().any(|c| matches!(c, BodyClause::Insert(_))));
+        assert!(query
+            .body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::Insert(_))));
     }
 
     #[test]
     fn test_parse_update() {
         let query = parse("FOR doc IN users UPDATE doc WITH { active: true } IN users").unwrap();
-        assert!(query.body_clauses.iter().any(|c| matches!(c, BodyClause::Update(_))));
+        assert!(query
+            .body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::Update(_))));
     }
 
     #[test]
     fn test_parse_remove() {
         let query = parse("FOR doc IN users REMOVE doc IN users").unwrap();
-        assert!(query.body_clauses.iter().any(|c| matches!(c, BodyClause::Remove(_))));
+        assert!(query
+            .body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::Remove(_))));
     }
 
     #[test]
     fn test_parse_collect() {
         let query = parse("FOR doc IN users COLLECT city = doc.city RETURN city").unwrap();
-        assert!(query.body_clauses.iter().any(|c| matches!(c, BodyClause::Collect(_))));
+        assert!(query
+            .body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::Collect(_))));
     }
 
     #[test]
@@ -1421,7 +1470,8 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_filters() {
-        let query = parse("FOR doc IN users FILTER doc.age > 18 FILTER doc.active RETURN doc").unwrap();
+        let query =
+            parse("FOR doc IN users FILTER doc.age > 18 FILTER doc.active RETURN doc").unwrap();
         assert_eq!(query.filter_clauses.len(), 2);
     }
 
@@ -1431,5 +1481,3 @@ mod tests {
         assert_eq!(query.for_clauses.len(), 2);
     }
 }
-
-

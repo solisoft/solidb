@@ -2,7 +2,7 @@
 //!
 //! Provides debugging, profiling, and mocking utilities for script development.
 
-use mlua::{Lua, Result as LuaResult, Function, Table, Value as LuaValue};
+use mlua::{Function, Lua, Result as LuaResult, Table, Value as LuaValue};
 use std::time::Instant;
 
 /// Create solidb.debug(data) -> string
@@ -152,7 +152,8 @@ pub fn create_benchmark_function(lua: &Lua) -> LuaResult<Function> {
         let max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
         // Calculate standard deviation
-        let variance: f64 = times.iter().map(|t| (t - avg).powi(2)).sum::<f64>() / iterations as f64;
+        let variance: f64 =
+            times.iter().map(|t| (t - avg).powi(2)).sum::<f64>() / iterations as f64;
         let std_dev = variance.sqrt();
 
         let result = lua.create_table()?;
@@ -219,19 +220,23 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
 
         // mock:update(key, doc)
         let data_update = data.clone();
-        let update_fn = lua.create_function(move |_lua, (_self, key, updates): (Table, String, Table)| {
-            let existing: Option<Table> = data_update.get(key.clone()).ok();
-            if let Some(doc) = existing {
-                for pair in updates.pairs::<String, LuaValue>() {
-                    if let Ok((k, v)) = pair {
-                        doc.set(k, v)?;
+        let update_fn =
+            lua.create_function(move |_lua, (_self, key, updates): (Table, String, Table)| {
+                let existing: Option<Table> = data_update.get(key.clone()).ok();
+                if let Some(doc) = existing {
+                    for pair in updates.pairs::<String, LuaValue>() {
+                        if let Ok((k, v)) = pair {
+                            doc.set(k, v)?;
+                        }
                     }
+                    Ok(doc)
+                } else {
+                    Err(mlua::Error::RuntimeError(format!(
+                        "Document not found: {}",
+                        key
+                    )))
                 }
-                Ok(doc)
-            } else {
-                Err(mlua::Error::RuntimeError(format!("Document not found: {}", key)))
-            }
-        })?;
+            })?;
         mock.set("update", update_fn)?;
 
         // mock:delete(key)
@@ -275,7 +280,8 @@ pub fn create_mock_function(lua: &Lua) -> LuaResult<Function> {
         let data_reset = data.clone();
         let reset_fn = lua.create_function(move |_lua, _self: Table| {
             // Clear all data
-            let keys: Vec<String> = data_reset.clone()
+            let keys: Vec<String> = data_reset
+                .clone()
                 .pairs::<String, LuaValue>()
                 .filter_map(|r| r.ok().map(|(k, _)| k))
                 .collect();
@@ -303,23 +309,27 @@ pub fn create_dev_assert_function(lua: &Lua) -> LuaResult<Function> {
 
 /// Create solidb.assert_eq(a, b, message?) - equality assertion
 pub fn create_assert_eq_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, (a, b, message): (LuaValue, LuaValue, Option<String>)| {
-        let equal = values_equal(&a, &b);
-        if !equal {
-            let msg = message.unwrap_or_else(|| {
-                format!("Assertion failed: {} != {}", format_value(&a, 0), format_value(&b, 0))
-            });
-            return Err(mlua::Error::RuntimeError(msg));
-        }
-        Ok(true)
-    })
+    lua.create_function(
+        |_lua, (a, b, message): (LuaValue, LuaValue, Option<String>)| {
+            let equal = values_equal(&a, &b);
+            if !equal {
+                let msg = message.unwrap_or_else(|| {
+                    format!(
+                        "Assertion failed: {} != {}",
+                        format_value(&a, 0),
+                        format_value(&b, 0)
+                    )
+                });
+                return Err(mlua::Error::RuntimeError(msg));
+            }
+            Ok(true)
+        },
+    )
 }
 
 /// Create solidb.dump(value) -> string (JSON-like dump)
 pub fn create_dump_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_lua, value: LuaValue| {
-        Ok(format_value(&value, 0))
-    })
+    lua.create_function(|_lua, value: LuaValue| Ok(format_value(&value, 0)))
 }
 
 /// Format a Lua value for display
@@ -370,13 +380,21 @@ fn format_value(value: &LuaValue, indent: usize) -> String {
                     format!("[{}]", parts.join(", "))
                 } else {
                     let inner_spaces = "  ".repeat(indent + 1);
-                    format!("[\n{}{}\n{}]", inner_spaces, parts.join(&format!(",\n{}", inner_spaces)), spaces)
+                    format!(
+                        "[\n{}{}\n{}]",
+                        inner_spaces,
+                        parts.join(&format!(",\n{}", inner_spaces)),
+                        spaces
+                    )
                 }
             } else {
                 for pair in t.clone().pairs::<LuaValue, LuaValue>() {
                     if let Ok((k, v)) = pair {
                         let key_str = match &k {
-                            LuaValue::String(s) => s.to_str().map(|s| s.to_string()).unwrap_or_else(|_| "?".to_string()),
+                            LuaValue::String(s) => s
+                                .to_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|_| "?".to_string()),
                             LuaValue::Integer(i) => format!("[{}]", i),
                             _ => format!("[{}]", format_value(&k, 0)),
                         };
@@ -385,11 +403,18 @@ fn format_value(value: &LuaValue, indent: usize) -> String {
                 }
                 if parts.is_empty() {
                     "{}".to_string()
-                } else if parts.len() <= 2 && parts.iter().all(|p| !p.contains('\n') && p.len() < 40) {
+                } else if parts.len() <= 2
+                    && parts.iter().all(|p| !p.contains('\n') && p.len() < 40)
+                {
                     format!("{{ {} }}", parts.join(", "))
                 } else {
                     let inner_spaces = "  ".repeat(indent + 1);
-                    format!("{{\n{}{}\n{}}}", inner_spaces, parts.join(&format!(",\n{}", inner_spaces)), spaces)
+                    format!(
+                        "{{\n{}{}\n{}}}",
+                        inner_spaces,
+                        parts.join(&format!(",\n{}", inner_spaces)),
+                        spaces
+                    )
                 }
             }
         }
@@ -454,9 +479,18 @@ mod tests {
     #[test]
     fn test_values_equal() {
         assert!(values_equal(&LuaValue::Nil, &LuaValue::Nil));
-        assert!(values_equal(&LuaValue::Boolean(true), &LuaValue::Boolean(true)));
-        assert!(!values_equal(&LuaValue::Boolean(true), &LuaValue::Boolean(false)));
+        assert!(values_equal(
+            &LuaValue::Boolean(true),
+            &LuaValue::Boolean(true)
+        ));
+        assert!(!values_equal(
+            &LuaValue::Boolean(true),
+            &LuaValue::Boolean(false)
+        ));
         assert!(values_equal(&LuaValue::Integer(42), &LuaValue::Integer(42)));
-        assert!(values_equal(&LuaValue::Integer(42), &LuaValue::Number(42.0)));
+        assert!(values_equal(
+            &LuaValue::Integer(42),
+            &LuaValue::Number(42.0)
+        ));
     }
 }

@@ -6,9 +6,9 @@
 //! - Column pruning (only read needed columns)
 //! - LZ4 compression for efficient storage
 
+use fastbloom::BloomFilter;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use rocksdb::DB;
-use fastbloom::BloomFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -17,14 +17,14 @@ use std::sync::{Arc, RwLock};
 use crate::error::{DbError, DbResult};
 
 /// Key prefixes for columnar storage
-const COL_DATA_PREFIX: &str = "col:";      // col:{column}:{row_id} -> compressed_value
+const COL_DATA_PREFIX: &str = "col:"; // col:{column}:{row_id} -> compressed_value
 const COL_META_PREFIX: &str = "col_meta:"; // col_meta:{collection} -> ColumnarCollectionMeta
-const COL_ROW_PREFIX: &str = "col_row:";   // col_row:{row_id} -> full row for reconstruction
-const COL_IDX_PREFIX: &str = "col_idx:";   // col_idx:{column}:{encoded_value} -> [row_ids]
+const COL_ROW_PREFIX: &str = "col_row:"; // col_row:{row_id} -> full row for reconstruction
+const COL_IDX_PREFIX: &str = "col_idx:"; // col_idx:{column}:{encoded_value} -> [row_ids]
 const COL_IDX_META_PREFIX: &str = "col_idx_meta:"; // col_idx_meta:{column} -> ColumnarIndexMeta
 const COL_IDX_BITMAP_PREFIX: &str = "col_idx_bmp:"; // col_idx_bmp:{column}:{encoded_value} -> [compressed_bitset]
-const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:";  // col_idx_mm:{column}:{chunk_id} -> {min, max}
-const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:";  // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
+const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:"; // col_idx_mm:{column}:{chunk_id} -> {min, max}
+const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:"; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
 const MINMAX_CHUNK_SIZE: u64 = 1000;
 
@@ -155,11 +155,11 @@ pub struct ColumnarStats {
 #[serde(rename_all = "lowercase")]
 pub enum ColumnarIndexType {
     #[default]
-    Sorted,  // Supports equality + range queries (binary-comparable keys)
-    Hash,    // Equality-only (faster for high-cardinality)
-    Bitmap,  // Low cardinality, fast boolean ops, compressed
-    MinMax,  // Range pruning for high cardinality/time-series
-    Bloom,   // Probabilistic existence check per chunk
+    Sorted, // Supports equality + range queries (binary-comparable keys)
+    Hash,   // Equality-only (faster for high-cardinality)
+    Bitmap, // Low cardinality, fast boolean ops, compressed
+    MinMax, // Range pruning for high cardinality/time-series
+    Bloom,  // Probabilistic existence check per chunk
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,7 +255,9 @@ impl ColumnarCollection {
 
         // Store metadata
         {
-            let db_guard = db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+            let db_guard = db
+                .write()
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
             let cf = db_guard.cf_handle(&cf_name).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
             })?;
@@ -280,7 +282,9 @@ impl ColumnarCollection {
         let cf_name = format!("{}:_columnar_{}", db_name, name);
 
         let meta = {
-            let db_guard = db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+            let db_guard = db
+                .read()
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
             let cf = db_guard.cf_handle(&cf_name).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
             })?;
@@ -314,8 +318,14 @@ impl ColumnarCollection {
             return Ok(Vec::new());
         }
 
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -371,15 +381,22 @@ impl ColumnarCollection {
     /// Insert a row with a specific UUID (for replication)
     /// This is idempotent - if the row already exists, it's skipped
     pub fn insert_row_with_id(&self, row_uuid: &str, row: Value) -> DbResult<bool> {
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Check if row already exists (idempotency for replication)
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-        if db_guard.get_cf(cf, row_key.as_bytes())
+        if db_guard
+            .get_cf(cf, row_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?
             .is_some()
         {
@@ -428,15 +445,22 @@ impl ColumnarCollection {
 
     /// Delete a row by UUID
     pub fn delete_row(&self, row_uuid: &str) -> DbResult<bool> {
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Check if row exists
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-        if db_guard.get_cf(cf, row_key.as_bytes())
+        if db_guard
+            .get_cf(cf, row_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?
             .is_none()
         {
@@ -446,12 +470,14 @@ impl ColumnarCollection {
         // Delete column values
         for col_def in &meta.columns {
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-            db_guard.delete_cf(cf, col_key.as_bytes())
+            db_guard
+                .delete_cf(cf, col_key.as_bytes())
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
         // Delete full row
-        db_guard.delete_cf(cf, row_key.as_bytes())
+        db_guard
+            .delete_cf(cf, row_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Update metadata
@@ -471,7 +497,10 @@ impl ColumnarCollection {
 
     /// List all row UUIDs in the collection
     pub fn list_row_uuids(&self) -> DbResult<Vec<String>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -497,15 +526,24 @@ impl ColumnarCollection {
 
     /// Read a single column for all rows or specific row IDs
     pub fn read_column(&self, column: &str, row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let _cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Validate column exists
         if !meta.columns.iter().any(|c| c.name == column) {
-            return Err(DbError::BadRequest(format!("Column '{}' not found", column)));
+            return Err(DbError::BadRequest(format!(
+                "Column '{}' not found",
+                column
+            )));
         }
 
         // Get UUIDs to read
@@ -520,8 +558,14 @@ impl ColumnarCollection {
         };
 
         // Re-acquire locks if we had to get UUIDs
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -546,9 +590,19 @@ impl ColumnarCollection {
     }
 
     /// Read multiple columns (projection) for all rows or specific row UUIDs
-    pub fn read_columns(&self, columns: &[&str], row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+    pub fn read_columns(
+        &self,
+        columns: &[&str],
+        row_uuids: Option<&[String]>,
+    ) -> DbResult<Vec<Value>> {
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let _cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -572,8 +626,14 @@ impl ColumnarCollection {
         };
 
         // Re-acquire locks if we had to get UUIDs
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -611,8 +671,14 @@ impl ColumnarCollection {
 
     /// Read a single column value for a specific row UUID
     fn read_column_value(&self, column: &str, row_uuid: &str) -> DbResult<Value> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -651,8 +717,14 @@ impl ColumnarCollection {
     /// Aggregate a column with the specified operation
     /// Aggregate a column with the specified operation
     pub fn aggregate(&self, column: &str, op: AggregateOp) -> DbResult<Value> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -685,7 +757,9 @@ impl ColumnarCollection {
                         if !key.starts_with(prefix.as_bytes()) {
                             break;
                         }
-                        if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
+                        if let Ok(decompressed) =
+                            self.decompress_data(&val_bytes, &meta.compression)
+                        {
                             if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                                 if let Some(n) = value.as_f64() {
                                     sum += n;
@@ -705,7 +779,9 @@ impl ColumnarCollection {
                         if !key.starts_with(prefix.as_bytes()) {
                             break;
                         }
-                        if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
+                        if let Ok(decompressed) =
+                            self.decompress_data(&val_bytes, &meta.compression)
+                        {
                             if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                                 if let Some(n) = value.as_f64() {
                                     sum += n;
@@ -729,7 +805,9 @@ impl ColumnarCollection {
                         if !key.starts_with(prefix.as_bytes()) {
                             break;
                         }
-                        if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
+                        if let Ok(decompressed) =
+                            self.decompress_data(&val_bytes, &meta.compression)
+                        {
                             if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                                 if let Some(n) = value.as_f64() {
                                     match min_val {
@@ -755,7 +833,9 @@ impl ColumnarCollection {
                         if !key.starts_with(prefix.as_bytes()) {
                             break;
                         }
-                        if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
+                        if let Ok(decompressed) =
+                            self.decompress_data(&val_bytes, &meta.compression)
+                        {
                             if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                                 if let Some(n) = value.as_f64() {
                                     match max_val {
@@ -781,7 +861,9 @@ impl ColumnarCollection {
                         if !key.starts_with(prefix.as_bytes()) {
                             break;
                         }
-                        if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
+                        if let Ok(decompressed) =
+                            self.decompress_data(&val_bytes, &meta.compression)
+                        {
                             if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                                 distinct.insert(value.to_string());
                             }
@@ -822,8 +904,7 @@ impl ColumnarCollection {
                         if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
                             // Simple bucketing logic (naive implementation for POC)
                             // Parse interval
-                            let (num, unit) = parsers::parse_interval(interval)
-                                .unwrap_or((1, "h")); // Default to 1h if invalid
+                            let (num, unit) = parsers::parse_interval(interval).unwrap_or((1, "h")); // Default to 1h if invalid
 
                             let timestamp = dt.timestamp();
                             let bucket_size = match unit {
@@ -837,9 +918,9 @@ impl ColumnarCollection {
                             let bucketed = (timestamp / bucket_size) * bucket_size;
                             // Convert back to ISO string
                             if let Some(dt_utc) = chrono::DateTime::from_timestamp(bucketed, 0) {
-                                 group_key_parts.push(dt_utc.to_rfc3339());
+                                group_key_parts.push(dt_utc.to_rfc3339());
                             } else {
-                                 group_key_parts.push(v.to_string());
+                                group_key_parts.push(v.to_string());
                             }
                         } else {
                             group_key_parts.push(v.to_string());
@@ -849,7 +930,10 @@ impl ColumnarCollection {
             }
             let group_key = group_key_parts.join("|");
 
-            group_data.entry(group_key).or_default().push(row_uuid.clone());
+            group_data
+                .entry(group_key)
+                .or_default()
+                .push(row_uuid.clone());
         }
 
         // Compute aggregates for each group
@@ -874,12 +958,22 @@ impl ColumnarCollection {
 
                     if use_number {
                         if let Ok(n) = part.parse::<f64>() {
-                            result_obj.insert(col_def.name().to_string(), Value::Number(serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0))));
+                            result_obj.insert(
+                                col_def.name().to_string(),
+                                Value::Number(
+                                    serde_json::Number::from_f64(n)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                ),
+                            );
                         } else {
-                            result_obj.insert(col_def.name().to_string(), Value::String(part.to_string()));
+                            result_obj.insert(
+                                col_def.name().to_string(),
+                                Value::String(part.to_string()),
+                            );
                         }
                     } else {
-                        result_obj.insert(col_def.name().to_string(), Value::String(part.to_string()));
+                        result_obj
+                            .insert(col_def.name().to_string(), Value::String(part.to_string()));
                     }
                 }
             }
@@ -892,12 +986,11 @@ impl ColumnarCollection {
     }
 
     /// Scan with filter and column projection
-    pub fn scan_filtered(
-        &self,
-        filter: &ColumnFilter,
-        columns: &[&str],
-    ) -> DbResult<Vec<Value>> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+    pub fn scan_filtered(&self, filter: &ColumnFilter, columns: &[&str]) -> DbResult<Vec<Value>> {
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Find matching row indices (positions)
         let matching_positions = self.apply_filter(filter, 0..meta.row_count)?;
@@ -911,8 +1004,14 @@ impl ColumnarCollection {
 
     /// Get collection statistics
     pub fn stats(&self) -> DbResult<ColumnarStats> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -951,14 +1050,23 @@ impl ColumnarCollection {
 
     /// Get collection metadata
     pub fn metadata(&self) -> DbResult<ColumnarCollectionMeta> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         Ok(meta.clone())
     }
 
     /// Truncate all data from the collection (preserves schema)
     pub fn truncate(&self) -> DbResult<()> {
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -968,7 +1076,8 @@ impl ColumnarCollection {
         let iter = db_guard.prefix_iterator_cf(cf, prefix);
         for item in iter {
             if let Ok((key, _)) = item {
-                db_guard.delete_cf(cf, &key)
+                db_guard
+                    .delete_cf(cf, &key)
                     .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
             }
         }
@@ -978,7 +1087,8 @@ impl ColumnarCollection {
         let iter = db_guard.prefix_iterator_cf(cf, row_prefix);
         for item in iter {
             if let Ok((key, _)) = item {
-                db_guard.delete_cf(cf, &key)
+                db_guard
+                    .delete_cf(cf, &key)
                     .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
             }
         }
@@ -988,7 +1098,8 @@ impl ColumnarCollection {
         let iter = db_guard.prefix_iterator_cf(cf, idx_prefix);
         for item in iter {
             if let Ok((key, _)) = item {
-                db_guard.delete_cf(cf, &key)
+                db_guard
+                    .delete_cf(cf, &key)
                     .map_err(|e| DbError::InternalError(format!("Failed to delete: {}", e)))?;
             }
         }
@@ -999,7 +1110,8 @@ impl ColumnarCollection {
         // Save updated metadata
         let meta_bytes = serde_json::to_vec(&*meta)
             .map_err(|e| DbError::InternalError(format!("Failed to serialize meta: {}", e)))?;
-        db_guard.put_cf(cf, b"meta", &meta_bytes)
+        db_guard
+            .put_cf(cf, b"meta", &meta_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to save meta: {}", e)))?;
 
         Ok(())
@@ -1007,10 +1119,14 @@ impl ColumnarCollection {
 
     /// Drop the entire columnar collection (removes everything including schema)
     pub fn drop(&self) -> DbResult<()> {
-        let mut db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Drop the column family - this removes all data
-        db_guard.drop_cf(&self.cf_name)
+        db_guard
+            .drop_cf(&self.cf_name)
             .map_err(|e| DbError::InternalError(format!("Failed to drop CF: {}", e)))?;
 
         Ok(())
@@ -1020,19 +1136,30 @@ impl ColumnarCollection {
 
     /// Create an index on a column
     pub fn create_index(&self, column: &str, index_type: ColumnarIndexType) -> DbResult<()> {
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Validate column exists and check if already indexed
-        let col_idx = meta.columns.iter().position(|c| c.name == column).ok_or_else(|| {
-            DbError::BadRequest(format!("Column '{}' not found", column))
-        })?;
+        let col_idx = meta
+            .columns
+            .iter()
+            .position(|c| c.name == column)
+            .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", column)))?;
 
         if meta.columns[col_idx].indexed {
-            return Err(DbError::BadRequest(format!("Column '{}' already has an index", column)));
+            return Err(DbError::BadRequest(format!(
+                "Column '{}' already has an index",
+                column
+            )));
         }
 
         // Copy values we need before building index
@@ -1045,11 +1172,16 @@ impl ColumnarCollection {
             if let Ok(Some(bytes)) = db_guard.get_cf(cf, col_key.as_bytes()) {
                 if let Ok(decompressed) = self.decompress_data(&bytes, &compression) {
                     if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-
                         match index_type {
                             ColumnarIndexType::Bitmap => {
                                 let idx_key = self.encode_bitmap_key(column, &value);
-                                self.append_row_to_bitmap_index(&db_guard, cf, &idx_key, row_id, &compression)?;
+                                self.append_row_to_bitmap_index(
+                                    &db_guard,
+                                    cf,
+                                    &idx_key,
+                                    row_id,
+                                    &compression,
+                                )?;
                             }
                             ColumnarIndexType::MinMax => {
                                 self.update_minmax_index(&db_guard, cf, column, &value, row_id)?;
@@ -1095,19 +1227,30 @@ impl ColumnarCollection {
 
     /// Drop an index from a column
     pub fn drop_index(&self, column: &str) -> DbResult<()> {
-        let mut meta = self.meta.write().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.write().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Validate column exists and has index
-        let col_idx = meta.columns.iter().position(|c| c.name == column).ok_or_else(|| {
-            DbError::BadRequest(format!("Column '{}' not found", column))
-        })?;
+        let col_idx = meta
+            .columns
+            .iter()
+            .position(|c| c.name == column)
+            .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", column)))?;
 
         if !meta.columns[col_idx].indexed {
-            return Err(DbError::BadRequest(format!("Column '{}' has no index", column)));
+            return Err(DbError::BadRequest(format!(
+                "Column '{}' has no index",
+                column
+            )));
         }
 
         // Delete all index entries for this column
@@ -1118,13 +1261,17 @@ impl ColumnarCollection {
                 if !key.starts_with(prefix.as_bytes()) {
                     break;
                 }
-                db_guard.delete_cf(cf, &key).map_err(|e| DbError::InternalError(e.to_string()))?;
+                db_guard
+                    .delete_cf(cf, &key)
+                    .map_err(|e| DbError::InternalError(e.to_string()))?;
             }
         }
 
         // Delete index metadata
         let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-        db_guard.delete_cf(cf, idx_meta_key.as_bytes()).map_err(|e| DbError::InternalError(e.to_string()))?;
+        db_guard
+            .delete_cf(cf, idx_meta_key.as_bytes())
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Mark column as not indexed
         meta.columns[col_idx].indexed = false;
@@ -1141,8 +1288,14 @@ impl ColumnarCollection {
 
     /// List all indexes on this collection
     pub fn list_indexes(&self) -> DbResult<Vec<ColumnarIndexMeta>> {
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -1164,7 +1317,8 @@ impl ColumnarCollection {
 
     /// Check if a column has an index
     pub fn has_index(&self, column: &str) -> bool {
-        self.meta.read()
+        self.meta
+            .read()
             .map(|m| m.columns.iter().any(|c| c.name == column && c.indexed))
             .unwrap_or(false)
     }
@@ -1191,17 +1345,19 @@ impl ColumnarCollection {
     /// Get index type/info for a column
     pub fn get_index_type(&self, column: &str) -> Option<ColumnarIndexType> {
         self.meta.read().ok().and_then(|m| {
-            m.columns.iter()
+            m.columns
+                .iter()
                 .find(|c| c.name == column && c.indexed)
                 .and_then(|c| c.index_type.clone())
         })
     }
 
-
-
     /// Lookup rows using Bitmap index
     fn index_lookup_bitmap(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -1212,7 +1368,9 @@ impl ColumnarCollection {
         if let Ok(Some(bytes)) = db_guard.get_cf(cf, idx_key.as_bytes()) {
             if let Ok(bitmap) = self.decompress_data(&bytes, &CompressionType::Lz4) {
                 for (byte_idx, &byte) in bitmap.iter().enumerate() {
-                    if byte == 0 { continue; }
+                    if byte == 0 {
+                        continue;
+                    }
                     for bit_idx in 0..8 {
                         if (byte & (1 << bit_idx)) != 0 {
                             row_ids.push((byte_idx * 8 + bit_idx) as u64);
@@ -1221,18 +1379,28 @@ impl ColumnarCollection {
                 }
             }
         }
-        
+
         Ok(row_ids)
     }
 
     /// Get candidate chunks/rows from MinMax index
-    fn get_candidate_rows_from_minmax(&self, column: &str, filter: &ColumnFilter) -> DbResult<Vec<u64>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+    fn get_candidate_rows_from_minmax(
+        &self,
+        column: &str,
+        filter: &ColumnFilter,
+    ) -> DbResult<Vec<u64>> {
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let row_count = meta.row_count;
         let chunk_count = (row_count + MINMAX_CHUNK_SIZE - 1) / MINMAX_CHUNK_SIZE;
 
@@ -1245,7 +1413,8 @@ impl ColumnarCollection {
                     let mut matches = false;
                     match filter {
                         ColumnFilter::Gt(_, val) => {
-                            matches = compare_values(&chunk.max, val) == std::cmp::Ordering::Greater;
+                            matches =
+                                compare_values(&chunk.max, val) == std::cmp::Ordering::Greater;
                         }
                         ColumnFilter::Gte(_, val) => {
                             matches = compare_values(&chunk.max, val) != std::cmp::Ordering::Less;
@@ -1254,7 +1423,8 @@ impl ColumnarCollection {
                             matches = compare_values(&chunk.min, val) == std::cmp::Ordering::Less;
                         }
                         ColumnFilter::Lte(_, val) => {
-                            matches = compare_values(&chunk.min, val) != std::cmp::Ordering::Greater;
+                            matches =
+                                compare_values(&chunk.min, val) != std::cmp::Ordering::Greater;
                         }
                         _ => {}
                     }
@@ -1273,12 +1443,18 @@ impl ColumnarCollection {
 
     /// Get candidate chunks/rows from Bloom index
     fn get_candidate_rows_from_bloom(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
-        let meta = self.meta.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let row_count = meta.row_count;
         let chunk_count = (row_count + MINMAX_CHUNK_SIZE - 1) / MINMAX_CHUNK_SIZE;
 
@@ -1289,26 +1465,29 @@ impl ColumnarCollection {
             let idx_key = self.encode_bloom_key(column, chunk_id);
             // If bloom filter missing, assume match (safe default)
             let mut matches = true;
-            
+
             if let Ok(Some(bytes)) = db_guard.get_cf(cf, idx_key.as_bytes()) {
-                 if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
-                     matches = filter.contains(&val_str);
-                 }
+                if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
+                    matches = filter.contains(&val_str);
+                }
             }
-            
+
             if matches {
                 let start = chunk_id * MINMAX_CHUNK_SIZE;
                 let end = (start + MINMAX_CHUNK_SIZE).min(row_count);
                 candidate_ids.extend(start..end);
             }
         }
-        
+
         Ok(candidate_ids)
     }
 
     /// Lookup rows matching a value using index (O(1) for equality)
     fn index_lookup_eq(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -1326,7 +1505,10 @@ impl ColumnarCollection {
 
     /// Range scan using sorted index
     fn index_range_scan(&self, column: &str, filter: &ColumnFilter) -> DbResult<Vec<u64>> {
-        let db_guard = self.db.read().map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db_guard = self
+            .db
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
         let cf = db_guard.cf_handle(&self.cf_name).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
@@ -1430,7 +1612,6 @@ impl ColumnarCollection {
             _ => format!("9:{}", value),
         }
     }
-
 
     /// Decode index value from encoded string
     fn decode_index_value(&self, encoded: &str) -> Option<Value> {
@@ -1602,8 +1783,6 @@ impl ColumnarCollection {
         Ok(())
     }
 
-
-
     /// Update indexes when inserting a row with UUID (for UUID-based storage)
     /// Note: Bitmap indexes are not supported with UUIDs (they require positional IDs)
     fn update_indexes_for_row_uuid(
@@ -1689,10 +1868,7 @@ impl ColumnarCollection {
             AggregateOp::Count => Value::Number(values.len().into()),
 
             AggregateOp::Sum => {
-                let sum: f64 = values
-                    .iter()
-                    .filter_map(|v| v.as_f64())
-                    .sum();
+                let sum: f64 = values.iter().filter_map(|v| v.as_f64()).sum();
                 json_number(sum)
             }
 
@@ -1706,29 +1882,23 @@ impl ColumnarCollection {
                 }
             }
 
-            AggregateOp::Min => {
-                values
-                    .iter()
-                    .filter_map(|v| v.as_f64())
-                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(json_number)
-                    .unwrap_or(Value::Null)
-            }
+            AggregateOp::Min => values
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(json_number)
+                .unwrap_or(Value::Null),
 
-            AggregateOp::Max => {
-                values
-                    .iter()
-                    .filter_map(|v| v.as_f64())
-                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(json_number)
-                    .unwrap_or(Value::Null)
-            }
+            AggregateOp::Max => values
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(json_number)
+                .unwrap_or(Value::Null),
 
             AggregateOp::CountDistinct => {
-                let distinct: std::collections::HashSet<String> = values
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect();
+                let distinct: std::collections::HashSet<String> =
+                    values.iter().map(|v| v.to_string()).collect();
                 Value::Number(distinct.len().into())
             }
         }
@@ -1745,13 +1915,17 @@ impl ColumnarCollection {
                 if let Some(idx_type) = self.get_index_type(col) {
                     match idx_type {
                         ColumnarIndexType::Bitmap => return self.index_lookup_bitmap(col, val),
-                        ColumnarIndexType::Sorted | ColumnarIndexType::Hash => return self.index_lookup_eq(col, val),
+                        ColumnarIndexType::Sorted | ColumnarIndexType::Hash => {
+                            return self.index_lookup_eq(col, val)
+                        }
                         ColumnarIndexType::Bloom => {
                             // Bloom filter can give false positives, so it provides candidates.
                             // We still need to verify with actual data.
                             let candidate_ids = self.get_candidate_rows_from_bloom(col, val)?;
                             let values = self.read_column_by_positions(col, &candidate_ids)?;
-                            return Ok(candidate_ids.into_iter().zip(values.into_iter())
+                            return Ok(candidate_ids
+                                .into_iter()
+                                .zip(values.into_iter())
                                 .filter(|(_, v)| v == val)
                                 .map(|(id, _)| id)
                                 .collect());
@@ -1759,7 +1933,7 @@ impl ColumnarCollection {
                         _ => {} // MinMax bad for equality usually, fall back to scan
                     }
                 }
-                
+
                 // Fallback to full scan
                 let values = self.read_column(col, None)?;
                 Ok(row_range
@@ -1786,14 +1960,14 @@ impl ColumnarCollection {
                     candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
                 }
 
-                // If we have candidates, use them to restrict read. 
+                // If we have candidates, use them to restrict read.
                 // However, read_column reads raw values. We still need to filter them.
-                // The candidates vector effectively replaces the row_range iteration space, 
+                // The candidates vector effectively replaces the row_range iteration space,
                 // but we also need to pass it to read_column to avoid IO on skipped chunks.
-                
+
                 // Optimization: calling read_column with candidates only reads those blocks.
                 // Then filter the results.
-                
+
                 // Since `apply_filter` logic below filters based on ALL values returned by `read_column`,
                 // and `read_column` returns values *corresponding* to inputs if provided...
                 // Wait, read_column returns Vec<Value>. If input IDs are [0, 5], it returns [v0, v5].
@@ -1803,15 +1977,17 @@ impl ColumnarCollection {
                 // BUT the filter logic below `values.get(i as usize)` accesses by row index.
                 // If `read_column` returns partial vector, we can't index it by row_id directly.
                 // The existing logic matches: `let values = self.read_column(col, None)?;` -> full column.
-                
+
                 // So I MUST restructure the scan logic to handle partial reads.
                 if let Some(cand_ids) = candidates {
                     let values = self.read_column_by_positions(col, &cand_ids)?;
                     // Zip candidates with values
                     let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(cand_ids.into_iter().zip(values.into_iter())
+                    Ok(cand_ids
+                        .into_iter()
+                        .zip(values.into_iter())
                         .filter(|(_, v): &(_, Value)| {
-                             v.as_f64().map(|n| n > threshold).unwrap_or(false)
+                            v.as_f64().map(|n| n > threshold).unwrap_or(false)
                         })
                         .map(|(id, _)| id)
                         .collect())
@@ -1830,7 +2006,6 @@ impl ColumnarCollection {
                 }
             }
 
-
             ColumnFilter::Gte(col, val) => {
                 // Use sorted index if available
                 if self.has_sorted_index(col) {
@@ -1846,9 +2021,11 @@ impl ColumnarCollection {
                 if let Some(cand_ids) = candidates {
                     let values = self.read_column_by_positions(col, &cand_ids)?;
                     let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(cand_ids.into_iter().zip(values.into_iter())
+                    Ok(cand_ids
+                        .into_iter()
+                        .zip(values.into_iter())
                         .filter(|(_, v): &(_, Value)| {
-                             v.as_f64().map(|n| n >= threshold).unwrap_or(false)
+                            v.as_f64().map(|n| n >= threshold).unwrap_or(false)
                         })
                         .map(|(id, _)| id)
                         .collect())
@@ -1872,7 +2049,7 @@ impl ColumnarCollection {
                 if self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
-                
+
                 // Use MinMax
                 let mut candidates = None;
                 if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
@@ -1882,9 +2059,11 @@ impl ColumnarCollection {
                 if let Some(cand_ids) = candidates {
                     let values = self.read_column_by_positions(col, &cand_ids)?;
                     let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(cand_ids.into_iter().zip(values.into_iter())
+                    Ok(cand_ids
+                        .into_iter()
+                        .zip(values.into_iter())
                         .filter(|(_, v): &(_, Value)| {
-                             v.as_f64().map(|n| n < threshold).unwrap_or(false)
+                            v.as_f64().map(|n| n < threshold).unwrap_or(false)
                         })
                         .map(|(id, _)| id)
                         .collect())
@@ -1908,7 +2087,7 @@ impl ColumnarCollection {
                 if self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
-                
+
                 // Use MinMax
                 let mut candidates = None;
                 if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
@@ -1918,9 +2097,11 @@ impl ColumnarCollection {
                 if let Some(cand_ids) = candidates {
                     let values = self.read_column_by_positions(col, &cand_ids)?;
                     let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(cand_ids.into_iter().zip(values.into_iter())
+                    Ok(cand_ids
+                        .into_iter()
+                        .zip(values.into_iter())
                         .filter(|(_, v): &(_, Value)| {
-                             v.as_f64().map(|n| n <= threshold).unwrap_or(false)
+                            v.as_f64().map(|n| n <= threshold).unwrap_or(false)
                         })
                         .map(|(id, _)| id)
                         .collect())
@@ -1943,8 +2124,10 @@ impl ColumnarCollection {
                 // Use index if available - lookup each value and union results
                 // Check index type to dispatch correctly
                 if let Some(idx_type) = self.get_index_type(col) {
-                   match idx_type {
-                        ColumnarIndexType::Bitmap | ColumnarIndexType::Hash | ColumnarIndexType::Sorted => {
+                    match idx_type {
+                        ColumnarIndexType::Bitmap
+                        | ColumnarIndexType::Hash
+                        | ColumnarIndexType::Sorted => {
                             let mut result = Vec::new();
                             for val in vals {
                                 if idx_type == ColumnarIndexType::Bitmap {
@@ -1964,18 +2147,20 @@ impl ColumnarCollection {
                             }
                             candidates.sort();
                             candidates.dedup();
-                            
+
                             // Verify candidates
                             let values = self.read_column_by_positions(col, &candidates)?;
-                            return Ok(candidates.into_iter().zip(values.into_iter())
+                            return Ok(candidates
+                                .into_iter()
+                                .zip(values.into_iter())
                                 .filter(|(_, v)| vals.contains(v)) // O(N*M) where M is vals len. vals usually small.
                                 .map(|(id, _)| id)
                                 .collect());
                         }
                         _ => {}
-                   }
+                    }
                 }
-                
+
                 let values = self.read_column(col, None)?;
                 Ok(row_range
                     .filter(|&i| {
@@ -1991,14 +2176,16 @@ impl ColumnarCollection {
                 let mut result: Vec<u64> = row_range.collect();
                 for f in filters {
                     let matching = self.apply_filter(f, 0..result.len() as u64)?;
-                    let matching_set: std::collections::HashSet<u64> = matching.into_iter().collect();
+                    let matching_set: std::collections::HashSet<u64> =
+                        matching.into_iter().collect();
                     result.retain(|id| matching_set.contains(id));
                 }
                 Ok(result)
             }
 
             ColumnFilter::Or(filters) => {
-                let mut result_set: std::collections::HashSet<u64> = std::collections::HashSet::new();
+                let mut result_set: std::collections::HashSet<u64> =
+                    std::collections::HashSet::new();
                 for f in filters {
                     let matching = self.apply_filter(f, row_range.clone())?;
                     result_set.extend(matching);
@@ -2039,10 +2226,22 @@ mod tests {
 
     #[test]
     fn test_column_type_inference() {
-        assert_eq!(ColumnType::infer_from_value(&Value::Bool(true)), ColumnType::Bool);
-        assert_eq!(ColumnType::infer_from_value(&serde_json::json!(42)), ColumnType::Int64);
-        assert_eq!(ColumnType::infer_from_value(&serde_json::json!(3.14)), ColumnType::Float64);
-        assert_eq!(ColumnType::infer_from_value(&serde_json::json!("hello")), ColumnType::String);
+        assert_eq!(
+            ColumnType::infer_from_value(&Value::Bool(true)),
+            ColumnType::Bool
+        );
+        assert_eq!(
+            ColumnType::infer_from_value(&serde_json::json!(42)),
+            ColumnType::Int64
+        );
+        assert_eq!(
+            ColumnType::infer_from_value(&serde_json::json!(3.14)),
+            ColumnType::Float64
+        );
+        assert_eq!(
+            ColumnType::infer_from_value(&serde_json::json!("hello")),
+            ColumnType::String
+        );
         assert_eq!(
             ColumnType::infer_from_value(&serde_json::json!("2024-01-01T00:00:00Z")),
             ColumnType::Timestamp
@@ -2066,7 +2265,8 @@ mod tests {
     #[test]
     fn test_lz4_compression_roundtrip() {
         // Test LZ4 compression directly without needing a full ColumnarCollection
-        let data = b"Hello, world! This is test data for compression. Repeated text helps compression.";
+        let data =
+            b"Hello, world! This is test data for compression. Repeated text helps compression.";
 
         // Compress with LZ4
         let compressed = compress_prepend_size(data);

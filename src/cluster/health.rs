@@ -37,7 +37,7 @@ impl HealthMonitor {
     /// Start the background health check loop
     pub async fn start(self) {
         let mut tick = interval(self.config.heartbeat_interval);
-        
+
         loop {
             tick.tick().await;
             self.check_nodes();
@@ -64,7 +64,8 @@ impl HealthMonitor {
             } else if elapsed > self.config.suspicion_threshold {
                 if member.status == NodeStatus::Active {
                     // TODO: Log warning
-                    self.state.mark_status(&member.node.id, NodeStatus::Suspected);
+                    self.state
+                        .mark_status(&member.node.id, NodeStatus::Suspected);
                 }
             }
         }
@@ -79,7 +80,7 @@ mod tests {
     #[test]
     fn test_health_config_default() {
         let config = HealthConfig::default();
-        
+
         assert_eq!(config.heartbeat_interval, Duration::from_secs(5));
         assert_eq!(config.suspicion_threshold, Duration::from_secs(10));
         assert_eq!(config.failure_threshold, Duration::from_secs(15));
@@ -92,7 +93,7 @@ mod tests {
             suspicion_threshold: Duration::from_secs(5),
             failure_threshold: Duration::from_secs(10),
         };
-        
+
         assert_eq!(config.heartbeat_interval, Duration::from_secs(2));
     }
 
@@ -100,7 +101,7 @@ mod tests {
     fn test_health_config_clone() {
         let config = HealthConfig::default();
         let cloned = config.clone();
-        
+
         assert_eq!(config.heartbeat_interval, cloned.heartbeat_interval);
         assert_eq!(config.failure_threshold, cloned.failure_threshold);
     }
@@ -109,7 +110,7 @@ mod tests {
     fn test_health_monitor_new() {
         let config = HealthConfig::default();
         let state = ClusterState::new("local".to_string());
-        
+
         let _monitor = HealthMonitor::new(config, state);
         // Should not panic
     }
@@ -118,7 +119,7 @@ mod tests {
     fn test_check_nodes_skips_local() {
         let config = HealthConfig::default();
         let state = ClusterState::new("local".to_string());
-        
+
         // Add local node
         let local_node = Node::new(
             "local".to_string(),
@@ -126,12 +127,12 @@ mod tests {
             "127.0.0.1:9000".to_string(),
         );
         state.add_member(local_node, NodeStatus::Active);
-        
+
         let monitor = HealthMonitor::new(config, state.clone());
-        
+
         // Should not change local node status
         monitor.check_nodes();
-        
+
         let member = state.get_member("local").unwrap();
         assert_eq!(member.status, NodeStatus::Active);
     }
@@ -141,10 +142,10 @@ mod tests {
         let config = HealthConfig {
             heartbeat_interval: Duration::from_secs(1),
             suspicion_threshold: Duration::from_millis(1), // Very short for test
-            failure_threshold: Duration::from_secs(1000), // Very long to avoid Dead
+            failure_threshold: Duration::from_secs(1000),  // Very long to avoid Dead
         };
         let state = ClusterState::new("local".to_string());
-        
+
         // Add a remote node with old heartbeat
         let remote_node = Node::new(
             "remote".to_string(),
@@ -152,13 +153,13 @@ mod tests {
             "127.0.0.1:9001".to_string(),
         );
         state.add_member(remote_node, NodeStatus::Active);
-        
+
         // Sleep to exceed suspicion threshold
         std::thread::sleep(Duration::from_millis(10));
-        
+
         let monitor = HealthMonitor::new(config, state.clone());
         monitor.check_nodes();
-        
+
         let member = state.get_member("remote").unwrap();
         assert_eq!(member.status, NodeStatus::Suspected);
     }
@@ -171,22 +172,21 @@ mod tests {
             failure_threshold: Duration::from_millis(1), // Very short for test
         };
         let state = ClusterState::new("local".to_string());
-        
+
         let remote_node = Node::new(
             "remote".to_string(),
             "127.0.0.1:8001".to_string(),
             "127.0.0.1:9001".to_string(),
         );
         state.add_member(remote_node, NodeStatus::Active);
-        
+
         // Sleep to exceed failure threshold
         std::thread::sleep(Duration::from_millis(10));
-        
+
         let monitor = HealthMonitor::new(config, state.clone());
         monitor.check_nodes();
-        
+
         let member = state.get_member("remote").unwrap();
         assert_eq!(member.status, NodeStatus::Dead);
     }
 }
-

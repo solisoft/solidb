@@ -5,9 +5,7 @@ use crate::sync::log::SyncLog;
 use crate::sync::{LogEntry, Operation};
 
 use argon2::{
-    password_hash::{
-        PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-    },
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use axum::{
@@ -17,8 +15,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey, Algorithm};
-
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
 use once_cell::sync::Lazy;
 use rand_core::{OsRng, RngCore};
@@ -41,7 +38,9 @@ pub fn check_rate_limit(ip: &str) -> Result<(), crate::error::DbError> {
     let now = Instant::now();
     let window = std::time::Duration::from_secs(RATE_LIMIT_WINDOW_SECS);
 
-    let mut limiter = LOGIN_RATE_LIMITER.write().unwrap_or_else(|e| e.into_inner());
+    let mut limiter = LOGIN_RATE_LIMITER
+        .write()
+        .unwrap_or_else(|e| e.into_inner());
 
     // Get or create entry for this IP
     let attempts = limiter.entry(ip.to_string()).or_insert_with(Vec::new);
@@ -76,7 +75,9 @@ static JWT_SECRET: Lazy<String> = Lazy::new(|| {
     match std::env::var("JWT_SECRET") {
         Ok(secret) => {
             if secret.len() < 32 {
-                tracing::warn!("⚠️  JWT_SECRET is less than 32 characters - consider using a longer secret");
+                tracing::warn!(
+                    "⚠️  JWT_SECRET is less than 32 characters - consider using a longer secret"
+                );
             }
             secret
         }
@@ -91,7 +92,9 @@ static JWT_SECRET: Lazy<String> = Lazy::new(|| {
             tracing::warn!("║  All tokens will be INVALID after server restart.                ║");
             tracing::warn!("║                                                                  ║");
             tracing::warn!("║  For production, set JWT_SECRET to a secure 32+ character value: ║");
-            tracing::warn!("║    export JWT_SECRET=\"your-secure-random-secret-here\"            ║");
+            tracing::warn!(
+                "║    export JWT_SECRET=\"your-secure-random-secret-here\"            ║"
+            );
             tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
             generated
         }
@@ -103,7 +106,7 @@ pub struct Claims {
     pub sub: String, // username
     pub exp: usize,  // expiration
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub livequery: Option<bool>,  // If true, this token is only valid for live queries
+    pub livequery: Option<bool>, // If true, this token is only valid for live queries
     /// Role names assigned to this user (for RBAC)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<String>>,
@@ -141,7 +144,7 @@ pub struct ApiKey {
 pub struct ApiKeyResponse {
     pub id: String,
     pub name: String,
-    pub key: String,  // Only returned on creation
+    pub key: String, // Only returned on creation
     pub created_at: String,
 }
 
@@ -160,7 +163,6 @@ impl AuthService {
     /// Initialize authentication system
     /// Checks if admin user exists, if not creates default
     pub fn init(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
-
         // Force JWT_SECRET initialization to show warning at startup if not configured
         let _ = JWT_SECRET.len();
 
@@ -169,7 +171,8 @@ impl AuthService {
         // Check for cluster mode with peers (joining node)
         // If we have peers, we expect to sync data, so we SHOULD NOT create default admins/api_keys
         // Unless there is an explicit password override
-        let is_joining_cluster = storage.cluster_config()
+        let is_joining_cluster = storage
+            .cluster_config()
             .map(|c| !c.peers.is_empty())
             .unwrap_or(false);
 
@@ -182,7 +185,10 @@ impl AuthService {
         // Ensure _admins collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ADMIN_COLL) {
             if should_skip_defaults {
-                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", ADMIN_COLL);
+                tracing::info!(
+                    "Cluster join detected: Skipping {} creation (waiting for sync)",
+                    ADMIN_COLL
+                );
             } else {
                 tracing::info!("Creating {} collection", ADMIN_COLL);
                 db.create_collection(ADMIN_COLL.to_string(), None)?;
@@ -192,7 +198,10 @@ impl AuthService {
         // Ensure _api_keys collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(API_KEYS_COLL) {
             if should_skip_defaults {
-                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", API_KEYS_COLL);
+                tracing::info!(
+                    "Cluster join detected: Skipping {} creation (waiting for sync)",
+                    API_KEYS_COLL
+                );
             } else {
                 tracing::info!("Creating {} collection", API_KEYS_COLL);
                 db.create_collection(API_KEYS_COLL.to_string(), None)?;
@@ -204,7 +213,7 @@ impl AuthService {
         if let Ok(collection) = db.get_collection(ADMIN_COLL) {
             if collection.count() == 0 {
                 if should_skip_defaults {
-                     tracing::info!("Cluster join detected: Skipping default admin user creation (waiting for sync)");
+                    tracing::info!("Cluster join detected: Skipping default admin user creation (waiting for sync)");
                 } else {
                     // Check for override password (for testing/development)
                     // If SOLIDB_ADMIN_PASSWORD is set, use it; otherwise generate random
@@ -230,40 +239,58 @@ impl AuthService {
                         password_hash,
                     };
 
-                    let doc_value = serde_json::to_value(user)
-                        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+                    let doc_value = serde_json::to_value(user).map_err(|e| {
+                        DbError::InternalError(format!("Serialization error: {}", e))
+                    })?;
 
                     collection.insert(doc_value.clone())?; // Clone for recording
 
                     // Record write for replication
                     if let Some(log) = replication_log {
-                         let entry = LogEntry {
-                             sequence: 0,
-                             node_id: "".to_string(), // implementation log fills this
-                             database: ADMIN_DB.to_string(),
-                             collection: ADMIN_COLL.to_string(),
-                             operation: Operation::Insert,
-                             key: DEFAULT_USER.to_string(),
-                             data: serde_json::to_vec(&doc_value).ok(),
-                             timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                             origin_sequence: None,
-                         };
-                         let _ = log.append(entry);
+                        let entry = LogEntry {
+                            sequence: 0,
+                            node_id: "".to_string(), // implementation log fills this
+                            database: ADMIN_DB.to_string(),
+                            collection: ADMIN_COLL.to_string(),
+                            operation: Operation::Insert,
+                            key: DEFAULT_USER.to_string(),
+                            data: serde_json::to_vec(&doc_value).ok(),
+                            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                            origin_sequence: None,
+                        };
+                        let _ = log.append(entry);
                     }
 
-
                     if is_override {
-                        tracing::warn!("Admin user created with password from SOLIDB_ADMIN_PASSWORD env var");
+                        tracing::warn!(
+                            "Admin user created with password from SOLIDB_ADMIN_PASSWORD env var"
+                        );
                     } else {
-                        tracing::warn!("╔══════════════════════════════════════════════════════════════════╗");
-                        tracing::warn!("║              INITIAL ADMIN ACCOUNT CREATED                       ║");
-                        tracing::warn!("╠══════════════════════════════════════════════════════════════════╣");
-                        tracing::warn!("║  Username: admin                                                 ║");
+                        tracing::warn!(
+                            "╔══════════════════════════════════════════════════════════════════╗"
+                        );
+                        tracing::warn!(
+                            "║              INITIAL ADMIN ACCOUNT CREATED                       ║"
+                        );
+                        tracing::warn!(
+                            "╠══════════════════════════════════════════════════════════════════╣"
+                        );
+                        tracing::warn!(
+                            "║  Username: admin                                                 ║"
+                        );
                         tracing::warn!("║  Password: {}                             ║", password);
-                        tracing::warn!("║                                                                  ║");
-                        tracing::warn!("║  ⚠️  SAVE THIS PASSWORD! It will not be shown again.             ║");
-                        tracing::warn!("║  Change it after first login via the API.                        ║");
-                        tracing::warn!("╚══════════════════════════════════════════════════════════════════╝");
+                        tracing::warn!(
+                            "║                                                                  ║"
+                        );
+                        tracing::warn!(
+                            "║  ⚠️  SAVE THIS PASSWORD! It will not be shown again.             ║"
+                        );
+                        tracing::warn!(
+                            "║  Change it after first login via the API.                        ║"
+                        );
+                        tracing::warn!(
+                            "╚══════════════════════════════════════════════════════════════════╝"
+                        );
                     }
                 }
             }
@@ -276,13 +303,20 @@ impl AuthService {
     }
 
     /// Initialize RBAC system: create collections, builtin roles, and migrate existing users
-    fn init_rbac(storage: &StorageEngine, replication_log: Option<&SyncLog>, should_skip_defaults: bool) -> Result<(), DbError> {
+    fn init_rbac(
+        storage: &StorageEngine,
+        replication_log: Option<&SyncLog>,
+        should_skip_defaults: bool,
+    ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
 
         // Ensure _roles collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(ROLES_COLL) {
             if should_skip_defaults {
-                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", ROLES_COLL);
+                tracing::info!(
+                    "Cluster join detected: Skipping {} creation (waiting for sync)",
+                    ROLES_COLL
+                );
             } else {
                 tracing::info!("Creating {} collection for RBAC", ROLES_COLL);
                 db.create_collection(ROLES_COLL.to_string(), None)?;
@@ -292,7 +326,10 @@ impl AuthService {
         // Ensure _user_roles collection exists
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(USER_ROLES_COLL) {
             if should_skip_defaults {
-                tracing::info!("Cluster join detected: Skipping {} creation (waiting for sync)", USER_ROLES_COLL);
+                tracing::info!(
+                    "Cluster join detected: Skipping {} creation (waiting for sync)",
+                    USER_ROLES_COLL
+                );
             } else {
                 tracing::info!("Creating {} collection for RBAC", USER_ROLES_COLL);
                 db.create_collection(USER_ROLES_COLL.to_string(), None)?;
@@ -303,7 +340,10 @@ impl AuthService {
         let config_coll = "_config";
         if let Err(DbError::CollectionNotFound(_)) = db.get_collection(config_coll) {
             if !should_skip_defaults {
-                tracing::info!("Creating {} collection for system configuration", config_coll);
+                tracing::info!(
+                    "Creating {} collection for system configuration",
+                    config_coll
+                );
                 db.create_collection(config_coll.to_string(), None)?;
             }
         }
@@ -330,8 +370,9 @@ impl AuthService {
             for role in Role::builtin_roles() {
                 // Only insert if role doesn't exist
                 if roles_coll.get(&role.name).is_err() {
-                    let role_value = serde_json::to_value(&role)
-                        .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
+                    let role_value = serde_json::to_value(&role).map_err(|e| {
+                        DbError::InternalError(format!("Serialization error: {}", e))
+                    })?;
                     roles_coll.insert(role_value.clone())?;
                     tracing::info!("Created builtin role: {}", role.name);
 
@@ -375,7 +416,10 @@ impl AuthService {
     }
 
     /// Migrate existing users to have admin role
-    fn migrate_existing_users_to_admin(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+    fn migrate_existing_users_to_admin(
+        storage: &StorageEngine,
+        replication_log: Option<&SyncLog>,
+    ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
         let admins_coll = db.get_collection(ADMIN_COLL)?;
         let user_roles_coll = db.get_collection(USER_ROLES_COLL)?;
@@ -427,7 +471,10 @@ impl AuthService {
     }
 
     /// Migrate existing API keys to have admin role
-    fn migrate_existing_api_keys_to_admin(storage: &StorageEngine, replication_log: Option<&SyncLog>) -> Result<(), DbError> {
+    fn migrate_existing_api_keys_to_admin(
+        storage: &StorageEngine,
+        replication_log: Option<&SyncLog>,
+    ) -> Result<(), DbError> {
         let db = storage.get_database(ADMIN_DB)?;
         let api_keys_coll = db.get_collection(API_KEYS_COLL)?;
 
@@ -496,7 +543,11 @@ impl AuthService {
     }
 
     /// Create JWT for user with roles
-    pub fn create_jwt_with_roles(username: &str, roles: Option<Vec<String>>, scoped_databases: Option<Vec<String>>) -> Result<String, DbError> {
+    pub fn create_jwt_with_roles(
+        username: &str,
+        roles: Option<Vec<String>>,
+        scoped_databases: Option<Vec<String>>,
+    ) -> Result<String, DbError> {
         let expiration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -551,7 +602,8 @@ impl AuthService {
             token,
             &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
             &Validation::new(Algorithm::HS256),
-        ).map_err(|_| DbError::BadRequest("Invalid token".to_string()))?;
+        )
+        .map_err(|_| DbError::BadRequest("Invalid token".to_string()))?;
 
         Ok(token_data.claims)
     }
@@ -575,7 +627,7 @@ impl AuthService {
 
     /// Hash an API key using SHA-256 (fast for verification)
     fn hash_api_key(key: &str) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(key.as_bytes());
         hex::encode(hasher.finalize())
@@ -610,7 +662,11 @@ impl AuthService {
                     sub: format!("api-key:{}", api_key.name),
                     exp: usize::MAX, // Claims never expire (API key expiry checked above)
                     livequery: None,
-                    roles: if api_key.roles.is_empty() { None } else { Some(api_key.roles) },
+                    roles: if api_key.roles.is_empty() {
+                        None
+                    } else {
+                        Some(api_key.roles)
+                    },
                     scoped_databases: api_key.scoped_databases,
                 });
             }
@@ -645,7 +701,10 @@ impl AuthService {
             // automatically grant admin role. This will be removed later.
             if let Ok(admins_coll) = db.get_collection(ADMIN_COLL) {
                 if admins_coll.count() == 1 {
-                    tracing::info!("Single admin user '{}' detected - auto-granting admin role", username);
+                    tracing::info!(
+                        "Single admin user '{}' detected - auto-granting admin role",
+                        username
+                    );
                     return Some(vec!["admin".to_string()]);
                 }
             }
@@ -679,18 +738,22 @@ pub async fn auth_middleware(
 
     if is_internal_cluster_request {
         // Get cluster secret from keyfile via storage config
-        let cluster_secret = state.storage
+        let cluster_secret = state
+            .storage
             .cluster_config()
             .and_then(|c| c.keyfile.clone())
             .unwrap_or_default();
 
-        let provided_secret = req.headers()
+        let provided_secret = req
+            .headers()
             .get("X-Cluster-Secret")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
         // Only bypass if secrets match and secret is not empty
-        if !cluster_secret.is_empty() && constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes()) {
+        if !cluster_secret.is_empty()
+            && constant_time_eq(cluster_secret.as_bytes(), provided_secret.as_bytes())
+        {
             let claims = Claims {
                 sub: "cluster-internal".to_string(),
                 exp: usize::MAX,
@@ -707,12 +770,8 @@ pub async fn auth_middleware(
         // This prevents external attackers from using X-Shard-Direct to bypass auth
     }
 
-
     // First check for X-API-Key header
-    if let Some(api_key) = req.headers()
-        .get("X-API-Key")
-        .and_then(|h| h.to_str().ok())
-    {
+    if let Some(api_key) = req.headers().get("X-API-Key").and_then(|h| h.to_str().ok()) {
         match AuthService::validate_api_key(&state.storage, api_key) {
             Ok(claims) => {
                 req.extensions_mut().insert(claims);
@@ -723,7 +782,8 @@ pub async fn auth_middleware(
     }
 
     // Check for Authorization header
-    let auth_header = req.headers()
+    let auth_header = req
+        .headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok());
 
@@ -755,17 +815,26 @@ pub async fn auth_middleware(
         // Support: Authorization: Basic <base64(user:pass)>
         if header.starts_with("Basic ") {
             let encoded = &header[6..];
-            if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded) {
+            if let Ok(decoded) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+            {
                 if let Ok(credentials) = String::from_utf8(decoded) {
                     if let Some((username, password)) = credentials.split_once(':') {
                         // Validate against _admins collection
                         if let Ok(db) = state.storage.get_database("_system") {
                             if let Ok(collection) = db.get_collection("_admins") {
                                 if let Ok(doc) = collection.get(username) {
-                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value()) {
-                                        if AuthService::verify_password(password, &user.password_hash) {
+                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
+                                    {
+                                        if AuthService::verify_password(
+                                            password,
+                                            &user.password_hash,
+                                        ) {
                                             // Load user roles from _user_roles
-                                            let roles = AuthService::get_user_roles(&state.storage, username);
+                                            let roles = AuthService::get_user_roles(
+                                                &state.storage,
+                                                username,
+                                            );
                                             let claims = Claims {
                                                 sub: username.to_string(),
                                                 exp: usize::MAX,
@@ -809,12 +878,8 @@ pub async fn permissive_auth_middleware(
     mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    
     // First check for X-API-Key header
-    if let Some(api_key) = req.headers()
-        .get("X-API-Key")
-        .and_then(|h| h.to_str().ok())
-    {
+    if let Some(api_key) = req.headers().get("X-API-Key").and_then(|h| h.to_str().ok()) {
         // If API key is present, it MUST be valid
         match AuthService::validate_api_key(&state.storage, api_key) {
             Ok(claims) => {
@@ -826,13 +891,14 @@ pub async fn permissive_auth_middleware(
     }
 
     // Check for Authorization header
-    let auth_header = req.headers()
+    let auth_header = req
+        .headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok());
 
     if let Some(header) = auth_header {
         // If Authorization header is present, it MUST be valid
-        
+
         // Support: Authorization: ApiKey <key>
         if header.starts_with("ApiKey ") {
             let api_key = &header[7..];
@@ -860,17 +926,26 @@ pub async fn permissive_auth_middleware(
         // Support: Authorization: Basic <base64(user:pass)>
         if header.starts_with("Basic ") {
             let encoded = &header[6..];
-            if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded) {
+            if let Ok(decoded) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+            {
                 if let Ok(credentials) = String::from_utf8(decoded) {
                     if let Some((username, password)) = credentials.split_once(':') {
                         // Validate against _admins collection
                         if let Ok(db) = state.storage.get_database("_system") {
                             if let Ok(collection) = db.get_collection("_admins") {
                                 if let Ok(doc) = collection.get(username) {
-                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value()) {
-                                        if AuthService::verify_password(password, &user.password_hash) {
+                                    if let Ok(user) = serde_json::from_value::<User>(doc.to_value())
+                                    {
+                                        if AuthService::verify_password(
+                                            password,
+                                            &user.password_hash,
+                                        ) {
                                             // Load user roles from _user_roles
-                                            let roles = AuthService::get_user_roles(&state.storage, username);
+                                            let roles = AuthService::get_user_roles(
+                                                &state.storage,
+                                                username,
+                                            );
                                             let claims = Claims {
                                                 sub: username.to_string(),
                                                 exp: usize::MAX,
@@ -904,7 +979,7 @@ mod tests {
     fn test_hash_and_verify_password() {
         let password = "test_password_123";
         let hash = AuthService::hash_password(password).unwrap();
-        
+
         assert!(!hash.is_empty());
         assert!(AuthService::verify_password(password, &hash));
         assert!(!AuthService::verify_password("wrong_password", &hash));
@@ -918,9 +993,9 @@ mod tests {
     #[test]
     fn test_create_and_validate_jwt() {
         let token = AuthService::create_jwt("testuser").unwrap();
-        
+
         assert!(!token.is_empty());
-        
+
         let claims = AuthService::validate_token(&token).unwrap();
         assert_eq!(claims.sub, "testuser");
         assert!(claims.exp > 0);
@@ -936,7 +1011,7 @@ mod tests {
     #[test]
     fn test_create_livequery_jwt() {
         let token = AuthService::create_livequery_jwt().unwrap();
-        
+
         let claims = AuthService::validate_token(&token).unwrap();
         assert_eq!(claims.sub, "livequery");
         assert_eq!(claims.livequery, Some(true));
@@ -945,16 +1020,16 @@ mod tests {
     #[test]
     fn test_generate_api_key() {
         let (raw_key, hash) = AuthService::generate_api_key();
-        
+
         // Key should start with sk_
         assert!(raw_key.starts_with("sk_"));
-        
+
         // Key should be 67 characters (sk_ + 64 hex chars)
         assert_eq!(raw_key.len(), 67);
-        
+
         // Hash should be 64 characters (SHA-256 hex)
         assert_eq!(hash.len(), 64);
-        
+
         // Hashing same key should produce same hash
         let hash2 = AuthService::hash_api_key(&raw_key);
         assert_eq!(hash, hash2);
@@ -964,7 +1039,7 @@ mod tests {
     fn test_api_key_uniqueness() {
         let (key1, _) = AuthService::generate_api_key();
         let (key2, _) = AuthService::generate_api_key();
-        
+
         assert_ne!(key1, key2);
     }
 
@@ -999,7 +1074,7 @@ mod tests {
             username: "admin".to_string(),
             password_hash: "hash123".to_string(),
         };
-        
+
         assert_eq!(user.username, "admin");
         assert_eq!(user.password_hash, "hash123");
     }
@@ -1070,13 +1145,12 @@ mod tests {
         let password = "same_password";
         let hash1 = AuthService::hash_password(password).unwrap();
         let hash2 = AuthService::hash_password(password).unwrap();
-        
+
         // Hashes should be different due to random salt
         assert_ne!(hash1, hash2);
-        
+
         // But both should verify correctly
         assert!(AuthService::verify_password(password, &hash1));
         assert!(AuthService::verify_password(password, &hash2));
     }
 }
-

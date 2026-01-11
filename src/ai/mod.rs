@@ -37,14 +37,14 @@ pub use orchestrator::{
 pub use marketplace::{
     AgentDiscoveryQuery, AgentDiscoveryResponse, AgentMarketplace, AgentRanking,
     AgentRankingsResponse, AgentReputation, RankedAgent, RecentPerformance, ScoreBreakdown,
-    TaskTypeStats, VerifiedCapability, VerificationMethod,
+    TaskTypeStats, VerificationMethod, VerifiedCapability,
 };
 
 pub use learning::{
     ActionType, FeedbackContext, FeedbackEvent, FeedbackOutcome, FeedbackQuery, FeedbackType,
     LearningSystem, ListFeedbackResponse, ListPatternsResponse, Pattern, PatternMatch,
-    PatternQuery, PatternSignature, PatternType, ProcessingResult, Recommendation,
-    SuggestedAction, TestOutput,
+    PatternQuery, PatternSignature, PatternType, ProcessingResult, Recommendation, SuggestedAction,
+    TestOutput,
 };
 
 pub use recovery::{

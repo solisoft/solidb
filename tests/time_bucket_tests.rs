@@ -1,10 +1,8 @@
-
-use solidb::{
-    AggregateOp, ColumnDef, ColumnType, ColumnarCollection,
-    CompressionType, StorageEngine,
-};
-use solidb::storage::columnar::GroupByColumn;
 use serde_json::json;
+use solidb::storage::columnar::GroupByColumn;
+use solidb::{
+    AggregateOp, ColumnDef, ColumnType, ColumnarCollection, CompressionType, StorageEngine,
+};
 use tempfile::TempDir;
 
 fn create_test_engine() -> (StorageEngine, TempDir) {
@@ -63,9 +61,14 @@ fn test_time_bucket_grouping() {
     col.insert_rows(rows).unwrap();
 
     // Group by 1h bucket
-    let group_cols = vec![GroupByColumn::TimeBucket("timestamp".to_string(), "1h".to_string())];
-    
-    let results = col.group_by(&group_cols, "value", AggregateOp::Sum).unwrap();
+    let group_cols = vec![GroupByColumn::TimeBucket(
+        "timestamp".to_string(),
+        "1h".to_string(),
+    )];
+
+    let results = col
+        .group_by(&group_cols, "value", AggregateOp::Sum)
+        .unwrap();
 
     // Expected groups:
     // 10:00 -> 10+20 = 30
@@ -75,14 +78,38 @@ fn test_time_bucket_grouping() {
     assert_eq!(results.len(), 3);
 
     // Verify 10:00
-    let group_10 = results.iter().find(|r| r["timestamp"].as_str().unwrap().starts_with("2024-01-01T10:00")).unwrap();
+    let group_10 = results
+        .iter()
+        .find(|r| {
+            r["timestamp"]
+                .as_str()
+                .unwrap()
+                .starts_with("2024-01-01T10:00")
+        })
+        .unwrap();
     assert_eq!(group_10["_agg"], json!(30.0));
 
     // Verify 11:00
-    let group_11 = results.iter().find(|r| r["timestamp"].as_str().unwrap().starts_with("2024-01-01T11:00")).unwrap();
+    let group_11 = results
+        .iter()
+        .find(|r| {
+            r["timestamp"]
+                .as_str()
+                .unwrap()
+                .starts_with("2024-01-01T11:00")
+        })
+        .unwrap();
     assert_eq!(group_11["_agg"], json!(70.0));
 
-     // Verify 12:00
-    let group_12 = results.iter().find(|r| r["timestamp"].as_str().unwrap().starts_with("2024-01-01T12:00")).unwrap();
+    // Verify 12:00
+    let group_12 = results
+        .iter()
+        .find(|r| {
+            r["timestamp"]
+                .as_str()
+                .unwrap()
+                .starts_with("2024-01-01T12:00")
+        })
+        .unwrap();
     assert_eq!(group_12["_agg"], json!(50.0));
 }
