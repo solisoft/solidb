@@ -23,9 +23,7 @@ fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Val
 }
 
 fn setup_sales_data(engine: &StorageEngine) {
-    engine
-        .create_collection("sales".to_string(), None)
-        .unwrap();
+    engine.create_collection("sales".to_string(), None).unwrap();
     let sales = engine.get_collection("sales").unwrap();
 
     sales
@@ -426,9 +424,7 @@ fn test_multiple_window_functions() {
 #[test]
 fn test_window_function_empty_collection() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("empty".to_string(), None)
-        .unwrap();
+    engine.create_collection("empty".to_string(), None).unwrap();
 
     let results = execute_query(
         &engine,
@@ -450,9 +446,7 @@ fn test_window_function_single_row() {
         .create_collection("single".to_string(), None)
         .unwrap();
     let single = engine.get_collection("single").unwrap();
-    single
-        .insert(json!({"_key": "1", "value": 100}))
-        .unwrap();
+    single.insert(json!({"_key": "1", "value": 100})).unwrap();
 
     let results = execute_query(
         &engine,

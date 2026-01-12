@@ -53,11 +53,11 @@ pub enum Token {
     Partition, // PARTITION (BY is handled separately)
 
     // CASE expression keywords
-    Case,  // CASE
-    When,  // WHEN
-    Then,  // THEN
-    Else,  // ELSE
-    End,   // END
+    Case, // CASE
+    When, // WHEN
+    Then, // THEN
+    Else, // ELSE
+    End,  // END
 
     // Identifiers and literals
     Identifier(String),
@@ -89,6 +89,7 @@ pub enum Token {
     Pipe,       // |
     Caret,      // ^
     Tilde,      // ~
+    FuzzyEqual, // ~=
     LeftShift,  // <<
     RightShift, // >>
 
@@ -540,7 +541,12 @@ impl Lexer {
             }
             Some('~') => {
                 self.advance();
-                Token::Tilde
+                if self.current_char == Some('=') {
+                    self.advance();
+                    Token::FuzzyEqual
+                } else {
+                    Token::Tilde
+                }
             }
             Some('.') => {
                 self.advance();

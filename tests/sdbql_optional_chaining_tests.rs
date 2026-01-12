@@ -23,9 +23,7 @@ fn execute_query(engine: &StorageEngine, query_str: &str) -> Vec<serde_json::Val
 }
 
 fn setup_test_data(engine: &StorageEngine) {
-    engine
-        .create_collection("users".to_string(), None)
-        .unwrap();
+    engine.create_collection("users".to_string(), None).unwrap();
     let users = engine.get_collection("users").unwrap();
 
     // User with full nested data
@@ -247,13 +245,19 @@ fn test_optional_chaining_with_null_coalescing() {
 
     assert_eq!(results.len(), 3);
 
-    let alice = results.iter().find(|r| r["name"] == json!("Alice")).unwrap();
+    let alice = results
+        .iter()
+        .find(|r| r["name"] == json!("Alice"))
+        .unwrap();
     assert_eq!(alice["city"], json!("New York"));
 
     let bob = results.iter().find(|r| r["name"] == json!("Bob")).unwrap();
     assert_eq!(bob["city"], json!("Unknown"));
 
-    let charlie = results.iter().find(|r| r["name"] == json!("Charlie")).unwrap();
+    let charlie = results
+        .iter()
+        .find(|r| r["name"] == json!("Charlie"))
+        .unwrap();
     assert_eq!(charlie["city"], json!("Boston"));
 }
 
@@ -275,13 +279,19 @@ fn test_deep_optional_with_null_coalescing() {
 
     assert_eq!(results.len(), 3);
 
-    let alice = results.iter().find(|r| r["name"] == json!("Alice")).unwrap();
+    let alice = results
+        .iter()
+        .find(|r| r["name"] == json!("Alice"))
+        .unwrap();
     assert_eq!(alice["lat"], json!(40.7128));
 
     let bob = results.iter().find(|r| r["name"] == json!("Bob")).unwrap();
     assert_eq!(bob["lat"], json!(0));
 
-    let charlie = results.iter().find(|r| r["name"] == json!("Charlie")).unwrap();
+    let charlie = results
+        .iter()
+        .find(|r| r["name"] == json!("Charlie"))
+        .unwrap();
     assert_eq!(charlie["lat"], json!(0));
 }
 
@@ -309,7 +319,10 @@ fn test_optional_chaining_in_return_object() {
 
     assert_eq!(results.len(), 3);
 
-    let alice = results.iter().find(|r| r["name"] == json!("Alice")).unwrap();
+    let alice = results
+        .iter()
+        .find(|r| r["name"] == json!("Alice"))
+        .unwrap();
     assert_eq!(alice["city"], json!("New York"));
     assert_eq!(alice["bio"], json!("Developer"));
     assert_eq!(alice["lat"], json!(40.7128));
@@ -327,9 +340,7 @@ fn test_optional_chaining_in_return_object() {
 #[test]
 fn test_optional_chaining_on_array() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("data".to_string(), None)
-        .unwrap();
+    engine.create_collection("data".to_string(), None).unwrap();
     let data = engine.get_collection("data").unwrap();
 
     data.insert(json!({
@@ -354,9 +365,7 @@ fn test_optional_chaining_on_array() {
 #[test]
 fn test_optional_chaining_on_number() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("data".to_string(), None)
-        .unwrap();
+    engine.create_collection("data".to_string(), None).unwrap();
     let data = engine.get_collection("data").unwrap();
 
     data.insert(json!({
@@ -381,9 +390,7 @@ fn test_optional_chaining_on_number() {
 #[test]
 fn test_optional_chaining_on_string() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("data".to_string(), None)
-        .unwrap();
+    engine.create_collection("data".to_string(), None).unwrap();
     let data = engine.get_collection("data").unwrap();
 
     data.insert(json!({

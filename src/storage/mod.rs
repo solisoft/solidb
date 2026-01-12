@@ -18,8 +18,8 @@ pub use document::Document;
 pub use engine::StorageEngine;
 pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
-    bm25_score, calculate_idf, levenshtein_distance, tokenize, FulltextMatch, Index, IndexStats,
-    IndexType, TtlIndex, TtlIndexStats,
+    bm25_score, calculate_idf, generate_ngrams, levenshtein_distance, ngram_similarity, tokenize,
+    FulltextMatch, Index, IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
 };
 pub use schema::{
     CollectionSchema, SchemaCompilationError, SchemaValidationError, SchemaValidationMode,

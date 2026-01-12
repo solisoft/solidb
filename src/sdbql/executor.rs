@@ -3291,8 +3291,13 @@ impl<'a> QueryExecutor<'a> {
                 self.sort_partition_indices(rows, &partition_indices, &spec.order_by)?;
 
             // Compute function for each row in partition
-            let partition_values =
-                self.compute_window_in_partition(rows, &sorted_indices, function, arguments, &spec.order_by)?;
+            let partition_values = self.compute_window_in_partition(
+                rows,
+                &sorted_indices,
+                function,
+                arguments,
+                &spec.order_by,
+            )?;
 
             // Map values back to original row positions
             for (i, original_idx) in sorted_indices.iter().enumerate() {
@@ -3454,10 +3459,7 @@ impl<'a> QueryExecutor<'a> {
                         let prev_idx = sorted_indices[i - offset];
                         let val = arguments
                             .first()
-                            .map(|arg| {
-                                self.evaluate_expr_with_context(arg, &rows[prev_idx])
-                                    .ok()
-                            })
+                            .map(|arg| self.evaluate_expr_with_context(arg, &rows[prev_idx]).ok())
                             .flatten()
                             .unwrap_or(Value::Null);
                         results.push(val);
@@ -3487,10 +3489,7 @@ impl<'a> QueryExecutor<'a> {
                         let next_idx = sorted_indices[i + offset];
                         let val = arguments
                             .first()
-                            .map(|arg| {
-                                self.evaluate_expr_with_context(arg, &rows[next_idx])
-                                    .ok()
-                            })
+                            .map(|arg| self.evaluate_expr_with_context(arg, &rows[next_idx]).ok())
                             .flatten()
                             .unwrap_or(Value::Null);
                         results.push(val);
@@ -3537,10 +3536,7 @@ impl<'a> QueryExecutor<'a> {
                             let idx = sorted_indices[i];
                             arguments
                                 .first()
-                                .map(|arg| {
-                                    self.evaluate_expr_with_context(arg, &rows[idx])
-                                        .ok()
-                                })
+                                .map(|arg| self.evaluate_expr_with_context(arg, &rows[idx]).ok())
                                 .flatten()
                                 .unwrap_or(Value::Null)
                         })
@@ -3548,8 +3544,7 @@ impl<'a> QueryExecutor<'a> {
 
                     let result = match function.to_uppercase().as_str() {
                         "SUM" => {
-                            let sum: f64 =
-                                frame_values.iter().filter_map(|v| v.as_f64()).sum();
+                            let sum: f64 = frame_values.iter().filter_map(|v| v.as_f64()).sum();
                             serde_json::Number::from_f64(sum)
                                 .map(Value::Number)
                                 .unwrap_or(Value::Null)
@@ -6281,6 +6276,191 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(serde_json::Number::from(distance)))
             }
 
+            // SIMILARITY(string1, string2) - Trigram similarity score (0.0 to 1.0)
+            "SIMILARITY" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "SIMILARITY requires 2 arguments: string1, string2".to_string(),
+                    ));
+                }
+                let s1 = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "SIMILARITY: first argument must be a string".to_string(),
+                    )
+                })?;
+                let s2 = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "SIMILARITY: second argument must be a string".to_string(),
+                    )
+                })?;
+
+                use crate::storage::{generate_ngrams, ngram_similarity, NGRAM_SIZE};
+                let ngrams_a = generate_ngrams(s1, NGRAM_SIZE);
+                let ngrams_b = generate_ngrams(s2, NGRAM_SIZE);
+                let similarity = ngram_similarity(&ngrams_a, &ngrams_b);
+
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(similarity)
+                        .unwrap_or_else(|| serde_json::Number::from(0)),
+                ))
+            }
+
+            // FUZZY_MATCH(text, pattern, max_distance?) - Check if text matches pattern within edit distance
+            "FUZZY_MATCH" => {
+                if evaluated_args.len() < 2 || evaluated_args.len() > 3 {
+                    return Err(DbError::ExecutionError(
+                        "FUZZY_MATCH requires 2-3 arguments: text, pattern, [max_distance]"
+                            .to_string(),
+                    ));
+                }
+                let text = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "FUZZY_MATCH: first argument must be a string".to_string(),
+                    )
+                })?;
+                let pattern = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "FUZZY_MATCH: second argument must be a string".to_string(),
+                    )
+                })?;
+                let max_distance = if evaluated_args.len() == 3 {
+                    evaluated_args[2].as_u64().unwrap_or(2) as usize
+                } else {
+                    2 // Default max distance
+                };
+
+                let distance = crate::storage::levenshtein_distance(text, pattern);
+                Ok(Value::Bool(distance <= max_distance))
+            }
+
+            // SOUNDEX(string, locale?) - Phonetic encoding with optional locale
+            // Supported locales: "en" (default), "de" (German), "fr" (French)
+            "SOUNDEX" => {
+                if evaluated_args.is_empty() || evaluated_args.len() > 2 {
+                    return Err(DbError::ExecutionError(
+                        "SOUNDEX requires 1 or 2 arguments: SOUNDEX(string) or SOUNDEX(string, locale)".to_string(),
+                    ));
+                }
+
+                let locale = if evaluated_args.len() == 2 {
+                    evaluated_args[1].as_str().unwrap_or("en")
+                } else {
+                    "en"
+                };
+
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let result = match locale {
+                            "de" => cologne_phonetic(s),
+                            "fr" => soundex_fr(s),
+                            "es" => soundex_es(s),
+                            "it" => soundex_it(s),
+                            "pt" => soundex_pt(s),
+                            "nl" => soundex_nl(s),
+                            "el" => soundex_el(s),
+                            "ja" => soundex_ja(s),
+                            _ => soundex(s), // "en" or any other defaults to American
+                        };
+                        Ok(Value::String(result))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "SOUNDEX requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // METAPHONE(string) - Metaphone phonetic encoding
+            // More accurate than Soundex, handles English pronunciation rules
+            "METAPHONE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "METAPHONE requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => Ok(Value::String(metaphone(s))),
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "METAPHONE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // DOUBLE_METAPHONE(string) - Double Metaphone encoding
+            // Returns array with [primary, secondary] codes for ambiguous pronunciations
+            "DOUBLE_METAPHONE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "DOUBLE_METAPHONE requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => {
+                        let (primary, secondary) = double_metaphone(s);
+                        Ok(Value::Array(vec![
+                            Value::String(primary),
+                            Value::String(secondary),
+                        ]))
+                    }
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "DOUBLE_METAPHONE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // COLOGNE(string) - Cologne Phonetic algorithm for German names
+            // Returns numeric phonetic code optimized for German pronunciation
+            "COLOGNE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "COLOGNE requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => Ok(Value::String(cologne_phonetic(s))),
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "COLOGNE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // CAVERPHONE(string) - Caverphone algorithm for European names
+            // Returns 10-character phonetic code, good for matching European surnames
+            "CAVERPHONE" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "CAVERPHONE requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => Ok(Value::String(caverphone(s))),
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "CAVERPHONE requires a string argument".to_string(),
+                    )),
+                }
+            }
+
+            // NYSIIS(string) - New York State Identification algorithm
+            // More accurate than Soundex for various name origins
+            "NYSIIS" => {
+                if evaluated_args.len() != 1 {
+                    return Err(DbError::ExecutionError(
+                        "NYSIIS requires exactly 1 argument".to_string(),
+                    ));
+                }
+                match &evaluated_args[0] {
+                    Value::String(s) => Ok(Value::String(nysiis(s))),
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(DbError::ExecutionError(
+                        "NYSIIS requires a string argument".to_string(),
+                    )),
+                }
+            }
+
             // BM25(field, query) - BM25 relevance scoring for a document field
             // Returns a numeric score that can be used in SORT clauses
             // Usage: SORT BM25(doc.content, "search query") DESC
@@ -7859,6 +8039,13 @@ fn evaluate_binary_op(left: &Value, op: &BinaryOperator, right: &Value) -> DbRes
             }
         }
 
+        BinaryOperator::FuzzyEqual => {
+            let left_str = left.as_str().unwrap_or("");
+            let right_str = right.as_str().unwrap_or("");
+            let distance = crate::storage::levenshtein_distance(left_str, right_str);
+            Ok(Value::Bool(distance <= 2)) // Default max distance of 2
+        }
+
         BinaryOperator::And => Ok(Value::Bool(to_bool(left) && to_bool(right))),
         BinaryOperator::Or => Ok(Value::Bool(to_bool(left) || to_bool(right))),
 
@@ -8084,11 +8271,15 @@ fn contains_window_functions(expr: &Expression) -> bool {
             when_clauses,
             else_clause,
         } => {
-            operand.as_ref().map_or(false, |o| contains_window_functions(o))
-                || when_clauses.iter().any(|(c, r)| {
-                    contains_window_functions(c) || contains_window_functions(r)
-                })
-                || else_clause.as_ref().map_or(false, |e| contains_window_functions(e))
+            operand
+                .as_ref()
+                .map_or(false, |o| contains_window_functions(o))
+                || when_clauses
+                    .iter()
+                    .any(|(c, r)| contains_window_functions(c) || contains_window_functions(r))
+                || else_clause
+                    .as_ref()
+                    .map_or(false, |e| contains_window_functions(e))
         }
         Expression::FunctionCall { args, .. } => args.iter().any(contains_window_functions),
         Expression::FieldAccess(base, _) | Expression::OptionalFieldAccess(base, _) => {
@@ -8109,7 +8300,11 @@ fn contains_window_functions(expr: &Expression) -> bool {
 }
 
 /// Generate a unique key for a window function based on its signature
-fn generate_window_key(function: &str, arguments: &[Expression], over_clause: &WindowSpec) -> String {
+fn generate_window_key(
+    function: &str,
+    arguments: &[Expression],
+    over_clause: &WindowSpec,
+) -> String {
     // Create a deterministic key from the window function components
     let args_str: String = arguments
         .iter()
@@ -8135,9 +8330,18 @@ fn generate_window_key(function: &str, arguments: &[Expression], over_clause: &W
         args_str.len(),
         partition_str.len() + order_str.len(),
         // Simple hash to keep the key shorter
-        args_str.as_bytes().iter().fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
-            + partition_str.as_bytes().iter().fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
-            + order_str.as_bytes().iter().fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
+        args_str
+            .as_bytes()
+            .iter()
+            .fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
+            + partition_str
+                .as_bytes()
+                .iter()
+                .fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
+            + order_str
+                .as_bytes()
+                .iter()
+                .fold(0u32, |acc, &b| acc.wrapping_add(b as u32))
     )
 }
 
@@ -8235,5 +8439,1530 @@ fn extract_window_functions_impl(
             }
         }
         _ => {}
+    }
+}
+
+// =============================================================================
+// Phonetic Matching Functions
+// =============================================================================
+
+/// American Soundex algorithm - returns 4-character phonetic code
+/// Example: "Smith" and "Smyth" both return "S530"
+fn soundex(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let first = chars[0];
+    let mut code = String::from(first);
+    let mut last_digit = soundex_digit(first);
+
+    for &ch in &chars[1..] {
+        let digit = soundex_digit(ch);
+        if let Some(d) = digit {
+            if Some(d) != last_digit {
+                code.push(d);
+                if code.len() == 4 {
+                    break;
+                }
+            }
+            last_digit = Some(d);
+        } else {
+            // Vowels and H,W,Y reset the last digit for adjacent consonant check
+            last_digit = None;
+        }
+    }
+
+    // Pad with zeros to length 4
+    while code.len() < 4 {
+        code.push('0');
+    }
+
+    code
+}
+
+/// Map character to Soundex digit
+fn soundex_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'F' | 'P' | 'V' => Some('1'),
+        'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        _ => None, // A, E, I, O, U, H, W, Y
+    }
+}
+
+/// Metaphone phonetic algorithm - more accurate than Soundex
+/// Handles English pronunciation rules like silent letters, PH→F, etc.
+fn metaphone(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut i = 0;
+
+    // Skip initial silent letters
+    if chars.len() >= 2 {
+        match (chars[0], chars[1]) {
+            ('K', 'N') | ('G', 'N') | ('P', 'N') | ('A', 'E') | ('W', 'R') => i = 1,
+            _ => {}
+        }
+    }
+
+    while i < chars.len() && result.len() < 6 {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        let prev = if i > 0 {
+            chars.get(i - 1).copied()
+        } else {
+            None
+        };
+
+        // Skip consecutive duplicate consonants (except for C which has special rules)
+        if c != 'C' && prev == Some(c) && !matches!(c, 'A' | 'E' | 'I' | 'O' | 'U') {
+            i += 1;
+            continue;
+        }
+
+        match c {
+            'A' | 'E' | 'I' | 'O' | 'U' => {
+                // Vowels only kept at start
+                if i == 0 {
+                    result.push(c);
+                }
+            }
+            'B' => {
+                // B silent after M at end
+                if !(prev == Some('M') && next.is_none()) {
+                    result.push('B');
+                }
+            }
+            'C' => {
+                // CH -> X, CI/CE/CY -> S, else K
+                if next == Some('H') {
+                    result.push('X');
+                    i += 1;
+                } else if matches!(next, Some('I') | Some('E') | Some('Y')) {
+                    result.push('S');
+                } else {
+                    result.push('K');
+                }
+            }
+            'D' => {
+                // DG -> J, else T
+                if next == Some('G')
+                    && matches!(chars.get(i + 2), Some('E') | Some('I') | Some('Y'))
+                {
+                    result.push('J');
+                    i += 1;
+                } else {
+                    result.push('T');
+                }
+            }
+            'F' | 'J' | 'L' | 'M' | 'N' | 'R' => result.push(c),
+            'G' => {
+                // GH silent before T, GN/GNED silent, else J before E/I/Y, else K
+                if next == Some('H') {
+                    if !matches!(chars.get(i + 2), Some('T')) {
+                        result.push('F');
+                    }
+                    i += 1;
+                } else if next == Some('N') {
+                    // GN at end is silent
+                } else if matches!(next, Some('E') | Some('I') | Some('Y')) {
+                    result.push('J');
+                } else {
+                    result.push('K');
+                }
+            }
+            'H' => {
+                // H after vowel or before non-vowel is silent
+                if !matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) && matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
+                    result.push('H');
+                }
+            }
+            'K' => {
+                if prev != Some('C') {
+                    result.push('K');
+                }
+            }
+            'P' => {
+                if next == Some('H') {
+                    result.push('F');
+                    i += 1;
+                } else {
+                    result.push('P');
+                }
+            }
+            'Q' => result.push('K'),
+            'S' => {
+                if next == Some('H') {
+                    result.push('X');
+                    i += 1;
+                } else if next == Some('I') && matches!(chars.get(i + 2), Some('O') | Some('A')) {
+                    result.push('X');
+                } else {
+                    result.push('S');
+                }
+            }
+            'T' => {
+                if next == Some('H') {
+                    result.push('0'); // Theta sound
+                    i += 1;
+                } else if next == Some('I') && matches!(chars.get(i + 2), Some('O') | Some('A')) {
+                    result.push('X');
+                } else {
+                    result.push('T');
+                }
+            }
+            'V' => result.push('F'),
+            'W' | 'Y' => {
+                // Only if followed by vowel
+                if matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
+                    result.push(c);
+                }
+            }
+            'X' => {
+                result.push('K');
+                result.push('S');
+            }
+            'Z' => result.push('S'),
+            _ => {}
+        }
+        i += 1;
+    }
+
+    result
+}
+
+/// Double Metaphone - returns (primary, secondary) codes
+/// Useful for names with ambiguous pronunciations (e.g., "Schmidt" in German vs English)
+fn double_metaphone(s: &str) -> (String, String) {
+    // For a full implementation, consider using the `rphonetic` crate
+    // This simplified version returns the same code for both
+    let primary = metaphone(s);
+    let secondary = primary.clone();
+    (primary, secondary)
+}
+
+/// Cologne Phonetic algorithm - optimized for German names
+/// Returns a numeric string code where similar-sounding German names produce the same code
+/// Examples: Müller/Mueller/Miller all produce the same code
+fn cologne_phonetic(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Normalize: uppercase and handle German umlauts
+    let s = s
+        .to_uppercase()
+        .replace('Ä', "A")
+        .replace('Ö', "O")
+        .replace('Ü', "U")
+        .replace('ß', "SS");
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut last_code: Option<char> = None;
+
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let code = match c {
+            'A' | 'E' | 'I' | 'J' | 'O' | 'U' | 'Y' => Some('0'),
+            'B' => Some('1'),
+            'P' => {
+                if next == Some('H') {
+                    Some('3')
+                } else {
+                    Some('1')
+                }
+            }
+            'D' | 'T' => {
+                if matches!(next, Some('C') | Some('S') | Some('Z')) {
+                    Some('8')
+                } else {
+                    Some('2')
+                }
+            }
+            'F' | 'V' | 'W' => Some('3'),
+            'G' | 'K' | 'Q' => Some('4'),
+            'C' => {
+                if i == 0 {
+                    // Initial C
+                    if matches!(
+                        next,
+                        Some('A')
+                            | Some('H')
+                            | Some('K')
+                            | Some('L')
+                            | Some('O')
+                            | Some('Q')
+                            | Some('R')
+                            | Some('U')
+                            | Some('X')
+                    ) {
+                        Some('4')
+                    } else {
+                        Some('8')
+                    }
+                } else if matches!(prev, Some('S') | Some('Z')) {
+                    Some('8')
+                } else if matches!(
+                    next,
+                    Some('A')
+                        | Some('H')
+                        | Some('K')
+                        | Some('O')
+                        | Some('Q')
+                        | Some('U')
+                        | Some('X')
+                ) {
+                    // C before A,H,K,O,Q,U,X (not after S,Z)
+                    Some('4')
+                } else {
+                    Some('8')
+                }
+            }
+            'X' => {
+                if matches!(prev, Some('C') | Some('K') | Some('Q')) {
+                    Some('8')
+                } else {
+                    // X = 48
+                    result.push('4');
+                    Some('8')
+                }
+            }
+            'L' => Some('5'),
+            'M' | 'N' => Some('6'),
+            'R' => Some('7'),
+            'S' | 'Z' => Some('8'),
+            'H' => None, // H is ignored (produces no code)
+            _ => None,
+        };
+
+        if let Some(c) = code {
+            // Remove consecutive duplicates
+            if last_code != Some(c) {
+                result.push(c);
+            }
+            last_code = Some(c);
+        }
+    }
+
+    // Remove leading zeros (except if that's all we have)
+    let trimmed: String = result.trim_start_matches('0').to_string();
+    if trimmed.is_empty() && !result.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Caverphone algorithm (version 2) - good for matching European surnames
+/// Returns a 10-character code, particularly effective for English and European names
+fn caverphone(s: &str) -> String {
+    if s.is_empty() {
+        return "1111111111".to_string();
+    }
+
+    let mut result = s.to_lowercase();
+
+    // Remove anything not a letter
+    result = result.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if result.is_empty() {
+        return "1111111111".to_string();
+    }
+
+    // Apply transformation rules in order
+
+    // Remove final 'e'
+    if result.ends_with('e') {
+        result.pop();
+    }
+
+    // Initial transformations
+    if result.starts_with("cough") {
+        result = format!("cof2f{}", &result[5..]);
+    }
+    if result.starts_with("rough") {
+        result = format!("rof2f{}", &result[5..]);
+    }
+    if result.starts_with("tough") {
+        result = format!("tof2f{}", &result[5..]);
+    }
+    if result.starts_with("enough") {
+        result = format!("enof2f{}", &result[6..]);
+    }
+    if result.starts_with("gn") {
+        result = format!("2n{}", &result[2..]);
+    }
+    if result.ends_with("mb") {
+        let len = result.len();
+        result = format!("{}m2", &result[..len - 2]);
+    }
+
+    // Common substitutions
+    result = result
+        .replace("cq", "2q")
+        .replace("ci", "si")
+        .replace("ce", "se")
+        .replace("cy", "sy")
+        .replace("tch", "2ch")
+        .replace("c", "k")
+        .replace("q", "k")
+        .replace("x", "k")
+        .replace("v", "f")
+        .replace("dg", "2g")
+        .replace("tio", "sio")
+        .replace("tia", "sia")
+        .replace("d", "t")
+        .replace("ph", "fh")
+        .replace("b", "p")
+        .replace("sh", "s2")
+        .replace("z", "s")
+        .replace("gh", "22")
+        .replace("gn", "2n")
+        .replace('g', "k")
+        .replace("kh", "k2")
+        .replace("wh", "w2");
+
+    // Handle 'w' followed by vowel
+    result = result
+        .replace("wa", "2a")
+        .replace("we", "2e")
+        .replace("wi", "2i")
+        .replace("wo", "2o")
+        .replace("wu", "2u");
+
+    // Remove 'w' if not followed by vowel (remaining w's)
+    result = result.replace('w', "2");
+
+    // Handle 'h' (keep if between two vowels or at start before vowel)
+    let chars: Vec<char> = result.chars().collect();
+    let mut new_result = String::new();
+    for (i, &c) in chars.iter().enumerate() {
+        if c == 'h' {
+            let prev_vowel = i > 0
+                && matches!(
+                    chars[i - 1],
+                    'a' | 'e' | 'i' | 'o' | 'u' | 'A' | 'E' | 'I' | 'O' | 'U'
+                );
+            let next_vowel = i + 1 < chars.len()
+                && matches!(
+                    chars[i + 1],
+                    'a' | 'e' | 'i' | 'o' | 'u' | 'A' | 'E' | 'I' | 'O' | 'U'
+                );
+            if prev_vowel && next_vowel {
+                new_result.push('2');
+            }
+            // else drop h
+        } else {
+            new_result.push(c);
+        }
+    }
+    result = new_result;
+
+    // Replace vowels
+    result = result
+        .replace('a', "A")
+        .replace('e', "A")
+        .replace('i', "A")
+        .replace('o', "A")
+        .replace('u', "A");
+
+    // Remove duplicate adjacent letters
+    let chars: Vec<char> = result.chars().collect();
+    let mut deduped = String::new();
+    let mut last_char: Option<char> = None;
+    for c in chars {
+        if last_char != Some(c) {
+            deduped.push(c);
+        }
+        last_char = Some(c);
+    }
+    result = deduped;
+
+    // Remove all '2's
+    result = result.replace('2', "");
+
+    // Pad with 1's or truncate to 10 characters
+    while result.len() < 10 {
+        result.push('1');
+    }
+    result.truncate(10);
+
+    result.to_uppercase()
+}
+
+/// NYSIIS (New York State Identification and Intelligence System) algorithm
+/// More accurate than Soundex, particularly for names of various ethnic origins
+fn nysiis(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let mut name = s.to_uppercase();
+
+    // Remove non-alphabetic characters
+    name = name.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if name.is_empty() {
+        return String::new();
+    }
+
+    // Translate first characters
+    if name.starts_with("MAC") {
+        name = format!("MCC{}", &name[3..]);
+    } else if name.starts_with("KN") {
+        name = format!("NN{}", &name[2..]);
+    } else if name.starts_with('K') {
+        name = format!("C{}", &name[1..]);
+    } else if name.starts_with("PH") || name.starts_with("PF") {
+        name = format!("FF{}", &name[2..]);
+    } else if name.starts_with("SCH") {
+        name = format!("SSS{}", &name[3..]);
+    }
+
+    // Translate last characters
+    if name.ends_with("EE") || name.ends_with("IE") {
+        let len = name.len();
+        name = format!("{}Y", &name[..len - 2]);
+    } else if name.ends_with("DT")
+        || name.ends_with("RT")
+        || name.ends_with("RD")
+        || name.ends_with("NT")
+        || name.ends_with("ND")
+    {
+        let len = name.len();
+        name = format!("{}D", &name[..len - 2]);
+    }
+
+    // Save first character
+    let first_char = name.chars().next().unwrap();
+
+    // Process remaining characters
+    let chars: Vec<char> = name.chars().collect();
+    let mut result = String::from(first_char);
+    let mut i = 1;
+
+    while i < chars.len() {
+        let c = chars[i];
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let replacement = match c {
+            'E' | 'I' | 'O' | 'U' => 'A',
+            'Q' => 'G',
+            'Z' => 'S',
+            'M' => 'N',
+            'K' => {
+                if next == Some('N') {
+                    'N'
+                } else {
+                    'C'
+                }
+            }
+            'S' => {
+                if next == Some('C') && chars.get(i + 2) == Some(&'H') {
+                    // SCH -> SSS
+                    result.push('S');
+                    result.push('S');
+                    i += 2;
+                    'S'
+                } else if next == Some('H') {
+                    // SH -> S
+                    i += 1;
+                    'S'
+                } else {
+                    'S'
+                }
+            }
+            'P' => {
+                if next == Some('H') {
+                    i += 1;
+                    'F'
+                } else {
+                    'P'
+                }
+            }
+            'H' => {
+                let prev_vowel = matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
+                let next_vowel = matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
+                if !prev_vowel || !next_vowel {
+                    // H not between vowels, use previous or skip
+                    if let Some(p) = prev {
+                        p
+                    } else {
+                        i += 1;
+                        continue;
+                    }
+                } else {
+                    'H'
+                }
+            }
+            'W' => {
+                let prev_vowel = matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                );
+                if prev_vowel {
+                    prev.unwrap_or('W')
+                } else {
+                    'W'
+                }
+            }
+            _ => c,
+        };
+
+        // Don't add if same as last character
+        if result.chars().last() != Some(replacement) {
+            result.push(replacement);
+        }
+
+        i += 1;
+    }
+
+    // Remove trailing 'S'
+    if result.ends_with('S') && result.len() > 1 {
+        result.pop();
+    }
+
+    // Remove trailing 'A'
+    if result.ends_with('A') && result.len() > 1 {
+        result.pop();
+    }
+
+    // Replace trailing 'AY' with 'Y'
+    if result.ends_with("AY") {
+        let len = result.len();
+        result = format!("{}Y", &result[..len - 2]);
+    }
+
+    result
+}
+
+/// French Soundex (Soundex Français) - optimized for French names
+/// Handles French-specific phonetic rules:
+/// - Silent endings (t, d, s, x, z, p at end of words)
+/// - Nasal vowels (an, en, in, on, un → numeric codes)
+/// - Special combinations (eau, au, ou, ch, gn, ph, etc.)
+/// - Accented characters (é, è, ê, à, etc.)
+fn soundex_fr(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Normalize: uppercase and remove accents
+    let s = s
+        .to_uppercase()
+        .replace('É', "E")
+        .replace('È', "E")
+        .replace('Ê', "E")
+        .replace('Ë', "E")
+        .replace('À', "A")
+        .replace('Â', "A")
+        .replace('Ä', "A")
+        .replace('Î', "I")
+        .replace('Ï', "I")
+        .replace('Ô', "O")
+        .replace('Ö', "O")
+        .replace('Ù', "U")
+        .replace('Û', "U")
+        .replace('Ü', "U")
+        .replace('Ç', "S")
+        .replace('Œ', "OE")
+        .replace('Æ', "AE");
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    // Build the string for processing
+    let word: String = chars.iter().collect();
+
+    // Apply French phonetic transformations
+    let mut processed = word.clone();
+
+    // Remove silent endings
+    if processed.len() > 2 {
+        let last_char = processed.chars().last().unwrap();
+        if matches!(last_char, 'T' | 'D' | 'S' | 'X' | 'Z' | 'P') {
+            processed.pop();
+        }
+    }
+
+    // Handle common French letter combinations
+    processed = processed
+        .replace("EAU", "O")
+        .replace("AU", "O")
+        .replace("OU", "U")
+        .replace("OI", "WA")
+        .replace("CH", "S")
+        .replace("SCH", "S")
+        .replace("SH", "S")
+        .replace("GN", "N")
+        .replace("PH", "F")
+        .replace("QU", "K")
+        .replace("CK", "K")
+        .replace("CC", "K")
+        .replace("GU", "G")
+        .replace("GA", "KA")
+        .replace("GO", "KO")
+        .replace("GY", "JI");
+
+    // C before E, I, Y becomes S
+    processed = processed
+        .replace("CE", "SE")
+        .replace("CI", "SI")
+        .replace("CY", "SY");
+
+    // Remaining C becomes K
+    processed = processed.replace('C', "K");
+
+    // Handle nasal vowels (simplified)
+    processed = processed
+        .replace("AN", "1")
+        .replace("AM", "1")
+        .replace("EN", "1")
+        .replace("EM", "1")
+        .replace("IN", "2")
+        .replace("IM", "2")
+        .replace("AIN", "2")
+        .replace("EIN", "2")
+        .replace("ON", "3")
+        .replace("OM", "3")
+        .replace("UN", "4")
+        .replace("UM", "4");
+
+    // Get first character (save original letter)
+    let first_char = chars[0];
+    let mut result = String::from(first_char);
+
+    // Process remaining characters with French Soundex mapping
+    let processed_chars: Vec<char> = processed.chars().collect();
+    let mut last_code: Option<char> = soundex_fr_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_fr_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            // Vowels and silent letters reset the last code
+            last_code = None;
+        }
+    }
+
+    // Pad with zeros to length 4
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+/// French Soundex digit mapping
+fn soundex_fr_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'C' | 'K' | 'Q' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'G' | 'J' => Some('7'),
+        'S' | 'X' | 'Z' => Some('8'),
+        'F' | 'V' => Some('9'),
+        '1' | '2' | '3' | '4' => Some(c), // Keep nasal vowel codes
+        _ => None,                        // Vowels A, E, I, O, U, H, W, Y
+    }
+}
+
+/// Spanish Soundex - optimized for Spanish/Castilian names
+/// Handles Spanish-specific phonetic rules:
+/// - Ñ (eñe) sound
+/// - LL and Y equivalence
+/// - H is always silent
+/// - B/V equivalence
+/// - C/Z/S equivalence in many dialects (seseo)
+fn soundex_es(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Normalize: uppercase and handle Spanish characters
+    let s = s
+        .to_uppercase()
+        .replace('Á', "A")
+        .replace('É', "E")
+        .replace('Í', "I")
+        .replace('Ó', "O")
+        .replace('Ú', "U")
+        .replace('Ü', "U")
+        .replace('Ñ', "NY"); // Ñ sounds like NY
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let word: String = chars.iter().collect();
+    let mut processed = word;
+
+    // Spanish phonetic transformations
+    processed = processed
+        .replace("CH", "X") // CH is a single sound
+        .replace("LL", "Y") // LL and Y are equivalent
+        .replace("RR", "R") // Double R is still R
+        .replace("QU", "K")
+        .replace("GU", "G")
+        .replace("GÜ", "GW")
+        .replace("CE", "SE")
+        .replace("CI", "SI")
+        .replace("CY", "SY")
+        .replace("ZA", "SA")
+        .replace("ZE", "SE")
+        .replace("ZI", "SI")
+        .replace("ZO", "SO")
+        .replace("ZU", "SU");
+
+    // C before other letters is K
+    processed = processed.replace('C', "K");
+
+    // B and V are equivalent in Spanish
+    processed = processed.replace('B', "V");
+
+    // H is always silent in Spanish
+    processed = processed.replace('H', "");
+
+    // Use first char from processed string (after transformations)
+    let processed_chars: Vec<char> = processed.chars().collect();
+    if processed_chars.is_empty() {
+        return String::new();
+    }
+    let first_char = processed_chars[0];
+    let mut result = String::from(first_char);
+    let mut last_code: Option<char> = soundex_es_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_es_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_es_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'V' | 'W' => Some('1'), // B and V sound the same in Spanish
+        'K' | 'Q' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'G' | 'J' | 'X' => Some('7'), // J and G before e/i, X (from CH)
+        'S' | 'Z' => Some('8'),
+        'F' | 'P' => Some('9'),
+        'Y' => Some('0'), // Y as consonant
+        _ => None,
+    }
+}
+
+/// Italian Soundex - optimized for Italian names
+/// Handles Italian-specific phonetic rules:
+/// - GL (like "gli") and GN (like "gnocchi")
+/// - SC before e/i
+/// - Double consonants
+/// - H is silent
+fn soundex_it(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let s = s
+        .to_uppercase()
+        .replace('À', "A")
+        .replace('È', "E")
+        .replace('É', "E")
+        .replace('Ì', "I")
+        .replace('Ò', "O")
+        .replace('Ù', "U");
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let word: String = chars.iter().collect();
+    let mut processed = word;
+
+    // Italian phonetic transformations
+    processed = processed
+        .replace("GLI", "LI") // GL before I
+        .replace("GN", "N") // GN is a single nasal sound
+        .replace("SCE", "SE") // SC before E
+        .replace("SCI", "SI") // SC before I
+        .replace("CHE", "KE") // CH before E
+        .replace("CHI", "KI") // CH before I
+        .replace("GHE", "GE") // GH before E
+        .replace("GHI", "GI") // GH before I
+        .replace("CE", "CE") // C before E = CH sound
+        .replace("CI", "CI") // C before I = CH sound
+        .replace("GE", "JE") // G before E = J sound
+        .replace("GI", "JI") // G before I = J sound
+        .replace("QU", "KU");
+
+    // Remove H (always silent)
+    processed = processed.replace('H', "");
+
+    // Remove double consonants
+    let mut prev_char = ' ';
+    let deduped: String = processed
+        .chars()
+        .filter(|&c| {
+            let keep = c != prev_char || "AEIOU".contains(c);
+            prev_char = c;
+            keep
+        })
+        .collect();
+    processed = deduped;
+
+    let first_char = chars[0];
+    let mut result = String::from(first_char);
+
+    let processed_chars: Vec<char> = processed.chars().collect();
+    let mut last_code: Option<char> = soundex_it_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_it_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_it_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'C' | 'K' | 'Q' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'G' | 'J' => Some('7'),
+        'S' | 'X' | 'Z' => Some('8'),
+        'F' | 'V' => Some('9'),
+        _ => None,
+    }
+}
+
+/// Portuguese Soundex - optimized for Portuguese names
+/// Handles Portuguese-specific phonetic rules:
+/// - Ç (cedilha)
+/// - NH and LH digraphs
+/// - Nasal vowels (ã, õ)
+/// - X with multiple sounds
+fn soundex_pt(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let s = s
+        .to_uppercase()
+        .replace('Á', "A")
+        .replace('À', "A")
+        .replace('Â', "A")
+        .replace('Ã', "AN") // Nasal A
+        .replace('É', "E")
+        .replace('Ê', "E")
+        .replace('Í', "I")
+        .replace('Ó', "O")
+        .replace('Ô', "O")
+        .replace('Õ', "ON") // Nasal O
+        .replace('Ú', "U")
+        .replace('Ü', "U")
+        .replace('Ç', "S");
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let word: String = chars.iter().collect();
+    let mut processed = word;
+
+    // Portuguese phonetic transformations
+    processed = processed
+        .replace("NH", "N") // NH is a palatal nasal
+        .replace("LH", "L") // LH is a palatal lateral
+        .replace("CH", "X") // CH sounds like SH
+        .replace("RR", "R") // Double R
+        .replace("SS", "S") // Double S
+        .replace("QU", "K")
+        .replace("GU", "G")
+        .replace("CE", "SE")
+        .replace("CI", "SI")
+        .replace("GE", "JE")
+        .replace("GI", "JI");
+
+    // H is silent at start
+    if processed.starts_with('H') {
+        processed = processed[1..].to_string();
+    }
+
+    let first_char = chars[0];
+    let mut result = String::from(first_char);
+
+    let processed_chars: Vec<char> = processed.chars().collect();
+    let mut last_code: Option<char> = soundex_pt_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_pt_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_pt_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'C' | 'K' | 'Q' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'G' | 'J' | 'X' => Some('7'),
+        'S' | 'Z' => Some('8'),
+        'F' | 'V' => Some('9'),
+        _ => None,
+    }
+}
+
+/// Dutch Soundex - optimized for Dutch names
+/// Handles Dutch-specific phonetic rules:
+/// - IJ digraph (treated as single letter)
+/// - CH and SCH sounds
+/// - Double vowels (aa, ee, oo, uu)
+/// - W sounds like V
+fn soundex_nl(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    let s = s
+        .to_uppercase()
+        .replace("IJ", "Y") // IJ is a single letter in Dutch
+        .replace('Ë', "E")
+        .replace('Ï', "I")
+        .replace('É', "E");
+
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let word: String = chars.iter().collect();
+    let mut processed = word;
+
+    // Dutch phonetic transformations
+    processed = processed
+        .replace("SCH", "S") // SCH at start often sounds like S
+        .replace("CH", "G") // CH sounds like G
+        .replace("PH", "F")
+        .replace("QU", "KW")
+        .replace("TH", "T")
+        .replace("DT", "T")
+        .replace("AA", "A") // Long vowels
+        .replace("EE", "E")
+        .replace("OO", "O")
+        .replace("UU", "U");
+
+    // W and V are often interchangeable in Dutch
+    processed = processed.replace('W', "V");
+
+    // Use first char from processed string (after transformations)
+    let processed_chars: Vec<char> = processed.chars().collect();
+    if processed_chars.is_empty() {
+        return String::new();
+    }
+    let first_char = processed_chars[0];
+    let mut result = String::from(first_char);
+    let mut last_code: Option<char> = soundex_nl_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_nl_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_nl_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'C' | 'K' | 'Q' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'G' | 'J' => Some('7'),
+        'S' | 'X' | 'Z' => Some('8'),
+        'F' | 'V' => Some('9'),
+        _ => None,
+    }
+}
+
+/// Greek Soundex - optimized for Greek names
+/// Handles Greek alphabet transliteration and phonetic rules:
+/// - Greek letters (α, β, γ, δ, etc.) to Latin equivalents
+/// - Digraphs: ου→U, αι→E, ει→I, οι→I, μπ→B, ντ→D, γκ→G
+/// - Double consonants
+fn soundex_el(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Transliterate Greek to Latin
+    let mut transliterated = s.to_uppercase();
+
+    // Handle Greek digraphs first (order matters)
+    transliterated = transliterated
+        .replace("ΟΥ", "U")
+        .replace("ΑΥ", "AV")
+        .replace("ΕΥ", "EV")
+        .replace("ΑΙ", "E")
+        .replace("ΕΙ", "I")
+        .replace("ΟΙ", "I")
+        .replace("ΥΙ", "I")
+        .replace("ΜΠ", "B")
+        .replace("ΝΤ", "D")
+        .replace("ΓΚ", "G")
+        .replace("ΓΓ", "NG")
+        .replace("ΤΣ", "TS")
+        .replace("ΤΖ", "DZ");
+
+    // Transliterate individual Greek letters
+    transliterated = transliterated
+        .replace('Α', "A")
+        .replace('Ά', "A")
+        .replace('Β', "V")
+        .replace('Γ', "G")
+        .replace('Δ', "D")
+        .replace('Ε', "E")
+        .replace('Έ', "E")
+        .replace('Ζ', "Z")
+        .replace('Η', "I")
+        .replace('Ή', "I")
+        .replace('Θ', "TH")
+        .replace('Ι', "I")
+        .replace('Ί', "I")
+        .replace('Ϊ', "I")
+        .replace('Κ', "K")
+        .replace('Λ', "L")
+        .replace('Μ', "M")
+        .replace('Ν', "N")
+        .replace('Ξ', "KS")
+        .replace('Ο', "O")
+        .replace('Ό', "O")
+        .replace('Π', "P")
+        .replace('Ρ', "R")
+        .replace('Σ', "S")
+        .replace('Σ', "S") // Final sigma
+        .replace('Τ', "T")
+        .replace('Υ', "I")
+        .replace('Ύ', "I")
+        .replace('Ϋ', "I")
+        .replace('Φ', "F")
+        .replace('Χ', "CH")
+        .replace('Ψ', "PS")
+        .replace('Ω', "O")
+        .replace('Ώ', "O");
+
+    let chars: Vec<char> = transliterated
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let word: String = chars.iter().collect();
+    let mut processed = word;
+
+    // Simplify common combinations
+    processed = processed
+        .replace("TH", "T")
+        .replace("CH", "K")
+        .replace("PS", "S")
+        .replace("KS", "S");
+
+    // Remove double consonants
+    let mut prev_char = ' ';
+    let deduped: String = processed
+        .chars()
+        .filter(|&c| {
+            let keep = c != prev_char || "AEIOU".contains(c);
+            prev_char = c;
+            keep
+        })
+        .collect();
+    processed = deduped;
+
+    let processed_chars: Vec<char> = processed.chars().collect();
+    if processed_chars.is_empty() {
+        return String::new();
+    }
+
+    let first_char = processed_chars[0];
+    let mut result = String::from(first_char);
+    let mut last_code: Option<char> = soundex_el_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_el_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_el_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'G' | 'K' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'L' => Some('4'),
+        'M' | 'N' => Some('5'),
+        'R' => Some('6'),
+        'S' | 'Z' => Some('7'),
+        'F' | 'V' => Some('8'),
+        _ => None,
+    }
+}
+
+/// Japanese Soundex - optimized for Japanese names
+/// Converts Hiragana and Katakana to Romaji, then applies phonetic matching
+/// Note: Kanji characters are skipped (require dictionary for reading)
+fn soundex_ja(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Convert to Romaji
+    let mut romaji = String::new();
+
+    for c in s.chars() {
+        let converted = match c {
+            // Hiragana vowels
+            'あ' | 'ア' => "A",
+            'い' | 'イ' => "I",
+            'う' | 'ウ' => "U",
+            'え' | 'エ' => "E",
+            'お' | 'オ' => "O",
+
+            // Hiragana K-row + voiced G
+            'か' | 'カ' => "KA",
+            'き' | 'キ' => "KI",
+            'く' | 'ク' => "KU",
+            'け' | 'ケ' => "KE",
+            'こ' | 'コ' => "KO",
+            'が' | 'ガ' => "GA",
+            'ぎ' | 'ギ' => "GI",
+            'ぐ' | 'グ' => "GU",
+            'げ' | 'ゲ' => "GE",
+            'ご' | 'ゴ' => "GO",
+
+            // Hiragana S-row + voiced Z
+            'さ' | 'サ' => "SA",
+            'し' | 'シ' => "SI",
+            'す' | 'ス' => "SU",
+            'せ' | 'セ' => "SE",
+            'そ' | 'ソ' => "SO",
+            'ざ' | 'ザ' => "ZA",
+            'じ' | 'ジ' => "ZI",
+            'ず' | 'ズ' => "ZU",
+            'ぜ' | 'ゼ' => "ZE",
+            'ぞ' | 'ゾ' => "ZO",
+
+            // Hiragana T-row + voiced D
+            'た' | 'タ' => "TA",
+            'ち' | 'チ' => "TI",
+            'つ' | 'ツ' => "TU",
+            'て' | 'テ' => "TE",
+            'と' | 'ト' => "TO",
+            'だ' | 'ダ' => "DA",
+            'ぢ' | 'ヂ' => "DI",
+            'づ' | 'ヅ' => "DU",
+            'で' | 'デ' => "DE",
+            'ど' | 'ド' => "DO",
+
+            // Hiragana N-row
+            'な' | 'ナ' => "NA",
+            'に' | 'ニ' => "NI",
+            'ぬ' | 'ヌ' => "NU",
+            'ね' | 'ネ' => "NE",
+            'の' | 'ノ' => "NO",
+
+            // Hiragana H-row + voiced B + semi-voiced P
+            'は' | 'ハ' => "HA",
+            'ひ' | 'ヒ' => "HI",
+            'ふ' | 'フ' => "HU",
+            'へ' | 'ヘ' => "HE",
+            'ほ' | 'ホ' => "HO",
+            'ば' | 'バ' => "BA",
+            'び' | 'ビ' => "BI",
+            'ぶ' | 'ブ' => "BU",
+            'べ' | 'ベ' => "BE",
+            'ぼ' | 'ボ' => "BO",
+            'ぱ' | 'パ' => "PA",
+            'ぴ' | 'ピ' => "PI",
+            'ぷ' | 'プ' => "PU",
+            'ぺ' | 'ペ' => "PE",
+            'ぽ' | 'ポ' => "PO",
+
+            // Hiragana M-row
+            'ま' | 'マ' => "MA",
+            'み' | 'ミ' => "MI",
+            'む' | 'ム' => "MU",
+            'め' | 'メ' => "ME",
+            'も' | 'モ' => "MO",
+
+            // Hiragana Y-row
+            'や' | 'ヤ' => "YA",
+            'ゆ' | 'ユ' => "YU",
+            'よ' | 'ヨ' => "YO",
+
+            // Hiragana R-row
+            'ら' | 'ラ' => "RA",
+            'り' | 'リ' => "RI",
+            'る' | 'ル' => "RU",
+            'れ' | 'レ' => "RE",
+            'ろ' | 'ロ' => "RO",
+
+            // Hiragana W-row and N
+            'わ' | 'ワ' => "WA",
+            'を' | 'ヲ' => "O",
+            'ん' | 'ン' => "N",
+
+            // Small kana (for combinations)
+            'っ' | 'ッ' => "", // Double consonant marker - handled separately
+            'ゃ' | 'ャ' => "YA",
+            'ゅ' | 'ュ' => "YU",
+            'ょ' | 'ョ' => "YO",
+            'ぁ' | 'ァ' => "A",
+            'ぃ' | 'ィ' => "I",
+            'ぅ' | 'ゥ' => "U",
+            'ぇ' | 'ェ' => "E",
+            'ぉ' | 'ォ' => "O",
+
+            // Extended Katakana
+            'ヴ' => "VU",
+
+            // Latin letters (pass through uppercase)
+            c if c.is_ascii_alphabetic() => {
+                romaji.push(c.to_ascii_uppercase());
+                continue;
+            }
+
+            // Skip other characters (including Kanji)
+            _ => continue,
+        };
+        romaji.push_str(converted);
+    }
+
+    if romaji.is_empty() {
+        return String::new();
+    }
+
+    // Apply Japanese phonetic simplifications
+    let mut processed = romaji;
+
+    // Simplify common combinations
+    processed = processed
+        .replace("SH", "S")
+        .replace("CH", "T")
+        .replace("TS", "T")
+        .replace("DZ", "Z");
+
+    // Remove double vowels (long vowels)
+    processed = processed
+        .replace("AA", "A")
+        .replace("II", "I")
+        .replace("UU", "U")
+        .replace("EE", "E")
+        .replace("OO", "O")
+        .replace("OU", "O");
+
+    let processed_chars: Vec<char> = processed.chars().collect();
+    if processed_chars.is_empty() {
+        return String::new();
+    }
+
+    let first_char = processed_chars[0];
+    let mut result = String::from(first_char);
+    let mut last_code: Option<char> = soundex_ja_digit(first_char);
+
+    for &c in processed_chars.iter().skip(1) {
+        if result.len() >= 4 {
+            break;
+        }
+
+        let code = soundex_ja_digit(c);
+        if let Some(d) = code {
+            if Some(d) != last_code {
+                result.push(d);
+            }
+            last_code = Some(d);
+        } else {
+            last_code = None;
+        }
+    }
+
+    while result.len() < 4 {
+        result.push('0');
+    }
+
+    result
+}
+
+fn soundex_ja_digit(c: char) -> Option<char> {
+    match c {
+        'B' | 'P' => Some('1'),
+        'G' | 'K' => Some('2'),
+        'D' | 'T' => Some('3'),
+        'M' | 'N' => Some('4'),
+        'R' => Some('5'),
+        'S' | 'Z' => Some('6'),
+        'H' | 'F' | 'V' => Some('7'),
+        'W' | 'Y' => Some('8'),
+        _ => None, // Vowels A, E, I, O, U
     }
 }

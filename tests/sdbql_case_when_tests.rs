@@ -33,7 +33,9 @@ fn setup_test_data(engine: &StorageEngine) {
         .insert(json!({"_key": "p1", "name": "Laptop", "category": "electronics", "price": 999, "stock": 50}))
         .unwrap();
     products
-        .insert(json!({"_key": "p2", "name": "Book", "category": "books", "price": 25, "stock": 200}))
+        .insert(
+            json!({"_key": "p2", "name": "Book", "category": "books", "price": 25, "stock": 200}),
+        )
         .unwrap();
     products
         .insert(json!({"_key": "p3", "name": "Headphones", "category": "electronics", "price": 150, "stock": 0}))
@@ -73,16 +75,25 @@ fn test_simple_case_basic() {
 
     assert_eq!(results.len(), 5);
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["category_label"], json!("Tech"));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
     assert_eq!(book["category_label"], json!("Reading"));
 
-    let shirt = results.iter().find(|r| r["name"] == json!("Shirt")).unwrap();
+    let shirt = results
+        .iter()
+        .find(|r| r["name"] == json!("Shirt"))
+        .unwrap();
     assert_eq!(shirt["category_label"], json!("Fashion"));
 
-    let coffee = results.iter().find(|r| r["name"] == json!("Coffee Maker")).unwrap();
+    let coffee = results
+        .iter()
+        .find(|r| r["name"] == json!("Coffee Maker"))
+        .unwrap();
     assert_eq!(coffee["category_label"], json!("Other"));
 }
 
@@ -171,16 +182,28 @@ fn test_searched_case_basic() {
 
     assert_eq!(results.len(), 5);
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["price_tier"], json!("premium"));
 
-    let headphones = results.iter().find(|r| r["name"] == json!("Headphones")).unwrap();
+    let headphones = results
+        .iter()
+        .find(|r| r["name"] == json!("Headphones"))
+        .unwrap();
     assert_eq!(headphones["price_tier"], json!("mid-range"));
 
-    let coffee = results.iter().find(|r| r["name"] == json!("Coffee Maker")).unwrap();
+    let coffee = results
+        .iter()
+        .find(|r| r["name"] == json!("Coffee Maker"))
+        .unwrap();
     assert_eq!(coffee["price_tier"], json!("budget")); // $80 is >= 50
 
-    let shirt = results.iter().find(|r| r["name"] == json!("Shirt")).unwrap();
+    let shirt = results
+        .iter()
+        .find(|r| r["name"] == json!("Shirt"))
+        .unwrap();
     assert_eq!(shirt["price_tier"], json!("bargain")); // $45 is < 50
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
@@ -210,13 +233,22 @@ fn test_searched_case_stock_status() {
 
     assert_eq!(results.len(), 5);
 
-    let headphones = results.iter().find(|r| r["name"] == json!("Headphones")).unwrap();
+    let headphones = results
+        .iter()
+        .find(|r| r["name"] == json!("Headphones"))
+        .unwrap();
     assert_eq!(headphones["availability"], json!("Out of Stock"));
 
-    let coffee = results.iter().find(|r| r["name"] == json!("Coffee Maker")).unwrap();
+    let coffee = results
+        .iter()
+        .find(|r| r["name"] == json!("Coffee Maker"))
+        .unwrap();
     assert_eq!(coffee["availability"], json!("Low Stock"));
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["availability"], json!("In Stock"));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
@@ -245,13 +277,19 @@ fn test_searched_case_multiple_conditions() {
 
     assert_eq!(results.len(), 5);
 
-    let headphones = results.iter().find(|r| r["name"] == json!("Headphones")).unwrap();
+    let headphones = results
+        .iter()
+        .find(|r| r["name"] == json!("Headphones"))
+        .unwrap();
     assert_eq!(headphones["deal"], json!("Tech Deal"));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
     assert_eq!(book["deal"], json!("Bulk Available"));
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["deal"], json!("Regular"));
 }
 
@@ -285,14 +323,18 @@ fn test_case_in_filter() {
 #[test]
 fn test_case_in_sort() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("items".to_string(), None)
-        .unwrap();
+    engine.create_collection("items".to_string(), None).unwrap();
     let items = engine.get_collection("items").unwrap();
 
-    items.insert(json!({"_key": "1", "priority": "high"})).unwrap();
-    items.insert(json!({"_key": "2", "priority": "low"})).unwrap();
-    items.insert(json!({"_key": "3", "priority": "medium"})).unwrap();
+    items
+        .insert(json!({"_key": "1", "priority": "high"}))
+        .unwrap();
+    items
+        .insert(json!({"_key": "2", "priority": "low"}))
+        .unwrap();
+    items
+        .insert(json!({"_key": "3", "priority": "medium"}))
+        .unwrap();
 
     let results = execute_query(
         &engine,
@@ -336,10 +378,16 @@ fn test_case_nested() {
 
     assert_eq!(results.len(), 5);
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["status"], json!("Electronics - Available"));
 
-    let headphones = results.iter().find(|r| r["name"] == json!("Headphones")).unwrap();
+    let headphones = results
+        .iter()
+        .find(|r| r["name"] == json!("Headphones"))
+        .unwrap();
     assert_eq!(headphones["status"], json!("Electronics - Unavailable"));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
@@ -372,10 +420,16 @@ fn test_case_with_functions() {
 
     assert_eq!(results.len(), 5);
 
-    let coffee = results.iter().find(|r| r["name"] == json!("Coffee Maker")).unwrap();
+    let coffee = results
+        .iter()
+        .find(|r| r["name"] == json!("Coffee Maker"))
+        .unwrap();
     assert_eq!(coffee["name_length_category"], json!("long"));
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["name_length_category"], json!("medium"));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();
@@ -385,14 +439,18 @@ fn test_case_with_functions() {
 #[test]
 fn test_case_with_null_coalescing() {
     let (engine, _tmp) = create_test_engine();
-    engine
-        .create_collection("users".to_string(), None)
-        .unwrap();
+    engine.create_collection("users".to_string(), None).unwrap();
     let users = engine.get_collection("users").unwrap();
 
-    users.insert(json!({"_key": "1", "name": "Alice", "role": "admin"})).unwrap();
-    users.insert(json!({"_key": "2", "name": "Bob", "role": null})).unwrap();
-    users.insert(json!({"_key": "3", "name": "Charlie"})).unwrap();
+    users
+        .insert(json!({"_key": "1", "name": "Alice", "role": "admin"}))
+        .unwrap();
+    users
+        .insert(json!({"_key": "2", "name": "Bob", "role": null}))
+        .unwrap();
+    users
+        .insert(json!({"_key": "3", "name": "Charlie"}))
+        .unwrap();
 
     let results = execute_query(
         &engine,
@@ -411,13 +469,19 @@ fn test_case_with_null_coalescing() {
 
     assert_eq!(results.len(), 3);
 
-    let alice = results.iter().find(|r| r["name"] == json!("Alice")).unwrap();
+    let alice = results
+        .iter()
+        .find(|r| r["name"] == json!("Alice"))
+        .unwrap();
     assert_eq!(alice["access"], json!("full"));
 
     let bob = results.iter().find(|r| r["name"] == json!("Bob")).unwrap();
     assert_eq!(bob["access"], json!("read-only"));
 
-    let charlie = results.iter().find(|r| r["name"] == json!("Charlie")).unwrap();
+    let charlie = results
+        .iter()
+        .find(|r| r["name"] == json!("Charlie"))
+        .unwrap();
     assert_eq!(charlie["access"], json!("read-only"));
 }
 
@@ -429,9 +493,15 @@ fn test_case_with_optional_chaining() {
         .unwrap();
     let orders = engine.get_collection("orders").unwrap();
 
-    orders.insert(json!({"_key": "1", "customer": {"tier": "gold"}})).unwrap();
-    orders.insert(json!({"_key": "2", "customer": {"tier": "silver"}})).unwrap();
-    orders.insert(json!({"_key": "3", "customer": null})).unwrap();
+    orders
+        .insert(json!({"_key": "1", "customer": {"tier": "gold"}}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "2", "customer": {"tier": "silver"}}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "3", "customer": null}))
+        .unwrap();
 
     let results = execute_query(
         &engine,
@@ -506,7 +576,10 @@ fn test_case_with_boolean_result() {
 
     assert_eq!(results.len(), 5);
 
-    let laptop = results.iter().find(|r| r["name"] == json!("Laptop")).unwrap();
+    let laptop = results
+        .iter()
+        .find(|r| r["name"] == json!("Laptop"))
+        .unwrap();
     assert_eq!(laptop["is_premium"], json!(true));
 
     let book = results.iter().find(|r| r["name"] == json!("Book")).unwrap();

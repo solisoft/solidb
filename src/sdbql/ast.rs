@@ -293,9 +293,7 @@ pub enum Expression {
 
     /// Template string with interpolated expressions: $"Hello ${name}!"
     /// Syntax: $"text ${expression} more text"
-    TemplateString {
-        parts: Vec<TemplateStringPart>,
-    },
+    TemplateString { parts: Vec<TemplateStringPart> },
 }
 
 /// Window specification (the OVER clause)
@@ -337,6 +335,7 @@ pub enum BinaryOperator {
     NotLike,
     RegEx,
     NotRegEx,
+    FuzzyEqual, // ~= (fuzzy string matching)
 
     // Bitwise
     BitwiseAnd,

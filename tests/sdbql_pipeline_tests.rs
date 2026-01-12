@@ -177,7 +177,10 @@ fn test_pipeline_find_with_lambda() {
 fn test_pipeline_reduce_sum() {
     let (engine, _tmp) = create_test_engine();
     // Sum all numbers in array
-    let results = execute_query(&engine, "RETURN [1, 2, 3, 4, 5] |> REDUCE((acc, x) -> acc + x, 0)");
+    let results = execute_query(
+        &engine,
+        "RETURN [1, 2, 3, 4, 5] |> REDUCE((acc, x) -> acc + x, 0)",
+    );
     assert_eq!(results, vec![json!(15.0)]);
 }
 
@@ -185,7 +188,10 @@ fn test_pipeline_reduce_sum() {
 fn test_pipeline_reduce_product() {
     let (engine, _tmp) = create_test_engine();
     // Multiply all numbers
-    let results = execute_query(&engine, "RETURN [1, 2, 3, 4] |> REDUCE((acc, x) -> acc * x, 1)");
+    let results = execute_query(
+        &engine,
+        "RETURN [1, 2, 3, 4] |> REDUCE((acc, x) -> acc * x, 1)",
+    );
     assert_eq!(results, vec![json!(24.0)]);
 }
 

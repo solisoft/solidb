@@ -1241,6 +1241,10 @@ impl Parser {
                 self.advance();
                 Ok(Some(BinaryOperator::NotRegEx))
             }
+            Token::FuzzyEqual => {
+                self.advance();
+                Ok(Some(BinaryOperator::FuzzyEqual))
+            }
             Token::Not => {
                 // Check for NOT LIKE
                 if matches!(self.peek_token(1), Token::Like) {
@@ -1573,9 +1577,7 @@ impl Parser {
 
                     Ok(Expression::FunctionCall { name, args })
                 } else {
-                    Err(DbError::ParseError(
-                        "Expected '(' after COUNT".to_string(),
-                    ))
+                    Err(DbError::ParseError("Expected '(' after COUNT".to_string()))
                 }
             }
 

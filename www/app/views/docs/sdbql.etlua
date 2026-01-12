@@ -935,6 +935,22 @@ FOR doc IN daily_sales
                       </code>
                     </div>
                   </div>
+
+                  <!-- Fuzzy Matching -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~=</code>
+                       <span class="text-xs text-gray-400">Fuzzy Match (edit distance &le; 2)</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        name ~= "jonathen"
+                      </code>
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        // matches: john, jon, jonathan
+                      </code>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2102,6 +2118,164 @@ RETURN NEW</code></pre>
                 Calculates edit distance.
               </p>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LEVENSHTEIN("foo", "bar")</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >SIMILARITY(s1, s2)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns trigram similarity score (0.0 to 1.0) using Jaccard coefficient.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">// Identical strings
+RETURN SIMILARITY("hello", "hello") // 1.0
+
+// Similar strings
+RETURN SIMILARITY("hello", "hallo") // ~0.6
+
+// Use in queries
+FOR doc IN products
+  LET sim = SIMILARITY(doc.name, "iPhone")
+  FILTER sim > 0.5
+  SORT sim DESC
+  RETURN {name: doc.name, score: sim}</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >FUZZY_MATCH(text, pattern, max_distance?)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns true if text matches pattern within edit distance. Default max_distance is 2.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">// Exact match
+RETURN FUZZY_MATCH("hello", "hello", 0) // true
+
+// Within 1 edit
+RETURN FUZZY_MATCH("hello", "hallo", 1) // true
+
+// Default distance (2)
+RETURN FUZZY_MATCH("jonathan", "jonathen") // true
+
+// Use in queries
+FOR doc IN users
+  FILTER FUZZY_MATCH(doc.name, @search, 2)
+  RETURN doc</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >SOUNDEX(str, locale?)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns phonetic code for name matching. Supports locales: en, de, fr, es, it, pt, nl, el, ja.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">// English (default)
+RETURN SOUNDEX("Smith") == SOUNDEX("Smyth") // true
+
+// German (de) - Cologne Phonetic
+RETURN SOUNDEX("Müller", "de") == SOUNDEX("Mueller", "de") // true
+
+// French (fr) - silent endings, ç
+RETURN SOUNDEX("Dupont", "fr") == SOUNDEX("Dupon", "fr") // true
+
+// Spanish (es) - b/v, silent h, ñ
+RETURN SOUNDEX("García", "es")
+
+// Italian (it) - double consonants, gn
+RETURN SOUNDEX("Rossi", "it") == SOUNDEX("Rosi", "it") // true
+
+// Portuguese (pt) - ç, nh, lh
+RETURN SOUNDEX("Gonçalves", "pt")
+
+// Dutch (nl) - ij, sch
+RETURN SOUNDEX("Dijkstra", "nl")
+
+// Greek (el) - Greek alphabet support
+RETURN SOUNDEX("Παπαδόπουλος", "el") // μπ→B, ντ→D
+
+// Japanese (ja) - Hiragana/Katakana to Romaji
+RETURN SOUNDEX("やまだ", "ja") == SOUNDEX("ヤマダ", "ja") // true
+RETURN SOUNDEX("すずき", "ja") // Suzuki</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >METAPHONE(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns phonetic encoding using Metaphone algorithm. More accurate than SOUNDEX for English pronunciation.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN METAPHONE("Katherine") // "K0RN"
+RETURN METAPHONE("Catherine") // "K0RN" (matches!)
+RETURN METAPHONE("Wright") == METAPHONE("Right") // true
+RETURN METAPHONE("Knife") // "NF" (silent K handled)</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >DOUBLE_METAPHONE(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Returns array with [primary, secondary] phonetic codes. Useful for names with multiple pronunciations.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DOUBLE_METAPHONE("Schmidt") // ["SMT", "SMT"]
+RETURN DOUBLE_METAPHONE("Smith")[0] // "SM0" (primary code)</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >COLOGNE(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Cologne Phonetic algorithm for German names. Handles umlauts (ä,ö,ü) and ß.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COLOGNE("Müller") == COLOGNE("Mueller") // true
+RETURN COLOGNE("Meyer") == COLOGNE("Meier") // true
+RETURN COLOGNE("Schröder") == COLOGNE("Schroder") // true
+// Find German name variants
+FOR doc IN users
+  FILTER COLOGNE(doc.name) == COLOGNE("Müller")
+  RETURN doc.name // Müller, Mueller, Miller...</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >CAVERPHONE(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                Caverphone algorithm for European surnames. Returns 10-character code.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CAVERPHONE("Lee") == CAVERPHONE("Leigh") // true
+RETURN CAVERPHONE("Stevenson") == CAVERPHONE("Stephenson") // true</code></pre>
+            </div>
+            <div
+              class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
+            >
+              <code
+                class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3"
+                >NYSIIS(str)</code
+              >
+              <p class="text-sm text-gray-400 mb-3">
+                New York State algorithm. More accurate than Soundex for various ethnic origins.
+              </p>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN NYSIIS("MacDonald") == NYSIIS("McDonald") // true
+RETURN NYSIIS("Knight") == NYSIIS("Night") // true
+RETURN NYSIIS("Phelps") == NYSIIS("Felps") // true</code></pre>
             </div>
             <div
               class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors"
