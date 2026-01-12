@@ -62,6 +62,26 @@ LET london = {lat: 51.5074, lon: -0.1278}
 RETURN GEO_DISTANCE(paris, london)</code></pre>
                 </div>
               </div>
+              </div>
+            </div>
+
+            <!-- Geometric Tests -->
+            <div>
+              <h3 class="text-lg font-bold text-green-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-green-500 rounded-full mr-3"></span>
+                Geometric Tests
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">GEO_WITHIN(point, polygon)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns true if the point is inside the specified polygon (ray casting). Polygon is an array of points (LinearRing).</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Check if point is inside a zone
+LET point = {lat: 48.8566, lon: 2.3522}
+-- Polygon defined as array of [lon, lat] or objects
+LET zone = [[2.3, 48.8], [2.4, 48.8], [2.4, 48.9], [2.3, 48.9]] 
+RETURN GEO_WITHIN(point, zone)</code></pre>
+                </div>
+              </div>
             </div>
 
             <!-- Info Box -->

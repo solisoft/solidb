@@ -63,6 +63,12 @@
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN DATE_TIMESTAMP("2025-12-03T13:59:47.000Z")
 --1764770387000</code></pre>
                 </div>
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">HUMAN_TIME(date)</code>
+                  <p class="text-sm text-gray-400 mb-3">Converts date to relative human-readable string (e.g. "5 minutes ago").</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN HUMAN_TIME(DATE_SUBTRACT(DATE_NOW(), 5, "minutes"))
+--"5 minutes ago"</code></pre>
+                </div>
               </div>
             </div>
 
@@ -334,9 +340,67 @@ FOR event IN events
               </div>
             </div>
 
+            <!-- HUMAN_TIME -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-emerald-300 flex items-center">
+                  <span class="bg-emerald-500/20 text-emerald-400 text-xs font-mono px-2 py-1 rounded mr-3">HUMAN_TIME</span>
+                  Human Readable Time
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Converts a timestamp or ISO 8601 string into a human-readable relative time string (e.g., "2 hours ago", "3 days from now").</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">HUMAN_TIME(<span class="text-pink-400">date</span>, <span class="text-cyan-400">now?</span>)</code>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-pink-300">date</code> - timestamp (ms) or ISO 8601 string</li>
+                      <li><code class="text-pink-300">now</code> - optional reference date (default: current time)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examples</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">HUMAN_TIME(DATE_SUBTRACT(DATE_NOW(), 5, "minutes"))
+--"5 minutes ago"
+
+HUMAN_TIME(DATE_ADD(DATE_NOW(), 2, "hours"))
+--"2 hours from now"
+
+HUMAN_TIME("2025-06-15T14:30:00Z", "2025-06-15T14:35:00Z")
+--"5 minutes ago"</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- HIGHLIGHT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-yellow-500/20 text-yellow-400 text-xs font-mono px-2 py-1 rounded mr-3">HIGHLIGHT</span>
+                  Result Highlighting
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Wraps matching terms in text with &lt;b&gt; tags (case-insensitive). Useful for displaying search results.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">HIGHLIGHT(<span class="text-yellow-400">text</span>, <span class="text-cyan-400">terms</span>)</code>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET text = "The quick brown fox jumps over the lazy dog"
+RETURN HIGHLIGHT(text, ["fox", "dog"])
+-- "The quick brown <b>fox</b> jumps over the lazy <b>dog</b>"</code></pre>
+                </div>
+              </div>
+            </div>
+
             <!-- Practical Examples -->
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
-              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Search Examples</h4>
               <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Get events from the last 7 days
 FOR event IN events
   FILTER event.created_at >= DATE_SUBTRACT(DATE_NOW(), 7, "days")

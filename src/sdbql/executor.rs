@@ -3170,6 +3170,67 @@ impl<'a> QueryExecutor<'a> {
                     Ok(Value::Null)
                 }
             }
+            "HIGHLIGHT" => {
+                if let Some(Value::String(text)) = args.first() {
+                    let terms_arg = args.get(1);
+                    let mut terms: Vec<String> = Vec::new();
+
+                    match terms_arg {
+                        Some(Value::String(s)) => terms.push(s.clone()),
+                        Some(Value::Array(arr)) => {
+                            for v in arr {
+                                if let Value::String(s) = v {
+                                    terms.push(s.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if terms.is_empty() {
+                         return Ok(Value::String(text.clone()));
+                    }
+
+                    // Sort terms by length descending to handle overlapping terms (longest first)
+                    terms.sort_by(|a, b| b.len().cmp(&a.len()));
+                    
+                    let mut result = String::new();
+                    let mut i = 0;
+                    let text_chars: Vec<char> = text.chars().collect();
+                    // Pre-convert terms to lowercase chars for comparison
+                    let terms_chars: Vec<Vec<char>> = terms.iter().map(|t| t.to_lowercase().chars().collect()).collect();
+                    
+                    while i < text_chars.len() {
+                        let mut matched = false;
+                        for term_chars in &terms_chars {
+                             if i + term_chars.len() <= text_chars.len() {
+                                 let slice = &text_chars[i..i+term_chars.len()];
+                                 // Case-insensitive comparison
+                                 if slice.iter().zip(term_chars.iter()).all(|(c1, c2)| {
+                                     c1.to_lowercase().collect::<String>() == c2.to_string()
+                                 }) {
+                                     result.push_str("<b>");
+                                     for k in 0..term_chars.len() {
+                                         result.push(text_chars[i+k]);
+                                     }
+                                     result.push_str("</b>");
+                                     i += term_chars.len();
+                                     matched = true;
+                                     break; 
+                                 }
+                             }
+                        }
+                        
+                        if !matched {
+                            result.push(text_chars[i]);
+                            i += 1;
+                        }
+                    }
+                    Ok(Value::String(result))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
             // Numeric functions
             "ROUND" => {
                 if let Some(v) = args.first() {
@@ -3214,6 +3275,65 @@ impl<'a> QueryExecutor<'a> {
                     Ok(Value::Null)
                 }
             }
+            // Geo functions
+            "GEO_WITHIN" => {
+                let point = args.get(0);
+                let polygon = args.get(1);
+
+                if let (Some(point_val), Some(Value::Array(poly_coords))) = (point, polygon) {
+                    let (px, py) = match point_val {
+                        Value::Array(arr) if arr.len() >= 2 => (
+                            val_to_f64(&arr[0]),
+                            val_to_f64(&arr[1]),
+                        ),
+                        Value::Object(obj) => (
+                            obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
+                            obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                        ),
+                        _ => return Ok(Value::Bool(false)),
+                    };
+
+                    let mut inside = false;
+                    let n = poly_coords.len();
+                    if n > 0 {
+                        let mut j = n - 1;
+                        for i in 0..n {
+                            let (xi, yi) = match &poly_coords[i] {
+                                Value::Array(arr) if arr.len() >= 2 => (
+                                    val_to_f64(&arr[0]),
+                                    val_to_f64(&arr[1]),
+                                ),
+                                Value::Object(obj) => (
+                                    obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
+                                    obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                                ),
+                                _ => (0.0, 0.0),
+                            };
+                            let (xj, yj) = match &poly_coords[j] {
+                                Value::Array(arr) if arr.len() >= 2 => (
+                                    val_to_f64(&arr[0]),
+                                    val_to_f64(&arr[1]),
+                                ),
+                                Value::Object(obj) => (
+                                    obj.get("lon").or_else(|| obj.get("x")).map(val_to_f64).unwrap_or(0.0),
+                                    obj.get("lat").or_else(|| obj.get("y")).map(val_to_f64).unwrap_or(0.0),
+                                ),
+                                _ => (0.0, 0.0),
+                            };
+
+                            let intersect = ((yi > py) != (yj > py))
+                                && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+                            if intersect {
+                                inside = !inside;
+                            }
+                            j = i;
+                        }
+                    }
+                    Ok(Value::Bool(inside))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
             // Type conversion
             "TO_STRING" => {
                 if let Some(v) = args.first() {
@@ -3236,6 +3356,35 @@ impl<'a> QueryExecutor<'a> {
                     Ok(serde_json::Number::from_f64(num)
                         .map(Value::Number)
                         .unwrap_or(Value::Null))
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            // Date functions
+            "HUMAN_TIME" => {
+                if let Some(val) = args.first() {
+                    if let Ok(dt) = parse_datetime(val) {
+                         let now = Utc::now();
+                         let diff = now.signed_duration_since(dt);
+                         let seconds = diff.num_seconds();
+                         
+                         let s = if seconds < 0 {
+                             "in the future".to_string()
+                         } else if seconds < 60 {
+                             "just now".to_string()
+                         } else if seconds < 3600 {
+                             format!("{} minutes ago", seconds / 60)
+                         } else if seconds < 86400 {
+                             format!("{} hours ago", seconds / 3600)
+                         } else if seconds < 2592000 { 
+                             format!("{} days ago", seconds / 86400)
+                         } else {
+                              dt.to_rfc3339()
+                         };
+                         Ok(Value::String(s))
+                    } else {
+                        Ok(Value::Null)
+                    }
                 } else {
                     Ok(Value::Null)
                 }
