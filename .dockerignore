@@ -1,0 +1,53 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+benches/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Data directories
+data/
+*.db
+*.log
+
+# Client SDKs (not needed in server image)
+clients/
+
+# Web application (optional - uncomment if you want to include www/)
+# www/
+
+# Scripts
+scripts/
+
+# Misc
+.env*
+*.pem
+*.key

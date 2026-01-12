@@ -1,0 +1,452 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to API Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+
+       <section id="auth" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+               Authentication
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">On first startup, an <code class="text-fuchsia-400">admin</code> user is created with a <strong class="text-yellow-400">randomly generated password</strong> shown in the server logs. Save this password!</p>
+          </div>
+           <div class="divide-y divide-white/5">
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/auth/login</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Authenticate and receive a JWT token.</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">username</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Username (e.g., "admin").</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">password</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">User's password.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "token": "eyJhbGciOiJIUzI1NiIsInR..."
+                   }
+                 </div>
+               </div>
+            </div>
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/auth/password</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Change current user's password.</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">current_password</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Current password.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">new_password</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">New password.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "status": "password_updated"
+                   }
+                 </div>
+               </div>
+            </div>
+               <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/api-keys</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new API key.</p>
+               <div class="mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+                   <table class="w-full text-left text-xs">
+                     <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                       <tr>
+                         <th class="p-3">Field</th>
+                         <th class="p-3">Type</th>
+                         <th class="p-3">Description</th>
+                         <th class="p-3">Required</th>
+                       </tr>
+                     </thead>
+                     <tbody class="text-gray-400 divide-y divide-white/5">
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">name</td>
+                         <td class="p-3 font-mono">string</td>
+                         <td class="p-3">Name/Description for the API key.</td>
+                         <td class="p-3 text-white">Yes</td>
+                       </tr>
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "id": "uuid-v4-...",
+                     "name": "My API Key",
+                     "key": "sk_...",
+                     "created_at": "2023-..."
+                   }
+                 </div>
+               </div>
+            </div>
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/api-keys</code>
+              </div>
+              <p class="text-sm text-gray-400">List active API keys.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "keys": [
+                       { "id": "...", "name": "...", "created_at": "..." }
+                     ]
+                   }
+                 </div>
+               </div>
+            </div>
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/api-keys/:key_id</code>
+              </div>
+              <p class="text-sm text-gray-400">Revoke an API key.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   {
+                     "deleted": true
+                   }
+                 </div>
+               </div>
+            </div>
+             <!-- Live Query Token -->
+              <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/livequery/token</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Generate a short-lived JWT token for WebSocket live query connections. This token expires in 30 seconds. Useful for connecting to real-time changefeeds without exposing long-lived admin tokens.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   { "token": "eyJhbGciOiJIUzI1NiIsInR...", "expires_in": 30 }
+                 </div>
+               </div>
+               <div class="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                 <p class="text-xs text-yellow-400"><strong>Usage:</strong> Call this endpoint, then connect to ws://host:6745/_api/ws/changefeed?token=TOKEN</p>
+               </div>
+            </div>
+
+            <!-- GET /_api/auth/me -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/me</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get current authenticated user info and roles.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                  </div>
+                  { "username": "admin", "roles": ["admin"], "permissions": [...] }
+                </div>
+              </div>
+            </div>
+
+            <!-- GET /_api/auth/me/permissions -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/me/permissions</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get effective permissions for the current user.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                    <span class="text-emerald-400 font-bold">200 OK</span>
+                  </div>
+                  { "permissions": [{"action": "admin", "scope": "global", "database": null}] }
+                </div>
+              </div>
+            </div>
+           </div>
+         </div>
+       </section>
+
+       <!-- RBAC Roles Section -->
+       <section id="roles" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+              Roles (RBAC)
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Role-Based Access Control. Builtin roles: <code class="text-fuchsia-400">admin</code>, <code class="text-fuchsia-400">editor</code>, <code class="text-fuchsia-400">viewer</code>.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/auth/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all roles. Requires admin permission.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  [{ "name": "admin", "description": "Full system access", "permissions": [...], "is_builtin": true }]
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a custom role. Requires admin permission.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "name": "analyst", "description": "Read-only analyst", "permissions": [{"action": "read", "scope": "database", "database": "analytics"}] }
+                </div>
+              </div>
+            </div>
+
+            <!-- GET /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Get a specific role by name.</p>
+            </div>
+
+            <!-- PUT /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Update a custom role. Cannot modify builtin roles.</p>
+            </div>
+
+            <!-- DELETE /_api/auth/roles/:name -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/roles/:name</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a custom role. Cannot delete builtin roles.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Users Section -->
+       <section id="users" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+              Users
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">User management endpoints. All require admin permission.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/auth/users -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/users</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">List all users with their roles.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "users": [{ "username": "admin", "created_at": "2025-01-01T00:00:00Z", "roles": ["admin"] }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/users -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/users</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Create a new user.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "username": "newuser", "password": "securepass123", "initial_role": "viewer" }
+                </div>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/auth/users/:username -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/users/:username</code>
+              </div>
+              <p class="text-sm text-gray-400">Delete a user.</p>
+            </div>
+
+            <!-- GET /_api/auth/users/:username/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Get roles assigned to a user.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "roles": [{ "id": "uuid", "role": "admin", "database": null, "assigned_at": "..." }] }
+                </div>
+              </div>
+            </div>
+
+            <!-- POST /_api/auth/users/:username/roles -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Assign a role to a user.</p>
+              <div class="mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "role": "editor", "database": "mydb" }
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Set <code>database</code> to null for global role assignment.</p>
+              </div>
+            </div>
+
+            <!-- DELETE /_api/auth/users/:username/roles/:role -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/auth/users/:username/roles/:role</code>
+              </div>
+              <p class="text-sm text-gray-400">Revoke a role from a user. Use <code>?database=mydb</code> for database-scoped revocation.</p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/api-cluster" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Cluster
+          </span>
+        </a>
+        <a href="/docs/api-jobs" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Jobs
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

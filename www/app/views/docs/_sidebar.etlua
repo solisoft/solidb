@@ -5,7 +5,20 @@ local sections = {
     title = "Getting Started",
     items = {
       { slug = "getting-started", label = "Quick Start", icon = "fa-rocket", color = "primary" },
-      { slug = "api", label = "API Reference", icon = "fa-code", color = "accent" },
+      { slug = "api", label = "API Reference", icon = "fa-code", color = "accent", subitems = {
+        { slug = "api-databases", label = "Databases" },
+        { slug = "api-collections", label = "Collections" },
+        { slug = "api-documents", label = "Documents" },
+        { slug = "api-queries", label = "Queries" },
+        { slug = "api-indexes", label = "Indexes" },
+        { slug = "api-scripting", label = "Scripting" },
+        { slug = "api-blobs", label = "Blobs" },
+        { slug = "api-transactions", label = "Transactions" },
+        { slug = "api-cluster", label = "Cluster" },
+        { slug = "api-auth", label = "Auth & RBAC" },
+        { slug = "api-jobs", label = "Jobs & Queues" },
+        { slug = "api-monitoring", label = "Monitoring" },
+      }},
       { slug = "driver", label = "Native Driver", icon = "fa-plug", color = "info" },
     }
   },
