@@ -34,16 +34,13 @@
       Use the <code class="text-accent-light">CREATE STREAM</code> statement to define a new stream. A stream is defined by a name and a query that specifies the data source and transformation.
     </p>
 
-    <div class="code-block bg-[#1e1e1e] rounded-xl overflow-hidden border border-white/10 mb-8 shadow-2xl">
-      <div class="px-4 py-2 bg-white/5 border-b border-white/5 flex justify-between items-center">
-        <span class="text-xs font-medium text-text-muted">SDBQL</span>
-      </div>
-      <div class="p-6 overflow-x-auto">
-        <pre class="text-sm font-mono leading-relaxed"><span class="text-keyword">CREATE STREAM</span> <span class="text-variable">high_value_orders</span> <span class="text-keyword">AS</span>
-<span class="text-keyword">FOR</span> <span class="text-variable">order</span> <span class="text-keyword">IN</span> <span class="text-variable">orders</span>
-<span class="text-keyword">FILTER</span> <span class="text-variable">order</span>.<span class="text-property">amount</span> > <span class="text-number">100</span>
-<span class="text-keyword">WINDOW TUMBLING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"1m"</span>)
-<span class="text-keyword">RETURN</span> <span class="text-variable">order</span></pre>
+    <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 mb-8 shadow-2xl">
+      <div class="p-4 overflow-x-auto">
+        <pre><code class="language-sdbql">CREATE STREAM high_value_orders AS
+FOR order IN orders
+FILTER order.amount > 100
+WINDOW TUMBLING (SIZE "1m")
+RETURN order</code></pre>
       </div>
     </div>
   </section>
@@ -65,8 +62,10 @@
         <p class="text-sm text-text-muted mb-4">
           Fixed-size, non-overlapping time intervals.
         </p>
-        <div class="code-block bg-black/30 rounded-lg p-4 border border-white/5">
-          <pre class="text-xs font-mono"><span class="text-keyword">WINDOW TUMBLING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"5m"</span>)</pre>
+        <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+          <div class="p-4">
+            <pre><code class="language-sdbql">WINDOW TUMBLING (SIZE "5m")</code></pre>
+          </div>
         </div>
       </div>
 
@@ -76,8 +75,10 @@
         <p class="text-sm text-text-muted mb-4">
           Overlapping time intervals that slide by a specified duration.
         </p>
-        <div class="code-block bg-black/30 rounded-lg p-4 border border-white/5">
-          <pre class="text-xs font-mono"><span class="text-keyword">WINDOW SLIDING</span> (<span class="text-keyword">SIZE</span> <span class="text-string">"1h"</span>)</pre>
+        <div class="code-block bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">
+          <div class="p-4">
+            <pre><code class="language-sdbql">WINDOW SLIDING (SIZE "1h")</code></pre>
+          </div>
         </div>
       </div>
     </div>

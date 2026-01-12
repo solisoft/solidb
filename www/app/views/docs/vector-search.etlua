@@ -1,0 +1,574 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <!-- Main Content -->
+    <main class="col-span-12 lg:col-span-12 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400 mb-4 tracking-tight">Vector Search</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Enable AI-powered semantic search with high-dimensional vector similarity. Perfect for RAG, recommendations, and intelligent content discovery.
+          </p>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl p-8">
+        <p class="text-gray-300 leading-relaxed mb-4">
+          Vector search enables finding semantically similar items by comparing high-dimensional embeddings. Instead of exact keyword matching, vector search understands <strong>meaning</strong> - finding documents that are conceptually related even if they use different words.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="bg-purple-900/20 border border-purple-500/20 rounded-xl p-4 text-center">
+            <div class="text-3xl mb-2">🔍</div>
+            <h4 class="text-white font-bold">Semantic Search</h4>
+            <p class="text-sm text-gray-400">Find by meaning, not keywords</p>
+          </div>
+          <div class="bg-pink-900/20 border border-pink-500/20 rounded-xl p-4 text-center">
+            <div class="text-3xl mb-2">🤖</div>
+            <h4 class="text-white font-bold">RAG Applications</h4>
+            <p class="text-sm text-gray-400">Power AI with relevant context</p>
+          </div>
+          <div class="bg-rose-900/20 border border-rose-500/20 rounded-xl p-4 text-center">
+            <div class="text-3xl mb-2">💡</div>
+            <h4 class="text-white font-bold">Recommendations</h4>
+            <p class="text-sm text-gray-400">Similar items & content</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- How It Works -->
+      <section id="how-it-works" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+              How Vector Search Works
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center">
+                <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-3">
+                  <span class="text-purple-400 font-bold">1</span>
+                </div>
+                <h4 class="text-white font-semibold mb-2">Generate Embeddings</h4>
+                <p class="text-xs text-gray-400">Use an AI model (OpenAI, Ollama, etc.) to convert text/images into vectors</p>
+              </div>
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center">
+                <div class="w-10 h-10 rounded-full bg-pink-500/20 flex items-center justify-center mx-auto mb-3">
+                  <span class="text-pink-400 font-bold">2</span>
+                </div>
+                <h4 class="text-white font-semibold mb-2">Store in SoliDB</h4>
+                <p class="text-xs text-gray-400">Save embeddings as array fields in your documents</p>
+              </div>
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center">
+                <div class="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center mx-auto mb-3">
+                  <span class="text-rose-400 font-bold">3</span>
+                </div>
+                <h4 class="text-white font-semibold mb-2">Create Vector Index</h4>
+                <p class="text-xs text-gray-400">Index the embedding field for fast similarity search</p>
+              </div>
+              <div class="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center">
+                <div class="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center mx-auto mb-3">
+                  <span class="text-orange-400 font-bold">4</span>
+                </div>
+                <h4 class="text-white font-semibold mb-2">Query by Similarity</h4>
+                <p class="text-xs text-gray-400">Find nearest neighbors using SDBQL or REST API</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HNSW Algorithm -->
+      <section id="hnsw" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              HNSW: Fast Approximate Search
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed mb-4">
+              SoliDB uses <strong>HNSW (Hierarchical Navigable Small World)</strong> graphs for fast approximate nearest neighbor search on large vector datasets. HNSW provides 10-100x faster searches compared to brute-force while maintaining high recall (>95%).
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-6">
+                <h4 class="text-emerald-400 font-bold mb-3">Automatic Activation</h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  HNSW automatically activates when your index exceeds <strong>10,000 vectors</strong>. Below this threshold, exact brute-force search is used for 100% accuracy.
+                </p>
+                <div class="bg-black/30 rounded-lg p-3 text-xs font-mono">
+                  <span class="text-gray-500"># Vectors < 10K:</span> Exact search<br/>
+                  <span class="text-gray-500"># Vectors >= 10K:</span> HNSW approximate
+                </div>
+              </div>
+
+              <div class="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6">
+                <h4 class="text-purple-400 font-bold mb-3">Query-Time Tuning</h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Use the <code class="bg-gray-800 px-1 rounded">ef_search</code> parameter to trade off between speed and recall at query time.
+                </p>
+                <div class="bg-black/30 rounded-lg p-3 text-xs font-mono">
+                  <span class="text-purple-300">ef_search: 40</span> <span class="text-gray-500">// Fast, ~90% recall</span><br/>
+                  <span class="text-purple-300">ef_search: 100</span> <span class="text-gray-500">// Balanced</span><br/>
+                  <span class="text-purple-300">ef_search: 200</span> <span class="text-gray-500">// High recall, slower</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+              <h4 class="text-white font-bold mb-3">Performance Characteristics</h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-emerald-400 font-bold mb-1">Search Speed</div>
+                  <p class="text-gray-400">O(log n) vs O(n) brute-force. 10-100x faster at 100K+ vectors.</p>
+                </div>
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-purple-400 font-bold mb-1">Memory</div>
+                  <p class="text-gray-400">Graph stored alongside vectors. ~20-30% overhead for neighbor links.</p>
+                </div>
+                <div class="bg-black/20 rounded-lg p-4">
+                  <div class="text-pink-400 font-bold mb-1">Recall</div>
+                  <p class="text-gray-400">>95% recall with default settings. Tunable via ef_search.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p class="text-sm text-blue-200">
+                  <strong>Tip:</strong> HNSW graph is built incrementally as vectors are inserted and persisted to disk. No manual rebuild is required.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Distance Metrics -->
+      <section id="metrics" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Distance Metrics
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-6">
+              SoliDB supports three distance metrics for comparing vectors. Choose based on your embedding model's requirements.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <div class="flex items-center mb-4">
+                  <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mr-3">
+                    <span class="text-purple-400 font-bold text-lg">θ</span>
+                  </div>
+                  <h4 class="text-white font-bold">Cosine</h4>
+                </div>
+                <p class="text-sm text-gray-400 mb-4">Measures the angle between vectors. Best for text embeddings where magnitude doesn't matter.</p>
+                <div class="bg-black/30 rounded-lg p-3">
+                  <code class="text-xs text-purple-300">similarity = cos(θ) = A·B / (|A||B|)</code>
+                </div>
+                <div class="mt-4 text-xs">
+                  <span class="text-green-400">✓ OpenAI embeddings</span><br/>
+                  <span class="text-green-400">✓ Sentence transformers</span>
+                </div>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <div class="flex items-center mb-4">
+                  <div class="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center mr-3">
+                    <span class="text-pink-400 font-bold text-lg">d</span>
+                  </div>
+                  <h4 class="text-white font-bold">Euclidean</h4>
+                </div>
+                <p class="text-sm text-gray-400 mb-4">Straight-line distance in vector space. Best when magnitude matters.</p>
+                <div class="bg-black/30 rounded-lg p-3">
+                  <code class="text-xs text-pink-300">distance = √Σ(Ai - Bi)²</code>
+                </div>
+                <div class="mt-4 text-xs">
+                  <span class="text-green-400">✓ Image embeddings</span><br/>
+                  <span class="text-green-400">✓ Normalized vectors</span>
+                </div>
+              </div>
+
+              <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5">
+                <div class="flex items-center mb-4">
+                  <div class="w-10 h-10 rounded-lg bg-rose-500/20 flex items-center justify-center mr-3">
+                    <span class="text-rose-400 font-bold text-lg">·</span>
+                  </div>
+                  <h4 class="text-white font-bold">Dot Product</h4>
+                </div>
+                <p class="text-sm text-gray-400 mb-4">Raw dot product. Fastest metric, requires normalized vectors for meaningful results.</p>
+                <div class="bg-black/30 rounded-lg p-3">
+                  <code class="text-xs text-rose-300">score = Σ(Ai × Bi)</code>
+                </div>
+                <div class="mt-4 text-xs">
+                  <span class="text-green-400">✓ Pre-normalized vectors</span><br/>
+                  <span class="text-green-400">✓ Maximum performance</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Creating Vector Index -->
+      <section id="create-index" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+              Creating a Vector Index
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-4">
+              Create a vector index on any field containing embedding arrays. The index enables fast similarity search.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-emerald-400 font-bold text-sm">Create Vector Index</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/vector/:collection</span>
+              </div>
+              <div class="p-4">
+                <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"embedding_idx"</span>,
+  <span class="text-purple-400">"field"</span>: <span class="text-green-400">"embedding"</span>,
+  <span class="text-purple-400">"dimension"</span>: <span class="text-yellow-300">1536</span>,
+  <span class="text-purple-400">"metric"</span>: <span class="text-green-400">"cosine"</span>
+}</code></pre>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
+                <h4 class="text-white font-bold mb-3">Parameters</h4>
+                <table class="w-full text-sm">
+                  <tbody class="text-gray-400">
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 font-mono text-purple-400">name</td>
+                      <td class="py-2">Unique index name</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 font-mono text-purple-400">field</td>
+                      <td class="py-2">Document field containing vectors</td>
+                    </tr>
+                    <tr class="border-b border-white/5">
+                      <td class="py-2 font-mono text-purple-400">dimension</td>
+                      <td class="py-2">Vector dimension (e.g., 1536 for OpenAI)</td>
+                    </tr>
+                    <tr>
+                      <td class="py-2 font-mono text-purple-400">metric</td>
+                      <td class="py-2">"cosine", "euclidean", or "dot"</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-6">
+                <h4 class="text-emerald-400 font-bold mb-3">Common Dimensions</h4>
+                <ul class="space-y-2 text-sm text-gray-400">
+                  <li class="flex justify-between">
+                    <span>OpenAI text-embedding-3-small</span>
+                    <code class="text-emerald-300">1536</code>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>OpenAI text-embedding-3-large</span>
+                    <code class="text-emerald-300">3072</code>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Ollama nomic-embed-text</span>
+                    <code class="text-emerald-300">768</code>
+                  </li>
+                  <li class="flex justify-between">
+                    <span>Sentence Transformers</span>
+                    <code class="text-emerald-300">384-768</code>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Storing Vectors -->
+      <section id="storing" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+              Storing Documents with Vectors
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-4">
+              Store embedding vectors as array fields in your documents. The vector index automatically updates when documents are inserted, updated, or deleted.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5">
+                <span class="text-blue-400 font-bold text-sm">Insert Document with Embedding</span>
+              </div>
+              <div class="p-4">
+                <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"_key"</span>: <span class="text-green-400">"article_001"</span>,
+  <span class="text-purple-400">"title"</span>: <span class="text-green-400">"Introduction to Machine Learning"</span>,
+  <span class="text-purple-400">"content"</span>: <span class="text-green-400">"Machine learning is a subset of AI..."</span>,
+  <span class="text-purple-400">"embedding"</span>: [<span class="text-yellow-300">0.0123, -0.0456, 0.0789, ...</span>]
+}</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p class="text-sm text-blue-200">
+                  <strong>Tip:</strong> Generate embeddings before insertion using your preferred embedding model (OpenAI, Ollama, HuggingFace, etc.). SoliDB stores and indexes the vectors but doesn't generate them.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Querying with SDBQL -->
+      <section id="sdbql" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              Querying with SDBQL
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-4">
+              Use vector functions in SDBQL to compute similarity scores, filter by similarity threshold, and sort by relevance.
+            </p>
+
+            <!-- Basic similarity search -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5">
+                <span class="text-cyan-400 font-bold text-sm">Find Similar Documents</span>
+              </div>
+              <div class="p-4">
+                <pre><code class="language-sql text-sm text-gray-300">FOR doc IN articles
+  LET similarity = VECTOR_SIMILARITY(doc.embedding, @query_vector)
+  FILTER similarity > 0.8
+  SORT similarity DESC
+  LIMIT 10
+  RETURN {
+    title: doc.title,
+    score: similarity
+  }</code></pre>
+              </div>
+            </div>
+
+            <!-- Filter and combine -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5">
+                <span class="text-cyan-400 font-bold text-sm">Combine Vector Search with Filters</span>
+              </div>
+              <div class="p-4">
+                <pre><code class="language-sql text-sm text-gray-300">FOR doc IN products
+  FILTER doc.category == "electronics"
+  FILTER doc.price < 500
+  LET sim = VECTOR_SIMILARITY(doc.embedding, @query_vec)
+  FILTER sim > 0.7
+  SORT sim DESC
+  LIMIT 20
+  RETURN doc</code></pre>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-cyan-900/10 border border-cyan-500/20 rounded-xl p-4">
+                <h4 class="text-cyan-400 font-bold mb-2">Available Functions</h4>
+                <ul class="space-y-1 text-sm text-gray-400">
+                  <li><code class="text-cyan-300">VECTOR_SIMILARITY(a, b)</code> - Cosine similarity (0-1)</li>
+                  <li><code class="text-cyan-300">VECTOR_DISTANCE(a, b, metric)</code> - Distance value</li>
+                  <li><code class="text-cyan-300">VECTOR_NORMALIZE(v)</code> - Normalize to unit length</li>
+                </ul>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-4 border border-white/5">
+                <h4 class="text-white font-bold mb-2">Performance Tips</h4>
+                <ul class="space-y-1 text-sm text-gray-400">
+                  <li>• Apply non-vector filters first to reduce candidates</li>
+                  <li>• Use <code>LIMIT</code> to cap result size</li>
+                  <li>• Pre-filter by metadata when possible</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REST API Search -->
+      <section id="rest-api" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+              REST API Search
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 mb-4">
+              Use the dedicated vector search endpoint for direct similarity queries without writing SDBQL.
+            </p>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-orange-400 font-bold text-sm">Vector Search</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/vector/:collection/:index/search</span>
+              </div>
+              <div class="p-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2">Request:</p>
+                    <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"vector"</span>: [<span class="text-yellow-300">0.0123, -0.0456, ...</span>],
+  <span class="text-purple-400">"limit"</span>: <span class="text-yellow-300">10</span>,
+  <span class="text-purple-400">"ef_search"</span>: <span class="text-yellow-300">100</span>
+}</code></pre>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2">Response:</p>
+                    <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"results"</span>: [
+    {
+      <span class="text-purple-400">"doc_key"</span>: <span class="text-green-400">"article_001"</span>,
+      <span class="text-purple-400">"score"</span>: <span class="text-yellow-300">0.9823</span>
+    },
+    ...
+  ]
+}</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Use Cases -->
+      <section id="use-cases" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+              Use Cases
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-xl p-6 border border-purple-500/20">
+                <h4 class="text-white font-bold mb-3 flex items-center">
+                  <span class="text-2xl mr-3">🤖</span> RAG (Retrieval Augmented Generation)
+                </h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Power LLM applications with relevant context. Store document chunks with embeddings, retrieve the most relevant passages for each query.
+                </p>
+                <code class="text-xs text-purple-300 bg-black/30 px-2 py-1 rounded">Semantic document retrieval</code>
+              </div>
+
+              <div class="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-xl p-6 border border-blue-500/20">
+                <h4 class="text-white font-bold mb-3 flex items-center">
+                  <span class="text-2xl mr-3">🔍</span> Semantic Search
+                </h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Find documents by meaning, not keywords. "comfortable office chair" finds "ergonomic desk seating" even without matching words.
+                </p>
+                <code class="text-xs text-blue-300 bg-black/30 px-2 py-1 rounded">Natural language queries</code>
+              </div>
+
+              <div class="bg-gradient-to-br from-green-900/20 to-emerald-900/20 rounded-xl p-6 border border-green-500/20">
+                <h4 class="text-white font-bold mb-3 flex items-center">
+                  <span class="text-2xl mr-3">💡</span> Recommendations
+                </h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Suggest similar products, articles, or content. Users who viewed X might like these similar items.
+                </p>
+                <code class="text-xs text-green-300 bg-black/30 px-2 py-1 rounded">Content-based filtering</code>
+              </div>
+
+              <div class="bg-gradient-to-br from-orange-900/20 to-red-900/20 rounded-xl p-6 border border-orange-500/20">
+                <h4 class="text-white font-bold mb-3 flex items-center">
+                  <span class="text-2xl mr-3">🖼️</span> Image Search
+                </h4>
+                <p class="text-sm text-gray-400 mb-3">
+                  Find visually similar images using CLIP or other vision embeddings. Search photos by description or by example.
+                </p>
+                <code class="text-xs text-orange-300 bg-black/30 px-2 py-1 rounded">Multimodal search</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Management API -->
+      <section id="management" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              Management API Summary
+            </h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-emerald-400 font-bold text-sm">Create Vector Index</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/vector/:collection</span>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-blue-400 font-bold text-sm">List Vector Indexes</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">GET /_api/database/:db/vector/:collection</span>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-red-400 font-bold text-sm">Delete Vector Index</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">DELETE /_api/database/:db/vector/:collection/:name</span>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-4 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                <span class="text-orange-400 font-bold text-sm">Vector Similarity Search</span>
+                <span class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-400">POST /_api/database/:db/vector/:collection/:index/search</span>
+              </div>
+            </div>
+
+            <div class="mt-6 text-center">
+              <a href="/docs/api-vector" class="inline-flex items-center text-purple-400 hover:text-purple-300 font-medium transition-colors">
+                View Full API Reference
+                <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>

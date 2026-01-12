@@ -1,0 +1,288 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400 mb-4 tracking-tight">
+            Vector Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Functions for vector similarity search, distance calculations, and embedding operations.
+          </p>
+        </div>
+      </div>
+
+      <!-- Vector Functions -->
+      <section id="vector-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+              </svg>
+              Vector Similarity Functions
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL provides vector functions for computing similarity between embeddings, measuring distances, and normalizing vectors for semantic search applications.
+            </p>
+
+            <!-- VECTOR_SIMILARITY -->
+            <div>
+              <h3 class="text-lg font-bold text-purple-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-purple-500 rounded-full mr-3"></span>
+                Similarity Functions
+              </h3>
+              <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">VECTOR_SIMILARITY(vec1, vec2)</code>
+                  <p class="text-sm text-gray-400 mb-3">Calculates cosine similarity between two vectors. Returns a value between -1 and 1, where 1 means identical direction, 0 means orthogonal, and -1 means opposite direction.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Identical vectors have similarity 1.0
+RETURN VECTOR_SIMILARITY([1, 0, 0], [1, 0, 0])
+-- Result: 1.0
+
+-- Orthogonal vectors have similarity 0
+RETURN VECTOR_SIMILARITY([1, 0, 0], [0, 1, 0])
+-- Result: 0.0
+
+-- Similar vectors have high similarity
+RETURN VECTOR_SIMILARITY([0.9, 0.1, 0], [1, 0, 0])
+-- Result: ~0.994</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- VECTOR_DISTANCE -->
+            <div>
+              <h3 class="text-lg font-bold text-pink-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-pink-500 rounded-full mr-3"></span>
+                Distance Functions
+              </h3>
+              <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-pink-500/20 px-2 py-1 rounded border border-pink-500/30 w-fit mb-3">VECTOR_DISTANCE(vec1, vec2, metric)</code>
+                  <p class="text-sm text-gray-400 mb-3">Calculates the distance between two vectors using the specified metric. Supported metrics: "cosine", "euclidean", "dot".</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Euclidean distance (3-4-5 triangle)
+RETURN VECTOR_DISTANCE([0, 0], [3, 4], "euclidean")
+-- Result: 5.0
+
+-- Cosine distance (1 - cosine similarity)
+RETURN VECTOR_DISTANCE([1, 0], [0, 1], "cosine")
+-- Result: 1.0
+
+-- Dot product (for pre-normalized vectors)
+RETURN VECTOR_DISTANCE([0.6, 0.8], [1, 0], "dot")
+-- Result: 0.6</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- VECTOR_NORMALIZE -->
+            <div>
+              <h3 class="text-lg font-bold text-rose-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-rose-500 rounded-full mr-3"></span>
+                Utility Functions
+              </h3>
+              <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-rose-500/20 px-2 py-1 rounded border border-rose-500/30 w-fit mb-3">VECTOR_NORMALIZE(vec)</code>
+                  <p class="text-sm text-gray-400 mb-3">Normalizes a vector to unit length (magnitude = 1). Useful for preparing vectors for dot product similarity.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Normalize a 3-4-5 vector
+RETURN VECTOR_NORMALIZE([3, 4, 0])
+-- Result: [0.6, 0.8, 0.0]
+
+-- The normalized vector has magnitude 1
+LET norm = VECTOR_NORMALIZE([3, 4, 0])
+RETURN SQRT(norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2])
+-- Result: 1.0</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-purple-900/10 border border-purple-500/30 rounded-lg p-4 flex items-start">
+              <svg class="w-5 h-5 text-purple-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div>
+                <h4 class="text-purple-300 font-bold mb-1 text-sm">Choosing a Metric</h4>
+                <p class="text-sm text-purple-200/70">
+                  <strong>Cosine</strong> is ideal for text embeddings (OpenAI, sentence-transformers) where direction matters more than magnitude. <strong>Euclidean</strong> works well for image embeddings or when magnitude is meaningful. <strong>Dot product</strong> is fastest but requires pre-normalized vectors.
+                </p>
+              </div>
+            </div>
+
+            <!-- Practical Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Find similar articles to a query
+FOR doc IN articles
+  LET sim = VECTOR_SIMILARITY(doc.embedding, @query_embedding)
+  FILTER sim > 0.8
+  SORT sim DESC
+  LIMIT 10
+  RETURN { title: doc.title, score: sim }
+
+-- Find products similar to a given product
+LET product = (FOR p IN products FILTER p._key == @product_id RETURN p)[0]
+FOR other IN products
+  FILTER other._key != @product_id
+  LET sim = VECTOR_SIMILARITY(other.embedding, product.embedding)
+  SORT sim DESC
+  LIMIT 5
+  RETURN { name: other.name, similarity: ROUND(sim, 3) }
+
+-- Combine vector search with filters
+FOR doc IN documents
+  FILTER doc.category == "technology"
+  FILTER doc.published >= "2024-01-01"
+  LET sim = VECTOR_SIMILARITY(doc.embedding, @query_vec)
+  FILTER sim > 0.75
+  SORT sim DESC
+  LIMIT 20
+  RETURN {
+    title: doc.title,
+    category: doc.category,
+    score: ROUND(sim, 4)
+  }
+
+-- Find nearest neighbors using Euclidean distance
+FOR item IN items
+  LET dist = VECTOR_DISTANCE(item.features, @target_features, "euclidean")
+  SORT dist ASC
+  LIMIT 5
+  RETURN { id: item._key, distance: dist }
+
+-- Normalize vectors before storage
+LET raw_embedding = @embedding_from_model
+LET normalized = VECTOR_NORMALIZE(raw_embedding)
+INSERT { content: @content, embedding: normalized } INTO documents
+
+-- Semantic search with score threshold
+FOR chunk IN document_chunks
+  LET relevance = VECTOR_SIMILARITY(chunk.embedding, @question_embedding)
+  FILTER relevance >= 0.7
+  SORT relevance DESC
+  LIMIT 5
+  RETURN {
+    text: chunk.text,
+    source: chunk.source_doc,
+    relevance: ROUND(relevance, 3)
+  }
+
+-- Multi-vector query (average of multiple embeddings)
+LET query_vecs = @user_interest_embeddings
+FOR product IN products
+  LET scores = (
+    FOR qv IN query_vecs
+      RETURN VECTOR_SIMILARITY(product.embedding, qv)
+  )
+  LET avg_score = SUM(scores) / LENGTH(scores)
+  SORT avg_score DESC
+  LIMIT 10
+  RETURN { name: product.name, match_score: avg_score }</code></pre>
+            </div>
+
+            <!-- Tips -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Tips for Vector Queries</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-400">
+                <div>
+                  <h5 class="text-purple-300 font-semibold mb-2">Performance</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Create vector indexes on embedding fields</li>
+                    <li>Apply non-vector filters first to reduce candidates</li>
+                    <li>Use LIMIT to cap result size</li>
+                    <li>Pre-normalize vectors for dot product</li>
+                    <li>Large indexes (>10K) use HNSW for ~100x faster search</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 class="text-purple-300 font-semibold mb-2">Best Practices</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Store embeddings as float arrays</li>
+                    <li>Match dimension to your model (1536, 768, etc.)</li>
+                    <li>Use cosine for most text embedding models</li>
+                    <li>Test similarity thresholds for your use case</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Function Reference Table -->
+      <section id="reference" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Quick Reference</h2>
+          </div>
+          <div class="p-8">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-white/10">
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Function</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Returns</th>
+                    <th class="text-left py-3 px-4 text-gray-400 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="text-gray-300">
+                  <tr class="border-b border-white/5">
+                    <td class="py-3 px-4 font-mono text-purple-400">VECTOR_SIMILARITY(a, b)</td>
+                    <td class="py-3 px-4">Number (-1 to 1)</td>
+                    <td class="py-3 px-4">Cosine similarity between vectors</td>
+                  </tr>
+                  <tr class="border-b border-white/5">
+                    <td class="py-3 px-4 font-mono text-pink-400">VECTOR_DISTANCE(a, b, metric)</td>
+                    <td class="py-3 px-4">Number (>= 0)</td>
+                    <td class="py-3 px-4">Distance using specified metric</td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 px-4 font-mono text-rose-400">VECTOR_NORMALIZE(v)</td>
+                    <td class="py-3 px-4">Array</td>
+                    <td class="py-3 px-4">Unit-length normalized vector</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-geo" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Geo Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-search" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Search Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

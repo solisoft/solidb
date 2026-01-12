@@ -17,6 +17,97 @@ pub enum IndexType {
     Bloom,
     /// Cuckoo Filter index - probabilistic existence check with deletion support
     Cuckoo,
+    /// Vector index - approximate nearest neighbor search using HNSW
+    Vector,
+}
+
+/// Distance metric for vector similarity search
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum VectorMetric {
+    /// Cosine similarity (normalized dot product, range 0-1 for normalized vectors)
+    Cosine,
+    /// Euclidean distance (L2 norm)
+    Euclidean,
+    /// Dot product (inner product)
+    DotProduct,
+}
+
+impl Default for VectorMetric {
+    fn default() -> Self {
+        VectorMetric::Cosine
+    }
+}
+
+/// Configuration for vector index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorIndexConfig {
+    /// Index name
+    pub name: String,
+    /// Field path containing the vector (must be array of f32/f64)
+    pub field: String,
+    /// Dimension of vectors (must be consistent across all documents)
+    pub dimension: usize,
+    /// Distance metric to use
+    #[serde(default)]
+    pub metric: VectorMetric,
+    /// HNSW M parameter - max connections per node (default: 16)
+    #[serde(default = "default_hnsw_m")]
+    pub m: usize,
+    /// HNSW ef_construction - build quality parameter (default: 200)
+    #[serde(default = "default_ef_construction")]
+    pub ef_construction: usize,
+}
+
+fn default_hnsw_m() -> usize {
+    16
+}
+
+fn default_ef_construction() -> usize {
+    200
+}
+
+impl VectorIndexConfig {
+    /// Create a new vector index configuration with defaults
+    pub fn new(name: String, field: String, dimension: usize) -> Self {
+        Self {
+            name,
+            field,
+            dimension,
+            metric: VectorMetric::default(),
+            m: default_hnsw_m(),
+            ef_construction: default_ef_construction(),
+        }
+    }
+
+    /// Set the distance metric
+    pub fn with_metric(mut self, metric: VectorMetric) -> Self {
+        self.metric = metric;
+        self
+    }
+
+    /// Set HNSW M parameter
+    pub fn with_m(mut self, m: usize) -> Self {
+        self.m = m;
+        self
+    }
+
+    /// Set HNSW ef_construction parameter
+    pub fn with_ef_construction(mut self, ef_construction: usize) -> Self {
+        self.ef_construction = ef_construction;
+        self
+    }
+}
+
+/// Vector index statistics
+#[derive(Debug, Clone, Serialize)]
+pub struct VectorIndexStats {
+    pub name: String,
+    pub field: String,
+    pub dimension: usize,
+    pub metric: VectorMetric,
+    pub m: usize,
+    pub ef_construction: usize,
+    pub indexed_vectors: usize,
 }
 
 // ==================== N-gram Utilities ====================

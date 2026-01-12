@@ -237,6 +237,51 @@
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                     <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
                   </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Vector Search (HNSW)</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Full-text Search</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">Geo Indexes</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">SQL Compatibility</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-yellow-400 text-lg">◐</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="py-3 px-4 text-gray-300">TTL / Expiration</td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-red-400 text-lg">✗</span></td>
+                    <td class="py-3 px-3 text-center"><span class="text-green-400 text-lg">✓</span></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -307,6 +352,14 @@
                   <li class="flex items-start">
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Columnar Engine</strong> - Native columnar storage for high-performance analytics</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Vector Search with HNSW</strong> - Built-in AI/RAG support with fast approximate nearest neighbor search</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">SQL Compatibility</strong> - Execute SQL queries translated to native SDBQL</span>
                   </li>
                 </ul>
               </div>
@@ -410,6 +463,10 @@
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Built-in Columnar</strong> - No extensions required for analytical workloads</span>
                   </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Native Vector Search</strong> - HNSW indexes for AI/RAG without pgvector extension</span>
+                  </li>
                 </ul>
               </div>
 
@@ -504,6 +561,14 @@
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Advanced Match & Regex</strong> - SDBQL supports regex matching and complex math functions</span>
                   </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Vector Search</strong> - Built-in HNSW for AI/ML applications (Redis requires RediSearch)</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Full-text & Geo Search</strong> - Native search capabilities without modules</span>
+                  </li>
                 </ul>
               </div>
 
@@ -597,6 +662,14 @@
                   <li class="flex items-start">
                     <span class="text-green-400 mr-2">•</span>
                     <span><strong class="text-white">Rust Performance</strong> - Memory-safe with excellent performance</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Vector Search</strong> - HNSW indexes for AI/RAG applications</span>
+                  </li>
+                  <li class="flex items-start">
+                    <span class="text-green-400 mr-2">•</span>
+                    <span><strong class="text-white">Full-text & Geo Search</strong> - Built-in search indexes</span>
                   </li>
                 </ul>
               </div>
@@ -909,11 +982,13 @@
                 <ul class="space-y-2 text-sm text-gray-300">
                   <li>• Real-time applications with live updates</li>
                   <li>• Document + Graph in one database</li>
+                  <li>• AI/RAG with vector search (HNSW)</li>
                   <li>• Simple deployment and operations</li>
                   <li>• Built-in background job processing</li>
                   <li>• Server-side logic with Lua scripting</li>
                   <li>• Master-master replication</li>
                   <li>• Integrated blob/file storage</li>
+                  <li>• Full-text and geospatial search</li>
                   <li>• Low resource footprint</li>
                 </ul>
               </div>

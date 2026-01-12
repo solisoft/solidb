@@ -9,8 +9,9 @@ use super::document::Document;
 use super::geo::{GeoIndex, GeoIndexStats};
 use super::index::{
     extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch, Index,
-    IndexStats, IndexType, TtlIndex, TtlIndexStats, NGRAM_SIZE,
+    IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats, NGRAM_SIZE,
 };
+use super::vector::{VectorIndex, VectorSearchResult};
 use crate::error::{DbError, DbResult};
 use crate::storage::schema::{CollectionSchema, SchemaValidator};
 use cuckoofilter::CuckooFilter;
@@ -36,6 +37,8 @@ const TTL_META_PREFIX: &str = "ttl_meta:"; // TTL index metadata
 const BLO_IDX_PREFIX: &str = "blo_idx:"; // Bloom filter index prefix
 const CFO_IDX_PREFIX: &str = "cfo_idx:"; // Cuckoo filter index prefix
 const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
+const VEC_META_PREFIX: &str = "vec_meta:"; // Vector index metadata
+const VEC_DATA_PREFIX: &str = "vec_data:"; // Vector index data (serialized VectorIndex)
 
 /// Type of change event
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -118,6 +121,8 @@ pub struct Collection {
     pub bloom_filters: Arc<RwLock<HashMap<String, BloomFilter>>>,
     /// In-memory Cuckoo filters for indexes
     pub cuckoo_filters: Arc<RwLock<HashMap<String, CuckooFilter<DefaultHasher>>>>,
+    /// In-memory vector indexes
+    pub vector_indexes: Arc<RwLock<HashMap<String, VectorIndex>>>,
 }
 
 impl Clone for Collection {
@@ -133,6 +138,7 @@ impl Clone for Collection {
             collection_type: self.collection_type.clone(),
             bloom_filters: self.bloom_filters.clone(),
             cuckoo_filters: self.cuckoo_filters.clone(),
+            vector_indexes: self.vector_indexes.clone(),
         }
     }
 }
@@ -213,6 +219,7 @@ impl Collection {
             collection_type: Arc::new(RwLock::new(collection_type)),
             bloom_filters: Arc::new(RwLock::new(HashMap::new())),
             cuckoo_filters: Arc::new(RwLock::new(HashMap::new())),
+            vector_indexes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -321,6 +328,16 @@ impl Collection {
     /// Build a geo index entry key
     fn geo_entry_key(index_name: &str, doc_key: &str) -> Vec<u8> {
         format!("{}{}:{}", GEO_PREFIX, index_name, doc_key).into_bytes()
+    }
+
+    /// Build a vector index metadata key
+    fn vec_meta_key(index_name: &str) -> Vec<u8> {
+        format!("{}{}", VEC_META_PREFIX, index_name).into_bytes()
+    }
+
+    /// Build a vector index data key
+    fn vec_data_key(index_name: &str) -> Vec<u8> {
+        format!("{}{}", VEC_DATA_PREFIX, index_name).into_bytes()
     }
 
     /// Build a fulltext index metadata key
@@ -773,6 +790,7 @@ impl Collection {
 
         let mut batch = WriteBatch::default();
         let mut insert_count = 0;
+        let mut upserted_docs: Vec<(String, Value)> = Vec::new();
 
         for (key, mut data) in documents {
             // Ensure _key is set
@@ -805,6 +823,7 @@ impl Collection {
 
             if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
                 batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+                upserted_docs.push((key.clone(), doc.to_value()));
                 if !exists {
                     insert_count += 1;
                 }
@@ -823,6 +842,15 @@ impl Collection {
                 .fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
             self.count_dirty
                 .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        // Update vector indexes for all upserted documents
+        for (key, doc_value) in &upserted_docs {
+            self.update_vector_indexes_on_upsert(key, doc_value);
+        }
+        // Persist vector indexes after batch
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
         Ok(count)
@@ -1035,6 +1063,8 @@ impl Collection {
         if update_indexes {
             self.update_indexes_on_insert(&key, &doc_value)?;
             self.update_fulltext_on_insert(&key, &doc_value)?;
+            // Update vector indexes
+            self.update_vector_indexes_on_upsert(&key, &doc_value);
         }
 
         // Update document count
@@ -1122,6 +1152,10 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Update vector indexes (remove old, add new)
+        self.update_vector_indexes_on_delete(key);
+        self.update_vector_indexes_on_upsert(key, &new_value);
+
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
             type_: ChangeType::Update,
@@ -1184,6 +1218,10 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Update vector indexes (remove old, add new)
+        self.update_vector_indexes_on_delete(key);
+        self.update_vector_indexes_on_upsert(key, &new_value);
+
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
             type_: ChangeType::Update,
@@ -1221,6 +1259,9 @@ impl Collection {
 
         // Update fulltext indexes
         self.update_fulltext_on_delete(key, &doc_value)?;
+
+        // Update vector indexes
+        self.update_vector_indexes_on_delete(key);
 
         // Update document count
         self.decrement_count();
@@ -1282,6 +1323,8 @@ impl Collection {
                     if let Err(e) = self.update_fulltext_on_delete(key, &doc_value) {
                         tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
                     }
+                    // Update vector indexes
+                    self.update_vector_indexes_on_delete(key);
 
                     deleted_docs.push((key.clone(), doc_value));
                     deleted_count += 1;
@@ -1291,6 +1334,11 @@ impl Collection {
 
         if deleted_count == 0 {
             return Ok(0);
+        }
+
+        // Persist vector indexes after batch delete
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
         // 2. Commit storage batch
@@ -2601,6 +2649,37 @@ impl Collection {
             );
         }
 
+        // Rebuild vector indexes
+        let vector_configs = self.get_all_vector_index_configs();
+        if !vector_configs.is_empty() {
+            let vec_start = std::time::Instant::now();
+
+            // Clear all vector indexes
+            {
+                let indexes = self.vector_indexes.read().unwrap();
+                for index in indexes.values() {
+                    index.clear();
+                }
+            }
+
+            // Re-index all documents
+            for doc in &docs {
+                let doc_value = doc.to_value();
+                self.update_vector_indexes_on_upsert(&doc.key, &doc_value);
+            }
+
+            // Persist vector indexes
+            if let Err(e) = self.persist_vector_indexes() {
+                tracing::warn!("Failed to persist vector indexes during rebuild: {}", e);
+            }
+
+            tracing::info!(
+                "rebuild_all_indexes: Vector indexes ({}) took {:?}",
+                vector_configs.len(),
+                vec_start.elapsed()
+            );
+        }
+
         tracing::info!(
             "rebuild_all_indexes: Total time {:?}",
             total_start.elapsed()
@@ -3110,6 +3189,332 @@ impl Collection {
             .collect();
 
         Some(docs)
+    }
+
+    // ==================== Vector Index Operations ====================
+
+    /// Get a vector index by name (from memory or load from disk)
+    pub fn get_vector_index(&self, name: &str) -> Option<VectorIndexConfig> {
+        // First check in-memory
+        {
+            let indexes = self.vector_indexes.read().unwrap();
+            if let Some(idx) = indexes.get(name) {
+                return Some(idx.config().clone());
+            }
+        }
+
+        // Try to load from disk
+        let db = self.db.read().unwrap();
+        let cf = db.cf_handle(&self.name)?;
+        let bytes = db.get_cf(cf, Self::vec_meta_key(name)).ok()??;
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Get all vector index configurations
+    fn get_all_vector_index_configs(&self) -> Vec<VectorIndexConfig> {
+        let db = self.db.read().unwrap();
+        let cf = match db.cf_handle(&self.name) {
+            Some(cf) => cf,
+            None => return vec![],
+        };
+
+        let prefix = VEC_META_PREFIX.as_bytes();
+        db.prefix_iterator_cf(cf, prefix)
+            .filter_map(|r| r.ok())
+            .filter(|(k, _)| k.starts_with(prefix))
+            .filter_map(|(_, value)| serde_json::from_slice(&value).ok())
+            .collect()
+    }
+
+    /// Load vector index from disk into memory
+    fn load_vector_index(&self, name: &str) -> DbResult<()> {
+        // Check if already loaded
+        {
+            let indexes = self.vector_indexes.read().unwrap();
+            if indexes.contains_key(name) {
+                return Ok(());
+            }
+        }
+
+        // Get config from disk
+        let config = self.get_vector_index(name).ok_or_else(|| {
+            DbError::BadRequest(format!("Vector index '{}' not found", name))
+        })?;
+
+        // Try to load serialized index data
+        let index = {
+            let db = self.db.read().unwrap();
+            let cf = db.cf_handle(&self.name).ok_or_else(|| {
+                DbError::InternalError("Column family not found".to_string())
+            })?;
+
+            match db.get_cf(cf, Self::vec_data_key(name)).ok().flatten() {
+                Some(bytes) => VectorIndex::deserialize(&bytes)?,
+                None => {
+                    // No serialized data - create fresh index and rebuild
+                    VectorIndex::new(config.clone())?
+                }
+            }
+        };
+
+        // Store in memory
+        let mut indexes = self.vector_indexes.write().unwrap();
+        indexes.insert(name.to_string(), index);
+
+        Ok(())
+    }
+
+    /// Create a vector index on a field
+    pub fn create_vector_index(&self, config: VectorIndexConfig) -> DbResult<VectorIndexStats> {
+        let name = config.name.clone();
+        let field = config.field.clone();
+
+        // Check if index already exists
+        if self.get_vector_index(&name).is_some() {
+            return Err(DbError::BadRequest(format!(
+                "Vector index '{}' already exists",
+                name
+            )));
+        }
+
+        // Validate dimension
+        if config.dimension == 0 {
+            return Err(DbError::BadRequest(
+                "Vector dimension must be greater than 0".to_string(),
+            ));
+        }
+
+        // Create the index
+        let index = VectorIndex::new(config.clone())?;
+
+        // Store config to disk
+        {
+            let config_bytes = serde_json::to_vec(&config)?;
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            db.put_cf(cf, Self::vec_meta_key(&name), &config_bytes)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to create vector index: {}", e))
+                })?;
+        }
+
+        // Build index from existing documents
+        let docs = self.all();
+        let mut indexed_count = 0;
+
+        for doc in &docs {
+            let doc_value = doc.to_value();
+            let field_value = extract_field_value(&doc_value, &field);
+
+            // Try to extract vector from field value
+            if let Some(vec) = Self::extract_vector(&field_value, config.dimension) {
+                if index.insert(&doc.key, &vec).is_ok() {
+                    indexed_count += 1;
+                }
+            }
+        }
+
+        // Persist index data
+        {
+            let index_bytes = index.serialize()?;
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            db.put_cf(cf, Self::vec_data_key(&name), &index_bytes)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to persist vector index: {}", e))
+                })?;
+        }
+
+        // Store in memory
+        {
+            let mut indexes = self.vector_indexes.write().unwrap();
+            indexes.insert(name.clone(), index);
+        }
+
+        Ok(VectorIndexStats {
+            name,
+            field: config.field,
+            dimension: config.dimension,
+            metric: config.metric,
+            m: config.m,
+            ef_construction: config.ef_construction,
+            indexed_vectors: indexed_count,
+        })
+    }
+
+    /// Drop a vector index
+    pub fn drop_vector_index(&self, name: &str) -> DbResult<()> {
+        if self.get_vector_index(name).is_none() {
+            return Err(DbError::BadRequest(format!(
+                "Vector index '{}' not found",
+                name
+            )));
+        }
+
+        // Remove from memory
+        {
+            let mut indexes = self.vector_indexes.write().unwrap();
+            indexes.remove(name);
+        }
+
+        // Remove from disk
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .expect("Column family should exist");
+
+        db.delete_cf(cf, Self::vec_meta_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to drop vector index: {}", e)))?;
+
+        db.delete_cf(cf, Self::vec_data_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to drop vector index data: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// List all vector indexes
+    pub fn list_vector_indexes(&self) -> Vec<VectorIndexStats> {
+        self.get_all_vector_index_configs()
+            .iter()
+            .map(|config| {
+                let indexed_vectors = self
+                    .vector_indexes
+                    .read()
+                    .unwrap()
+                    .get(&config.name)
+                    .map(|idx| idx.len())
+                    .unwrap_or(0);
+
+                VectorIndexStats {
+                    name: config.name.clone(),
+                    field: config.field.clone(),
+                    dimension: config.dimension,
+                    metric: config.metric,
+                    m: config.m,
+                    ef_construction: config.ef_construction,
+                    indexed_vectors,
+                }
+            })
+            .collect()
+    }
+
+    /// Search for similar vectors
+    pub fn vector_search(
+        &self,
+        index_name: &str,
+        query: &[f32],
+        limit: usize,
+        ef_search: Option<usize>,
+    ) -> DbResult<Vec<VectorSearchResult>> {
+        // Ensure index is loaded
+        self.load_vector_index(index_name)?;
+
+        let indexes = self.vector_indexes.read().unwrap();
+        let index = indexes.get(index_name).ok_or_else(|| {
+            DbError::BadRequest(format!("Vector index '{}' not found", index_name))
+        })?;
+
+        // Search with ef parameter (default: max(limit*2, 40) for good recall)
+        let ef = ef_search.unwrap_or_else(|| (limit * 2).max(40));
+        index.search(query, limit, ef)
+    }
+
+    /// Calculate similarity between a document and a query vector
+    pub fn vector_similarity(
+        &self,
+        index_name: &str,
+        doc_key: &str,
+        query: &[f32],
+    ) -> DbResult<Option<f32>> {
+        // Ensure index is loaded
+        self.load_vector_index(index_name)?;
+
+        let indexes = self.vector_indexes.read().unwrap();
+        let index = indexes.get(index_name).ok_or_else(|| {
+            DbError::BadRequest(format!("Vector index '{}' not found", index_name))
+        })?;
+
+        index.similarity(doc_key, query)
+    }
+
+    /// Update vector index when a document is inserted/updated
+    pub fn update_vector_indexes_on_upsert(&self, doc_key: &str, doc_value: &Value) {
+        let configs = self.get_all_vector_index_configs();
+
+        for config in configs {
+            // Ensure the index is loaded into memory
+            if let Err(e) = self.load_vector_index(&config.name) {
+                tracing::warn!("Failed to load vector index '{}': {}", config.name, e);
+                continue;
+            }
+
+            let indexes = self.vector_indexes.read().unwrap();
+            if let Some(index) = indexes.get(&config.name) {
+                let field_value = extract_field_value(doc_value, &config.field);
+                if let Some(vec) = Self::extract_vector(&field_value, config.dimension) {
+                    let _ = index.insert(doc_key, &vec);
+                }
+            }
+        }
+    }
+
+    /// Update vector index when a document is deleted
+    pub fn update_vector_indexes_on_delete(&self, doc_key: &str) {
+        let configs = self.get_all_vector_index_configs();
+
+        for config in configs {
+            // Ensure the index is loaded into memory
+            if let Err(e) = self.load_vector_index(&config.name) {
+                tracing::warn!("Failed to load vector index '{}': {}", config.name, e);
+                continue;
+            }
+
+            let indexes = self.vector_indexes.read().unwrap();
+            if let Some(index) = indexes.get(&config.name) {
+                let _ = index.remove(doc_key);
+            }
+        }
+    }
+
+    /// Persist all vector indexes to disk
+    pub fn persist_vector_indexes(&self) -> DbResult<()> {
+        let indexes = self.vector_indexes.read().unwrap();
+        let db = self.db.read().unwrap();
+        let cf = db
+            .cf_handle(&self.name)
+            .ok_or_else(|| DbError::InternalError("Column family not found".to_string()))?;
+
+        for (name, index) in indexes.iter() {
+            let bytes = index.serialize()?;
+            db.put_cf(cf, Self::vec_data_key(name), &bytes)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to persist vector index: {}", e))
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Extract a vector from a JSON value
+    fn extract_vector(value: &Value, expected_dim: usize) -> Option<Vec<f32>> {
+        match value {
+            Value::Array(arr) => {
+                if arr.len() != expected_dim {
+                    return None;
+                }
+                arr.iter()
+                    .map(|v| match v {
+                        Value::Number(n) => n.as_f64().map(|f| f as f32),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            _ => None,
+        }
     }
 
     // ==================== Fulltext Index Operations ====================
