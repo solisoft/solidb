@@ -4945,6 +4945,9 @@ pub struct CreateVectorIndexRequest {
     pub m: Option<usize>,
     #[serde(default)]
     pub ef_construction: Option<usize>,
+    /// Quantization method: "none" (default) or "scalar" (4x compression)
+    #[serde(default)]
+    pub quantization: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -4953,10 +4956,13 @@ pub struct CreateVectorIndexResponse {
     pub field: String,
     pub dimension: usize,
     pub metric: String,
+    pub quantization: String,
     #[serde(rename = "type")]
     pub index_type: String,
     pub status: String,
     pub indexed_vectors: usize,
+    pub memory_bytes: usize,
+    pub compression_ratio: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -4992,7 +4998,7 @@ pub async fn create_vector_index(
     Path((db_name, coll_name)): Path<(String, String)>,
     Json(req): Json<CreateVectorIndexRequest>,
 ) -> Result<Json<CreateVectorIndexResponse>, DbError> {
-    use crate::storage::index::{VectorIndexConfig, VectorMetric};
+    use crate::storage::index::{VectorIndexConfig, VectorMetric, VectorQuantization};
 
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
@@ -5004,8 +5010,15 @@ pub async fn create_vector_index(
         _ => VectorMetric::Cosine, // default
     };
 
+    // Parse quantization
+    let quantization = match req.quantization.as_deref() {
+        Some("scalar") => VectorQuantization::Scalar,
+        _ => VectorQuantization::None, // default
+    };
+
     let mut config = VectorIndexConfig::new(req.name.clone(), req.field.clone(), req.dimension)
-        .with_metric(metric);
+        .with_metric(metric)
+        .with_quantization(quantization);
 
     if let Some(m) = req.m {
         config = config.with_m(m);
@@ -5022,14 +5035,22 @@ pub async fn create_vector_index(
         VectorMetric::DotProduct => "dot",
     };
 
+    let quantization_str = match stats.quantization {
+        VectorQuantization::None => "none",
+        VectorQuantization::Scalar => "scalar",
+    };
+
     Ok(Json(CreateVectorIndexResponse {
         name: stats.name,
         field: stats.field,
         dimension: stats.dimension,
         metric: metric_str.to_string(),
+        quantization: quantization_str.to_string(),
         index_type: "vector".to_string(),
         status: "created".to_string(),
         indexed_vectors: stats.indexed_vectors,
+        memory_bytes: stats.memory_bytes,
+        compression_ratio: stats.compression_ratio,
     }))
 }
 
@@ -5081,6 +5102,61 @@ pub async fn vector_search(
     Ok(Json(VectorSearchResponse {
         results: search_results,
         count,
+    }))
+}
+
+/// Response for quantize operation
+#[derive(Debug, Serialize)]
+pub struct QuantizeVectorIndexResponse {
+    pub name: String,
+    pub vectors_quantized: usize,
+    pub memory_before: usize,
+    pub memory_after: usize,
+    pub compression_ratio: f32,
+    pub status: String,
+}
+
+/// Quantize an existing vector index for memory compression
+pub async fn quantize_vector_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+) -> Result<Json<QuantizeVectorIndexResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    // Get the index and quantize it
+    let (vectors_quantized, stats) = collection.quantize_vector_index(&index_name)?;
+
+    Ok(Json(QuantizeVectorIndexResponse {
+        name: index_name,
+        vectors_quantized,
+        memory_before: stats.full_memory_bytes,
+        memory_after: stats.memory_bytes,
+        compression_ratio: stats.compression_ratio,
+        status: "quantized".to_string(),
+    }))
+}
+
+/// Response for dequantize operation
+#[derive(Debug, Serialize)]
+pub struct DequantizeVectorIndexResponse {
+    pub name: String,
+    pub status: String,
+}
+
+/// Remove quantization from a vector index (revert to full precision)
+pub async fn dequantize_vector_index(
+    State(state): State<AppState>,
+    Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+) -> Result<Json<DequantizeVectorIndexResponse>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+
+    collection.dequantize_vector_index(&index_name)?;
+
+    Ok(Json(DequantizeVectorIndexResponse {
+        name: index_name,
+        status: "dequantized".to_string(),
     }))
 }
 

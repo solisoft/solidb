@@ -111,6 +111,50 @@ RETURN SQRT(norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2])
               </div>
             </div>
 
+            <!-- VECTOR_INDEX_STATS -->
+            <div>
+              <h3 class="text-lg font-bold text-cyan-300 mb-4 flex items-center">
+                <span class="w-2 h-6 bg-cyan-500 rounded-full mr-3"></span>
+                Index Statistics
+              </h3>
+              <div class="grid grid-cols-1 gap-4">
+                <div class="bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <code class="block text-sm font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30 w-fit mb-3">VECTOR_INDEX_STATS(collection, index_name)</code>
+                  <p class="text-sm text-gray-400 mb-3">Returns statistics about a vector index including dimension, vector count, quantization status, and memory usage.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">-- Get statistics for a vector index
+LET stats = VECTOR_INDEX_STATS("articles", "embedding_idx")
+RETURN stats
+-- Result: {
+--   "name": "embedding_idx",
+--   "field": "embedding",
+--   "dimension": 768,
+--   "vectors": 15420,
+--   "metric": "cosine",
+--   "quantization": "scalar",
+--   "memory_bytes": 11842560,
+--   "compression_ratio": 4.0,
+--   "m": 16,
+--   "ef_construction": 200
+-- }
+
+-- Check if an index is quantized
+LET stats = VECTOR_INDEX_STATS("articles", "embedding_idx")
+RETURN stats.quantization != "none"
+-- Result: true
+
+-- Calculate memory savings
+LET stats = VECTOR_INDEX_STATS("articles", "embedding_idx")
+LET full_memory = stats.vectors * stats.dimension * 4
+LET savings = full_memory - stats.memory_bytes
+RETURN {
+  vectors: stats.vectors,
+  compression: stats.compression_ratio,
+  savings_mb: ROUND(savings / 1048576, 2)
+}</code></pre>
+                </div>
+              </div>
+            </div>
+
             <!-- Info Box -->
             <div class="bg-purple-900/10 border border-purple-500/30 rounded-lg p-4 flex items-start">
               <svg class="w-5 h-5 text-purple-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,10 +295,15 @@ FOR product IN products
                     <td class="py-3 px-4">Number (>= 0)</td>
                     <td class="py-3 px-4">Distance using specified metric</td>
                   </tr>
-                  <tr>
+                  <tr class="border-b border-white/5">
                     <td class="py-3 px-4 font-mono text-rose-400">VECTOR_NORMALIZE(v)</td>
                     <td class="py-3 px-4">Array</td>
                     <td class="py-3 px-4">Unit-length normalized vector</td>
+                  </tr>
+                  <tr>
+                    <td class="py-3 px-4 font-mono text-cyan-400">VECTOR_INDEX_STATS(coll, idx)</td>
+                    <td class="py-3 px-4">Object</td>
+                    <td class="py-3 px-4">Index stats: vectors, memory, quantization</td>
                   </tr>
                 </tbody>
               </table>

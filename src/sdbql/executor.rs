@@ -4078,6 +4078,53 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Array(normalized))
             }
 
+            // VECTOR_INDEX_STATS(collection, index_name) - get vector index statistics
+            "VECTOR_INDEX_STATS" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "VECTOR_INDEX_STATS requires 2 arguments: collection, index_name".to_string(),
+                    ));
+                }
+
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VECTOR_INDEX_STATS: first argument must be a string (collection name)".to_string(),
+                    )
+                })?;
+
+                let index_name = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(
+                        "VECTOR_INDEX_STATS: second argument must be a string (index name)".to_string(),
+                    )
+                })?;
+
+                let collection = self.get_collection(coll_name)?;
+                let indexes = collection.list_vector_indexes();
+
+                // Find the specific index
+                let stats = indexes.into_iter().find(|idx| idx.name == index_name).ok_or_else(|| {
+                    DbError::ExecutionError(format!(
+                        "VECTOR_INDEX_STATS: index '{}' not found in collection '{}'",
+                        index_name, coll_name
+                    ))
+                })?;
+
+                // Build result object
+                let mut result = serde_json::Map::new();
+                result.insert("name".to_string(), Value::String(stats.name));
+                result.insert("field".to_string(), Value::String(stats.field));
+                result.insert("dimension".to_string(), Value::Number(serde_json::Number::from(stats.dimension)));
+                result.insert("vectors".to_string(), Value::Number(serde_json::Number::from(stats.indexed_vectors)));
+                result.insert("metric".to_string(), Value::String(format!("{:?}", stats.metric).to_lowercase()));
+                result.insert("quantization".to_string(), Value::String(format!("{:?}", stats.quantization).to_lowercase()));
+                result.insert("memory_bytes".to_string(), Value::Number(serde_json::Number::from(stats.memory_bytes)));
+                result.insert("compression_ratio".to_string(), Value::Number(number_from_f64(stats.compression_ratio as f64)));
+                result.insert("m".to_string(), Value::Number(serde_json::Number::from(stats.m)));
+                result.insert("ef_construction".to_string(), Value::Number(serde_json::Number::from(stats.ef_construction)));
+
+                Ok(Value::Object(result))
+            }
+
             // HAS(doc, attribute) - check if document has attribute
             "HAS" => {
                 if evaluated_args.len() != 2 {

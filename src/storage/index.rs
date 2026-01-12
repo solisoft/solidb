@@ -38,6 +38,21 @@ impl Default for VectorMetric {
     }
 }
 
+/// Quantization method for vector compression
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum VectorQuantization {
+    /// No quantization - full f32 precision (4 bytes/dim)
+    None,
+    /// Scalar Quantization - u8 per dimension (1 byte/dim), 4x compression
+    Scalar,
+}
+
+impl Default for VectorQuantization {
+    fn default() -> Self {
+        VectorQuantization::None
+    }
+}
+
 /// Configuration for vector index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorIndexConfig {
@@ -56,6 +71,9 @@ pub struct VectorIndexConfig {
     /// HNSW ef_construction - build quality parameter (default: 200)
     #[serde(default = "default_ef_construction")]
     pub ef_construction: usize,
+    /// Quantization method for storage compression (default: None)
+    #[serde(default)]
+    pub quantization: VectorQuantization,
 }
 
 fn default_hnsw_m() -> usize {
@@ -76,6 +94,7 @@ impl VectorIndexConfig {
             metric: VectorMetric::default(),
             m: default_hnsw_m(),
             ef_construction: default_ef_construction(),
+            quantization: VectorQuantization::default(),
         }
     }
 
@@ -96,6 +115,12 @@ impl VectorIndexConfig {
         self.ef_construction = ef_construction;
         self
     }
+
+    /// Set quantization method
+    pub fn with_quantization(mut self, quantization: VectorQuantization) -> Self {
+        self.quantization = quantization;
+        self
+    }
 }
 
 /// Vector index statistics
@@ -108,6 +133,12 @@ pub struct VectorIndexStats {
     pub m: usize,
     pub ef_construction: usize,
     pub indexed_vectors: usize,
+    /// Quantization method in use
+    pub quantization: VectorQuantization,
+    /// Estimated memory usage in bytes
+    pub memory_bytes: usize,
+    /// Compression ratio (1.0 = no compression, 4.0 = 4x compression)
+    pub compression_ratio: f32,
 }
 
 // ==================== N-gram Utilities ====================

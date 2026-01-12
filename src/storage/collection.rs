@@ -3335,6 +3335,10 @@ impl Collection {
             indexes.insert(name.clone(), index);
         }
 
+        // Calculate memory usage (full precision for now)
+        let memory_bytes = indexed_count * config.dimension * std::mem::size_of::<f32>();
+        let compression_ratio = 1.0; // No compression initially
+
         Ok(VectorIndexStats {
             name,
             field: config.field,
@@ -3343,6 +3347,9 @@ impl Collection {
             m: config.m,
             ef_construction: config.ef_construction,
             indexed_vectors: indexed_count,
+            quantization: config.quantization,
+            memory_bytes,
+            compression_ratio,
         })
     }
 
@@ -3389,6 +3396,17 @@ impl Collection {
                     .map(|idx| idx.len())
                     .unwrap_or(0);
 
+                // Calculate memory based on quantization
+                let bytes_per_dim = match config.quantization {
+                    crate::storage::index::VectorQuantization::None => std::mem::size_of::<f32>(),
+                    crate::storage::index::VectorQuantization::Scalar => 1,
+                };
+                let memory_bytes = indexed_vectors * config.dimension * bytes_per_dim;
+                let compression_ratio = match config.quantization {
+                    crate::storage::index::VectorQuantization::None => 1.0,
+                    crate::storage::index::VectorQuantization::Scalar => 4.0,
+                };
+
                 VectorIndexStats {
                     name: config.name.clone(),
                     field: config.field.clone(),
@@ -3397,6 +3415,9 @@ impl Collection {
                     m: config.m,
                     ef_construction: config.ef_construction,
                     indexed_vectors,
+                    quantization: config.quantization,
+                    memory_bytes,
+                    compression_ratio,
                 }
             })
             .collect()
@@ -3439,6 +3460,90 @@ impl Collection {
         })?;
 
         index.similarity(doc_key, query)
+    }
+
+    /// Quantize a vector index for memory compression (4x reduction)
+    ///
+    /// Returns the number of vectors quantized and quantization statistics.
+    pub fn quantize_vector_index(
+        &self,
+        index_name: &str,
+    ) -> DbResult<(usize, crate::storage::vector::QuantizationStats)> {
+        // Ensure index is loaded
+        self.load_vector_index(index_name)?;
+
+        let indexes = self.vector_indexes.read().unwrap();
+        let index = indexes.get(index_name).ok_or_else(|| {
+            DbError::BadRequest(format!("Vector index '{}' not found", index_name))
+        })?;
+
+        // Check if already quantized
+        if index.is_quantized() {
+            return Err(DbError::BadRequest(format!(
+                "Vector index '{}' is already quantized",
+                index_name
+            )));
+        }
+
+        // Quantize the index
+        let count = index.quantize()?;
+
+        // Get stats after quantization
+        let stats = index.quantization_stats().ok_or_else(|| {
+            DbError::InternalError("Failed to get quantization stats".to_string())
+        })?;
+
+        // Persist the updated index
+        {
+            let index_bytes = index.serialize()?;
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            db.put_cf(cf, Self::vec_data_key(index_name), &index_bytes)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to persist quantized vector index: {}", e))
+                })?;
+        }
+
+        Ok((count, stats))
+    }
+
+    /// Remove quantization from a vector index (revert to full precision search)
+    pub fn dequantize_vector_index(&self, index_name: &str) -> DbResult<()> {
+        // Ensure index is loaded
+        self.load_vector_index(index_name)?;
+
+        let indexes = self.vector_indexes.read().unwrap();
+        let index = indexes.get(index_name).ok_or_else(|| {
+            DbError::BadRequest(format!("Vector index '{}' not found", index_name))
+        })?;
+
+        // Check if quantized
+        if !index.is_quantized() {
+            return Err(DbError::BadRequest(format!(
+                "Vector index '{}' is not quantized",
+                index_name
+            )));
+        }
+
+        // Remove quantization
+        index.dequantize();
+
+        // Persist the updated index
+        {
+            let index_bytes = index.serialize()?;
+            let db = self.db.read().unwrap();
+            let cf = db
+                .cf_handle(&self.name)
+                .expect("Column family should exist");
+            db.put_cf(cf, Self::vec_data_key(index_name), &index_bytes)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to persist dequantized vector index: {}", e))
+                })?;
+        }
+
+        Ok(())
     }
 
     /// Update vector index when a document is inserted/updated
