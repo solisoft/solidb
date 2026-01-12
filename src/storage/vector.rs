@@ -60,6 +60,12 @@ impl VectorIndex {
         self.len() == 0
     }
 
+    /// Clear all vectors from the index
+    pub fn clear(&self) {
+        let mut vectors = self.vectors.write().unwrap();
+        vectors.clear();
+    }
+
     /// Insert a vector for a document
     pub fn insert(&self, doc_key: &str, vector: &[f32]) -> DbResult<()> {
         // Validate dimension

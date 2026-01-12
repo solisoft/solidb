@@ -790,6 +790,7 @@ impl Collection {
 
         let mut batch = WriteBatch::default();
         let mut insert_count = 0;
+        let mut upserted_docs: Vec<(String, Value)> = Vec::new();
 
         for (key, mut data) in documents {
             // Ensure _key is set
@@ -822,6 +823,7 @@ impl Collection {
 
             if let Ok(doc_bytes) = serde_json::to_vec(&doc) {
                 batch.put_cf(cf, Self::doc_key(&key), &doc_bytes);
+                upserted_docs.push((key.clone(), doc.to_value()));
                 if !exists {
                     insert_count += 1;
                 }
@@ -840,6 +842,15 @@ impl Collection {
                 .fetch_add(insert_count, std::sync::atomic::Ordering::Relaxed);
             self.count_dirty
                 .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        // Update vector indexes for all upserted documents
+        for (key, doc_value) in &upserted_docs {
+            self.update_vector_indexes_on_upsert(key, doc_value);
+        }
+        // Persist vector indexes after batch
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
         Ok(count)
@@ -1052,6 +1063,8 @@ impl Collection {
         if update_indexes {
             self.update_indexes_on_insert(&key, &doc_value)?;
             self.update_fulltext_on_insert(&key, &doc_value)?;
+            // Update vector indexes
+            self.update_vector_indexes_on_upsert(&key, &doc_value);
         }
 
         // Update document count
@@ -1139,6 +1152,10 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Update vector indexes (remove old, add new)
+        self.update_vector_indexes_on_delete(key);
+        self.update_vector_indexes_on_upsert(key, &new_value);
+
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
             type_: ChangeType::Update,
@@ -1201,6 +1218,10 @@ impl Collection {
         self.update_fulltext_on_delete(key, &old_value)?;
         self.update_fulltext_on_insert(key, &new_value)?;
 
+        // Update vector indexes (remove old, add new)
+        self.update_vector_indexes_on_delete(key);
+        self.update_vector_indexes_on_upsert(key, &new_value);
+
         // Broadcast change event
         let _ = self.change_sender.send(ChangeEvent {
             type_: ChangeType::Update,
@@ -1238,6 +1259,9 @@ impl Collection {
 
         // Update fulltext indexes
         self.update_fulltext_on_delete(key, &doc_value)?;
+
+        // Update vector indexes
+        self.update_vector_indexes_on_delete(key);
 
         // Update document count
         self.decrement_count();
@@ -1299,6 +1323,8 @@ impl Collection {
                     if let Err(e) = self.update_fulltext_on_delete(key, &doc_value) {
                         tracing::warn!("Failed to clean fulltext for {}: {}", key, e);
                     }
+                    // Update vector indexes
+                    self.update_vector_indexes_on_delete(key);
 
                     deleted_docs.push((key.clone(), doc_value));
                     deleted_count += 1;
@@ -1308,6 +1334,11 @@ impl Collection {
 
         if deleted_count == 0 {
             return Ok(0);
+        }
+
+        // Persist vector indexes after batch delete
+        if let Err(e) = self.persist_vector_indexes() {
+            tracing::warn!("Failed to persist vector indexes: {}", e);
         }
 
         // 2. Commit storage batch
@@ -2618,6 +2649,37 @@ impl Collection {
             );
         }
 
+        // Rebuild vector indexes
+        let vector_configs = self.get_all_vector_index_configs();
+        if !vector_configs.is_empty() {
+            let vec_start = std::time::Instant::now();
+
+            // Clear all vector indexes
+            {
+                let indexes = self.vector_indexes.read().unwrap();
+                for index in indexes.values() {
+                    index.clear();
+                }
+            }
+
+            // Re-index all documents
+            for doc in &docs {
+                let doc_value = doc.to_value();
+                self.update_vector_indexes_on_upsert(&doc.key, &doc_value);
+            }
+
+            // Persist vector indexes
+            if let Err(e) = self.persist_vector_indexes() {
+                tracing::warn!("Failed to persist vector indexes during rebuild: {}", e);
+            }
+
+            tracing::info!(
+                "rebuild_all_indexes: Vector indexes ({}) took {:?}",
+                vector_configs.len(),
+                vec_start.elapsed()
+            );
+        }
+
         tracing::info!(
             "rebuild_all_indexes: Total time {:?}",
             total_start.elapsed()
@@ -3381,9 +3443,15 @@ impl Collection {
     /// Update vector index when a document is inserted/updated
     pub fn update_vector_indexes_on_upsert(&self, doc_key: &str, doc_value: &Value) {
         let configs = self.get_all_vector_index_configs();
-        let indexes = self.vector_indexes.read().unwrap();
 
         for config in configs {
+            // Ensure the index is loaded into memory
+            if let Err(e) = self.load_vector_index(&config.name) {
+                tracing::warn!("Failed to load vector index '{}': {}", config.name, e);
+                continue;
+            }
+
+            let indexes = self.vector_indexes.read().unwrap();
             if let Some(index) = indexes.get(&config.name) {
                 let field_value = extract_field_value(doc_value, &config.field);
                 if let Some(vec) = Self::extract_vector(&field_value, config.dimension) {
@@ -3395,9 +3463,19 @@ impl Collection {
 
     /// Update vector index when a document is deleted
     pub fn update_vector_indexes_on_delete(&self, doc_key: &str) {
-        let indexes = self.vector_indexes.read().unwrap();
-        for index in indexes.values() {
-            let _ = index.remove(doc_key);
+        let configs = self.get_all_vector_index_configs();
+
+        for config in configs {
+            // Ensure the index is loaded into memory
+            if let Err(e) = self.load_vector_index(&config.name) {
+                tracing::warn!("Failed to load vector index '{}': {}", config.name, e);
+                continue;
+            }
+
+            let indexes = self.vector_indexes.read().unwrap();
+            if let Some(index) = indexes.get(&config.name) {
+                let _ = index.remove(doc_key);
+            }
         }
     }
 
