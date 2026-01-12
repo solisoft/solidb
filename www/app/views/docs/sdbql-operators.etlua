@@ -1,0 +1,308 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-pink-500 to-purple-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 mb-4 tracking-tight">
+            Operators
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Comparison, logical, arithmetic, and bitwise operators for building powerful query conditions.
+          </p>
+        </div>
+      </div>
+
+      <!-- Operators -->
+      <section id="operators" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+              </svg>
+              All Operators
+            </h2>
+          </div>
+          <div class="p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Comparison -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-balance-scale-right mr-2 opacity-50"></i> Comparison
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                  <!-- Equality -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">==</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">!=</code>
+                       <span class="text-xs text-gray-400">Equality check</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      status == "active"
+                    </code>
+                  </div>
+
+                  <!-- Relational -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;=</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;=</code>
+                       <span class="text-xs text-gray-400">Range comparison</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      age &gt;= 18
+                    </code>
+                  </div>
+
+                  <!-- Inclusion -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">IN</code>
+                       <span class="text-xs text-gray-400">Value in array</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      city IN ["Paris", "London"]
+                    </code>
+                  </div>
+
+                  <!-- Pattern Matching -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">LIKE</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">=~</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">!~</code>
+                       <span class="text-xs text-gray-400">Pattern & Regex</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        name LIKE "J%"
+                      </code>
+                       <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        email =~ "^[a-z]+@"
+                      </code>
+                    </div>
+                  </div>
+
+                  <!-- Fuzzy Matching -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~=</code>
+                       <span class="text-xs text-gray-400">Fuzzy Match (edit distance &le; 2)</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        name ~= "jonathen"
+                      </code>
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        -- matches: john, jon, jonathan
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Logical -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-check-double mr-2 opacity-50"></i> Logical
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                  <!-- AND/OR -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">AND</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">OR</code>
+                       <span class="text-xs text-gray-400">Boolean logic</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      age > 18 AND active == true
+                    </code>
+                  </div>
+
+                  <!-- NOT -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">NOT</code>
+                       <span class="text-xs text-gray-400">Negation</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      NOT is_deleted
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Arithmetic -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-calculator mr-2 opacity-50"></i> Arithmetic
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                   <!-- Basic Math -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">+</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">-</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">*</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">/</code>
+                       <span class="text-xs text-gray-400">Basic operations</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      total * 1.2
+                    </code>
+                  </div>
+
+                   <!-- Modulo -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">%</code>
+                       <span class="text-xs text-gray-400">Modulo (remainder)</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      index % 2 == 0
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bitwise -->
+              <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                <div class="px-5 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                  <h3 class="text-pink-300 font-bold text-sm uppercase tracking-wider flex items-center">
+                    <i class="fas fa-microchip mr-2 opacity-50"></i> Bitwise
+                  </h3>
+                </div>
+                <div class="p-5 space-y-5 flex-grow">
+                   <!-- Logic -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&amp;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">|</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">^</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">~</code>
+                       <span class="text-xs text-gray-400">Logic & NOT</span>
+                    </div>
+                    <div class="space-y-1">
+                      <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        flags & 4 -- Check bit
+                      </code>
+                       <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                        mask | 1 -- Set bit
+                      </code>
+                    </div>
+                  </div>
+
+                   <!-- Shift -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2">
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&lt;&lt;</code>
+                       <code class="text-xs font-bold text-white bg-gray-700/50 px-1.5 py-0.5 rounded border border-white/10">&gt;&gt;</code>
+                       <span class="text-xs text-gray-400">Shift Left/Right</span>
+                    </div>
+                    <code class="block text-xs text-gray-300 bg-black/20 px-2 py-1.5 rounded font-mono border border-white/5">
+                      1 &lt;&lt; 2 -- Results in 4
+                    </code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bind Variables -->
+      <section id="bind-variables" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5 flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+              </svg>
+              Bind Variables
+            </h2>
+            <span class="px-3 py-1 bg-green-500/20 text-green-300 text-xs font-bold rounded-full border border-green-500/30">SECURITY ESSENTIAL</span>
+          </div>
+          <div class="p-8 space-y-6">
+            <div class="bg-red-900/10 border border-red-500/30 rounded-xl p-5 flex items-start">
+              <svg class="w-6 h-6 text-red-400 mt-0.5 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+              </svg>
+              <div>
+                <h4 class="text-red-300 font-bold mb-1">Prevent Injection Attacks</h4>
+                <p class="text-sm text-red-200/70">
+                  Never concatenate user input directly into query strings. Always use bind variables (<code>@variable</code>) to safely substitute values.
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Query</h4>
+                <pre><code class="language-sql text-sm">FOR u IN users
+  FILTER u.name == @name
+  AND u.age >= @minAge
+  RETURN u</code></pre>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Bind Vars</h4>
+                <pre><code class="language-json text-sm">{
+  "name": "Alice",
+  "minAge": 25
+}</code></pre>
+              </div>
+            </div>
+
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-2">Dynamic Field Access</h4>
+              <p class="text-sm text-gray-400 mb-3">
+                Use bracket notation with bind variables for dynamic field names.
+              </p>
+              <code class="text-sm bg-gray-950 px-2 py-1 rounded text-indigo-300 border border-white/10">FILTER doc[@fieldName] == @value</code>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-syntax" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Syntax & Basics
+          </span>
+        </a>
+        <a href="/docs/sdbql-mutations" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Data Mutations
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

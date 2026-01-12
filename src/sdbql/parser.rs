@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::ast::*;
-use super::lexer::{Lexer, Token};
+use super::lexer::{Lexer, TemplatePart, Token};
 use crate::error::{DbError, DbResult};
 
 pub struct Parser {
@@ -830,7 +830,7 @@ impl Parser {
     /// Parse ternary expression: condition ? true_expr : false_expr
     /// Lowest precedence, right-associative
     fn parse_ternary_expression(&mut self) -> DbResult<Expression> {
-        let condition = self.parse_or_expression()?;
+        let condition = self.parse_null_coalesce_expression()?;
 
         if matches!(self.current_token(), Token::Question) {
             self.advance(); // consume '?'
@@ -845,6 +845,259 @@ impl Parser {
         } else {
             Ok(condition)
         }
+    }
+
+    /// Parse null coalescing expression: left ?? right
+    /// Returns left if left is not null, otherwise evaluates and returns right
+    /// Left-associative, precedence between ternary and pipeline
+    fn parse_null_coalesce_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_pipeline_expression()?;
+
+        while matches!(self.current_token(), Token::NullCoalesce) {
+            self.advance(); // consume ??
+            let right = self.parse_pipeline_expression()?;
+            left = Expression::BinaryOp {
+                left: Box::new(left),
+                op: BinaryOperator::NullCoalesce,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse pipeline expression: expr |> FUNC(args) |> FUNC2(args)
+    /// Left-associative, precedence between null coalesce and OR
+    fn parse_pipeline_expression(&mut self) -> DbResult<Expression> {
+        let mut left = self.parse_or_expression()?;
+
+        while matches!(self.current_token(), Token::PipeRight) {
+            self.advance(); // consume |>
+
+            // Parse function name - can be an identifier or a keyword that doubles as a function
+            let func_name = self.parse_pipeline_function_name()?;
+
+            // Expect opening paren
+            self.expect(Token::LeftParen)?;
+
+            // Parse arguments
+            let mut args = Vec::new();
+            while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                args.push(self.parse_expression()?);
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Token::RightParen)?;
+
+            let right = Expression::FunctionCall {
+                name: func_name,
+                args,
+            };
+
+            left = Expression::Pipeline {
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    /// Parse function name in pipeline context - allows keywords that double as functions
+    fn parse_pipeline_function_name(&mut self) -> DbResult<String> {
+        let name = match self.current_token() {
+            Token::Identifier(name) => name.clone(),
+            // Keywords that can also be function names
+            Token::Filter => "FILTER".to_string(),
+            Token::Sort => "SORT".to_string(),
+            Token::Count => "COUNT".to_string(),
+            Token::Any => "ANY".to_string(),
+            Token::Return => "RETURN".to_string(),
+            Token::In => "IN".to_string(),
+            _ => {
+                return Err(DbError::ParseError(format!(
+                    "Expected function name after |>, got {:?}",
+                    self.current_token()
+                )));
+            }
+        };
+        self.advance();
+        Ok(name)
+    }
+
+    /// Parse lambda expression: x -> expr or (a, b) -> expr
+    fn parse_lambda_expression(&mut self) -> DbResult<Expression> {
+        let mut params = Vec::new();
+
+        // Handle parenthesized parameters: (a, b) -> expr
+        if matches!(self.current_token(), Token::LeftParen) {
+            self.advance(); // consume (
+            while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                if let Token::Identifier(name) = self.current_token() {
+                    params.push(name.clone());
+                    self.advance();
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected parameter name in lambda".to_string(),
+                    ));
+                }
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Token::RightParen)?;
+        } else if let Token::Identifier(name) = self.current_token() {
+            // Single parameter without parentheses: x -> expr
+            params.push(name.clone());
+            self.advance();
+        }
+
+        self.expect(Token::Arrow)?;
+        let body = self.parse_expression()?;
+
+        Ok(Expression::Lambda {
+            params,
+            body: Box::new(body),
+        })
+    }
+
+    /// Check if the current position looks like the start of a lambda: (params) ->
+    fn is_lambda_params(&self) -> bool {
+        // We're at '(' - scan ahead to see if it's (ident, ident, ...) ->
+        let mut pos = self.position + 1;
+        let mut depth = 1;
+
+        while let Some(tok) = self.tokens.get(pos) {
+            match tok {
+                Token::LeftParen => depth += 1,
+                Token::RightParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // Check if next token is Arrow
+                        return matches!(self.tokens.get(pos + 1), Some(Token::Arrow));
+                    }
+                }
+                Token::Comma | Token::Identifier(_) => {}
+                _ => return false, // Not a simple param list
+            }
+            pos += 1;
+        }
+        false
+    }
+
+    /// Parse window function after detecting OVER keyword
+    /// Already consumed: FUNC(args), current token is OVER
+    fn parse_window_function(
+        &mut self,
+        function: String,
+        arguments: Vec<Expression>,
+    ) -> DbResult<Expression> {
+        self.expect(Token::Over)?;
+        self.expect(Token::LeftParen)?;
+
+        let over_clause = self.parse_window_spec()?;
+
+        self.expect(Token::RightParen)?;
+
+        Ok(Expression::WindowFunctionCall {
+            function: function.to_uppercase(),
+            arguments,
+            over_clause,
+        })
+    }
+
+    /// Parse window specification inside OVER(...)
+    /// Handles: PARTITION BY expr, ... ORDER BY expr [ASC|DESC], ...
+    fn parse_window_spec(&mut self) -> DbResult<WindowSpec> {
+        let mut partition_by = Vec::new();
+        let mut order_by = Vec::new();
+
+        // Parse PARTITION BY (optional)
+        if matches!(self.current_token(), Token::Partition) {
+            self.advance(); // consume PARTITION
+
+            // Expect BY keyword - check for identifier "BY"
+            match self.current_token() {
+                Token::Identifier(s) if s.to_uppercase() == "BY" => {
+                    self.advance(); // consume BY
+                }
+                _ => {
+                    return Err(DbError::ParseError(
+                        "Expected BY after PARTITION".to_string(),
+                    ));
+                }
+            }
+
+            // Parse partition expressions
+            loop {
+                partition_by.push(self.parse_expression()?);
+                if matches!(self.current_token(), Token::Comma) {
+                    // Check if next is ORDER or end of spec
+                    if matches!(self.peek_token(1), Token::Sort | Token::Identifier(_))
+                        && matches!(self.peek_token(1), Token::Sort)
+                    {
+                        break;
+                    }
+                    // Check if it's ORDER BY coming
+                    if let Token::Identifier(s) = self.peek_token(1) {
+                        if s.to_uppercase() == "ORDER" {
+                            break;
+                        }
+                    }
+                    self.advance(); // consume comma
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Parse ORDER BY (optional) - reusing Sort token for ORDER
+        if matches!(self.current_token(), Token::Sort) {
+            self.advance(); // consume ORDER (Sort token)
+
+            // Expect BY keyword
+            match self.current_token() {
+                Token::Identifier(s) if s.to_uppercase() == "BY" => {
+                    self.advance(); // consume BY
+                }
+                _ => {
+                    return Err(DbError::ParseError("Expected BY after ORDER".to_string()));
+                }
+            }
+
+            // Parse order expressions with optional ASC/DESC
+            loop {
+                let expr = self.parse_expression()?;
+                let ascending = match self.current_token() {
+                    Token::Desc => {
+                        self.advance();
+                        false
+                    }
+                    Token::Asc => {
+                        self.advance();
+                        true
+                    }
+                    _ => true, // Default ascending
+                };
+                order_by.push((expr, ascending));
+
+                if matches!(self.current_token(), Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(WindowSpec {
+            partition_by,
+            order_by,
+        })
     }
 
     fn parse_or_expression(&mut self) -> DbResult<Expression> {
@@ -988,6 +1241,10 @@ impl Parser {
                 self.advance();
                 Ok(Some(BinaryOperator::NotRegEx))
             }
+            Token::FuzzyEqual => {
+                self.advance();
+                Ok(Some(BinaryOperator::FuzzyEqual))
+            }
             Token::Not => {
                 // Check for NOT LIKE
                 if matches!(self.peek_token(1), Token::Like) {
@@ -1112,6 +1369,47 @@ impl Parser {
         }
     }
 
+    /// Get field name from current token - handles both identifiers and keywords
+    fn get_field_name(&self) -> Option<String> {
+        match self.current_token() {
+            Token::Identifier(name) => Some(name.clone()),
+            // Allow keywords as field names
+            Token::Sort => Some("sort".to_string()),
+            Token::Count => Some("count".to_string()),
+            Token::Filter => Some("filter".to_string()),
+            Token::Return => Some("return".to_string()),
+            Token::In => Some("in".to_string()),
+            Token::For => Some("for".to_string()),
+            Token::Let => Some("let".to_string()),
+            Token::Limit => Some("limit".to_string()),
+            Token::Partition => Some("partition".to_string()),
+            Token::Over => Some("over".to_string()),
+            Token::Case => Some("case".to_string()),
+            Token::When => Some("when".to_string()),
+            Token::Then => Some("then".to_string()),
+            Token::Else => Some("else".to_string()),
+            Token::End => Some("end".to_string()),
+            Token::True => Some("true".to_string()),
+            Token::False => Some("false".to_string()),
+            Token::Null => Some("null".to_string()),
+            Token::And => Some("and".to_string()),
+            Token::Or => Some("or".to_string()),
+            Token::Not => Some("not".to_string()),
+            Token::Like => Some("like".to_string()),
+            Token::Insert => Some("insert".to_string()),
+            Token::Update => Some("update".to_string()),
+            Token::Remove => Some("remove".to_string()),
+            Token::Upsert => Some("upsert".to_string()),
+            Token::Into => Some("into".to_string()),
+            Token::With => Some("with".to_string()),
+            Token::Collect => Some("collect".to_string()),
+            Token::Aggregate => Some("aggregate".to_string()),
+            Token::Asc => Some("asc".to_string()),
+            Token::Desc => Some("desc".to_string()),
+            _ => None,
+        }
+    }
+
     fn parse_postfix_expression(&mut self) -> DbResult<Expression> {
         let mut expr = self.parse_primary_expression()?;
 
@@ -1120,13 +1418,23 @@ impl Parser {
             match self.current_token() {
                 Token::Dot => {
                     self.advance();
-                    if let Token::Identifier(field) = self.current_token() {
-                        let field_name = field.clone();
+                    if let Some(field_name) = self.get_field_name() {
                         self.advance();
                         expr = Expression::FieldAccess(Box::new(expr), field_name);
                     } else {
                         return Err(DbError::ParseError(
                             "Expected field name after '.'".to_string(),
+                        ));
+                    }
+                }
+                Token::QuestionDot => {
+                    self.advance();
+                    if let Some(field_name) = self.get_field_name() {
+                        self.advance();
+                        expr = Expression::OptionalFieldAccess(Box::new(expr), field_name);
+                    } else {
+                        return Err(DbError::ParseError(
+                            "Expected field name after '?.'".to_string(),
                         ));
                     }
                 }
@@ -1202,6 +1510,11 @@ impl Parser {
     fn parse_primary_expression(&mut self) -> DbResult<Expression> {
         match self.current_token() {
             Token::Identifier(name) => {
+                // Check for lambda: x -> expr
+                if matches!(self.peek_token(1), Token::Arrow) {
+                    return self.parse_lambda_expression();
+                }
+
                 let name = name.clone();
                 self.advance();
 
@@ -1223,9 +1536,48 @@ impl Parser {
 
                     self.expect(Token::RightParen)?;
 
+                    // Check for OVER clause - if present, this is a window function
+                    if matches!(self.current_token(), Token::Over) {
+                        return self.parse_window_function(name, args);
+                    }
+
                     Ok(Expression::FunctionCall { name, args })
                 } else {
                     Ok(Expression::Variable(name))
+                }
+            }
+
+            // Handle COUNT as a function call (it's a separate token but can be used as a function)
+            Token::Count => {
+                self.advance();
+                let name = "COUNT".to_string();
+
+                // Must be followed by LeftParen for function call
+                if matches!(self.current_token(), Token::LeftParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+
+                    // Parse arguments
+                    while !matches!(self.current_token(), Token::RightParen | Token::Eof) {
+                        args.push(self.parse_expression()?);
+
+                        if matches!(self.current_token(), Token::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    self.expect(Token::RightParen)?;
+
+                    // Check for OVER clause - if present, this is a window function
+                    if matches!(self.current_token(), Token::Over) {
+                        return self.parse_window_function(name, args);
+                    }
+
+                    Ok(Expression::FunctionCall { name, args })
+                } else {
+                    Err(DbError::ParseError("Expected '(' after COUNT".to_string()))
                 }
             }
 
@@ -1277,6 +1629,11 @@ impl Parser {
             Token::LeftBracket => self.parse_array_expression(),
 
             Token::LeftParen => {
+                // Check for lambda: (params) -> expr
+                if self.is_lambda_params() {
+                    return self.parse_lambda_expression();
+                }
+
                 self.advance();
                 // Check if this is a subquery (starts with FOR or LET)
                 if matches!(self.current_token(), Token::For | Token::Let) {
@@ -1297,11 +1654,108 @@ impl Parser {
                 Ok(Expression::Subquery(Box::new(subquery)))
             }
 
+            // CASE expression
+            Token::Case => self.parse_case_expression(),
+
+            // Template string: $"Hello ${name}!"
+            Token::TemplateString(parts) => {
+                let parts = parts.clone();
+                self.advance();
+                self.parse_template_string(parts)
+            }
+
             _ => Err(DbError::ParseError(format!(
                 "Unexpected token in expression: {:?}",
                 self.current_token()
             ))),
         }
+    }
+
+    /// Parse CASE expression
+    /// Simple form: CASE expr WHEN val1 THEN res1 WHEN val2 THEN res2 ELSE default END
+    /// Searched form: CASE WHEN cond1 THEN res1 WHEN cond2 THEN res2 ELSE default END
+    fn parse_case_expression(&mut self) -> DbResult<Expression> {
+        self.advance(); // consume CASE
+
+        // Check if this is a simple or searched CASE
+        let operand = if !matches!(self.current_token(), Token::When) {
+            // Simple CASE: CASE expr WHEN ...
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            // Searched CASE: CASE WHEN ...
+            None
+        };
+
+        // Parse WHEN clauses
+        let mut when_clauses = Vec::new();
+        while matches!(self.current_token(), Token::When) {
+            self.advance(); // consume WHEN
+
+            let condition = self.parse_expression()?;
+
+            if !matches!(self.current_token(), Token::Then) {
+                return Err(DbError::ParseError(
+                    "Expected THEN after WHEN condition".to_string(),
+                ));
+            }
+            self.advance(); // consume THEN
+
+            let result = self.parse_expression()?;
+            when_clauses.push((condition, result));
+        }
+
+        if when_clauses.is_empty() {
+            return Err(DbError::ParseError(
+                "CASE expression requires at least one WHEN clause".to_string(),
+            ));
+        }
+
+        // Parse optional ELSE clause
+        let else_clause = if matches!(self.current_token(), Token::Else) {
+            self.advance(); // consume ELSE
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        // Expect END
+        if !matches!(self.current_token(), Token::End) {
+            return Err(DbError::ParseError(
+                "Expected END to close CASE expression".to_string(),
+            ));
+        }
+        self.advance(); // consume END
+
+        Ok(Expression::Case {
+            operand,
+            when_clauses,
+            else_clause,
+        })
+    }
+
+    /// Parse template string parts from lexer into AST nodes
+    /// Each Expression(string) part gets parsed as a full SDBQL expression
+    fn parse_template_string(&mut self, parts: Vec<TemplatePart>) -> DbResult<Expression> {
+        let mut parsed_parts = Vec::new();
+
+        for part in parts {
+            match part {
+                TemplatePart::Literal(s) => {
+                    parsed_parts.push(TemplateStringPart::Literal(s));
+                }
+                TemplatePart::Expression(expr_str) => {
+                    // Parse the expression string as a full SDBQL expression
+                    let mut expr_parser = Parser::new(&expr_str)?;
+                    // Parse just the expression, not a full query
+                    let expr = expr_parser.parse_expression()?;
+                    parsed_parts.push(TemplateStringPart::Expression(Box::new(expr)));
+                }
+            }
+        }
+
+        Ok(Expression::TemplateString {
+            parts: parsed_parts,
+        })
     }
 
     fn parse_object_expression(&mut self) -> DbResult<Expression> {
@@ -1319,9 +1773,33 @@ impl Parser {
                 self.advance();
                 k
             } else {
-                return Err(DbError::ParseError(
-                    "Expected field name in object".to_string(),
-                ));
+                // Handle keyword tokens that can be used as field names
+                let keyword_name = match self.current_token() {
+                    Token::Sort => Some("order"),
+                    Token::Count => Some("count"),
+                    Token::Filter => Some("filter"),
+                    Token::Return => Some("return"),
+                    Token::In => Some("in"),
+                    Token::For => Some("for"),
+                    Token::Let => Some("let"),
+                    Token::Limit => Some("limit"),
+                    Token::Partition => Some("partition"),
+                    Token::Over => Some("over"),
+                    Token::Case => Some("case"),
+                    Token::When => Some("when"),
+                    Token::Then => Some("then"),
+                    Token::Else => Some("else"),
+                    Token::End => Some("end"),
+                    _ => None,
+                };
+                if let Some(name) = keyword_name {
+                    self.advance();
+                    name.to_string()
+                } else {
+                    return Err(DbError::ParseError(
+                        "Expected field name in object".to_string(),
+                    ));
+                }
             };
 
             // Support shorthand syntax: { city } means { city: city }

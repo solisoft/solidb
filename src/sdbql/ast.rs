@@ -185,6 +185,15 @@ pub struct ReturnClause {
     pub expression: Expression,
 }
 
+/// Part of a template string (used in AST after parsing)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateStringPart {
+    /// Static text between interpolations
+    Literal(String),
+    /// Parsed expression inside ${...}
+    Expression(Box<Expression>),
+}
+
 /// Expression types
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
@@ -196,6 +205,9 @@ pub enum Expression {
 
     /// Field access (e.g., doc.name)
     FieldAccess(Box<Expression>, String),
+
+    /// Optional field access (e.g., doc?.name) - returns null if base is null
+    OptionalFieldAccess(Box<Expression>, String),
 
     /// Dynamic field access (e.g., doc[@fieldName] or doc["name"])
     DynamicFieldAccess(Box<Expression>, Box<Expression>),
@@ -244,6 +256,55 @@ pub enum Expression {
         true_expr: Box<Expression>,
         false_expr: Box<Expression>,
     },
+
+    /// CASE expression - SQL-style conditional
+    /// Simple form: CASE expr WHEN val1 THEN res1 WHEN val2 THEN res2 ELSE default END
+    /// Searched form: CASE WHEN cond1 THEN res1 WHEN cond2 THEN res2 ELSE default END
+    Case {
+        /// Optional operand for simple CASE (None for searched CASE)
+        operand: Option<Box<Expression>>,
+        /// List of (condition/value, result) pairs
+        when_clauses: Vec<(Expression, Expression)>,
+        /// Optional ELSE result
+        else_clause: Option<Box<Expression>>,
+    },
+
+    /// Pipeline operation (value |> FUNC(args))
+    /// Left value becomes first argument to right-side function call
+    Pipeline {
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+
+    /// Lambda expression (x -> expr) or ((a, b) -> expr)
+    /// Used as arguments to higher-order functions like FILTER, MAP
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expression>,
+    },
+
+    /// Window function call with OVER clause
+    /// Example: ROW_NUMBER() OVER (PARTITION BY doc.region ORDER BY doc.amount DESC)
+    WindowFunctionCall {
+        function: String,
+        arguments: Vec<Expression>,
+        over_clause: WindowSpec,
+    },
+
+    /// Template string with interpolated expressions: $"Hello ${name}!"
+    /// Syntax: $"text ${expression} more text"
+    TemplateString { parts: Vec<TemplateStringPart> },
+}
+
+/// Window specification (the OVER clause)
+/// Example: OVER (PARTITION BY doc.region ORDER BY doc.date ASC)
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowSpec {
+    /// PARTITION BY expressions (optional) - groups rows into partitions
+    pub partition_by: Vec<Expression>,
+    /// ORDER BY within the window (optional) - defines row ordering within each partition
+    /// Each tuple is (expression, ascending)
+    pub order_by: Vec<(Expression, bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -274,6 +335,7 @@ pub enum BinaryOperator {
     NotLike,
     RegEx,
     NotRegEx,
+    FuzzyEqual, // ~= (fuzzy string matching)
 
     // Bitwise
     BitwiseAnd,
@@ -281,6 +343,9 @@ pub enum BinaryOperator {
     BitwiseXor,
     LeftShift,
     RightShift,
+
+    // Null coalescing
+    NullCoalesce,
 }
 
 #[derive(Debug, Clone, PartialEq)]

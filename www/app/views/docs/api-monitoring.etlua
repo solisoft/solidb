@@ -1,0 +1,229 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/api" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to API Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+
+       <section id="health" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+              Health & Metrics
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Health check and Prometheus metrics endpoints. No authentication required.</p>
+          </div>
+          <div class="divide-y divide-white/5">
+            <!-- GET /_api/health -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/health</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Check if the server is running.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "status": "ok", "timestamp": "2025-01-01T00:00:00Z" }
+                </div>
+              </div>
+            </div>
+            <!-- GET /metrics -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/metrics</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Prometheus metrics endpoint. Returns metrics in Prometheus text exposition format for monitoring and alerting.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Available Metrics</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_http_requests_total</code>
+                    <p class="text-gray-500 mt-1">Total HTTP requests processed (counter)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_uptime_seconds</code>
+                    <p class="text-gray-500 mt-1">Server uptime in seconds (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_cpu_usage_percent</code>
+                    <p class="text-gray-500 mt-1">Current CPU usage percentage (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_memory_*_bytes</code>
+                    <p class="text-gray-500 mt-1">Memory stats: total, used, available (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_databases_total</code>
+                    <p class="text-gray-500 mt-1">Number of databases (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_collections_total</code>
+                    <p class="text-gray-500 mt-1">Total collections across all databases (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_active_scripts</code>
+                    <p class="text-gray-500 mt-1">Active Lua scripts (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_cluster_healthy_nodes</code>
+                    <p class="text-gray-500 mt-1">Healthy cluster nodes (gauge, if clustered)</p>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                  <pre># HELP solidb_http_requests_total Total number of HTTP requests processed
+# TYPE solidb_http_requests_total counter
+solidb_http_requests_total 1542
+
+# HELP solidb_uptime_seconds Time since server started in seconds
+# TYPE solidb_uptime_seconds gauge
+solidb_uptime_seconds 3600.123
+
+# HELP solidb_cpu_usage_percent Current CPU usage percentage
+# TYPE solidb_cpu_usage_percent gauge
+solidb_cpu_usage_percent 15.50</pre>
+                </div>
+              </div>
+              <div class="mt-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Prometheus Configuration</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <pre>scrape_configs:
+  - job_name: 'solidb'
+    static_configs:
+      - targets: ['localhost:6745']</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+         </div>
+       </section>
+
+       <!-- Datadog Integration -->
+       <section id="datadog" class="scroll-mt-24">
+         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Datadog Integration
+            </h2>
+            <p class="text-sm text-gray-400 mt-2">Integrate SoliDB metrics with Datadog using the Prometheus scraping feature.</p>
+          </div>
+          <div class="p-6 space-y-6">
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Overview</h4>
+              <p class="text-sm text-gray-300">
+                Datadog can scrape the <code class="text-purple-400">/metrics</code> endpoint directly using its OpenMetrics integration.
+                This requires no code changes to SoliDB - just configure the Datadog Agent.
+              </p>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Datadog Agent Configuration</h4>
+              <p class="text-sm text-gray-400 mb-3">Create a configuration file at <code class="text-gray-300">conf.d/openmetrics.d/conf.yaml</code>:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                <pre>init_config:
+
+instances:
+  - openmetrics_endpoint: http://localhost:6745/metrics
+    namespace: solidb
+    metrics:
+      - solidb_http_requests_total
+      - solidb_uptime_seconds
+      - solidb_cpu_usage_percent
+      - solidb_memory_total_bytes
+      - solidb_memory_used_bytes
+      - solidb_memory_available_bytes
+      - solidb_databases_total
+      - solidb_collections_total
+      - solidb_active_scripts
+      - solidb_active_websockets
+      - solidb_cluster_healthy_nodes</pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Docker Compose Setup</h4>
+              <p class="text-sm text-gray-400 mb-3">Run Datadog Agent alongside SoliDB:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                <pre>services:
+  solidb:
+    image: solidb/solidb:latest
+    ports:
+      - "6745:6745"
+
+  datadog-agent:
+    image: datadog/agent:latest
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=datadoghq.com
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./datadog-conf.d:/etc/datadog-agent/conf.d</pre>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Kubernetes with Autodiscovery</h4>
+              <p class="text-sm text-gray-400 mb-3">Add annotations to your SoliDB pod:</p>
+              <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                <pre>apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    ad.datadoghq.com/solidb.checks: |
+      {
+        "openmetrics": {
+          "instances": [{
+            "openmetrics_endpoint": "http://%%host%%:6745/metrics",
+            "namespace": "solidb",
+            "metrics": ["solidb_*"]
+          }]
+        }
+      }</pre>
+              </div>
+            </div>
+
+            <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+              <p class="text-sm text-purple-300">
+                <strong>Tip:</strong> Once configured, all SoliDB metrics will appear in Datadog with the <code class="text-purple-400">solidb.</code> prefix.
+                You can create dashboards, monitors, and alerts using these metrics.
+              </p>
+            </div>
+          </div>
+         </div>
+       </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/api-jobs" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Jobs
+          </span>
+        </a>
+        <a href="/docs/api" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            API Overview
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

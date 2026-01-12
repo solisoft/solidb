@@ -649,6 +649,8 @@ pub fn create_router(
         .route("/auth/login", post(login_handler))
         // Health check endpoint for cluster node monitoring (no auth required)
         .route("/_api/health", get(health_check_handler))
+        // Prometheus metrics endpoint (no auth required)
+        .route("/metrics", get(super::metrics::metrics_handler))
         // Internal cluster endpoints (use cluster secret, no user auth)
         .route("/_api/cluster/cleanup", post(cluster_cleanup))
         .route("/_api/cluster/reshard", post(cluster_reshard))

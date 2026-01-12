@@ -1,5 +1,14 @@
 use crate::error::{DbError, DbResult};
 
+/// Part of a template string (used in lexer output)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplatePart {
+    /// Static text between interpolations
+    Literal(String),
+    /// Raw expression text inside ${...}
+    Expression(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Keywords
@@ -39,12 +48,24 @@ pub enum Token {
     Graph,
     To,
 
+    // Window function keywords
+    Over,      // OVER
+    Partition, // PARTITION (BY is handled separately)
+
+    // CASE expression keywords
+    Case, // CASE
+    When, // WHEN
+    Then, // THEN
+    Else, // ELSE
+    End,  // END
+
     // Identifiers and literals
     Identifier(String),
     BindVar(String), // @variable for bind parameters
     Integer(i64),
     Float(f64),
     String(String),
+    TemplateString(Vec<TemplatePart>), // $"..." with interpolation
 
     // Operators
     Equal,         // ==
@@ -68,8 +89,14 @@ pub enum Token {
     Pipe,       // |
     Caret,      // ^
     Tilde,      // ~
+    FuzzyEqual, // ~=
     LeftShift,  // <<
     RightShift, // >>
+
+    // Pipeline operators
+    PipeRight,    // |> (pipeline)
+    Arrow,        // -> (lambda)
+    NullCoalesce, // ?? (null coalescing)
 
     // Delimiters
     Dot,          // .
@@ -83,6 +110,7 @@ pub enum Token {
     RightParen,   // )
     Colon,        // :
     Question,     // ?
+    QuestionDot,  // ?. (optional chaining)
 
     // Special
     Eof,
@@ -109,6 +137,11 @@ impl Lexer {
     fn advance(&mut self) {
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
+    }
+
+    /// Peek at the next character without consuming it
+    fn peek_char(&self) -> Option<char> {
+        self.input.get(self.position + 1).copied()
     }
 
     fn skip_whitespace(&mut self) {
@@ -191,6 +224,94 @@ impl Lexer {
         Err(DbError::ParseError("Unterminated string".to_string()))
     }
 
+    /// Read a template string: $"..." or $'...' with ${expression} interpolation
+    fn read_template_string(&mut self) -> DbResult<Token> {
+        self.advance(); // skip $
+        let quote = self.current_char.unwrap(); // " or '
+        self.advance(); // skip opening quote
+
+        let mut parts = Vec::new();
+        let mut current_literal = String::new();
+
+        while let Some(ch) = self.current_char {
+            if ch == quote {
+                // End of template
+                if !current_literal.is_empty() {
+                    parts.push(TemplatePart::Literal(current_literal));
+                }
+                self.advance();
+                return Ok(Token::TemplateString(parts));
+            } else if ch == '$' && self.peek_char() == Some('{') {
+                // Start of interpolation
+                if !current_literal.is_empty() {
+                    parts.push(TemplatePart::Literal(current_literal));
+                    current_literal = String::new();
+                }
+                self.advance(); // skip $
+                self.advance(); // skip {
+
+                // Read until matching }
+                let expr = self.read_until_closing_brace()?;
+                parts.push(TemplatePart::Expression(expr));
+            } else if ch == '$' && self.peek_char() == Some('$') {
+                // Escaped $$ -> $
+                current_literal.push('$');
+                self.advance();
+                self.advance();
+            } else if ch == '\\' {
+                // Handle escapes
+                self.advance();
+                if let Some(escaped) = self.current_char {
+                    current_literal.push(match escaped {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '$' => '$',
+                        '"' => '"',
+                        '\'' => '\'',
+                        _ => escaped,
+                    });
+                    self.advance();
+                }
+            } else {
+                current_literal.push(ch);
+                self.advance();
+            }
+        }
+
+        Err(DbError::ParseError(
+            "Unterminated template string".to_string(),
+        ))
+    }
+
+    /// Read expression text inside ${...}, handling nested braces
+    fn read_until_closing_brace(&mut self) -> DbResult<String> {
+        let mut expr = String::new();
+        let mut brace_depth = 1;
+
+        while let Some(ch) = self.current_char {
+            if ch == '{' {
+                brace_depth += 1;
+                expr.push(ch);
+            } else if ch == '}' {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    self.advance();
+                    return Ok(expr);
+                }
+                expr.push(ch);
+            } else {
+                expr.push(ch);
+            }
+            self.advance();
+        }
+
+        Err(DbError::ParseError(
+            "Unterminated interpolation ${}".to_string(),
+        ))
+    }
+
     fn read_quoted_identifier(&mut self) -> DbResult<Token> {
         self.advance(); // Skip opening backtick
 
@@ -227,7 +348,7 @@ impl Lexer {
             "FOR" => Token::For,
             "IN" => Token::In,
             "FILTER" => Token::Filter,
-            "SORT" => Token::Sort,
+            "SORT" | "ORDER" => Token::Sort,
             "LIMIT" => Token::Limit,
             "RETURN" => Token::Return,
             "LET" => Token::Let,
@@ -254,6 +375,15 @@ impl Lexer {
             "SHORTEST_PATH" => Token::ShortestPath,
             "GRAPH" => Token::Graph,
             "TO" => Token::To,
+            // Window function keywords
+            "OVER" => Token::Over,
+            "PARTITION" => Token::Partition,
+            // CASE expression keywords
+            "CASE" => Token::Case,
+            "WHEN" => Token::When,
+            "THEN" => Token::Then,
+            "ELSE" => Token::Else,
+            "END" => Token::End,
             // Aggregation keywords
             "COLLECT" => Token::Collect,
             "AGGREGATE" => Token::Aggregate,
@@ -293,6 +423,10 @@ impl Lexer {
 
             Some(ch) if ch.is_numeric() => {
                 return self.read_number();
+            }
+
+            Some('$') if matches!(self.peek_char(), Some('"') | Some('\'')) => {
+                return self.read_template_string();
             }
 
             Some('"') | Some('\'') => {
@@ -369,7 +503,23 @@ impl Lexer {
             }
             Some('-') => {
                 self.advance();
-                Token::Minus
+                if self.current_char == Some('>') {
+                    self.advance();
+                    Token::Arrow
+                } else if self.current_char == Some('-') {
+                    // Comment: skip until end of line
+                    self.advance();
+                    while let Some(ch) = self.current_char {
+                        if ch == '\n' {
+                            self.advance();
+                            break;
+                        }
+                        self.advance();
+                    }
+                    return self.next_token();
+                } else {
+                    Token::Minus
+                }
             }
             Some('*') => {
                 self.advance();
@@ -389,7 +539,12 @@ impl Lexer {
             }
             Some('|') => {
                 self.advance();
-                Token::Pipe
+                if self.current_char == Some('>') {
+                    self.advance();
+                    Token::PipeRight
+                } else {
+                    Token::Pipe
+                }
             }
             Some('^') => {
                 self.advance();
@@ -397,7 +552,12 @@ impl Lexer {
             }
             Some('~') => {
                 self.advance();
-                Token::Tilde
+                if self.current_char == Some('=') {
+                    self.advance();
+                    Token::FuzzyEqual
+                } else {
+                    Token::Tilde
+                }
             }
             Some('.') => {
                 self.advance();
@@ -442,7 +602,15 @@ impl Lexer {
             }
             Some('?') => {
                 self.advance();
-                Token::Question
+                if self.current_char == Some('?') {
+                    self.advance();
+                    Token::NullCoalesce
+                } else if self.current_char == Some('.') {
+                    self.advance();
+                    Token::QuestionDot
+                } else {
+                    Token::Question
+                }
             }
 
             Some(ch) => {
@@ -624,6 +792,7 @@ mod tests {
         assert_eq!(tokenize(")")[0], Token::RightParen);
         assert_eq!(tokenize(":")[0], Token::Colon);
         assert_eq!(tokenize("?")[0], Token::Question);
+        assert_eq!(tokenize("??")[0], Token::NullCoalesce);
     }
 
     #[test]
@@ -677,5 +846,72 @@ mod tests {
     fn test_error_unexpected_char() {
         let result = Lexer::new("$").tokenize();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_comment_single_line() {
+        // Comment at end of line
+        let tokens = tokenize("FOR doc -- this is a comment\nIN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+    }
+
+    #[test]
+    fn test_comment_at_start() {
+        // Comment at start of query
+        let tokens = tokenize("-- comment\nFOR doc IN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+    }
+
+    #[test]
+    fn test_comment_at_end() {
+        // Comment at end of query (no newline after)
+        let tokens = tokenize("RETURN 1 -- final comment");
+        assert_eq!(tokens[0], Token::Return);
+        assert_eq!(tokens[1], Token::Integer(1));
+        assert_eq!(tokens[2], Token::Eof);
+    }
+
+    #[test]
+    fn test_comment_full_line() {
+        // Full line comment
+        let tokens = tokenize("FOR doc IN users\n-- skip this line\nRETURN doc");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+        assert_eq!(tokens[4], Token::Return);
+        assert_eq!(tokens[5], Token::Identifier("doc".to_string()));
+    }
+
+    #[test]
+    fn test_comment_multiple() {
+        // Multiple comments
+        let tokens = tokenize("-- first\nFOR -- second\ndoc -- third\nIN users");
+        assert_eq!(tokens[0], Token::For);
+        assert_eq!(tokens[1], Token::Identifier("doc".to_string()));
+        assert_eq!(tokens[2], Token::In);
+        assert_eq!(tokens[3], Token::Identifier("users".to_string()));
+    }
+
+    #[test]
+    fn test_minus_not_comment() {
+        // Single minus should still work
+        let tokens = tokenize("5 - 3");
+        assert_eq!(tokens[0], Token::Integer(5));
+        assert_eq!(tokens[1], Token::Minus);
+        assert_eq!(tokens[2], Token::Integer(3));
+    }
+
+    #[test]
+    fn test_arrow_not_comment() {
+        // Arrow should still work
+        let tokens = tokenize("x -> y");
+        assert_eq!(tokens[0], Token::Identifier("x".to_string()));
+        assert_eq!(tokens[1], Token::Arrow);
+        assert_eq!(tokens[2], Token::Identifier("y".to_string()));
     }
 }

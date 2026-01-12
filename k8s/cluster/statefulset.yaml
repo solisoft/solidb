@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: solidb
+  namespace: solidb
+  labels:
+    app.kubernetes.io/name: solidb
+    app.kubernetes.io/component: cluster
+spec:
+  serviceName: solidb-headless
+  replicas: 3
+  podManagementPolicy: Parallel  # Start all pods at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: solidb
+      app.kubernetes.io/component: cluster
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: solidb
+        app.kubernetes.io/component: cluster
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6745"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        # Init container to build peer list dynamically
+        - name: init-peers
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              # Build peer list excluding self
+              REPLICAS=3
+              PEERS=""
+              for i in $(seq 0 $((REPLICAS - 1))); do
+                PEER="solidb-${i}.solidb-headless.solidb.svc.cluster.local:6745"
+                if [ "$PEER" != "${HOSTNAME}.solidb-headless.solidb.svc.cluster.local:6745" ]; then
+                  if [ -n "$PEERS" ]; then
+                    PEERS="${PEERS},"
+                  fi
+                  PEERS="${PEERS}${PEER}"
+                fi
+              done
+              echo "$PEERS" > /config/peers
+              echo "Peers: $PEERS"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: solidb
+          image: solidb/solidb:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              PEERS=$(cat /config/peers)
+              exec solidb \
+                --port 6745 \
+                --data-dir /data \
+                --keyfile /secrets/keyfile \
+                --cluster-peers "$PEERS"
+          ports:
+            - name: http
+              containerPort: 6745
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: solidb-config
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /_api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /_api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: solidb-secret
+            items:
+              - key: keyfile
+                path: keyfile
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: solidb
+                    app.kubernetes.io/component: cluster
+                topologyKey: kubernetes.io/hostname
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: solidb
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        # Uncomment to use a specific storage class
+        # storageClassName: standard

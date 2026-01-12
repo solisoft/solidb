@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: solidb-config
+  namespace: solidb
+  labels:
+    app.kubernetes.io/name: solidb
+data:
+  SOLIDB_PORT: "6745"
+  SOLIDB_LOG_LEVEL: "info"
+  RUST_LOG: "solidb=info,tower_http=info"

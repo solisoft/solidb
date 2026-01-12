@@ -1,0 +1,260 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs/sdbql" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to SDBQL Reference
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <!-- Header -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-yellow-500 to-amber-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 mb-4 tracking-tight">
+            Fulltext Search Functions
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Fulltext search capabilities with n-gram indexing and BM25 relevance scoring.
+          </p>
+        </div>
+      </div>
+
+      <!-- Fulltext Search Functions -->
+      <section id="fulltext-functions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-gradient-to-r from-yellow-500/10 to-amber-500/10">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              </svg>
+              Fulltext Search Operations
+            </h2>
+          </div>
+          <div class="p-8 space-y-8">
+            <p class="text-gray-300 leading-relaxed">
+              SDBQL provides powerful fulltext search capabilities using n-gram indexing for fuzzy matching and BM25 for relevance scoring.
+            </p>
+
+            <!-- FULLTEXT -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-yellow-500/20 text-yellow-400 text-xs font-mono px-2 py-1 rounded mr-3">FULLTEXT</span>
+                  N-Gram Fulltext Search
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Fuzzy search using n-gram indexing. Returns matching documents with similarity scores.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">FULLTEXT(<span class="text-yellow-400">collection</span>, <span class="text-cyan-400">field</span>, <span class="text-emerald-400">query</span>, <span class="text-pink-400">distance?</span>)</code>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Parameters</h4>
+                    <ul class="text-xs text-gray-400 space-y-1">
+                      <li><code class="text-yellow-300">collection</code> - Name of the collection to search</li>
+                      <li><code class="text-yellow-300">field</code> - Field name to search within</li>
+                      <li><code class="text-yellow-300">query</code> - Search query string</li>
+                      <li><code class="text-yellow-300">distance</code> - Optional max edit distance (default: 2)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">LET matches = FULLTEXT("articles", "title", "rust", 2)
+FOR m IN matches
+  RETURN m.doc</code></pre>
+                  </div>
+                </div>
+
+                <div class="bg-yellow-900/10 border border-yellow-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">N-Gram Indexing</h4>
+                    <p class="text-sm text-yellow-200/70">
+                      FULLTEXT uses n-gram (trigram) indexing to enable fuzzy matching. This allows finding documents even when there are typos or slight variations in the search query.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- BM25 -->
+            <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-yellow-300 flex items-center">
+                  <span class="bg-yellow-500/20 text-yellow-400 text-xs font-mono px-2 py-1 rounded mr-3">BM25</span>
+                  BM25 Relevance Scoring
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">BM25 relevance scoring for ranking search results. Returns a numeric score that can be used in SORT clauses.</p>
+
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">BM25(<span class="text-yellow-400">field</span>, <span class="text-cyan-400">query</span>)</code>
+                </div>
+
+                <div class="bg-yellow-900/10 border border-yellow-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">BM25 Algorithm</h4>
+                    <p class="text-sm text-yellow-200/70">
+                      BM25 (Best Matching 25) is a probabilistic ranking function that provides sophisticated relevance scoring. It considers:
+                    </p>
+                    <ul class="text-sm text-yellow-200/70 mt-2 list-disc list-inside">
+                      <li><strong>Term frequency (TF)</strong> - How often the term appears in the document</li>
+                      <li><strong>Inverse document frequency (IDF)</strong> - How rare the term is across all documents</li>
+                      <li><strong>Document length</strong> - Normalizes for shorter vs longer documents</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Basic Scoring</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  RETURN {
+    title: doc.title,
+    score: BM25(doc.content, "machine learning")
+  }</code></pre>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sort by Relevance</h4>
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  SORT BM25(doc.content, "rust database") DESC
+  LIMIT 10
+  RETURN doc</code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Combined with Filters</h4>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR doc IN articles
+  FILTER doc.published == true
+  LET score = BM25(doc.content, "query optimization")
+  FILTER score > 0.1
+  SORT score DESC
+  LIMIT 5
+  RETURN {title: doc.title, score}</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Practical Examples -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Search Examples</h4>
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Fuzzy search with ranking
+FOR doc IN products
+  LET score = BM25(doc.description, @searchQuery)
+  FILTER score > 0.1
+  SORT score DESC
+  LIMIT 20
+  RETURN { name: doc.name, score, snippet: SUBSTRING(doc.description, 0, 100) }
+
+-- Multi-field search with boosting
+FOR doc IN articles
+  LET titleScore = BM25(doc.title, @query) * 2  -- Boost title matches
+  LET contentScore = BM25(doc.content, @query)
+  LET totalScore = titleScore + contentScore
+  FILTER totalScore > 0
+  SORT totalScore DESC
+  LIMIT 10
+  RETURN { title: doc.title, score: totalScore }
+
+-- Search with category filter
+FOR doc IN products
+  FILTER doc.category == @category
+  LET score = BM25(doc.name, @search)
+  FILTER score > 0.5
+  SORT score DESC
+  RETURN doc
+
+-- Combine fulltext with fuzzy matching
+LET fulltextResults = FULLTEXT("products", "name", @query, 2)
+FOR result IN fulltextResults
+  LET doc = result.doc
+  LET relevance = BM25(doc.description, @query)
+  SORT relevance DESC
+  RETURN { doc, relevance }
+
+-- Autocomplete search
+FOR doc IN products
+  FILTER doc.name LIKE CONCAT(@prefix, "%")
+  LET score = BM25(doc.name, @prefix)
+  SORT score DESC
+  LIMIT 10
+  RETURN { name: doc.name, category: doc.category }
+
+-- Search with highlighting simulation
+FOR doc IN articles
+  LET score = BM25(doc.content, @query)
+  FILTER score > 0
+  SORT score DESC
+  LIMIT 10
+  LET preview = SUBSTRING(doc.content, 0, 200)
+  RETURN {
+    title: doc.title,
+    preview: CONCAT(preview, "..."),
+    score
+  }</code></pre>
+            </div>
+
+            <!-- Tips -->
+            <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+              <h4 class="text-sm font-bold text-gray-300 mb-3">Search Tips</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-400">
+                <div>
+                  <h5 class="text-yellow-300 font-semibold mb-2">Improving Relevance</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Boost important fields (title, name) with multipliers</li>
+                    <li>Use multiple search terms for better matching</li>
+                    <li>Filter by score threshold to remove weak matches</li>
+                    <li>Combine with FILTER for faceted search</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 class="text-yellow-300 font-semibold mb-2">Performance Tips</h5>
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>Create fulltext indexes on frequently searched fields</li>
+                    <li>Use LIMIT to restrict result set size</li>
+                    <li>Pre-filter with indexed fields before scoring</li>
+                    <li>Cache common search results</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation -->
+      <div class="flex justify-between items-center pt-8 border-t border-white/10">
+        <a href="/docs/sdbql-functions-geo" class="text-gray-400 hover:text-white transition-colors">
+          <span class="flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Geo Functions
+          </span>
+        </a>
+        <a href="/docs/sdbql-functions-misc" class="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <span class="flex items-center">
+            Other Functions
+            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </span>
+        </a>
+      </div>
+
+    </main>
+  </div>
+</div>

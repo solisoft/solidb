@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  solidb:
+    build: .
+    image: solidb/solidb:latest
+    container_name: solidb
+    ports:
+      - "6745:6745"
+    volumes:
+      - solidb-data:/data
+    environment:
+      - SOLIDB_PORT=6745
+      - SOLIDB_LOG_LEVEL=info
+      - RUST_LOG=solidb=info,tower_http=info
+      # Uncomment for cluster mode:
+      # - SOLIDB_CLUSTER_PEERS=solidb-node2:6745,solidb-node3:6745
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6745/_api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  solidb-data:
+    driver: local

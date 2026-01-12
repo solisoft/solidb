@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: solidb
+  labels:
+    app.kubernetes.io/name: solidb
+    app.kubernetes.io/component: database
