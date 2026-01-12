@@ -2750,15 +2750,15 @@
          </div>
        </section>
 
-       <!-- Health Section -->
+       <!-- Health & Metrics Section -->
        <section id="health" class="scroll-mt-24">
          <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
             <h2 class="text-2xl font-bold text-white flex items-center">
               <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-              Health
+              Health & Metrics
             </h2>
-            <p class="text-sm text-gray-400 mt-2">Health check endpoint. No authentication required.</p>
+            <p class="text-sm text-gray-400 mt-2">Health check and Prometheus metrics endpoints. No authentication required.</p>
           </div>
           <div class="divide-y divide-white/5">
             <!-- GET /_api/health -->
@@ -2772,6 +2772,76 @@
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                   { "status": "ok", "timestamp": "2025-01-01T00:00:00Z" }
+                </div>
+              </div>
+            </div>
+            <!-- GET /metrics -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/metrics</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Prometheus metrics endpoint. Returns metrics in Prometheus text exposition format for monitoring and alerting.</p>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Available Metrics</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_http_requests_total</code>
+                    <p class="text-gray-500 mt-1">Total HTTP requests processed (counter)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_uptime_seconds</code>
+                    <p class="text-gray-500 mt-1">Server uptime in seconds (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_cpu_usage_percent</code>
+                    <p class="text-gray-500 mt-1">Current CPU usage percentage (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_memory_*_bytes</code>
+                    <p class="text-gray-500 mt-1">Memory stats: total, used, available (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_databases_total</code>
+                    <p class="text-gray-500 mt-1">Number of databases (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_collections_total</code>
+                    <p class="text-gray-500 mt-1">Total collections across all databases (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_active_scripts</code>
+                    <p class="text-gray-500 mt-1">Active Lua scripts (gauge)</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_cluster_healthy_nodes</code>
+                    <p class="text-gray-500 mt-1">Healthy cluster nodes (gauge, if clustered)</p>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example Response</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                  <pre># HELP solidb_http_requests_total Total number of HTTP requests processed
+# TYPE solidb_http_requests_total counter
+solidb_http_requests_total 1542
+
+# HELP solidb_uptime_seconds Time since server started in seconds
+# TYPE solidb_uptime_seconds gauge
+solidb_uptime_seconds 3600.123
+
+# HELP solidb_cpu_usage_percent Current CPU usage percentage
+# TYPE solidb_cpu_usage_percent gauge
+solidb_cpu_usage_percent 15.50</pre>
+                </div>
+              </div>
+              <div class="mt-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Prometheus Configuration</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  <pre>scrape_configs:
+  - job_name: 'solidb'
+    static_configs:
+      - targets: ['localhost:6745']</pre>
                 </div>
               </div>
             </div>
