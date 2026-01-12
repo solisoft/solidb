@@ -405,6 +405,21 @@ function CalendarController:delete()
   return self:json({ success = true })
 end
 
+-- Debug action
+function CalendarController:debug_data()
+  local current_user = get_current_user()
+  local events = MailboxEvent.for_user(current_user._key)
+  local pending = MailboxEvent.pending_for_user(current_user._key)
+  
+  self:json({ 
+    user_key = current_user._key,
+    events_count = #events,
+    pending_count = #pending,
+    events = events,
+    pending = pending
+  })
+end
+
 function CalendarController:respond()
   local event_key = self.params.id
   local status = self.params.status

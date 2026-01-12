@@ -296,6 +296,7 @@ router.scope("/mailbox", { middleware = { "session_auth" } }, function()
   router.post("/calendar/event", "mailbox/calendar#create")
   router.put("/calendar/event/:id", "mailbox/calendar#update")
   router.delete("/calendar/event/:id", "mailbox/calendar#delete")
+  router.get("/calendar/debug_data", "mailbox/calendar#debug_data")
   router.post("/calendar/event/:id/respond", "mailbox/calendar#respond")
 
   -- Contacts
